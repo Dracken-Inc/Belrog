@@ -3,6 +3,7 @@ import {
   Sparkles, Video, Image as ImageIcon, Music, RefreshCw, Loader2,
   ChevronLeft, ChevronRight, Play, Pause, Upload, X, Film, Search,
   FolderOpen, Wand2, Volume2, Mic, Clock, Settings, Terminal, ChevronDown, ChevronUp, PenLine, KeyRound,
+  Copy,
 } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import ImageAnnotationModal from './ImageAnnotationModal'
@@ -267,6 +268,60 @@ async function copyTextToClipboard(text) {
   textarea.select()
   document.execCommand('copy')
   document.body.removeChild(textarea)
+}
+
+function buildGenerationErrorTroubleshootingHints(errorText = '') {
+  const text = String(errorText || '')
+  const lower = text.toLowerCase()
+  const hints = []
+
+  const looksLikeQwenAsr = (
+    lower.includes('unifiedasrtranscribenode')
+    || lower.includes('qwen3asr')
+    || lower.includes('tts-audio-suite')
+    || lower.includes('caption transcription')
+  )
+
+  if (looksLikeQwenAsr) {
+    hints.push('This reached the Caption Transcription (Qwen ASR) workflow and failed inside ComfyUI, not inside the Music Video planner.')
+    hints.push('Open the bundled caption_qwen_asr_transcription.json workflow in ComfyUI and run it there to debug the local Python/node/model environment.')
+  }
+
+  if (lower.includes('check_model_inputs') && lower.includes('missing 1 required positional argument')) {
+    hints.push('The check_model_inputs error points to a Qwen3-ASR / transformers compatibility problem in the ComfyUI Python environment.')
+  }
+
+  if (lower.includes('node') && lower.includes('not found')) {
+    hints.push('If this happened after installing nodes, restart ComfyUI and re-check Workflow Setup so ComfyUI reloads the new node classes.')
+  }
+
+  return hints
+}
+
+function buildGenerationErrorClipboardText({
+  errorText = '',
+  hints = [],
+  workflow = null,
+  generationMode = '',
+} = {}) {
+  const lines = [
+    'ComfyStudio error report',
+    `Timestamp: ${new Date().toISOString()}`,
+  ]
+
+  if (workflow?.id || workflow?.label) {
+    lines.push(`Workflow: ${workflow?.label || workflow?.id} (${workflow?.id || 'unknown'})`)
+  }
+  if (generationMode) lines.push(`Mode: ${generationMode}`)
+
+  lines.push('', 'Error:', String(errorText || '').trim() || '(empty)')
+
+  if (Array.isArray(hints) && hints.length > 0) {
+    lines.push('', 'Troubleshooting hints:')
+    for (const hint of hints) lines.push(`- ${hint}`)
+  }
+
+  return lines.join('\n')
 }
 
 function formatCountLabel(count, singular, plural = `${singular}s`) {
@@ -2783,6 +2838,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const MAX_CONSECUTIVE_RAPID_FAILS = 3
   const MIN_JOB_INTERVAL_MS = 2000
   const [formError, setFormError] = useState(null)
+  const [formErrorCopyStatus, setFormErrorCopyStatus] = useState('')
   const [creatingStoryboardPdf, setCreatingStoryboardPdf] = useState(false)
   const [yoloMusicAudioImporting, setYoloMusicAudioImporting] = useState(false)
   const [yoloMusicTranscribingSrt, setYoloMusicTranscribingSrt] = useState(false)
@@ -3171,6 +3227,30 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     () => currentCategoryWorkflows.find((workflow) => workflow.id === workflowId) || currentCategoryWorkflows[0],
     [currentCategoryWorkflows, workflowId]
   )
+  const formErrorTroubleshootingHints = useMemo(
+    () => buildGenerationErrorTroubleshootingHints(formError),
+    [formError]
+  )
+  useEffect(() => {
+    setFormErrorCopyStatus('')
+  }, [formError])
+  const handleCopyFormError = useCallback(async () => {
+    if (!formError) return
+    const text = buildGenerationErrorClipboardText({
+      errorText: formError,
+      hints: formErrorTroubleshootingHints,
+      workflow: currentWorkflow,
+      generationMode,
+    })
+    try {
+      await copyTextToClipboard(text)
+      setFormErrorCopyStatus('Copied')
+      setTimeout(() => setFormErrorCopyStatus(''), 1600)
+    } catch {
+      setFormErrorCopyStatus('Copy failed')
+      setTimeout(() => setFormErrorCopyStatus(''), 1600)
+    }
+  }, [currentWorkflow, formError, formErrorTroubleshootingHints, generationMode])
   const activeWorkflowBrowserMode = generationMode === 'yolo' ? 'create' : 'generate'
   const visibleWorkflowManifests = useMemo(() => (
     GENERATE_WORKFLOW_CATALOG.filter((workflow) => (
@@ -12322,7 +12402,31 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             )}
 
             {formError && (
-              <div className="mt-2 text-[10px] text-sf-error text-center">{formError}</div>
+              <div className="mt-2 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-left">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 text-[10px] font-semibold text-red-200">
+                    Generation message
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { void handleCopyFormError() }}
+                    className="inline-flex shrink-0 items-center gap-1 rounded border border-red-300/30 bg-sf-dark-950/60 px-1.5 py-0.5 text-[9px] font-medium text-red-100 transition-colors hover:border-red-200/60 hover:text-white"
+                    title="Copy this error and troubleshooting context"
+                  >
+                    <Copy className="h-3 w-3" />
+                    {formErrorCopyStatus || 'Copy error'}
+                  </button>
+                </div>
+                <pre className="mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words font-sans text-[10px] leading-4 text-sf-error">{formError}</pre>
+                {formErrorTroubleshootingHints.length > 0 && (
+                  <div className="mt-2 space-y-1 rounded border border-red-300/20 bg-sf-dark-950/50 p-2 text-[9px] leading-4 text-red-100">
+                    <div className="font-semibold text-red-50">Troubleshooting hints</div>
+                    {formErrorTroubleshootingHints.map((hint) => (
+                      <div key={hint}>{hint}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

@@ -437,6 +437,8 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
     customNodesPath: '',
     modelsPath: '',
     pythonCommand: '',
+    extraModelConfigPath: '',
+    extraModelPathCount: 0,
   })
   const [connectionState, setConnectionState] = useState({
     status: 'idle',
@@ -493,6 +495,8 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
         customNodesPath: '',
         modelsPath: '',
         pythonCommand: '',
+        extraModelConfigPath: '',
+        extraModelPathCount: 0,
       })
       return
     }
@@ -507,6 +511,8 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
         customNodesPath: '',
         modelsPath: '',
         pythonCommand: '',
+        extraModelConfigPath: '',
+        extraModelPathCount: 0,
       })
       return
     }
@@ -521,6 +527,8 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
       customNodesPath: result?.customNodesPath || '',
       modelsPath: result?.modelsPath || '',
       pythonCommand: result?.pythonCommand || '',
+      extraModelConfigPath: result?.extraModelConfigPath || '',
+      extraModelPathCount: Number(result?.extraModelPathCount || 0) || 0,
     })
   }, [])
 
@@ -1338,6 +1346,11 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
           )}
           {rootValidation.modelsPath && (
             <div className="text-sf-text-muted">Models: {rootValidation.modelsPath}</div>
+          )}
+          {rootValidation.extraModelPathCount > 0 && (
+            <div className="text-sf-text-muted">
+              Extra model paths: {rootValidation.extraModelPathCount} from {rootValidation.extraModelConfigPath || 'extra_model_paths.yaml'}
+            </div>
           )}
           {rootValidation.customNodesPath && (
             <div className="text-sf-text-muted">Custom nodes: {rootValidation.customNodesPath}</div>
