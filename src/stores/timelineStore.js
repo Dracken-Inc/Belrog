@@ -3889,6 +3889,13 @@ export const useTimelineStore = create(
       activeClips.push({ clip, track })
     }
 
+    const removeActiveClip = (clipId) => {
+      if (!clipId || !addedClipIds.has(clipId)) return
+      const index = activeClips.findIndex(({ clip }) => clip?.id === clipId)
+      if (index >= 0) activeClips.splice(index, 1)
+      addedClipIds.delete(clipId)
+    }
+
     const addTransitionClipsAtTime = (transition, progress = 0) => {
       if (!transition || transition.kind !== 'between') return
       const clipA = state.clips.find(c => c.id === transition.clipAId)
@@ -3896,6 +3903,8 @@ export const useTimelineStore = create(
       if (!clipA || !clipB) return
       const track = state.tracks.find(t => t.id === clipA.trackId)
       if (!track) return
+      removeActiveClip(clipA.id)
+      removeActiveClip(clipB.id)
       pushActiveClip(clipA, track)
       pushActiveClip(clipB, track)
     }

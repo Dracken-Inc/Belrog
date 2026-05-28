@@ -5610,6 +5610,9 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
                     const transitionEnd = editPoint + clipBContribution
                     const transitionWidth = Math.max(0, transitionEnd - transitionStart) * pixelsPerSecond
                     const transitionX = transitionStart * pixelsPerSecond
+                    const transitionHitWidth = Math.max(32, transitionWidth)
+                    const transitionHitInset = (transitionHitWidth - transitionWidth) / 2
+                    const transitionHitX = transitionX - transitionHitInset
                     const isSelected = selectedTransitionId === transition.id
                     const transitionMeta = TRANSITION_TYPES.find(t => t.id === transition.type)
                     const transitionName = transitionMeta?.name || transition.type
@@ -5619,10 +5622,8 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
                       <div
                         key={`transition-${clipA.id}-${clipB.id}`}
                         data-gap-ignore="true"
-                        className={`absolute top-0 bottom-[14px] z-25 pointer-events-auto cursor-pointer group/trans ${
-                          isSelected ? 'ring-2 ring-white/80 ring-inset shadow-[0_0_0_1px_rgba(255,255,255,0.4)]' : ''
-                        }`}
-                        style={{ left: `${transitionX}px`, width: `${transitionWidth}px` }}
+                        className="absolute top-0 bottom-[14px] z-[35] pointer-events-auto cursor-pointer group/trans"
+                        style={{ left: `${transitionHitX}px`, width: `${transitionHitWidth}px` }}
                         onClick={(e) => {
                           e.stopPropagation()
                           selectTransition(transition.id)
@@ -5630,7 +5631,12 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
                         title={`${transitionName} (${transitionFrames}f)`}
                       >
                         {/* Resolve-style: dark grey-black overlay container with visible border */}
-                        <div className="absolute inset-0 overflow-hidden border border-[#4a4a4a]/90 bg-[#1a1a1a]/85 rounded-[2px]">
+                        <div
+                          className={`absolute top-0 bottom-0 overflow-hidden border border-[#4a4a4a]/90 bg-[#1a1a1a]/85 rounded-[2px] ${
+                            isSelected ? 'ring-2 ring-white/80 ring-inset shadow-[0_0_0_1px_rgba(255,255,255,0.4)]' : ''
+                          }`}
+                          style={{ left: `${transitionHitInset}px`, width: `${transitionWidth}px` }}
+                        >
                           {/* Left/Right preview panes (clip A + clip B) - visible through overlay */}
                           <div className="absolute inset-0 flex">
                             <div className="relative h-full w-1/2 overflow-hidden">
@@ -5678,9 +5684,10 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
 
                         {/* Resize handles (left/right) */}
                         <div
-                          className={`absolute left-0 top-0 bottom-0 w-3 flex items-center justify-start z-30 cursor-ew-resize ${
-                            isSelected ? 'opacity-100' : 'opacity-0 group-hover/trans:opacity-100'
+                          className={`absolute top-0 bottom-0 w-3 flex items-center justify-start z-40 cursor-ew-resize ${
+                            isSelected ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover/trans:opacity-100 group-hover/trans:pointer-events-auto'
                           }`}
+                          style={{ left: `${transitionHitInset}px` }}
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             e.preventDefault()
@@ -5696,9 +5703,10 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
                           <div className="w-1 h-7 bg-white/90 rounded-r shadow-sm" />
                         </div>
                         <div
-                          className={`absolute right-0 top-0 bottom-0 w-3 flex items-center justify-end z-30 cursor-ew-resize ${
-                            isSelected ? 'opacity-100' : 'opacity-0 group-hover/trans:opacity-100'
+                          className={`absolute top-0 bottom-0 w-3 flex items-center justify-end z-40 cursor-ew-resize ${
+                            isSelected ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover/trans:opacity-100 group-hover/trans:pointer-events-auto'
                           }`}
+                          style={{ right: `${transitionHitInset}px` }}
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             e.preventDefault()
@@ -5721,8 +5729,9 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
                             removeTransition(transition.id)
                           }}
                           className={`absolute top-1 right-1 w-5 h-5 rounded bg-sf-dark-800/90 border border-sf-dark-500 text-sf-text-muted hover:text-sf-error hover:border-sf-error transition-colors ${
-                            isSelected ? 'opacity-100' : 'opacity-0 group-hover/trans:opacity-100'
+                            isSelected ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none group-hover/trans:opacity-100 group-hover/trans:pointer-events-auto'
                           }`}
+                          style={{ right: `${transitionHitInset + 4}px` }}
                           title="Remove transition"
                         >
                           ×

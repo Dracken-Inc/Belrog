@@ -59,8 +59,8 @@ function logCanvasDiag(event, payload = {}) {
   console.log(`[CanvasPreview] ${event}`, { t: nowSeconds, ...payload })
 }
 
-function getClipPlaybackTimeAtTimeline(clip, timelineTime, endOffset = 0.01) {
-  if (!clip) return 0
+function getClipPlaybackTimingAtTimeline(clip, timelineTime, endOffset = 0.01, options = {}) {
+  if (!clip) return { time: 0, rawTime: 0, clamped: false, minTime: 0, maxTime: 0 }
   const baseScale = clip.sourceTimeScale || (clip.timelineFps && clip.sourceFps
     ? clip.timelineFps / clip.sourceFps
     : 1)
@@ -71,12 +71,26 @@ function getClipPlaybackTimeAtTimeline(clip, timelineTime, endOffset = 0.01) {
   const trimStart = clip.trimStart || 0
   const rawTrimEnd = clip.trimEnd ?? clip.sourceDuration ?? (trimStart + (clip.duration || 0) * timeScale)
   const trimEnd = Number.isFinite(rawTrimEnd) ? rawTrimEnd : trimStart
-  const minTime = Math.min(trimStart, trimEnd)
-  const maxTime = Math.max(trimStart, trimEnd)
+  const sourceDuration = Number(clip.sourceDuration)
+  const allowHandles = !!options.allowHandles && Number.isFinite(sourceDuration) && sourceDuration > 0
+  const minTime = allowHandles ? 0 : Math.min(trimStart, trimEnd)
+  const maxTime = allowHandles ? sourceDuration : Math.max(trimStart, trimEnd)
   const sourceTime = reverse
     ? trimEnd - (timelineTime - (clip.startTime || 0)) * timeScale
     : trimStart + (timelineTime - (clip.startTime || 0)) * timeScale
-  return Math.max(minTime, Math.min(sourceTime, Math.max(minTime, maxTime - endOffset)))
+  const safeMaxTime = Math.max(minTime, maxTime - endOffset)
+  const clampedTime = Math.max(minTime, Math.min(sourceTime, safeMaxTime))
+  return {
+    time: clampedTime,
+    rawTime: sourceTime,
+    clamped: Math.abs(clampedTime - sourceTime) > 0.001,
+    minTime,
+    maxTime,
+  }
+}
+
+function getClipPlaybackTimeAtTimeline(clip, timelineTime, endOffset = 0.01, options = {}) {
+  return getClipPlaybackTimingAtTimeline(clip, timelineTime, endOffset, options).time
 }
 
 function resolvePreviewUrl(clip, getAssetById, useProxyPlaybackForAssets) {
@@ -345,6 +359,8 @@ function CanvasPreviewRenderer({
   const scrubSeekThrottleRef = useRef(new Map())
   const hasPaintedFrameRef = useRef(false)
   const lastPreloadTimeRef = useRef(0)
+  const lastDrawTimeRef = useRef(null)
+  const loopSeekHoldUntilRef = useRef(0)
   const [, setAssetRevision] = useState(0)
 
   const {
@@ -560,16 +576,23 @@ function CanvasPreviewRenderer({
           offCtx.restore()
           return
         }
-        const targetTime = isCachedRender ? clamp(clipTime, 0, Math.max(0, clip.duration - 0.01)) : getClipPlaybackTimeAtTimeline(clip, time)
+        const transitionPlayback = getClipPlaybackTimingAtTimeline(clip, time, 0.01, {
+          allowHandles: !!transitionStyle,
+        })
+        const targetTime = isCachedRender
+          ? clamp(clipTime, 0, Math.max(0, clip.duration - 0.01))
+          : transitionPlayback.time
         const timeDiff = Math.abs((video.currentTime || 0) - targetTime)
         const seekDriven = isSeekDrivenPlayback(state, clip)
+        const isTransitionClip = !!transitionStyle
+        const shouldHoldTransitionFrame = isTransitionClip && transitionPlayback.clamped
         const seekThreshold = state.isScrubbingPreview
           ? SCRUB_READY_TOLERANCE
-          : (state.isPlaying ? (seekDriven ? 0.12 : 0.16) : 0.025)
+          : (state.isPlaying ? (seekDriven ? 0.12 : (shouldHoldTransitionFrame ? 0.025 : 0.16)) : 0.025)
         if (!state.isScrubbingPreview && video.readyState >= 1 && timeDiff > seekThreshold) {
           video.currentTime = targetTime
         }
-        if (state.isPlaying && !seekDriven && video.readyState >= 2) {
+        if (state.isPlaying && !seekDriven && video.readyState >= 2 && !shouldHoldTransitionFrame) {
           const baseScale = clip.sourceTimeScale || (clip.timelineFps && clip.sourceFps
             ? clip.timelineFps / clip.sourceFps
             : 1)
@@ -754,16 +777,33 @@ function CanvasPreviewRenderer({
     const fps = latestRef.current.fps || safeFps
     const time = state.playheadPosition || 0
     const nowMs = getNowMs()
+    const previousDrawTime = lastDrawTimeRef.current
+    const loopJumpThreshold = Math.max(0.08, 2 / Math.max(1, fps))
+    const loopedBackward = state.isPlaying
+      && Number.isFinite(previousDrawTime)
+      && time < previousDrawTime - loopJumpThreshold
+    lastDrawTimeRef.current = time
+    if (!state.isPlaying) {
+      loopSeekHoldUntilRef.current = 0
+    } else if (loopedBackward) {
+      loopSeekHoldUntilRef.current = nowMs + 500
+      logCanvasDiag('loop-seek-hold:start', {
+        from: Number(previousDrawTime.toFixed(3)),
+        to: Number(time.toFixed(3)),
+      })
+    }
+    const loopSeekHoldActive = state.isPlaying && nowMs < loopSeekHoldUntilRef.current
     const isScrubbingPreview = !state.isPlaying
       && nowMs < (scrubPreviewStateRef.current.activeUntil || 0)
     state.isScrubbingPreview = isScrubbingPreview
     const transitionInfo = state.getTransitionAtTime(time)
+    const transitionClipIds = getTransitionClipIds(transitionInfo)
     const frameIndex = Math.floor(time * fps)
     const getAssetById = useAssetsStore.getState().getAssetById
     const visualClips = cullVisualLayerEntries(getVisualLayerClips(state, time), {
       time,
       getAssetById,
-      transitionClipIds: getTransitionClipIds(transitionInfo),
+      transitionClipIds,
       timelineWidth: width,
       timelineHeight: height,
     })
@@ -771,13 +811,16 @@ function CanvasPreviewRenderer({
     preloadVideosAroundTime(state, time)
 
     const shouldGateVideoReadiness = !state.isPlaying
+      || transitionClipIds.size > 0
+      || loopSeekHoldActive
       || visualClips.some(({ clip }) => clip?.type === 'video' && isSeekDrivenPlayback(state, clip))
 
     if (shouldGateVideoReadiness) {
       for (const { clip } of visualClips) {
         if (!clip || clip.type !== 'video') continue
         const seekDriven = isSeekDrivenPlayback(state, clip)
-        if (state.isPlaying && !seekDriven) continue
+        const isTransitionClip = transitionClipIds.has(clip.id)
+        if (state.isPlaying && !seekDriven && !isTransitionClip && !loopSeekHoldActive) continue
         const clipUrl = resolvePreviewUrl(clip, getAssetById, state.useProxyPlaybackForAssets)
         if (!clipUrl) continue
         const video = videoCache.getVideoElement({ ...clip, url: clipUrl })
@@ -787,9 +830,12 @@ function CanvasPreviewRenderer({
         }
         const isCachedRender = clip.cacheStatus === 'cached' && clip.cacheUrl && clipUrl === clip.cacheUrl
         const clipTime = time - (clip.startTime || 0)
+        const transitionPlayback = getClipPlaybackTimingAtTimeline(clip, time, 0.01, {
+          allowHandles: isTransitionClip,
+        })
         const targetTime = isCachedRender
           ? clamp(clipTime, 0, Math.max(0, clip.duration - 0.01))
-          : getClipPlaybackTimeAtTimeline(clip, time)
+          : transitionPlayback.time
 
         if (video.readyState < 1) {
           scheduleDeferredDraw(seekDriven ? 'seek-video-metadata' : 'paused-video-metadata')
@@ -798,7 +844,7 @@ function CanvasPreviewRenderer({
 
         const readyTolerance = state.isScrubbingPreview
           ? SCRUB_READY_TOLERANCE
-          : (seekDriven ? 0.12 : 0.025)
+          : (seekDriven ? 0.12 : ((isTransitionClip && state.isPlaying && !loopSeekHoldActive) ? 0.16 : 0.025))
         if (Math.abs((video.currentTime || 0) - targetTime) > readyTolerance) {
           if (state.isScrubbingPreview) {
             const throttleKey = clip.id || clip.assetId || clipUrl
@@ -892,6 +938,9 @@ function CanvasPreviewRenderer({
       lastCtx.drawImage(stageCanvas, 0, 0)
     }
     hasPaintedFrameRef.current = true
+    if (loopSeekHoldActive) {
+      loopSeekHoldUntilRef.current = 0
+    }
   }, [applyAdjustmentLayer, drawVisualClip, preloadVideosAroundTime, safeFps, safeHeight, safeWidth, scheduleDeferredDraw])
 
   drawFrameRef.current = drawFrame
