@@ -12,6 +12,7 @@ import {
   Music,
   Play,
   RefreshCw,
+  Upload,
   UserPlus,
   Wand2,
   X,
@@ -503,6 +504,7 @@ export default function MusicVideoEasyMode({
   handleQueueYoloStoryboards,
   handleQueueYoloShotStoryboard,
   handleQueueYoloShotStoryboards,
+  handleReplaceYoloMusicKeyframe,
   handleQueueYoloVideos,
   handleQueueYoloShotVideo,
   handleQueueYoloShotVideos,
@@ -540,7 +542,11 @@ export default function MusicVideoEasyMode({
   const [isQueuingVideos, setIsQueuingVideos] = useState(false)
   const [isAssemblingTimeline, setIsAssemblingTimeline] = useState(false)
   const [mediaPreview, setMediaPreview] = useState(null)
+  const [replaceKeyframeTarget, setReplaceKeyframeTarget] = useState(null)
+  const [replacementAssetId, setReplacementAssetId] = useState('')
+  const [replacementBusy, setReplacementBusy] = useState(false)
   const [peopleWizard, setPeopleWizard] = useState(null)
+  const replacementFileInputRef = useRef(null)
 
   const peopleWizardGenerationEnabled = Boolean(canUsePeopleWizardGeneration && BUILTIN_WORKFLOW_PATHS['z-image-turbo'] && BUILTIN_WORKFLOW_PATHS['multi-angles'])
 
@@ -578,6 +584,15 @@ export default function MusicVideoEasyMode({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [mediaPreview])
+
+  useEffect(() => {
+    if (!replaceKeyframeTarget) return
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setReplaceKeyframeTarget(null)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [replaceKeyframeTarget])
 
   const closePeopleWizard = () => setPeopleWizard(null)
   const handlePeopleWizardBackdropClick = (event) => {
@@ -852,8 +867,24 @@ export default function MusicVideoEasyMode({
   const keyframeStatusIsWarning = keyframeStatus.startsWith('All your keyframes')
   const singleKeyframeActionDisabled = isQueuingKeyframes || yoloDependencyCheckInProgress || !customKeyframeReady || yoloActivePlanIsStale
   const singleVideoActionDisabled = isQueuingVideos || yoloDependencyCheckInProgress || !customVideoReady
+  const replaceKeyframeActionDisabled = replacementBusy || !handleReplaceYoloMusicKeyframe || yoloActivePlanIsStale || plannedShotCount === 0
   const canOpenCustomKeyframeWorkflow = !customKeyframeWorkflowLoaded || Boolean(customKeyframeValidation.ok)
   const canOpenCustomVideoWorkflow = !customVideoWorkflowLoaded || Boolean(customVideoValidation.ok)
+  const replacementImageAssets = useMemo(() => (
+    (assets || [])
+      .filter((asset) => {
+        if (asset?.type !== 'image') return false
+        const mime = String(asset?.mimeType || '').toLowerCase()
+        const name = [asset?.name, asset?.path, asset?.url].filter(Boolean).join(' ').toLowerCase()
+        if (mime && !mime.startsWith('image/')) return false
+        return /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(name) || mime.startsWith('image/')
+      })
+      .sort((a, b) => new Date(b?.createdAt || b?.imported || 0).getTime() - new Date(a?.createdAt || a?.imported || 0).getTime())
+  ), [assets])
+  const selectedReplacementAsset = useMemo(
+    () => replacementImageAssets.find((asset) => asset?.id === replacementAssetId) || null,
+    [replacementAssetId, replacementImageAssets]
+  )
 
   useEffect(() => {
     if (flatShots.length === 0) {
@@ -1122,6 +1153,89 @@ export default function MusicVideoEasyMode({
       </button>
     )
   }
+
+  const openReplaceKeyframeDialog = (row, index) => {
+    if (!row || replaceKeyframeActionDisabled) return
+    const variant = getVariantForShot(row.scene.id, row.shot.id)
+    if (!variant?.key) {
+      setKeyframeStatus('Parse the director script before replacing a keyframe for this shot.')
+      return
+    }
+    const existingAsset = yoloStoryboardAssetMap?.get(variant.key) || null
+    setSelectedShotIndex(index)
+    setSelectedShotIndexes([index])
+    setSelectionAnchorIndex(index)
+    setMediaPreview(null)
+    setReplaceKeyframeTarget({
+      sceneId: row.scene.id,
+      shotId: row.shot.id,
+      shotIndex: index,
+      label: `Shot ${index + 1}: ${row.shot.scriptShotLabel || row.scene.label || row.shot.id}`,
+      existingAssetId: existingAsset?.id || '',
+    })
+    setReplacementAssetId('')
+  }
+
+  const closeReplaceKeyframeDialog = () => {
+    if (replacementBusy) return
+    setReplaceKeyframeTarget(null)
+    setReplacementAssetId('')
+    if (replacementFileInputRef.current) replacementFileInputRef.current.value = ''
+  }
+
+  const replaceKeyframeWithPayload = async (payload) => {
+    if (!replaceKeyframeTarget || replacementBusy || !handleReplaceYoloMusicKeyframe) return
+    setReplacementBusy(true)
+    setKeyframeStatus(`Replacing keyframe for Shot ${replaceKeyframeTarget.shotIndex + 1}...`)
+    try {
+      const replacement = await handleReplaceYoloMusicKeyframe({
+        sceneId: replaceKeyframeTarget.sceneId,
+        shotId: replaceKeyframeTarget.shotId,
+        ...payload,
+      })
+      if (replacement) {
+        setKeyframeStatus(`Replaced keyframe for Shot ${replaceKeyframeTarget.shotIndex + 1}. Step 5 will use the new image.`)
+        setReplaceKeyframeTarget(null)
+        setReplacementAssetId('')
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'Could not replace keyframe.')
+      setKeyframeStatus(`Could not replace keyframe: ${message}`)
+    } finally {
+      setReplacementBusy(false)
+      if (replacementFileInputRef.current) replacementFileInputRef.current.value = ''
+    }
+  }
+
+  const handleUseSelectedReplacementAsset = () => {
+    if (!replacementAssetId) {
+      setKeyframeStatus('Choose an image asset to use as the replacement keyframe.')
+      return
+    }
+    void replaceKeyframeWithPayload({ assetId: replacementAssetId })
+  }
+
+  const handleReplacementFileChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    void replaceKeyframeWithPayload({ file })
+  }
+
+  const renderReplaceKeyframeButton = (row, index, label = 'Replace') => (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation()
+        openReplaceKeyframeDialog(row, index)
+      }}
+      disabled={replaceKeyframeActionDisabled || !row}
+      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-sf-dark-600 bg-sf-dark-900/85 px-2 py-1 text-[10px] font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+      title={replaceKeyframeActionDisabled ? 'Keyframes cannot be replaced right now.' : 'Replace this keyframe with an image'}
+    >
+      <Upload className="h-3 w-3" />
+      {label}
+    </button>
+  )
 
   const handleCopyBrief = async () => {
     setBriefStatus('')
@@ -2661,6 +2775,7 @@ export default function MusicVideoEasyMode({
                       <div className="min-w-0 text-xs font-semibold text-sf-text-primary">Shot {index + 1}: {shot.scriptShotLabel || scene.label || shot.id}</div>
                       <div className="flex shrink-0 items-center gap-1">
                         {renderKeyframeRunButton({ scene, shot }, index)}
+                        {renderReplaceKeyframeButton({ scene, shot }, index)}
                         {renderCopyPromptButton(keyframePrompt, `Shot ${index + 1} keyframe prompt copied.`, setKeyframeStatus)}
                       </div>
                     </div>
@@ -2693,14 +2808,17 @@ export default function MusicVideoEasyMode({
                     {[outputResolutionLabel, `${videoFps} fps`, getCoverageLabel(selectedShotRow.scene, selectedShotRow.shot)].filter(Boolean).join(' / ')}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleRegenerateSelectedKeyframe}
-                  disabled={singleKeyframeActionDisabled}
-                  className="rounded-lg bg-sf-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {hasMultipleSelectedShots ? `Regenerate ${selectedShotCount} Selected` : 'Regenerate Selected Shot'}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!hasMultipleSelectedShots && renderReplaceKeyframeButton(selectedShotRow, selectedShotIndex, 'Replace Keyframe')}
+                  <button
+                    type="button"
+                    onClick={handleRegenerateSelectedKeyframe}
+                    disabled={singleKeyframeActionDisabled}
+                    className="rounded-lg bg-sf-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {hasMultipleSelectedShots ? `Regenerate ${selectedShotCount} Selected` : 'Regenerate Selected Shot'}
+                  </button>
+                </div>
               </div>
               {hasMultipleSelectedShots ? (
                 <div className="mt-3 rounded-lg border border-sf-dark-700 bg-sf-dark-900 px-3 py-2 text-xs leading-5 text-sf-text-secondary">
@@ -3255,6 +3373,9 @@ export default function MusicVideoEasyMode({
                       <Clipboard className="h-3 w-3" />
                       Copy
                     </button>
+                    {editableKeyframePrompt && previewShotRow ? (
+                      renderReplaceKeyframeButton(previewShotRow, previewShotIndex, 'Replace')
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -3304,6 +3425,107 @@ export default function MusicVideoEasyMode({
     )
   }
 
+  const renderReplaceKeyframeModal = () => {
+    if (!replaceKeyframeTarget) return null
+    const selectedAssetUrl = getAssetUrl(selectedReplacementAsset)
+
+    return (
+      <div
+        className="fixed inset-0 z-50 overflow-y-auto bg-black/80 px-4 py-6 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Replace keyframe"
+        onClick={closeReplaceKeyframeDialog}
+      >
+        <div className="flex min-h-full items-center justify-center">
+          <div
+            className="w-[94vw] max-w-2xl rounded-lg border border-sf-dark-600 bg-sf-dark-950 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-sf-dark-700 px-4 py-3">
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-sf-text-primary">Replace keyframe</div>
+                <div className="mt-1 truncate text-[10px] text-sf-text-muted">{replaceKeyframeTarget.label}</div>
+              </div>
+              <button
+                type="button"
+                onClick={closeReplaceKeyframeDialog}
+                disabled={replacementBusy}
+                className="rounded-md p-1.5 text-sf-text-muted transition-colors hover:bg-sf-dark-800 hover:text-sf-text-primary focus:outline-none focus:ring-2 focus:ring-sf-accent disabled:cursor-not-allowed disabled:opacity-50"
+                title="Close"
+                aria-label="Close replace keyframe"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-4">
+              <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-3">
+                <div className="text-xs font-semibold text-sf-text-primary">Import a new image</div>
+                <p className="mt-1 text-[11px] leading-5 text-sf-text-secondary">
+                  The imported image becomes the keyframe for this shot. Existing images stay untouched.
+                </p>
+                <input
+                  ref={replacementFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleReplacementFileChange}
+                />
+                <button
+                  type="button"
+                  onClick={() => replacementFileInputRef.current?.click()}
+                  disabled={replacementBusy}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg bg-sf-accent px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {replacementBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  Import Image
+                </button>
+              </div>
+
+              <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-3">
+                <div className="text-xs font-semibold text-sf-text-primary">Use an existing project image</div>
+                <div className="mt-3 grid gap-3 md:grid-cols-[1fr_120px] md:items-start">
+                  <div className="space-y-3">
+                    <select
+                      value={replacementAssetId}
+                      onChange={(event) => setReplacementAssetId(event.target.value)}
+                      disabled={replacementBusy || replacementImageAssets.length === 0}
+                      className="w-full rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs text-sf-text-primary outline-none focus:border-sf-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <option value="">{replacementImageAssets.length === 0 ? 'No image assets found' : 'Choose image...'}</option>
+                      {replacementImageAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.name || asset.path || asset.id}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleUseSelectedReplacementAsset}
+                      disabled={replacementBusy || !replacementAssetId}
+                      className="inline-flex items-center gap-2 rounded-lg border border-sf-dark-600 px-3 py-2 text-xs font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {replacementBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                      Use Selected Image
+                    </button>
+                  </div>
+                  <div className="flex h-24 items-center justify-center overflow-hidden rounded-lg border border-sf-dark-700 bg-sf-dark-950">
+                    {selectedAssetUrl ? (
+                      <img src={selectedAssetUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <ImageIcon className="h-5 w-5 text-sf-text-muted" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const stepRenderer = {
     song: renderSongStep,
     people: renderPeopleStep,
@@ -3347,6 +3569,7 @@ export default function MusicVideoEasyMode({
         </div>
       </div>
       {renderMediaPreviewModal()}
+      {renderReplaceKeyframeModal()}
     </>
   )
 }

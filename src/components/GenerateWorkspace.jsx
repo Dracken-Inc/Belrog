@@ -7478,6 +7478,136 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     updateYoloShot(sceneId, shotId, (shot) => ({ ...shot, imageBeat: value }))
   }, [updateYoloShot])
 
+  const handleReplaceYoloMusicKeyframe = useCallback(async ({ sceneId, shotId, assetId = '', file = null } = {}) => {
+    if (!isYoloMusicMode) return null
+    const variant = (yoloQueueVariants || []).find((entry) => (
+      String(entry?.sceneId || '') === String(sceneId || '') &&
+      String(entry?.shotId || '') === String(shotId || '')
+    ))
+    if (!variant?.key) {
+      const message = 'Parse the music video script before replacing a keyframe.'
+      setFormError(message)
+      throw new Error(message)
+    }
+    if (!currentProjectHandle) {
+      const message = 'Open a project folder before replacing a keyframe.'
+      setFormError(message)
+      throw new Error(message)
+    }
+
+    const sourceAsset = assetId ? assets.find((asset) => asset?.id === assetId) || null : null
+    if (!file && !sourceAsset) {
+      const message = 'Choose an image asset or import an image file first.'
+      setFormError(message)
+      throw new Error(message)
+    }
+    if (sourceAsset && sourceAsset.type !== 'image') {
+      const message = 'Only image assets can replace keyframes.'
+      setFormError(message)
+      throw new Error(message)
+    }
+    if (file && file.type && !String(file.type).startsWith('image/')) {
+      const message = 'Only image files can replace keyframes.'
+      setFormError(message)
+      throw new Error(message)
+    }
+
+    try {
+      let assetInfo = {}
+      let assetUrl = ''
+      let sourceName = ''
+      let sourceIsStoredFile = false
+
+      if (file) {
+        assetInfo = await importAsset(currentProjectHandle, file, 'images')
+        assetUrl = URL.createObjectURL(file)
+        sourceName = file.name || assetInfo.name || 'Imported image'
+        sourceIsStoredFile = true
+      } else if (sourceAsset) {
+        sourceName = sourceAsset.name || sourceAsset.path || sourceAsset.id || 'Project image'
+        sourceIsStoredFile = Boolean(sourceAsset.isImported || sourceAsset.path || sourceAsset.absolutePath)
+        assetInfo = {
+          path: sourceAsset.path || undefined,
+          absolutePath: sourceAsset.absolutePath || undefined,
+          size: sourceAsset.size,
+          mimeType: sourceAsset.mimeType,
+          width: sourceAsset.width ?? sourceAsset.settings?.width,
+          height: sourceAsset.height ?? sourceAsset.settings?.height,
+        }
+        assetUrl = sourceAsset.url || sourceAsset.thumbnailUrl || sourceAsset.proxyUrl || ''
+        if (!assetUrl && sourceAsset.path) {
+          assetUrl = await getProjectFileUrl(currentProjectHandle, sourceAsset.path)
+        }
+      }
+
+      if (!assetUrl && !assetInfo.path && !assetInfo.absolutePath) {
+        throw new Error('Could not resolve the replacement image file.')
+      }
+
+      const directorMeta = {
+        mode: 'music',
+        stage: 'storyboard',
+        workflowId: 'manual-keyframe-replacement',
+        key: variant.key,
+        sceneId: variant.sceneId,
+        shotId: variant.shotId,
+        angle: variant.angle,
+        take: variant.take,
+        durationSeconds: variant.durationSeconds,
+        profile: yoloMusicQualityProfile,
+        pass: (variant?.pass && typeof variant.pass === 'object') ? variant.pass : null,
+        coverage: (variant?.coverage && typeof variant.coverage === 'object') ? variant.coverage : null,
+        manualReplacement: {
+          source: file ? 'upload' : 'asset',
+          sourceAssetId: sourceAsset?.id || null,
+          sourceName,
+        },
+      }
+      const folderName = buildDirectorGeneratedFolderName(directorMeta, directorMeta.workflowId, 'image') || 'MVC Keyframes'
+      const folderId = ensureAssetFolderPath(['Generated', folderName])
+      const baseName = buildDirectorAssetDisplayName(directorMeta, directorMeta.workflowId) || 'MVC_keyframe'
+      const replacementName = `${baseName}_manual`
+      const prompt = String(variant.storyboardPrompt || variant.prompt || '').trim()
+      const addedAsset = addAsset({
+        ...assetInfo,
+        name: replacementName,
+        type: 'image',
+        url: assetUrl || assetInfo.url || '',
+        prompt,
+        isImported: sourceIsStoredFile,
+        yolo: directorMeta,
+        folderId,
+        settings: {
+          ...(sourceAsset?.settings || {}),
+          ...(assetInfo.settings || {}),
+          width: assetInfo.width ?? sourceAsset?.width ?? sourceAsset?.settings?.width,
+          height: assetInfo.height ?? sourceAsset?.height ?? sourceAsset?.settings?.height,
+          manualKeyframeReplacement: true,
+          sourceAssetId: sourceAsset?.id || undefined,
+          sourceAssetName: sourceName || undefined,
+        },
+      })
+      await saveProject?.()
+      setFormError(null)
+      addComfyLog('ok', `Replaced keyframe for ${variant.shotId || variant.key} with ${sourceName || 'image'}.`)
+      return addedAsset
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'Failed to replace keyframe')
+      setFormError(message)
+      addComfyLog('error', `Keyframe replacement failed: ${message}`)
+      throw error
+    }
+  }, [
+    addAsset,
+    addComfyLog,
+    assets,
+    currentProjectHandle,
+    isYoloMusicMode,
+    saveProject,
+    yoloMusicQualityProfile,
+    yoloQueueVariants,
+  ])
+
   const handleYoloShotVideoBeatChange = useCallback((sceneId, shotId, value) => {
     updateYoloShot(sceneId, shotId, (shot) => ({
       ...shot,
@@ -12026,6 +12156,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleQueueYoloStoryboards={handleQueueYoloStoryboards}
                     handleQueueYoloShotStoryboard={handleQueueYoloShotStoryboard}
                     handleQueueYoloShotStoryboards={handleQueueYoloShotStoryboards}
+                    handleReplaceYoloMusicKeyframe={handleReplaceYoloMusicKeyframe}
                     handleQueueYoloVideos={handleQueueYoloVideos}
                     handleQueueYoloShotVideo={handleQueueYoloShotVideo}
                     handleQueueYoloShotVideos={handleQueueYoloShotVideos}
