@@ -8765,6 +8765,89 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloStoryboardWorkflowId,
   ])
 
+  const handleQueueYoloShotStoryboards = useCallback(async (targets = [], options = {}) => {
+    const {
+      resolutionOverride = null,
+    } = options || {}
+    const targetKeys = new Set(
+      (Array.isArray(targets) ? targets : [])
+        .map((target) => `${target?.sceneId || ''}|${target?.shotId || ''}`)
+        .filter((key) => key !== '|')
+    )
+    if (targetKeys.size === 0) {
+      setFormError('Select at least one shot before re-rendering keyframes.')
+      return 0
+    }
+    if (!isConnected) return 0
+    if (yoloActivePlanIsStale) {
+      setFormError(isYoloMusicMode
+        ? 'Director plan is out of date. Click Parse Script again before re-rendering keyframes.'
+        : 'Director plan is out of date. Click Build Plan again before re-rendering keyframes.')
+      setDirectorSubTab('plan-script')
+      return 0
+    }
+    if (
+      !isYoloMusicMode &&
+      yoloAdHasReferenceAnchors &&
+      !yoloStoryboardSupportsReferenceAnchors
+    ) {
+      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(yoloStoryboardWorkflowId)} keyframes.`)
+      return 0
+    }
+    if (
+      !isYoloMusicMode &&
+      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(String(yoloStoryboardWorkflowId || '').trim()) &&
+      !yoloAdModelAsset &&
+      !yoloAdProductAsset
+    ) {
+      setFormError('Selected keyframe workflow needs at least a model or product reference image.')
+      return 0
+    }
+    const usesCustomMusicKeyframes = isYoloMusicMode && yoloStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
+      setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
+      return 0
+    }
+    if (!usesCustomMusicKeyframes) {
+      const depsOk = await validateDependenciesForQueue(
+        [yoloStoryboardWorkflowId],
+        `keyframe re-render for ${targetKeys.size} selected shots`
+      )
+      if (!depsOk) return 0
+    }
+
+    const planToUse = yoloActivePlan.length > 0 ? yoloActivePlan : buildActiveYoloPlan()
+    if (!planToUse) return 0
+
+    const variants = flattenYoloPlanVariants(planToUse)
+      .filter((variant) => targetKeys.has(`${variant.sceneId || ''}|${variant.shotId || ''}`))
+    if (variants.length === 0) {
+      setFormError('No keyframe variants found for the selected shots.')
+      return 0
+    }
+
+    return await queueYoloStoryboardVariants(variants, {
+      allowExistingDoneKeys: true,
+      skipConfirm: true,
+      sourceLabel: `Queued keyframe re-render for ${targetKeys.size} selected shots`,
+      resolutionOverride,
+    })
+  }, [
+    buildActiveYoloPlan,
+    isConnected,
+    isYoloMusicMode,
+    queueYoloStoryboardVariants,
+    yoloActivePlanIsStale,
+    validateDependenciesForQueue,
+    yoloMusicCustomKeyframeValidation,
+    yoloActivePlan,
+    yoloAdHasReferenceAnchors,
+    yoloAdModelAsset,
+    yoloAdProductAsset,
+    yoloStoryboardSupportsReferenceAnchors,
+    yoloStoryboardWorkflowId,
+  ])
+
   const queueYoloVideoVariants = useCallback(async (variants, options = {}) => {
     const {
       allowExistingDoneKeys = false,
@@ -9270,6 +9353,94 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (totalQueued === 0) {
       setFormError(`No video jobs queued for ${sceneId} ${shotId}. Check if target workflows are already running.`)
     }
+  }, [
+    buildActiveYoloPlan,
+    isConnected,
+    isYoloMusicMode,
+    queueYoloVideoVariants,
+    yoloActivePlanIsStale,
+    validateDependenciesForQueue,
+    yoloActivePlan,
+    yoloMusicCustomVideoValidation,
+    yoloSelectedVideoWorkflowIds,
+  ])
+
+  const handleQueueYoloShotVideos = useCallback(async (targets = [], options = {}) => {
+    const {
+      planOverride = null,
+      skipStaleCheck = false,
+      targetWorkflowIds = null,
+      resolutionOverride = null,
+    } = options || {}
+    const targetKeys = new Set(
+      (Array.isArray(targets) ? targets : [])
+        .map((target) => `${target?.sceneId || ''}|${target?.shotId || ''}`)
+        .filter((key) => key !== '|')
+    )
+    if (targetKeys.size === 0) {
+      setFormError('Select at least one shot before creating videos.')
+      return 0
+    }
+    if (!isConnected) return 0
+    if (yoloActivePlanIsStale && !skipStaleCheck) {
+      setFormError(isYoloMusicMode
+        ? 'Director plan is out of date. Click Parse Script again before creating shot videos.'
+        : 'Director plan is out of date. Click Build Plan again before creating shot videos.')
+      setDirectorSubTab('plan-script')
+      return 0
+    }
+    const targetsWorkflowIds = Array.from(new Set(
+      (Array.isArray(targetWorkflowIds) && targetWorkflowIds.length > 0
+        ? targetWorkflowIds
+        : yoloSelectedVideoWorkflowIds)
+        .map((id) => String(id || '').trim())
+        .filter(Boolean)
+    ))
+    if (targetsWorkflowIds.length === 0) {
+      setFormError('Choose a video workflow before creating shot videos.')
+      return 0
+    }
+    const usesCustomMusicVideoWorkflow = isYoloMusicMode && targetsWorkflowIds.includes(CUSTOM_MUSIC_VIDEO_WORKFLOW_ID)
+    if (usesCustomMusicVideoWorkflow && !yoloMusicCustomVideoValidation.ok) {
+      setFormError(yoloMusicCustomVideoValidation.message || 'Load and validate a custom video workflow before queueing.')
+      return 0
+    }
+    const dependencyTargets = targetsWorkflowIds.filter((id) => id !== CUSTOM_MUSIC_VIDEO_WORKFLOW_ID)
+    if (dependencyTargets.length > 0) {
+      const depsOk = await validateDependenciesForQueue(
+        dependencyTargets,
+        `video re-render for ${targetKeys.size} selected shots`
+      )
+      if (!depsOk) return 0
+    }
+
+    const planToUse = Array.isArray(planOverride) && planOverride.length > 0
+      ? planOverride
+      : (yoloActivePlan.length > 0 ? yoloActivePlan : buildActiveYoloPlan())
+    if (!planToUse) return 0
+
+    const variants = flattenYoloPlanVariants(planToUse)
+      .filter((variant) => targetKeys.has(`${variant.sceneId || ''}|${variant.shotId || ''}`))
+    if (variants.length === 0) {
+      setFormError('No video variants found for the selected shots.')
+      return 0
+    }
+
+    let totalQueued = 0
+    for (const targetWorkflowId of targetsWorkflowIds) {
+      totalQueued += await queueYoloVideoVariants(variants, {
+        workflowId: targetWorkflowId,
+        allowExistingDoneKeys: true,
+        skipConfirm: true,
+        suppressEmptyError: targetsWorkflowIds.length > 1,
+        resolutionOverride,
+        sourceLabel: `Queued video re-render for ${targetKeys.size} selected shots (${getWorkflowDisplayLabel(targetWorkflowId)})`,
+      })
+    }
+    if (totalQueued === 0) {
+      setFormError('No video jobs queued for the selected shots. Check if target workflows are already running.')
+    }
+    return totalQueued
   }, [
     buildActiveYoloPlan,
     isConnected,
@@ -11786,8 +11957,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleBuildActiveYoloPlan={handleBuildActiveYoloPlan}
                     handleQueueYoloStoryboards={handleQueueYoloStoryboards}
                     handleQueueYoloShotStoryboard={handleQueueYoloShotStoryboard}
+                    handleQueueYoloShotStoryboards={handleQueueYoloShotStoryboards}
                     handleQueueYoloVideos={handleQueueYoloVideos}
                     handleQueueYoloShotVideo={handleQueueYoloShotVideo}
+                    handleQueueYoloShotVideos={handleQueueYoloShotVideos}
                     handleYoloShotImageBeatChange={handleYoloShotImageBeatChange}
                     handleYoloShotVideoBeatChange={handleYoloShotVideoBeatChange}
                     handleYoloShotTakesChange={handleYoloShotTakesChange}
@@ -11852,8 +12025,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleBuildActiveYoloPlan={handleBuildActiveYoloPlan}
                     handleQueueYoloStoryboards={handleQueueYoloStoryboards}
                     handleQueueYoloShotStoryboard={handleQueueYoloShotStoryboard}
+                    handleQueueYoloShotStoryboards={handleQueueYoloShotStoryboards}
                     handleQueueYoloVideos={handleQueueYoloVideos}
                     handleQueueYoloShotVideo={handleQueueYoloShotVideo}
+                    handleQueueYoloShotVideos={handleQueueYoloShotVideos}
                     handleYoloShotImageBeatChange={handleYoloShotImageBeatChange}
                     handleYoloShotVideoBeatChange={handleYoloShotVideoBeatChange}
                     handleCopyMusicVideoLlmPrompt={handleCopyMusicVideoLlmPrompt}
