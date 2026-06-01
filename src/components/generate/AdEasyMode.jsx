@@ -38,6 +38,28 @@ const VIDEO_MODEL_OPTIONS = [
   { id: 'wan22-i2v', label: 'WAN 2.2', helper: 'Good alternate for product motion and physical demo shots.' },
 ]
 
+const KEYFRAME_MODEL_OPTIONS = [
+  {
+    id: 'nano-banana-2',
+    workflowId: 'nano-banana-2',
+    label: 'Nano Banana 2',
+    runtimeLabel: 'Cloud',
+    source: 'cloud',
+    tier: 'quality',
+    helper: 'Current cloud keyframe route. Good for prompt-only ad storyboards and reference consistency.',
+  },
+  {
+    id: 'image-edit-model-product',
+    workflowId: 'image-edit-model-product',
+    label: 'Qwen Image Edit',
+    runtimeLabel: 'Local',
+    source: 'local',
+    tier: 'quality',
+    needsReference: true,
+    helper: 'Local keyframes using your product or talent reference as the edit source.',
+  },
+]
+
 const SHOT_COUNT_OPTIONS = [3, 4, 5, 6, 8, 10, 12, 16, 20, 24]
 const COMMERCIAL_LENGTH_OPTIONS = [6, 15, 30, 60]
 const RESOLUTION_OPTIONS = [
@@ -62,6 +84,7 @@ const DEFAULT_AD_EASY_MODE_DRAFT = Object.freeze({
   videoFps: 24,
   commercialLength: 30,
   shotCount: 8,
+  keyframeWorkflowId: 'nano-banana-2',
   videoWorkflowId: 'ltx23-i2v',
   productAssetId: '',
   talentAssetId: '',
@@ -95,6 +118,7 @@ function normalizeAdEasyModeDraft(rawDraft = {}) {
     videoFps: normalizeDraftNumber(raw.videoFps, FPS_OPTIONS, DEFAULT_AD_EASY_MODE_DRAFT.videoFps),
     commercialLength: normalizeDraftNumber(raw.commercialLength, COMMERCIAL_LENGTH_OPTIONS, DEFAULT_AD_EASY_MODE_DRAFT.commercialLength),
     shotCount: normalizeDraftNumber(raw.shotCount, SHOT_COUNT_OPTIONS, DEFAULT_AD_EASY_MODE_DRAFT.shotCount),
+    keyframeWorkflowId: normalizeDraftOption(raw.keyframeWorkflowId, KEYFRAME_MODEL_OPTIONS, DEFAULT_AD_EASY_MODE_DRAFT.keyframeWorkflowId),
     videoWorkflowId: normalizeDraftOption(raw.videoWorkflowId, VIDEO_MODEL_OPTIONS, DEFAULT_AD_EASY_MODE_DRAFT.videoWorkflowId),
     productAssetId: String(raw.productAssetId || ''),
     talentAssetId: String(raw.talentAssetId || ''),
@@ -547,6 +571,7 @@ export default function AdEasyMode({
   const [videoFps, setVideoFps] = useState(initialDraft.videoFps)
   const [commercialLength, setCommercialLength] = useState(initialDraft.commercialLength)
   const [shotCount, setShotCount] = useState(initialDraft.shotCount)
+  const [keyframeWorkflowId, setKeyframeWorkflowId] = useState(initialDraft.keyframeWorkflowId)
   const [videoWorkflowId, setVideoWorkflowId] = useState(initialDraft.videoWorkflowId)
   const [productAssetId, setProductAssetId] = useState(initialDraft.productAssetId)
   const [talentAssetId, setTalentAssetId] = useState(initialDraft.talentAssetId)
@@ -579,6 +604,7 @@ export default function AdEasyMode({
       videoFps,
       commercialLength,
       shotCount,
+      keyframeWorkflowId,
       videoWorkflowId,
       productAssetId,
       talentAssetId,
@@ -598,6 +624,7 @@ export default function AdEasyMode({
     commercialLength,
     directorScript,
     format,
+    keyframeWorkflowId,
     noVisibleTalent,
     platform,
     product,
@@ -650,8 +677,14 @@ export default function AdEasyMode({
 
   const selectedTone = TONE_OPTIONS.find((option) => option.id === tone) || TONE_OPTIONS[0]
   const selectedFormat = FORMAT_OPTIONS.find((option) => option.id === format) || FORMAT_OPTIONS[0]
+  const selectedKeyframeWorkflow = KEYFRAME_MODEL_OPTIONS.find((option) => option.id === keyframeWorkflowId) || KEYFRAME_MODEL_OPTIONS[0]
   const selectedVideoWorkflow = VIDEO_MODEL_OPTIONS.find((option) => option.id === videoWorkflowId) || VIDEO_MODEL_OPTIONS[0]
   const selectedAspectRatio = ASPECT_RATIO_OPTIONS.find((option) => option.id === platform) || ASPECT_RATIO_OPTIONS[0]
+  const keyframeReferenceMissing = Boolean(
+    selectedKeyframeWorkflow.needsReference &&
+    !productAssetId &&
+    (noVisibleTalent || !talentAssetId)
+  )
   const outputResolution = useMemo(
     () => resolveOutputResolution(platform, resolutionPreset),
     [platform, resolutionPreset]
@@ -724,8 +757,8 @@ export default function AdEasyMode({
     setYoloAdModelAssetId(noVisibleTalent ? null : (talentAssetId || null))
     setYoloAdFormatPreset(format)
     setYoloAdPlatformPreset(platform)
-    setYoloAdStoryboardSource('cloud')
-    setYoloAdStoryboardTier('quality')
+    setYoloAdStoryboardSource(selectedKeyframeWorkflow.source)
+    setYoloAdStoryboardTier(selectedKeyframeWorkflow.tier)
     setYoloAdVideoSource('local')
     setYoloAdVideoTier('quality')
     setYoloAdLocalVideoWorkflowId(videoWorkflowId)
@@ -738,6 +771,13 @@ export default function AdEasyMode({
     setImageResolution(outputResolution)
     setYoloStyleNotes(buildEasyModeStyleNotes())
     setYoloScript(script)
+  }
+
+  const handleKeyframeWorkflowChange = (workflowId) => {
+    const option = KEYFRAME_MODEL_OPTIONS.find((item) => item.id === workflowId) || KEYFRAME_MODEL_OPTIONS[0]
+    setKeyframeWorkflowId(option.id)
+    setYoloAdStoryboardSource(option.source)
+    setYoloAdStoryboardTier(option.tier)
   }
 
   const handleVideoWorkflowChange = (workflowId) => {
@@ -818,10 +858,11 @@ export default function AdEasyMode({
           planOverride: plan,
           skipStaleCheck: true,
           skipConfirm: true,
-          sourceLabel: 'Ad Easy Mode keyframe pass',
+          sourceLabel: `Ad Easy Mode ${selectedKeyframeWorkflow.label} keyframe pass`,
           productAssetIdOverride: productAssetId || '',
           modelAssetIdOverride: noVisibleTalent ? '' : (talentAssetId || ''),
           resolutionOverride: outputResolution,
+          storyboardWorkflowIdOverride: selectedKeyframeWorkflow.workflowId,
         })
         setKeyframeStatus(
           queuedCount > 0
@@ -846,10 +887,11 @@ export default function AdEasyMode({
         skipStaleCheck: true,
         skipConfirm: true,
         allowExistingDoneKeys: true,
-        sourceLabel: 'Ad Easy Mode keyframe regeneration pass',
+        sourceLabel: `Ad Easy Mode ${selectedKeyframeWorkflow.label} keyframe regeneration pass`,
         productAssetIdOverride: productAssetId || '',
         modelAssetIdOverride: noVisibleTalent ? '' : (talentAssetId || ''),
         resolutionOverride: outputResolution,
+        storyboardWorkflowIdOverride: selectedKeyframeWorkflow.workflowId,
       })
       setKeyframeStatus(
         queuedCount > 0
@@ -1256,8 +1298,35 @@ export default function AdEasyMode({
             </label>
             <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 px-3 py-2">
               <div className="text-[10px] uppercase tracking-wider text-sf-text-muted">Model route</div>
-              <div className="mt-1 text-xs text-sf-text-primary">Nano Banana 2 keyframes + video model chosen in Step 7</div>
+              <div className="mt-1 text-xs text-sf-text-primary">{selectedKeyframeWorkflow.label} keyframes + {selectedVideoWorkflow.label} video</div>
             </div>
+          </div>
+          <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.14em] text-sf-accent">Keyframe model</div>
+                <p className="mt-1 max-w-3xl text-[11px] leading-relaxed text-sf-text-muted">
+                  Choose the image route used for ad storyboard keyframes. Videos still use the model selected later in the Videos step.
+                </p>
+              </div>
+              <span className="rounded-full border border-sf-dark-600 px-2 py-1 text-[10px] text-sf-text-muted">
+                {selectedKeyframeWorkflow.runtimeLabel}
+              </span>
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {KEYFRAME_MODEL_OPTIONS.map((option) => renderChoiceButton(
+                keyframeWorkflowId === option.id,
+                `${option.label} (${option.runtimeLabel})`,
+                () => handleKeyframeWorkflowChange(option.id),
+                option.helper,
+                `easy-keyframe-route-${option.id}`
+              ))}
+            </div>
+            {keyframeReferenceMissing && (
+              <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/90">
+                Qwen Image Edit needs a product or talent reference image. Add one in References, or switch keyframes back to Nano Banana 2.
+              </div>
+            )}
           </div>
           <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1306,7 +1375,7 @@ export default function AdEasyMode({
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" onClick={() => { const next = generatedScript; setDirectorScript(next); applyToDirector(next) }} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Regenerate script from brief</button>
               <button type="button" onClick={handleUpdatePlanOnly} disabled={isQueuingKeyframes || isQueuingVideos} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50">Update Plan Only</button>
-              <button type="button" onClick={handleBuildPlan} disabled={isQueuingKeyframes || yoloDependencyCheckInProgress} className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="button" onClick={handleBuildPlan} disabled={isQueuingKeyframes || yoloDependencyCheckInProgress || keyframeReferenceMissing} className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50">
                 {isQueuingKeyframes ? 'Queueing Keyframes...' : 'Looks Good - Create Keyframes'}
               </button>
             </div>
@@ -1328,6 +1397,28 @@ export default function AdEasyMode({
             <p className="mt-1 text-xs text-sf-text-muted">
               Completed shots will appear here one by one. You can select a shot, edit its keyframe prompt, and regenerate just that shot.
             </p>
+          </div>
+          <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.14em] text-sf-accent">Keyframe model</div>
+                <div className="mt-1 text-sm font-semibold text-sf-text-primary">Using {selectedKeyframeWorkflow.label}</div>
+              </div>
+              <div className="grid min-w-[260px] flex-1 grid-cols-1 gap-2 sm:grid-cols-2">
+                {KEYFRAME_MODEL_OPTIONS.map((option) => renderChoiceButton(
+                  keyframeWorkflowId === option.id,
+                  `${option.label} (${option.runtimeLabel})`,
+                  () => handleKeyframeWorkflowChange(option.id),
+                  option.helper,
+                  `easy-keyframe-review-route-${option.id}`
+                ))}
+              </div>
+            </div>
+            {keyframeReferenceMissing && (
+              <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100/90">
+                Qwen Image Edit needs a product or talent reference image before it can queue keyframes.
+              </div>
+            )}
           </div>
           {planShots.length === 0 ? (
             <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200">Build the script plan first.</div>
@@ -1390,7 +1481,9 @@ export default function AdEasyMode({
                       <div className="text-sm font-semibold text-sf-text-primary">Shot {selectedShotIndex + 1}: {selectedShotRow.shot.id}</div>
                       <div className="text-[10px] text-sf-text-muted">{selectedShotRow.scene.id}</div>
                     </div>
-                    <span className="rounded-full border border-sf-dark-600 px-2 py-1 text-[10px] text-sf-text-muted">Nano Banana 2 keyframe</span>
+                    <span className="rounded-full border border-sf-dark-600 px-2 py-1 text-[10px] text-sf-text-muted">
+                      {selectedKeyframeWorkflow.label} keyframe
+                    </span>
                   </div>
                   <label className="mt-3 block text-xs text-sf-text-secondary">
                     <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Edit shot keyframe prompt</span>
@@ -1402,8 +1495,8 @@ export default function AdEasyMode({
                     />
                   </label>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button type="button" disabled={isQueuingKeyframes || yoloDependencyCheckInProgress} onClick={() => { setKeyframeStatus(`Queued keyframe regeneration for Shot ${selectedShotIndex + 1}.`); void handleQueueYoloShotStoryboard(selectedShotRow.scene.id, selectedShotRow.shot.id, { resolutionOverride: outputResolution }) }} className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50">Regenerate Selected Shot</button>
-                    <button type="button" disabled={isQueuingKeyframes || yoloDependencyCheckInProgress || planShots.length === 0} onClick={handleRegenerateAllKeyframes} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50">Regenerate All</button>
+                    <button type="button" disabled={isQueuingKeyframes || yoloDependencyCheckInProgress || keyframeReferenceMissing} onClick={() => { setKeyframeStatus(`Queued ${selectedKeyframeWorkflow.label} keyframe regeneration for Shot ${selectedShotIndex + 1}.`); void handleQueueYoloShotStoryboard(selectedShotRow.scene.id, selectedShotRow.shot.id, { resolutionOverride: outputResolution, productAssetIdOverride: productAssetId || '', modelAssetIdOverride: noVisibleTalent ? '' : (talentAssetId || ''), storyboardWorkflowIdOverride: selectedKeyframeWorkflow.workflowId }) }} className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50">Regenerate Selected Shot</button>
+                    <button type="button" disabled={isQueuingKeyframes || yoloDependencyCheckInProgress || planShots.length === 0 || keyframeReferenceMissing} onClick={handleRegenerateAllKeyframes} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50">Regenerate All</button>
                     <button type="button" onClick={() => { setYoloTakesPerAngle(3); handleYoloShotTakesChange(selectedShotRow.scene.id, selectedShotRow.shot.id, 3); setKeyframeStatus('Variation mode set to 3 takes. Click regenerate to queue three seed variations for the selected shot.') }} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Make 3 Variations</button>
                     <span className="text-[10px] text-sf-text-muted">{keyframeStatus}</span>
                   </div>
@@ -1412,7 +1505,7 @@ export default function AdEasyMode({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <button type="button" onClick={() => setStep('script')} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Back</button>
                 <div className="flex gap-2">
-                  <button type="button" disabled={yoloDependencyCheckInProgress} onClick={() => { setKeyframeStatus('Queued keyframes for all planned shots.'); void handleQueueYoloStoryboards({ resolutionOverride: outputResolution }) }} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:opacity-50">Queue All Keyframes</button>
+                  <button type="button" disabled={yoloDependencyCheckInProgress || keyframeReferenceMissing} onClick={() => { setKeyframeStatus(`Queued ${selectedKeyframeWorkflow.label} keyframes for all planned shots.`); void handleQueueYoloStoryboards({ resolutionOverride: outputResolution, productAssetIdOverride: productAssetId || '', modelAssetIdOverride: noVisibleTalent ? '' : (talentAssetId || ''), storyboardWorkflowIdOverride: selectedKeyframeWorkflow.workflowId, sourceLabel: `Ad Easy Mode ${selectedKeyframeWorkflow.label} keyframe pass` }) }} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:opacity-50">Queue All Keyframes</button>
                   <button type="button" disabled={yoloStoryboardReadyCount === 0} onClick={() => setStep('videos')} className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50">
                     Next: Choose Video Model
                   </button>
@@ -1435,7 +1528,7 @@ export default function AdEasyMode({
             <p className="mt-1 text-xs text-sf-text-muted">Completed videos will appear here one by one. You can select a shot video, edit only its motion prompt, then regenerate just that clip.</p>
           </div>
           <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 px-3 py-2 text-xs text-sf-text-secondary">
-            {planShots.length} shots / {commercialLength}s / Nano Banana 2 keyframes / {selectedVideoWorkflow.label} video
+            {planShots.length} shots / {commercialLength}s / {selectedKeyframeWorkflow.label} keyframes / {selectedVideoWorkflow.label} video
           </div>
           <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">

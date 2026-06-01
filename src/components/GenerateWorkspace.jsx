@@ -129,6 +129,13 @@ import {
 } from '../config/shortFilmConfig'
 
 const CATEGORY_ICONS = { video: Video, image: ImageIcon, audio: Music }
+const STORYBOARD_REFERENCE_WORKFLOW_IDS = new Set([
+  'image-edit',
+  'nano-banana-2',
+  'nano-banana-pro',
+  'image-edit-model-product',
+  'seedream-5-lite-image-edit',
+])
 const DIRECTOR_SUBTABS = [
   {
     id: 'setup',
@@ -5864,7 +5871,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         : yoloAdVideoProfile?.videoWorkflowId
   ).trim()
   const yoloStoryboardSupportsReferenceAnchors = useMemo(() => (
-    ['image-edit', 'nano-banana-2', 'nano-banana-pro', 'image-edit-model-product', 'seedream-5-lite-image-edit'].includes(String(yoloStoryboardWorkflowId || '').trim())
+    STORYBOARD_REFERENCE_WORKFLOW_IDS.has(String(yoloStoryboardWorkflowId || '').trim())
   ), [yoloStoryboardWorkflowId])
   const yoloSelectedVideoWorkflowIds = useMemo(
     () => (yoloDefaultVideoWorkflowId ? [yoloDefaultVideoWorkflowId] : []),
@@ -8965,8 +8972,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride = undefined,
       modelAssetIdOverride = undefined,
       resolutionOverride = null,
+      storyboardWorkflowIdOverride = '',
     } = options
 
+    const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
     if (!Array.isArray(variants) || variants.length === 0) {
       setFormError('No queueable shots. Build a plan first.')
       return 0
@@ -9011,9 +9020,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const parsed = match ? Number(match[0]) : fallback
       return Number.isFinite(parsed) ? parsed : fallback
     }
-    const usesModelProductStoryboardWorkflow = yoloStoryboardWorkflowId === 'image-edit-model-product'
-    const usesQwenMusicStoryboardWorkflow = isYoloMusicMode && yoloStoryboardWorkflowId === 'image-edit'
-    const usesCustomMusicStoryboardWorkflow = isYoloMusicMode && yoloStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    const usesModelProductStoryboardWorkflow = effectiveStoryboardWorkflowId === 'image-edit-model-product'
+    const usesQwenMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === 'image-edit'
+    const usesCustomMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     const usesReferenceMusicStoryboardWorkflow = usesQwenMusicStoryboardWorkflow || usesCustomMusicStoryboardWorkflow
     const musicImageAssetById = new Map(
       (assets || [])
@@ -9085,7 +9094,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         ? resolveQwenMusicStoryboardReferences(variant)
         : { primaryAssetId: null, secondaryAssetId: null }
       const usesNanoBananaMusicOverride = isYoloMusicMode &&
-        ['nano-banana-2', 'nano-banana-pro'].includes(yoloStoryboardWorkflowId) &&
+        ['nano-banana-2', 'nano-banana-pro'].includes(effectiveStoryboardWorkflowId) &&
         Boolean(variant?.nanoBananaReferenceOverride?.enabled)
       const nanoBananaOverrideAssetIds = usesNanoBananaMusicOverride
         ? (Array.isArray(variant?.nanoBananaReferenceOverride?.assetIds)
@@ -9124,10 +9133,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         : (effectiveAdModelAsset?.id || null)
       return createQueuedJob({
         category: 'image',
-        workflowId: yoloStoryboardWorkflowId,
+        workflowId: effectiveStoryboardWorkflowId,
         workflowLabel: usesCustomMusicStoryboardWorkflow
           ? `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow'})`
-          : `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${yoloStoryboardWorkflowId})`,
+          : `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${effectiveStoryboardWorkflowId})`,
         needsImage: usesModelProductStoryboardWorkflow || Boolean(musicInputAsset),
         inputAssetType: usesModelProductStoryboardWorkflow || Boolean(musicInputAsset) ? 'image' : null,
         prompt: variant.storyboardPrompt || variant.prompt,
@@ -9219,7 +9228,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride = undefined,
       modelAssetIdOverride = undefined,
       resolutionOverride = null,
+      storyboardWorkflowIdOverride = '',
     } = options || {}
+    const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
+    const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
     if (!isConnected) {
       setFormError('ComfyUI is not connected yet. Start ComfyUI, then queue keyframes.')
       return 0
@@ -9237,7 +9249,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       : yoloAdModelAsset
     if (
       !isYoloMusicMode &&
-      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(String(yoloStoryboardWorkflowId || '').trim()) &&
+      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(effectiveStoryboardWorkflowId) &&
       !effectiveModelAsset &&
       !effectiveProductAsset
     ) {
@@ -9247,19 +9259,19 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (
       !isYoloMusicMode &&
       yoloAdHasReferenceAnchors &&
-      !yoloStoryboardSupportsReferenceAnchors
+      !effectiveStoryboardSupportsReferenceAnchors
     ) {
-      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(yoloStoryboardWorkflowId)} keyframes.`)
+      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(effectiveStoryboardWorkflowId)} keyframes.`)
       return 0
     }
-    const usesCustomMusicKeyframes = isYoloMusicMode && yoloStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
       setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return 0
     }
     if (!usesCustomMusicKeyframes) {
       const depsOk = await validateDependenciesForQueue(
-        [yoloStoryboardWorkflowId],
+        [effectiveStoryboardWorkflowId],
         sourceLabel
       )
       if (!depsOk) return 0
@@ -9278,6 +9290,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride,
       modelAssetIdOverride,
       resolutionOverride,
+      storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
     })
   }, [
     assets,
@@ -9300,7 +9313,18 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const handleQueueYoloShotStoryboard = useCallback(async (sceneId, shotId, options = {}) => {
     const {
       resolutionOverride = null,
+      productAssetIdOverride = undefined,
+      modelAssetIdOverride = undefined,
+      storyboardWorkflowIdOverride = '',
     } = options || {}
+    const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
+    const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
+    const effectiveProductAsset = productAssetIdOverride !== undefined
+      ? (assets.find((asset) => asset?.id === productAssetIdOverride) || null)
+      : yoloAdProductAsset
+    const effectiveModelAsset = modelAssetIdOverride !== undefined
+      ? (assets.find((asset) => asset?.id === modelAssetIdOverride) || null)
+      : yoloAdModelAsset
     if (!isConnected) return
     if (yoloActivePlanIsStale) {
       setFormError('Director plan is out of date. Click Build Plan again before re-rendering keyframes.')
@@ -9310,28 +9334,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (
       !isYoloMusicMode &&
       yoloAdHasReferenceAnchors &&
-      !yoloStoryboardSupportsReferenceAnchors
+      !effectiveStoryboardSupportsReferenceAnchors
     ) {
-      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(yoloStoryboardWorkflowId)} keyframes.`)
+      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(effectiveStoryboardWorkflowId)} keyframes.`)
       return
     }
     if (
       !isYoloMusicMode &&
-      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(String(yoloStoryboardWorkflowId || '').trim()) &&
-      !yoloAdModelAsset &&
-      !yoloAdProductAsset
+      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(effectiveStoryboardWorkflowId) &&
+      !effectiveModelAsset &&
+      !effectiveProductAsset
     ) {
       setFormError('Selected keyframe workflow needs at least a model or product reference image.')
       return
     }
-    const usesCustomMusicKeyframes = isYoloMusicMode && yoloStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
       setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return
     }
     if (!usesCustomMusicKeyframes) {
       const depsOk = await validateDependenciesForQueue(
-        [yoloStoryboardWorkflowId],
+        [effectiveStoryboardWorkflowId],
         `keyframe re-render for ${sceneId} ${shotId}`
       )
       if (!depsOk) return
@@ -9352,8 +9376,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       skipConfirm: true,
       sourceLabel: `Queued keyframe re-render for ${sceneId} ${shotId}`,
       resolutionOverride,
+      productAssetIdOverride,
+      modelAssetIdOverride,
+      storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
     })
   }, [
+    assets,
     buildActiveYoloPlan,
     isConnected,
     isYoloMusicMode,
@@ -9372,7 +9400,18 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const handleQueueYoloShotStoryboards = useCallback(async (targets = [], options = {}) => {
     const {
       resolutionOverride = null,
+      productAssetIdOverride = undefined,
+      modelAssetIdOverride = undefined,
+      storyboardWorkflowIdOverride = '',
     } = options || {}
+    const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
+    const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
+    const effectiveProductAsset = productAssetIdOverride !== undefined
+      ? (assets.find((asset) => asset?.id === productAssetIdOverride) || null)
+      : yoloAdProductAsset
+    const effectiveModelAsset = modelAssetIdOverride !== undefined
+      ? (assets.find((asset) => asset?.id === modelAssetIdOverride) || null)
+      : yoloAdModelAsset
     const targetKeys = new Set(
       (Array.isArray(targets) ? targets : [])
         .map((target) => `${target?.sceneId || ''}|${target?.shotId || ''}`)
@@ -9393,28 +9432,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (
       !isYoloMusicMode &&
       yoloAdHasReferenceAnchors &&
-      !yoloStoryboardSupportsReferenceAnchors
+      !effectiveStoryboardSupportsReferenceAnchors
     ) {
-      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(yoloStoryboardWorkflowId)} keyframes.`)
+      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(effectiveStoryboardWorkflowId)} keyframes.`)
       return 0
     }
     if (
       !isYoloMusicMode &&
-      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(String(yoloStoryboardWorkflowId || '').trim()) &&
-      !yoloAdModelAsset &&
-      !yoloAdProductAsset
+      ['image-edit-model-product', 'seedream-5-lite-image-edit'].includes(effectiveStoryboardWorkflowId) &&
+      !effectiveModelAsset &&
+      !effectiveProductAsset
     ) {
       setFormError('Selected keyframe workflow needs at least a model or product reference image.')
       return 0
     }
-    const usesCustomMusicKeyframes = isYoloMusicMode && yoloStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
       setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return 0
     }
     if (!usesCustomMusicKeyframes) {
       const depsOk = await validateDependenciesForQueue(
-        [yoloStoryboardWorkflowId],
+        [effectiveStoryboardWorkflowId],
         `keyframe re-render for ${targetKeys.size} selected shots`
       )
       if (!depsOk) return 0
@@ -9435,8 +9474,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       skipConfirm: true,
       sourceLabel: `Queued keyframe re-render for ${targetKeys.size} selected shots`,
       resolutionOverride,
+      productAssetIdOverride,
+      modelAssetIdOverride,
+      storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
     })
   }, [
+    assets,
     buildActiveYoloPlan,
     isConnected,
     isYoloMusicMode,
