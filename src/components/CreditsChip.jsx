@@ -196,7 +196,7 @@ function CreditsChip({ className = '', size = 'sm' }) {
       onClick={handleRefresh}
       aria-live="polite"
       title={labelPieces.tooltip}
-      className={`flex items-center rounded-md font-medium border transition-colors ${sizeClasses} ${
+      className={`no-drag flex items-center rounded-md font-medium border transition-colors ${sizeClasses} ${
         isLow
           ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/50 text-amber-100'
           : isLive
