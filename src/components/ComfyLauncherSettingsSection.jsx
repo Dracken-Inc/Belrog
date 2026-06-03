@@ -273,6 +273,17 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
           <p className="text-[11px] text-sf-text-muted mt-1.5">
             ComfyStudio opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.
           </p>
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-md border border-sf-dark-700 bg-sf-dark-900 px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-sf-text-primary">Launch in background</div>
+              <div className="text-[11px] text-sf-text-muted mt-0.5">Open ComfyUI.app hidden so the embedded ComfyUI tab stays front and center.</div>
+            </div>
+            <Toggle
+              checked={config.macAppLaunchHidden !== false}
+              ariaLabel="Toggle background launch for ComfyUI.app"
+              onChange={(value) => { void updateConfig({ macAppLaunchHidden: value }) }}
+            />
+          </div>
         </div>
       )}
 

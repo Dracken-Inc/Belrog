@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = Object.freeze({
   launcherMode: 'script',
   launcherScript: '',
   macAppPath: '',
+  macAppLaunchHidden: true,
   autoStart: false,
   stopOnQuit: true,
   startupTimeoutMs: 120_000,
@@ -52,6 +53,7 @@ function safeCloneConfig(config) {
     launcherMode,
     launcherScript: typeof base.launcherScript === 'string' ? base.launcherScript : '',
     macAppPath: typeof base.macAppPath === 'string' ? base.macAppPath : '',
+    macAppLaunchHidden: base.macAppLaunchHidden === undefined ? true : Boolean(base.macAppLaunchHidden),
     autoStart: Boolean(base.autoStart),
     stopOnQuit: base.stopOnQuit === undefined ? true : Boolean(base.stopOnQuit),
     startupTimeoutMs: Number.isFinite(Number(base.startupTimeoutMs)) ? Number(base.startupTimeoutMs) : DEFAULT_CONFIG.startupTimeoutMs,
@@ -752,6 +754,7 @@ class ComfyLauncher extends EventEmitter {
       launcherMode: config.launcherMode || 'script',
       launcherScript: config.launcherScript || '',
       macAppPath: config.macAppPath || '',
+      macAppLaunchHidden: config.macAppLaunchHidden === undefined ? true : Boolean(config.macAppLaunchHidden),
       httpBase: this._getHttpBase?.() || '',
       statusMessage: this._lastStatusMessage,
       error: this._lastError,
@@ -1300,7 +1303,8 @@ class ComfyLauncher extends EventEmitter {
 
     this._startupTimeoutMs = Math.max(10_000, Number(config.startupTimeoutMs) || DEFAULT_CONFIG.startupTimeoutMs)
     this._openLogFile()
-    this._appendLog('system', `Opening ComfyUI.app from ${appPath}`)
+    const openArgs = config.macAppLaunchHidden ? ['-g', '-j', appPath] : [appPath]
+    this._appendLog('system', `Opening ComfyUI.app from ${appPath}${config.macAppLaunchHidden ? ' (background)' : ''}`)
     this._appendLog('system', `httpBase=${httpBase || 'unknown'}`)
 
     this._child = null
@@ -1315,7 +1319,7 @@ class ComfyLauncher extends EventEmitter {
 
     try {
       await new Promise((resolve, reject) => {
-        const opener = spawn('open', [appPath], {
+        const opener = spawn('open', openArgs, {
           stdio: ['ignore', 'ignore', 'pipe'],
           detached: true,
         })
