@@ -140,9 +140,10 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
   }
 
   const hasLauncherTarget = launcherMode === 'mac-app' ? Boolean(config.macAppPath) : Boolean(config.launcherScript)
+  const canControlMacApp = isMacPlatform && launcherMode === 'mac-app' && state.ownership === 'app'
   const canStart = (state.state === 'idle' || state.state === 'stopped' || state.state === 'crashed' || state.state === 'unknown') && hasLauncherTarget
-  const canStop = state.state === 'running' && state.ownership === 'ours'
-  const canRestart = state.state === 'running' && state.ownership === 'ours'
+  const canStop = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
+  const canRestart = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
 
   return (
     <div className="space-y-5">
@@ -270,7 +271,7 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
             )}
           </div>
           <p className="text-[11px] text-sf-text-muted mt-1.5">
-            ComfyStudio opens the Mac app, then waits for the configured ComfyUI endpoint to respond. Stop or restart ComfyUI from macOS.
+            ComfyStudio opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.
           </p>
         </div>
       )}

@@ -237,9 +237,10 @@ function ComfyLauncherChip() {
   }
 
   const hasLauncherTarget = launcherMode === 'mac-app' ? Boolean(config.macAppPath) : Boolean(config.launcherScript)
+  const canControlMacApp = isMacPlatform && launcherMode === 'mac-app' && state.ownership === 'app'
   const canStart = (state.state === 'idle' || state.state === 'stopped' || state.state === 'crashed' || state.state === 'unknown') && hasLauncherTarget
-  const canStop = state.state === 'running' && state.ownership === 'ours'
-  const canRestart = state.state === 'running' && state.ownership === 'ours'
+  const canStop = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
+  const canRestart = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
 
   if (!available) return null
 
