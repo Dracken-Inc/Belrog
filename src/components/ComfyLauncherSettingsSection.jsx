@@ -20,6 +20,7 @@ import {
   getComfyLauncherSnapshot,
   isComfyLauncherAvailable,
   openComfyLauncherLogFile,
+  pickComfyLauncherMacApp,
   pickComfyLauncherScript,
   refreshComfyLauncher,
   restartComfyLauncher,
@@ -81,6 +82,8 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
   }, [available])
 
   const stateMeta = STATE_LABEL[state.state] || STATE_LABEL.unknown
+  const isMacPlatform = window?.electronAPI?.platform === 'darwin'
+  const launcherMode = config.launcherMode === 'mac-app' ? 'mac-app' : 'script'
 
   const updateConfig = useCallback(async (partial) => {
     setError('')
@@ -110,13 +113,20 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
   const handlePickScript = async () => {
     const result = await pickComfyLauncherScript()
     if (result?.success && result.filePath) {
-      setConfig((prev) => ({ ...prev, launcherScript: result.filePath }))
+      setConfig((prev) => ({ ...prev, launcherMode: 'script', launcherScript: result.filePath }))
+    }
+  }
+
+  const handlePickMacApp = async () => {
+    const result = await pickComfyLauncherMacApp()
+    if (result?.success && result.filePath) {
+      setConfig((prev) => ({ ...prev, launcherMode: 'mac-app', macAppPath: result.filePath }))
     }
   }
 
   const handleUseCandidate = async (candidate) => {
     if (!candidate?.path) return
-    await updateConfig({ launcherScript: candidate.path })
+    await updateConfig({ launcherMode: 'script', launcherScript: candidate.path })
   }
 
   const startupTimeoutSeconds = useMemo(() => Math.max(10, Math.round((config.startupTimeoutMs || 120000) / 1000)), [config.startupTimeoutMs])
@@ -129,7 +139,8 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
     )
   }
 
-  const canStart = (state.state === 'idle' || state.state === 'stopped' || state.state === 'crashed' || state.state === 'unknown') && Boolean(config.launcherScript)
+  const hasLauncherTarget = launcherMode === 'mac-app' ? Boolean(config.macAppPath) : Boolean(config.launcherScript)
+  const canStart = (state.state === 'idle' || state.state === 'stopped' || state.state === 'crashed' || state.state === 'unknown') && hasLauncherTarget
   const canStop = state.state === 'running' && state.ownership === 'ours'
   const canRestart = state.state === 'running' && state.ownership === 'ours'
 
@@ -200,7 +211,71 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
         )}
       </div>
 
-      {/* Launcher script */}
+      {/* Launcher target */}
+      {isMacPlatform && (
+        <div>
+          <label className="text-xs uppercase tracking-wider text-sf-text-muted font-semibold">Launcher mode</label>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { void updateConfig({ launcherMode: 'mac-app' }) }}
+              className={`text-left rounded-md border px-3 py-2 transition-colors ${launcherMode === 'mac-app'
+                ? 'border-sf-accent bg-sf-accent/15 text-sf-text-primary'
+                : 'border-sf-dark-700 bg-sf-dark-900 text-sf-text-secondary hover:bg-sf-dark-800'
+              }`}
+            >
+              <div className="text-xs font-semibold">ComfyUI.app</div>
+              <div className="text-[11px] text-sf-text-muted mt-0.5">Open the official Mac app and connect when it is ready.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { void updateConfig({ launcherMode: 'script' }) }}
+              className={`text-left rounded-md border px-3 py-2 transition-colors ${launcherMode === 'script'
+                ? 'border-sf-accent bg-sf-accent/15 text-sf-text-primary'
+                : 'border-sf-dark-700 bg-sf-dark-900 text-sf-text-secondary hover:bg-sf-dark-800'
+              }`}
+            >
+              <div className="text-xs font-semibold">Script</div>
+              <div className="text-[11px] text-sf-text-muted mt-0.5">Run a custom .sh launcher or standalone ComfyUI install.</div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isMacPlatform && launcherMode === 'mac-app' && (
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs uppercase tracking-wider text-sf-text-muted font-semibold">ComfyUI.app</label>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { void updateConfig({ launcherMode: 'mac-app', macAppPath: '/Applications/ComfyUI.app' }) }}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-sf-dark-700 hover:bg-sf-dark-600 text-sf-text-secondary transition-colors"
+              >
+                Use default
+              </button>
+              <button
+                type="button"
+                onClick={handlePickMacApp}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-sf-dark-700 hover:bg-sf-dark-600 text-sf-text-secondary transition-colors"
+              >
+                <FolderOpen className="w-3 h-3" />
+                Browse...
+              </button>
+            </div>
+          </div>
+          <div className="bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-xs text-sf-text-primary truncate min-h-[34px]">
+            {config.macAppPath || (
+              <span className="italic text-sf-text-muted">No app configured. Pick ComfyUI.app to let ComfyStudio open it for you.</span>
+            )}
+          </div>
+          <p className="text-[11px] text-sf-text-muted mt-1.5">
+            ComfyStudio opens the Mac app, then waits for the configured ComfyUI endpoint to respond. Stop or restart ComfyUI from macOS.
+          </p>
+        </div>
+      )}
+
+      {!(isMacPlatform && launcherMode === 'mac-app') && (
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs uppercase tracking-wider text-sf-text-muted font-semibold">Launcher script</label>
@@ -245,6 +320,7 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer }) {
           </div>
         )}
       </div>
+      )}
 
       {/* Behavior */}
       <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-4 py-3 space-y-3">

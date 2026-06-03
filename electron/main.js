@@ -800,12 +800,27 @@ function deriveComfyRootFromLauncherScript(launcherScript) {
   return ''
 }
 
+function deriveComfyRootFromMacAppPath(macAppPath) {
+  const normalized = String(macAppPath || '').trim()
+  if (!normalized || process.platform !== 'darwin') return ''
+  try {
+    const comfyRoot = path.join(path.resolve(normalized), 'Contents', 'Resources', 'ComfyUI')
+    if (fsSync.existsSync(path.join(comfyRoot, 'main.py')) || fsSync.existsSync(path.join(comfyRoot, 'custom_nodes'))) {
+      return comfyRoot
+    }
+  } catch {
+    /* ignore invalid app paths */
+  }
+  return ''
+}
+
 async function resolveComfyBridgeRoot() {
   await refreshLauncherConfigCache()
   const settings = await readSettingsRaw()
   const candidates = [
     settings?.[COMFY_ROOT_SETTING_KEY],
     deriveComfyRootFromLauncherScript(cachedLauncherConfig?.launcherScript),
+    deriveComfyRootFromMacAppPath(cachedLauncherConfig?.macAppPath),
   ].map((value) => String(value || '').trim()).filter(Boolean)
 
   const seen = new Set()
@@ -1842,7 +1857,10 @@ async function maybeAutoStartComfyLauncher() {
   try {
     const config = cachedLauncherConfig
     if (!config?.autoStart) return
-    if (!config.launcherScript) return
+    const hasLauncher = config.launcherMode === 'mac-app'
+      ? Boolean(config.macAppPath)
+      : Boolean(config.launcherScript)
+    if (!hasLauncher) return
     const state = comfyLauncher.getState()
     if (state.state === 'external' || state.state === 'starting' || state.state === 'running') return
     const result = await comfyLauncher.start()
@@ -3413,6 +3431,33 @@ ipcMain.handle('comfyLauncher:pickLauncherScript', async () => {
     return { success: false, canceled: true }
   }
   return { success: true, filePath: result.filePaths[0] }
+})
+
+ipcMain.handle('comfyLauncher:pickMacApp', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { success: false, error: 'No active window.' }
+  }
+  if (process.platform !== 'darwin') {
+    return { success: false, error: 'ComfyUI.app selection is only available on macOS.' }
+  }
+  const defaultComfyApp = '/Applications/ComfyUI.app'
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select ComfyUI.app',
+    defaultPath: fsSync.existsSync(defaultComfyApp) ? defaultComfyApp : '/Applications',
+    properties: ['openFile'],
+    filters: [
+      { name: 'macOS apps', extensions: ['app'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  })
+  if (result.canceled || !result.filePaths?.length) {
+    return { success: false, canceled: true }
+  }
+  const appPath = result.filePaths[0]
+  if (path.extname(appPath).toLowerCase() !== '.app') {
+    return { success: false, error: 'Choose the ComfyUI.app bundle.' }
+  }
+  return { success: true, filePath: appPath }
 })
 
 // ============================================
