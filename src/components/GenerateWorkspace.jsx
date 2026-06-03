@@ -55,6 +55,7 @@ import {
 import {
   ACTIVE_JOB_STATUSES,
   CATEGORY_ORDER,
+  CUSTOM_AD_KEYFRAME_WORKFLOW_ID,
   CUSTOM_GENERATE_IMAGE_WORKFLOW_ID,
   CUSTOM_GENERATE_VIDEO_WORKFLOW_ID,
   CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID,
@@ -133,6 +134,7 @@ const STORYBOARD_REFERENCE_WORKFLOW_IDS = new Set([
   'image-edit',
   'nano-banana-2',
   'nano-banana-pro',
+  CUSTOM_AD_KEYFRAME_WORKFLOW_ID,
   'image-edit-model-product',
   'seedream-5-lite-image-edit',
 ])
@@ -3380,6 +3382,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const [yoloMusicCustomVideoWorkflow, setYoloMusicCustomVideoWorkflow] = useState(() => (
     normalizeCustomKeyframeWorkflow(persistedState?.yoloMusicCustomVideoWorkflow)
   ))
+  const [yoloAdCustomKeyframeWorkflow, setYoloAdCustomKeyframeWorkflow] = useState(() => (
+    normalizeCustomKeyframeWorkflow(persistedState?.yoloAdCustomKeyframeWorkflow)
+  ))
   const [customGenerateImageWorkflow, setCustomGenerateImageWorkflow] = useState(() => (
     normalizeCustomKeyframeWorkflow(persistedState?.customGenerateImageWorkflow)
   ))
@@ -3640,6 +3645,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         yoloMusicKeyframeWorkflowId,
         yoloMusicCustomKeyframeWorkflow,
         yoloMusicCustomVideoWorkflow,
+        yoloAdCustomKeyframeWorkflow,
         customGenerateImageWorkflow,
         customGenerateVideoWorkflow,
         yoloMusicVideoWorkflowId,
@@ -3730,6 +3736,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicKeyframeWorkflowId,
     yoloMusicCustomKeyframeWorkflow,
     yoloMusicCustomVideoWorkflow,
+    yoloAdCustomKeyframeWorkflow,
     customGenerateImageWorkflow,
     customGenerateVideoWorkflow,
     yoloMusicVideoWorkflowId,
@@ -4418,6 +4425,86 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
   }, [])
 
+  const createYoloAdCustomKeyframeStarter = useCallback(async () => {
+    const starter = {
+      '1': {
+        class_type: 'LoadImage',
+        inputs: {
+          image: '',
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_INPUT_IMAGE',
+        },
+      },
+      '2': {
+        class_type: 'PrimitiveStringMultiline',
+        inputs: {
+          value: 'ComfyStudio will inject the ad shot keyframe prompt here.',
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_PROMPT',
+        },
+      },
+      '3': {
+        class_type: 'PrimitiveInt',
+        inputs: {
+          value: 0,
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_SEED',
+        },
+      },
+      '4': {
+        class_type: 'PrimitiveInt',
+        inputs: {
+          value: 1280,
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_WIDTH',
+        },
+      },
+      '5': {
+        class_type: 'PrimitiveInt',
+        inputs: {
+          value: 720,
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_HEIGHT',
+        },
+      },
+      '6': {
+        class_type: 'ImageScale',
+        inputs: {
+          image: ['1', 0],
+          upscale_method: 'lanczos',
+          width: ['4', 0],
+          height: ['5', 0],
+          crop: 'center',
+        },
+        _meta: {
+          title: 'ComfyStudio Output Resize',
+        },
+      },
+      '7': {
+        class_type: 'SaveImage',
+        inputs: {
+          images: ['6', 0],
+          filename_prefix: 'image/custom_ad_keyframe_starter',
+        },
+        _meta: {
+          title: 'COMFYSTUDIO_OUTPUT_IMAGE',
+        },
+      },
+    }
+    const validation = validateCustomKeyframeWorkflow(starter, { requireInputImage: false })
+    return {
+      name: 'ComfyStudio custom ad keyframe starter',
+      workflow: starter,
+      jsonText: JSON.stringify(starter, null, 2),
+      validation,
+    }
+  }, [])
+
   const createYoloMusicCustomVideoStarter = useCallback(async () => {
     const starter = {
       '1': {
@@ -4813,6 +4900,86 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     addComfyLog('status', `Cleared custom ${kind === 'video' ? 'video' : 'image'} workflow.`)
   }, [addComfyLog])
 
+  const handleImportYoloAdCustomKeyframeWorkflow = useCallback(async () => {
+    setCustomWorkflowBridgeTarget('ad-keyframe')
+    try {
+      const selected = await readCustomWorkflowJsonFromUser('Select custom ComfyUI ad keyframe workflow JSON')
+      if (!selected) return
+
+      const workflow = JSON.parse(selected.text)
+      const validation = validateCustomKeyframeWorkflow(workflow, { requireInputImage: false })
+      setYoloAdCustomKeyframeWorkflow({
+        name: selected.name || 'Custom ad keyframe workflow',
+        jsonText: JSON.stringify(workflow, null, 2),
+        updatedAt: Date.now(),
+      })
+      setFormError(validation.ok ? null : validation.message)
+      addComfyLog(validation.ok ? 'ok' : 'warning', validation.ok
+        ? `Loaded custom ad keyframe workflow: ${selected.name || 'Custom workflow'}`
+        : `Custom ad keyframe workflow loaded but is not ready: ${validation.message}`)
+    } catch (error) {
+      const message = error?.message || 'Could not import custom ad keyframe workflow'
+      setFormError(message)
+      addComfyLog('error', message)
+    }
+  }, [addComfyLog, readCustomWorkflowJsonFromUser])
+
+  const handleOpenYoloAdCustomKeyframeWorkflowInComfyUi = useCallback(async () => {
+    try {
+      setCustomWorkflowBridgeTarget('ad-keyframe')
+      const hasLoadedWorkflow = Boolean(String(yoloAdCustomKeyframeWorkflow?.jsonText || '').trim())
+      let workflow = null
+      let label = ''
+      let starterLoaded = false
+
+      if (hasLoadedWorkflow) {
+        workflow = JSON.parse(yoloAdCustomKeyframeWorkflow.jsonText || '')
+        label = yoloAdCustomKeyframeWorkflow.name || 'Custom ad keyframe workflow'
+      } else {
+        const starter = await createYoloAdCustomKeyframeStarter()
+        workflow = starter.workflow
+        label = starter.name
+        starterLoaded = true
+        setYoloAdCustomKeyframeWorkflow({
+          name: starter.name,
+          jsonText: starter.jsonText,
+          updatedAt: Date.now(),
+        })
+      }
+
+      const validation = validateCustomKeyframeWorkflow(workflow, { requireInputImage: false })
+      if (!validation.ok) {
+        setFormError(validation.message)
+        addComfyLog('warning', `Custom ad keyframe workflow is not ready: ${validation.message}`)
+        return
+      }
+
+      const result = await openApiWorkflowInComfyUi(workflow, { label })
+      if (result.success) {
+        setFormError(null)
+        addComfyLog('info', result.hint || `${starterLoaded ? 'Loaded the starter and opened' : 'Opened'} ${label} in the embedded ComfyUI tab.`)
+        return
+      }
+
+      setFormError(result.error || 'Could not open custom ad keyframe workflow in ComfyUI.')
+      addComfyLog('error', result.error || 'Could not open custom ad keyframe workflow in ComfyUI.')
+    } catch (error) {
+      const message = error?.message || 'Could not open custom ad keyframe workflow in ComfyUI.'
+      setFormError(message)
+      addComfyLog('error', message)
+    }
+  }, [
+    addComfyLog,
+    createYoloAdCustomKeyframeStarter,
+    yoloAdCustomKeyframeWorkflow,
+  ])
+
+  const handleClearYoloAdCustomKeyframeWorkflow = useCallback(() => {
+    setYoloAdCustomKeyframeWorkflow({ ...EMPTY_CUSTOM_KEYFRAME_WORKFLOW })
+    setFormError(null)
+    addComfyLog('status', 'Cleared custom ad keyframe workflow.')
+  }, [addComfyLog])
+
   const handleImportYoloMusicCustomKeyframeWorkflow = useCallback(async () => {
     setCustomWorkflowBridgeTarget('music-keyframe')
     const readBrowserFile = () => new Promise((resolve) => {
@@ -5086,13 +5253,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   useEffect(() => {
     const keyframeCustom = String(yoloMusicKeyframeWorkflowId || '').trim() === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     const videoCustom = String(yoloMusicVideoWorkflowId || '').trim() === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID
+    const adCustom = Boolean(String(yoloAdCustomKeyframeWorkflow?.jsonText || '').trim())
     const generateCustom = (
       String(workflowId || '').trim() === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID
       || String(workflowId || '').trim() === CUSTOM_GENERATE_VIDEO_WORKFLOW_ID
     )
-    if (!keyframeCustom && !videoCustom && !generateCustom) return
+    if (!keyframeCustom && !videoCustom && !adCustom && !generateCustom) return
     void handleCheckYoloMusicCustomKeyframeBridge({ silent: true })
-  }, [handleCheckYoloMusicCustomKeyframeBridge, workflowId, yoloMusicKeyframeWorkflowId, yoloMusicVideoWorkflowId])
+  }, [handleCheckYoloMusicCustomKeyframeBridge, workflowId, yoloAdCustomKeyframeWorkflow, yoloMusicKeyframeWorkflowId, yoloMusicVideoWorkflowId])
 
   useEffect(() => {
     const handleBridgeMessage = (event) => {
@@ -5106,7 +5274,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
       try {
         const name = String(data.name || '').trim() || 'ComfyUI current graph'
-        const target = ['music-video', 'generate-image', 'generate-video'].includes(customWorkflowBridgeTarget)
+        const target = ['music-video', 'ad-keyframe', 'generate-image', 'generate-video'].includes(customWorkflowBridgeTarget)
           ? customWorkflowBridgeTarget
           : 'music-keyframe'
         const isVideoTarget = target === 'music-video' || target === 'generate-video'
@@ -5134,6 +5302,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             updatedAt: Date.now(),
           })
           selectGenerateCustomWorkflow('image')
+        } else if (target === 'ad-keyframe') {
+          setYoloAdCustomKeyframeWorkflow({
+            name,
+            jsonText: JSON.stringify(workflow, null, 2),
+            updatedAt: Date.now(),
+          })
         } else {
           setYoloMusicCustomKeyframeWorkflow({
             name,
@@ -5147,9 +5321,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           ? 'video'
           : target === 'music-keyframe'
             ? 'keyframe'
-            : target === 'generate-video'
-              ? 'Generate video'
-              : 'Generate image'
+            : target === 'ad-keyframe'
+              ? 'ad keyframe'
+              : target === 'generate-video'
+                ? 'Generate video'
+                : 'Generate image'
         addComfyLog(validation.ok ? 'ok' : 'warning', validation.ok
           ? `Received custom ${targetLabel} workflow from ComfyUI: ${name}`
           : `Received workflow from ComfyUI but it needs attention: ${validation.message}`)
@@ -5169,6 +5345,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     addComfyLog,
     customWorkflowBridgeTarget,
     selectGenerateCustomWorkflow,
+    setYoloAdCustomKeyframeWorkflow,
     setYoloMusicKeyframeWorkflowId,
     setYoloMusicVideoWorkflowId,
   ])
@@ -5803,6 +5980,29 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       }
     }
   }, [yoloMusicCustomVideoWorkflow])
+  const yoloAdCustomKeyframeValidation = useMemo(() => {
+    const text = String(yoloAdCustomKeyframeWorkflow?.jsonText || '').trim()
+    if (!text) {
+      return {
+        ok: false,
+        missing: [],
+        warnings: [],
+        endpoints: {},
+        message: 'No custom ad keyframe workflow loaded yet.',
+      }
+    }
+    try {
+      return validateCustomKeyframeWorkflow(JSON.parse(text), { requireInputImage: false })
+    } catch (error) {
+      return {
+        ok: false,
+        missing: ['workflow_json'],
+        warnings: [],
+        endpoints: {},
+        message: error?.message || 'Workflow JSON could not be parsed.',
+      }
+    }
+  }, [yoloAdCustomKeyframeWorkflow])
   const customGenerateImageValidation = useMemo(() => {
     const text = String(customGenerateImageWorkflow?.jsonText || '').trim()
     if (!text) {
@@ -9021,8 +9221,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return Number.isFinite(parsed) ? parsed : fallback
     }
     const usesModelProductStoryboardWorkflow = effectiveStoryboardWorkflowId === 'image-edit-model-product'
+    const usesCustomAdStoryboardWorkflow = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
     const usesQwenMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === 'image-edit'
     const usesCustomMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+    const usesCustomStoryboardWorkflow = usesCustomMusicStoryboardWorkflow || usesCustomAdStoryboardWorkflow
     const usesReferenceMusicStoryboardWorkflow = usesQwenMusicStoryboardWorkflow || usesCustomMusicStoryboardWorkflow
     const musicImageAssetById = new Map(
       (assets || [])
@@ -9067,7 +9269,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const effectiveAdModelAsset = modelAssetIdOverride !== undefined
       ? (assets.find((asset) => asset?.id === modelAssetIdOverride) || null)
       : yoloAdModelAsset
-    const adStoryboardInputAsset = usesModelProductStoryboardWorkflow
+    const adStoryboardInputAsset = usesModelProductStoryboardWorkflow || usesCustomAdStoryboardWorkflow
       ? (effectiveAdModelAsset || effectiveAdProductAsset || null)
       : null
     const storyboardResolution = {
@@ -9122,7 +9324,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const musicInputAsset = usesReferenceMusicStoryboardWorkflow && musicReferenceAssetId1
         ? (musicImageAssetById.get(musicReferenceAssetId1) || null)
         : null
-      const storyboardInputAsset = usesModelProductStoryboardWorkflow
+      const storyboardInputAsset = usesModelProductStoryboardWorkflow || usesCustomAdStoryboardWorkflow
         ? adStoryboardInputAsset
         : musicInputAsset
       const storyboardReferenceAssetId1 = isYoloMusicMode
@@ -9134,11 +9336,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return createQueuedJob({
         category: 'image',
         workflowId: effectiveStoryboardWorkflowId,
-        workflowLabel: usesCustomMusicStoryboardWorkflow
-          ? `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow'})`
+        workflowLabel: usesCustomStoryboardWorkflow
+          ? `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${usesCustomAdStoryboardWorkflow ? (yoloAdCustomKeyframeWorkflow?.name || 'Custom Workflow') : (yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow')})`
           : `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${effectiveStoryboardWorkflowId})`,
-        needsImage: usesModelProductStoryboardWorkflow || Boolean(musicInputAsset),
-        inputAssetType: usesModelProductStoryboardWorkflow || Boolean(musicInputAsset) ? 'image' : null,
+        needsImage: Boolean(storyboardInputAsset),
+        inputAssetType: storyboardInputAsset ? 'image' : null,
         prompt: variant.storyboardPrompt || variant.prompt,
         seed: storyboardSeed,
         resolution: storyboardResolution,
@@ -9151,10 +9353,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceAssetId1: storyboardReferenceAssetId1,
         referenceAssetId2: storyboardReferenceAssetId2,
         directorLabel: yoloQueueNameLabel,
-        customWorkflow: usesCustomMusicStoryboardWorkflow
+        customWorkflow: usesCustomStoryboardWorkflow
           ? {
-              name: yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow',
-              jsonText: yoloMusicCustomKeyframeWorkflow?.jsonText || '',
+              name: usesCustomAdStoryboardWorkflow
+                ? (yoloAdCustomKeyframeWorkflow?.name || 'Custom Workflow')
+                : (yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow'),
+              jsonText: usesCustomAdStoryboardWorkflow
+                ? (yoloAdCustomKeyframeWorkflow?.jsonText || '')
+                : (yoloMusicCustomKeyframeWorkflow?.jsonText || ''),
             }
           : null,
         yolo: {
@@ -9199,6 +9405,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     seed,
     assets,
     yoloAdConsistency,
+    yoloAdCustomKeyframeWorkflow,
     yoloAdModelAsset,
     yoloAdModelAsset?.id,
     effectiveImageResolution.height,
@@ -9265,11 +9472,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return 0
     }
     const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
-    if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
-      setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
+    const usesCustomAdKeyframes = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
+    const usesCustomKeyframes = usesCustomMusicKeyframes || usesCustomAdKeyframes
+    const customKeyframeValidation = usesCustomAdKeyframes ? yoloAdCustomKeyframeValidation : yoloMusicCustomKeyframeValidation
+    if (usesCustomKeyframes && !customKeyframeValidation.ok) {
+      setFormError(customKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return 0
     }
-    if (!usesCustomMusicKeyframes) {
+    if (!usesCustomKeyframes) {
       const depsOk = await validateDependenciesForQueue(
         [effectiveStoryboardWorkflowId],
         sourceLabel
@@ -9300,6 +9510,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     queueYoloStoryboardVariants,
     yoloActivePlanIsStale,
     validateDependenciesForQueue,
+    yoloAdCustomKeyframeValidation,
     yoloMusicCustomKeyframeValidation,
     yoloActivePlan,
     yoloAdModelAsset,
@@ -9349,11 +9560,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return
     }
     const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
-    if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
-      setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
+    const usesCustomAdKeyframes = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
+    const usesCustomKeyframes = usesCustomMusicKeyframes || usesCustomAdKeyframes
+    const customKeyframeValidation = usesCustomAdKeyframes ? yoloAdCustomKeyframeValidation : yoloMusicCustomKeyframeValidation
+    if (usesCustomKeyframes && !customKeyframeValidation.ok) {
+      setFormError(customKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return
     }
-    if (!usesCustomMusicKeyframes) {
+    if (!usesCustomKeyframes) {
       const depsOk = await validateDependenciesForQueue(
         [effectiveStoryboardWorkflowId],
         `keyframe re-render for ${sceneId} ${shotId}`
@@ -9388,6 +9602,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     queueYoloStoryboardVariants,
     yoloActivePlanIsStale,
     validateDependenciesForQueue,
+    yoloAdCustomKeyframeValidation,
     yoloMusicCustomKeyframeValidation,
     yoloActivePlan,
     yoloAdHasReferenceAnchors,
@@ -9447,11 +9662,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return 0
     }
     const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
-    if (usesCustomMusicKeyframes && !yoloMusicCustomKeyframeValidation.ok) {
-      setFormError(yoloMusicCustomKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
+    const usesCustomAdKeyframes = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
+    const usesCustomKeyframes = usesCustomMusicKeyframes || usesCustomAdKeyframes
+    const customKeyframeValidation = usesCustomAdKeyframes ? yoloAdCustomKeyframeValidation : yoloMusicCustomKeyframeValidation
+    if (usesCustomKeyframes && !customKeyframeValidation.ok) {
+      setFormError(customKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
       return 0
     }
-    if (!usesCustomMusicKeyframes) {
+    if (!usesCustomKeyframes) {
       const depsOk = await validateDependenciesForQueue(
         [effectiveStoryboardWorkflowId],
         `keyframe re-render for ${targetKeys.size} selected shots`
@@ -9486,6 +9704,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     queueYoloStoryboardVariants,
     yoloActivePlanIsStale,
     validateDependenciesForQueue,
+    yoloAdCustomKeyframeValidation,
     yoloMusicCustomKeyframeValidation,
     yoloActivePlan,
     yoloAdHasReferenceAnchors,
@@ -11134,6 +11353,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             job.workflowId === 'grok-text-to-image' ||
             job.workflowId === 'nano-banana-pro' ||
             job.workflowId === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID ||
+            job.workflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID ||
             job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
           )
             ? `image/comfystudio_${outputToken}`
@@ -11347,6 +11567,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       let workflowJson = null
       if (
         job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
+        || job.workflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
         || job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID
         || job.workflowId === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID
         || job.workflowId === CUSTOM_GENERATE_VIDEO_WORKFLOW_ID
@@ -11584,7 +11805,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           })
           break
         case CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID:
+        case CUSTOM_AD_KEYFRAME_WORKFLOW_ID:
           modifiedWorkflow = modifyCustomKeyframeWorkflow(workflowJson, {
+            requireInputImage: job.workflowId !== CUSTOM_AD_KEYFRAME_WORKFLOW_ID,
             prompt: job.prompt,
             inputImage: uploadedFilename,
             seed: job.seed,
@@ -12576,6 +12799,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     yoloStoryboardReadyCount={yoloStoryboardReadyCount}
                     yoloActivePlanIsStale={yoloActivePlanIsStale}
                     yoloDependencyCheckInProgress={yoloDependencyCheckInProgress}
+                    yoloAdCustomKeyframeWorkflow={yoloAdCustomKeyframeWorkflow}
+                    yoloAdCustomKeyframeValidation={yoloAdCustomKeyframeValidation}
+                    yoloCustomKeyframeBridgeStatus={yoloMusicCustomKeyframeBridgeStatus}
+                    yoloCustomKeyframeBridgeBusy={yoloMusicCustomKeyframeBridgeBusy}
                     yoloScript={yoloScript}
                     setYoloScript={setYoloScript}
                     setYoloStyleNotes={setYoloStyleNotes}
@@ -12608,6 +12835,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleQueueYoloVideos={handleQueueYoloVideos}
                     handleQueueYoloShotVideo={handleQueueYoloShotVideo}
                     handleQueueYoloShotVideos={handleQueueYoloShotVideos}
+                    handleOpenYoloAdCustomKeyframeWorkflowInComfyUi={handleOpenYoloAdCustomKeyframeWorkflowInComfyUi}
+                    handleImportYoloAdCustomKeyframeWorkflow={handleImportYoloAdCustomKeyframeWorkflow}
+                    handleClearYoloAdCustomKeyframeWorkflow={handleClearYoloAdCustomKeyframeWorkflow}
+                    handleInstallYoloMusicCustomKeyframeBridge={handleInstallYoloMusicCustomKeyframeBridge}
+                    handleCheckYoloMusicCustomKeyframeBridge={handleCheckYoloMusicCustomKeyframeBridge}
                     handleYoloShotImageBeatChange={handleYoloShotImageBeatChange}
                     handleYoloShotVideoBeatChange={handleYoloShotVideoBeatChange}
                     handleYoloShotTakesChange={handleYoloShotTakesChange}
