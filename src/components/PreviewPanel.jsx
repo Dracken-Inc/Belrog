@@ -13,12 +13,9 @@ import CanvasPreviewRenderer from './CanvasPreviewRenderer'
 import AudioLayerRenderer from './AudioLayerRenderer'
 import PreviewTransformGizmo from './PreviewTransformGizmo'
 import {
-  getPreviewProxyPath,
   computePreviewSignature,
-  renderPreviewProxy,
   renderPreviewChunk,
   getPreviewComplexity,
-  shouldAutoGeneratePreviewProxy,
 } from '../services/previewCache'
 import { generateMissingProxiesForAllVideos, hasUsableProxy, isProxyableVideoAsset } from '../services/proxyCache'
 import { importAsset } from '../services/fileSystem'
@@ -199,11 +196,11 @@ const LETTERBOX_PRESETS = [
   { id: '4:5', label: '4:5 Instagram Portrait', ratio: 4/5 },
   { id: '1:1', label: '1:1 Square (Instagram)', ratio: 1 },
 ]
-const AUTO_SMOOTH_PREVIEW_KEY = 'comfystudio-auto-smooth-preview'
 const PREVIEW_TRANSFORM_CONTROLS_KEY = 'previewShowTransformControls'
 const PREVIEW_CHUNK_DURATION = 5
 const PREVIEW_CHUNK_COUNT = 4
 const PREVIEW_CHUNK_EPSILON = 0.03
+const SHOW_PREVIEW_CHUNK_CACHE_BUTTON = false
 
 function isSamePreviewChunkRange(a, b) {
   return Math.abs((Number(a?.rangeStart) || 0) - (Number(b?.rangeStart) || 0)) < 0.001
@@ -308,13 +305,6 @@ function PreviewPanel() {
     setKeyframe,
     duration: timelineDuration,
     timelineFps,
-    previewProxyStatus,
-    previewProxyPath,
-    previewProxySignature,
-    previewProxyProgress,
-    setPreviewProxyGenerating,
-    setPreviewProxyReady,
-    setPreviewProxyInvalid,
     useProxyPlaybackForAssets,
     setUseProxyPlaybackForAssets,
     glslPreviewQuality,
@@ -469,18 +459,6 @@ function PreviewPanel() {
       return true
     }
   })
-  const [autoSmoothPreviewEnabled, setAutoSmoothPreviewEnabled] = useState(() => {
-    // Default OFF now that per-asset proxies cover the common case. Users
-    // who previously opted in (true) keep their setting; fresh/cleared
-    // installs no longer trigger full-timeline re-renders on every edit,
-    // which was the main friction for music-video workflows.
-    try {
-      return localStorage.getItem(AUTO_SMOOTH_PREVIEW_KEY) === 'true'
-    } catch {
-      return false
-    }
-  })
-  
   // Persist info overlay preference
   useEffect(() => {
     try {
@@ -496,15 +474,7 @@ function PreviewPanel() {
       // Ignore localStorage errors.
     }
   }, [showPreviewTransformControls])
-  useEffect(() => {
-    try {
-      localStorage.setItem(AUTO_SMOOTH_PREVIEW_KEY, autoSmoothPreviewEnabled ? 'true' : 'false')
-    } catch {
-      // Ignore localStorage errors.
-    }
-  }, [autoSmoothPreviewEnabled])
-  
-  // Get timeline-specific settings and project handle for preview proxy
+  // Get timeline-specific settings and project handle for preview caching.
   const { getCurrentTimelineSettings, currentProjectHandle, currentTimelineId } = useProjectStore()
   const timelineSettings = getCurrentTimelineSettings()
   const previewComplexity = useMemo(
@@ -592,10 +562,6 @@ function PreviewPanel() {
       setProxyGenerationProgress({ current: 0, total: 0 })
     }
   }, [currentProjectHandle, generatingProxies])
-  const shouldAutoGenerateProxy = useMemo(
-    () => shouldAutoGeneratePreviewProxy({ clips, tracks, transitions }),
-    [clips, tracks, transitions]
-  )
   const currentSignature = useMemo(
     () => computePreviewSignature(currentTimelineId, {
       clips,
@@ -607,15 +573,6 @@ function PreviewPanel() {
     }),
     [currentTimelineId, clips, tracks, transitions, timelineDuration, timelineFps, assets]
   )
-  const useProxyPlayback = Boolean(
-    previewProxyPath &&
-    previewProxySignature &&
-    currentSignature === previewProxySignature
-  )
-  const lastAutoProxySignatureRef = useRef(null)
-  const forceAutoProxyRefreshRef = useRef(false)
-  const [proxyVideoUrl, setProxyVideoUrl] = useState(null)
-  const proxyVideoRef = useRef(null)
   const chunkVideoRef = useRef(null)
   const chunkCacheAbortRef = useRef(null)
   const [previewChunks, setPreviewChunks] = useState([])
@@ -629,41 +586,6 @@ function PreviewPanel() {
     totalCount: 0,
     currentRangeLabel: '',
   })
-  const runSmoothPreviewRender = useCallback(async ({ force = true, reason = 'manual' } = {}) => {
-    if (!currentProjectHandle || !currentTimelineId || !window.electronAPI) {
-      return { error: 'Preview cache is unavailable.' }
-    }
-
-    const timelineState = useTimelineStore.getState()
-    if (timelineState.previewProxyStatus === 'generating') {
-      return { skipped: true }
-    }
-
-    setPreviewProxyGenerating()
-    const result = await renderPreviewProxy(({ progress }) => {
-      useTimelineStore.getState().setPreviewProxyProgress(progress)
-    }, { force })
-
-    if (result?.path && result?.url) {
-      // Avoid enabling a stale proxy when timeline changed while rendering.
-      const latestSignature = computePreviewSignature(currentTimelineId, useTimelineStore.getState())
-      const renderedSignature = result.signature || latestSignature
-      if (renderedSignature !== latestSignature) {
-        useTimelineStore.getState().setPreviewProxyInvalid()
-        return { ...result, stale: true }
-      }
-      setPreviewProxyReady(result.path, renderedSignature)
-      setProxyVideoUrl(result.url)
-      return result
-    }
-
-    useTimelineStore.getState().setPreviewProxyInvalid()
-    if (result?.error) {
-      console.warn(`[PreviewCache:${reason}]`, result.error)
-    }
-    return result
-  }, [currentProjectHandle, currentTimelineId, setPreviewProxyGenerating, setPreviewProxyReady])
-
   useEffect(() => {
     previewChunksRef.current = previewChunks
   }, [previewChunks])
@@ -870,14 +792,13 @@ function PreviewPanel() {
   ])
 
   const activePreviewChunk = useMemo(() => {
-    if (useProxyPlayback) return null
     return previewChunks.find((chunk) => (
       chunk.signature === currentSignature
       && chunk.url
       && playheadPosition >= chunk.rangeStart - PREVIEW_CHUNK_EPSILON
       && playheadPosition < chunk.rangeEnd - PREVIEW_CHUNK_EPSILON
     )) || null
-  }, [currentSignature, playheadPosition, previewChunks, useProxyPlayback])
+  }, [currentSignature, playheadPosition, previewChunks])
 
   const stopPreviewChunkCache = useCallback(() => {
     chunkCacheAbortRef.current?.abort()
@@ -891,84 +812,6 @@ function PreviewPanel() {
   useEffect(() => () => {
     chunkCacheAbortRef.current?.abort()
   }, [])
-
-  // If timeline changed, mark proxy state invalid so status stays accurate.
-  useEffect(() => {
-    if (
-      previewProxyStatus === 'ready' &&
-      previewProxySignature &&
-      currentSignature !== previewProxySignature
-    ) {
-      forceAutoProxyRefreshRef.current = true
-      lastAutoProxySignatureRef.current = null
-      setPreviewProxyInvalid()
-    }
-  }, [previewProxyStatus, previewProxySignature, currentSignature, setPreviewProxyInvalid])
-
-  // Auto-generate smooth preview when timeline is heavy and idle.
-  useEffect(() => {
-    if (!autoSmoothPreviewEnabled) return
-    if (!window.electronAPI || !currentProjectHandle || !currentTimelineId) return
-    if (previewMode !== 'timeline') return
-    if (timelineIsPlaying) return
-    if (clips.length === 0) return
-    const shouldForceRefresh = forceAutoProxyRefreshRef.current
-    if (!shouldAutoGenerateProxy && !shouldForceRefresh) return
-    if (useProxyPlayback) return
-    if (previewProxyStatus === 'generating') return
-    if (!shouldForceRefresh && lastAutoProxySignatureRef.current === currentSignature) return
-
-    const timer = setTimeout(() => {
-      const triggerReason = forceAutoProxyRefreshRef.current ? 'stale-refresh' : 'auto'
-      if (forceAutoProxyRefreshRef.current) {
-        forceAutoProxyRefreshRef.current = false
-      }
-      lastAutoProxySignatureRef.current = currentSignature
-      void runSmoothPreviewRender({ force: false, reason: triggerReason })
-    }, 1200)
-
-    return () => clearTimeout(timer)
-  }, [
-    autoSmoothPreviewEnabled,
-    currentProjectHandle,
-    currentTimelineId,
-    previewMode,
-    timelineIsPlaying,
-    clips.length,
-    shouldAutoGenerateProxy,
-    useProxyPlayback,
-    previewProxyStatus,
-    currentSignature,
-    runSmoothPreviewRender,
-  ])
-
-  useEffect(() => {
-    if (!currentProjectHandle || !currentTimelineId || previewProxyStatus !== 'ready') {
-      setProxyVideoUrl(null)
-      return
-    }
-    let cancelled = false
-    getPreviewProxyPath(currentProjectHandle, currentTimelineId).then((result) => {
-      if (!cancelled && result?.url) setProxyVideoUrl(result.url)
-      else if (!cancelled) setProxyVideoUrl(null)
-    })
-    return () => { cancelled = true }
-  }, [currentProjectHandle, currentTimelineId, previewProxyStatus, previewProxyPath])
-  // Sync proxy video with playhead and playback
-  useEffect(() => {
-    if (!proxyVideoRef.current || !proxyVideoUrl) return
-    const video = proxyVideoRef.current
-    if (timelineIsPlaying) {
-      video.play().catch(() => {})
-    } else {
-      video.pause()
-      setPlayheadPosition(video.currentTime, { snap: true })
-    }
-  }, [timelineIsPlaying, proxyVideoUrl, setPlayheadPosition])
-  useEffect(() => {
-    if (!proxyVideoRef.current || !proxyVideoUrl || timelineIsPlaying) return
-    proxyVideoRef.current.currentTime = playheadPosition
-  }, [playheadPosition, proxyVideoUrl, timelineIsPlaying])
 
   useEffect(() => {
     if (!chunkVideoRef.current || !activePreviewChunk?.url) return
@@ -2261,26 +2104,7 @@ function PreviewPanel() {
               {/* Timeline Playback Mode */}
             {previewMode === 'timeline' && clips.length > 0 ? (
               <>
-                {/* Flattened preview proxy (smooth playback when many layers) or live compositing */}
-                {proxyVideoUrl && useProxyPlayback ? (
-                  <video
-                    ref={proxyVideoRef}
-                    src={proxyVideoUrl}
-                    className="absolute inset-0 w-full h-full object-contain bg-black"
-                    onLoadedMetadata={() => {
-                      if (proxyVideoRef.current) {
-                        proxyVideoRef.current.currentTime = playheadPosition
-                      }
-                    }}
-                    onTimeUpdate={() => {
-                      if (proxyVideoRef.current && timelineIsPlaying) {
-                        setPlayheadPosition(proxyVideoRef.current.currentTime)
-                      }
-                    }}
-                    onEnded={() => timelineIsPlaying && timelineTogglePlay()}
-                    onContextMenu={(e) => e.preventDefault()}
-                  />
-                ) : activePreviewChunk ? (
+                {activePreviewChunk ? (
                   <>
                     <AudioLayerRenderer />
                     <video
@@ -2351,11 +2175,6 @@ function PreviewPanel() {
                           {transitionInfo.transition?.type?.replace('-', ' ') || 'Dissolve'} {Math.round(transitionInfo.progress * 100)}%
                         </div>
                       )}
-                      {proxyVideoUrl && useProxyPlayback && (
-                        <div className="px-2 py-1 bg-green-600/80 rounded text-xs text-white">
-                          Smooth preview
-                        </div>
-                      )}
                       {activePreviewChunk && (
                         <div className="px-2 py-1 bg-emerald-700/80 rounded text-xs text-white">
                           Cached chunk {formatPreviewChunkRange(activePreviewChunk)}
@@ -2366,29 +2185,13 @@ function PreviewPanel() {
                           {previewChunks.length} cached chunk{previewChunks.length === 1 ? '' : 's'}
                         </div>
                       )}
-                      {!activePreviewChunk && !useProxyPlayback && previewCompositorMode === 'canvas' && (
-                        <div className="px-2 py-1 bg-blue-700/80 rounded text-xs text-white">
-                          Canvas preview
-                        </div>
-                      )}
                       {previewComplexity.maxConcurrentVideoLayers >= 2 && (
                         <div className="px-2 py-1 bg-sf-dark-900/80 rounded text-xs text-sf-text-muted">
                           Peak {previewComplexity.maxConcurrentVideoLayers} video layers
                         </div>
                       )}
-                      {autoSmoothPreviewEnabled && shouldAutoGenerateProxy && !useProxyPlayback && previewProxyStatus !== 'generating' && (
-                        <div className="px-2 py-1 bg-yellow-600/80 rounded text-xs text-white">
-                          Auto smooth preview pending
-                        </div>
-                      )}
                     </div>
                     <div className="flex items-center gap-2 pointer-events-auto">
-                      {previewProxyStatus === 'generating' && (
-                        <div className="px-2 py-1 bg-sf-dark-800 rounded text-xs text-sf-text-muted flex items-center gap-2">
-                          <span>Generating smooth preview…</span>
-                          <span>{Math.round(previewProxyProgress)}%</span>
-                        </div>
-                      )}
                       {chunkCacheState.busy && (
                         <div className="px-2 py-1 bg-sf-dark-800 rounded text-xs text-sf-text-muted flex items-center gap-2">
                           <span>{chunkCacheState.status || 'Caching preview chunks...'}</span>
@@ -2433,12 +2236,6 @@ function PreviewPanel() {
                           <option value="eighth">Eighth</option>
                         </select>
                       </label>
-                      <div
-                        className="px-2 py-1 rounded text-xs bg-blue-700/80 text-white"
-                        title="Timeline preview now uses the canvas compositor to avoid DOM reparenting flicker."
-                      >
-                        Canvas preview
-                      </div>
                       {useProxyPlaybackForAssets && currentProjectHandle && window.electronAPI && proxyCoverage.total > 0 && (
                         <button
                           type="button"
@@ -2473,23 +2270,13 @@ function PreviewPanel() {
                           {proxyCoverage.unavailable} unavailable
                         </span>
                       )}
-                      {currentProjectHandle && window.electronAPI && clips.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setAutoSmoothPreviewEnabled(prev => !prev)}
-                          className={`px-2 py-1 rounded text-xs transition-colors ${autoSmoothPreviewEnabled ? 'bg-green-700/70 hover:bg-green-700 text-white' : 'bg-sf-dark-700 hover:bg-sf-dark-600 text-sf-text-muted'}`}
-                          title="Automatically generate smooth preview proxies for heavy timelines"
-                        >
-                          {autoSmoothPreviewEnabled ? 'Auto smooth: On' : 'Auto smooth: Off'}
-                        </button>
-                      )}
-                      {currentProjectHandle && window.electronAPI && clips.length > 0 && (
+                      {SHOW_PREVIEW_CHUNK_CACHE_BUTTON && currentProjectHandle && window.electronAPI && clips.length > 0 && (
                         <button
                           type="button"
                           onClick={() => { void runPreviewChunkCache() }}
-                          disabled={chunkCacheState.busy || previewProxyStatus === 'generating'}
+                          disabled={chunkCacheState.busy}
                           className={`px-2 py-1 rounded text-xs transition-colors ${
-                            chunkCacheState.busy || previewProxyStatus === 'generating'
+                            chunkCacheState.busy
                               ? 'bg-sf-dark-700 text-sf-text-muted cursor-not-allowed'
                               : 'bg-emerald-800/70 hover:bg-emerald-700 text-white'
                           }`}
@@ -2498,16 +2285,6 @@ function PreviewPanel() {
                           {chunkCacheState.busy
                             ? `Caching ${chunkCacheState.cachedCount}/${chunkCacheState.totalCount || previewChunkPlan.ranges.length}`
                             : previewChunkPlan.label}
-                        </button>
-                      )}
-                      {previewProxyStatus !== 'generating' && currentProjectHandle && window.electronAPI && clips.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => { void runSmoothPreviewRender({ force: true, reason: 'manual' }) }}
-                          className="px-2 py-1 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-muted transition-colors"
-                          title="Render timeline to a single file for smoother playback with many layers (Electron only)"
-                        >
-                          {previewProxyStatus === 'ready' && useProxyPlayback ? 'Re-generate smooth preview' : 'Generate smooth preview'}
                         </button>
                       )}
                       {chunkCacheState.error && (
