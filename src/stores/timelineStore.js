@@ -3902,7 +3902,9 @@ export const useTimelineStore = create(
       const clipB = state.clips.find(c => c.id === transition.clipBId)
       if (!clipA || !clipB) return
       const track = state.tracks.find(t => t.id === clipA.trackId)
-      if (!track) return
+      if (!track || !track.visible || track.muted) return
+      if (clipA.trackId !== clipB.trackId) return
+      if (!isClipEnabled(clipA) || !isClipEnabled(clipB)) return
       removeActiveClip(clipA.id)
       removeActiveClip(clipB.id)
       pushActiveClip(clipA, track)
@@ -3928,6 +3930,9 @@ export const useTimelineStore = create(
       const clipA = state.clips.find(c => c.id === transition.clipAId)
       const clipB = state.clips.find(c => c.id === transition.clipBId)
       if (!clipA || !clipB) continue
+      if (clipA.trackId !== clipB.trackId) continue
+      const track = state.tracks.find(t => t.id === clipA.trackId)
+      if (!track || !track.visible || track.muted) continue
       const split = normalizeTransitionSplit(transition?.settings?.split, transition?.settings?.alignment || 'center')
       const editPoint = Number.isFinite(Number(transition.editPoint))
         ? Number(transition.editPoint)
@@ -3970,7 +3975,7 @@ export const useTimelineStore = create(
         if (!clip) continue
 
         const clipTrack = state.tracks.find(t => t.id === clip.trackId)
-        if (!clipTrack || clipTrack.type !== 'video') continue
+        if (!clipTrack || clipTrack.type !== 'video' || !clipTrack.visible || clipTrack.muted) continue
 
         const duration = Math.min(Number(transition.duration) || 0, Number(clip.duration) || 0)
         if (duration <= 0) continue
@@ -4008,7 +4013,7 @@ export const useTimelineStore = create(
       if (!clipA || !clipB) continue
 
       const clipTrack = state.tracks.find(t => t.id === clipA.trackId)
-      if (!clipTrack || clipTrack.type !== 'video') continue
+      if (!clipTrack || clipTrack.type !== 'video' || !clipTrack.visible || clipTrack.muted) continue
       if (clipA.trackId !== clipB.trackId) continue
       const duration = Number(transition.duration)
       if (!Number.isFinite(duration) || duration <= 0) continue
