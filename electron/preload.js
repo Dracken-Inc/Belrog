@@ -138,7 +138,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkNvenc: () => ipcRenderer.invoke('export:checkNvenc'),
 
   /**
-   * Transcode video for playback cache (same resolution, H.264, keyframe every 6, no B-frames)
+   * Transcode video for playback cache (same resolution, constant-FPS H.264, keyframe every 6, no B-frames)
    * @param {{ inputPath: string, outputPath: string }}
    * @returns {Promise<{ success: boolean, error?: string }>}
    */

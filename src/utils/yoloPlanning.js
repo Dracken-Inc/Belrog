@@ -18,18 +18,19 @@ const STRUCTURED_FIELD_PATTERNS = Object.freeze([
   { key: 'shotType', pattern: /^(?:shot\s*type|framing)\s*:\s*(.*)$/i },
   { key: 'keyframePrompt', pattern: /^(?:keyframe\s*prompt|image\s*action|opening\s*frame|keyframe)\s*:\s*(.*)$/i },
   { key: 'motionPrompt', pattern: /^(?:motion\s*prompt|video\s*action|video\s*prompt|motion)\s*:\s*(.*)$/i },
-  { key: 'camera', pattern: /^(?:camera|camera\s*direction|camera\s*setup)\s*:\s*(.*)$/i },
+  { key: 'camera', pattern: /^(?:camera|camera\s*direction|camera\s*setup|camera\s*mode)\s*:\s*(.*)$/i },
   // `length` is a music-video-friendly alias for duration. Ad scripts still
   // write `Duration:` and both route to the same shot field, so the downstream
   // parser/normalizer doesn't need to care which was used.
   { key: 'duration', pattern: /^(?:duration|length)(?:\s*\(s\))?\s*:\s*(.*)$/i },
   { key: 'takes', pattern: /^takes?\s*:\s*(.*)$/i },
   { key: 'adBeat', pattern: /^(?:ad\s*beat|commercial\s*beat|beat)\s*:\s*(.*)$/i },
+  { key: 'productAction', pattern: /^(?:product\s*action|product\s*handling|action\s*with\s*product)\s*:\s*(.*)$/i },
   { key: 'productMode', pattern: /^(?:product\s*mode|product\s*view|product)\s*:\s*(.*)$/i },
   { key: 'talentMode', pattern: /^(?:talent\s*mode|talent|spokesperson\s*mode)\s*:\s*(.*)$/i },
   { key: 'textOverlay', pattern: /^(?:text\s*overlay|overlay\s*text|caption|claim)\s*:\s*(.*)$/i },
   { key: 'endCard', pattern: /^(?:end\s*card|endcard|cta\s*card)\s*:\s*(.*)$/i },
-  { key: 'dialogue', pattern: /^(?:dialogue|voice\s*line|voiceover\s*line|spoken\s*line)\s*:\s*(.*)$/i },
+  { key: 'dialogue', pattern: /^(?:dialogue|creator\s*dialogue|creator\s*line|voice\s*line|voiceover\s*line|spoken\s*line|spoken\s*dialogue)\s*:\s*(.*)$/i },
   // Music-video-only: the specific lyric line this shot should sit on. The
   // ad path never sets this; the music planner reads it out when present to
   // pin audioStart to the right moment in the song.
@@ -157,16 +158,8 @@ function sanitizeSnippet(text = '', maxLength = 180) {
   return `${compact.slice(0, maxLength - 3)}...`
 }
 
-function extractKeyframeMoment(text = '') {
-  const compact = String(text || '').replace(/\s+/g, ' ').trim()
-  if (!compact) return ''
-  const sequenceSplit = compact
-    .split(/\b(?:then|after|before|while|as soon as|followed by)\b/i)
-    .map((part) => part.trim())
-    .filter(Boolean)
-  const firstSequence = sequenceSplit[0] || compact
-  const firstSentence = firstSequence.split(/(?<=[.!?])\s+/)[0] || firstSequence
-  return firstSentence.trim()
+function compactPromptText(text = '') {
+  return String(text || '').replace(/\s+/g, ' ').trim()
 }
 
 function seededUnit(seed) {
@@ -315,14 +308,12 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
     const shotId = `S${scenes.length + 1}_SH${shotIndex + 1}`
     const fallbackAngle = anglePresets[(variationSeed + scenes.length * 2 + shotIndex) % anglePresets.length]
     const fallbackDuration = randomizedShotDurationSeconds(variationSeed + targetDurationSeconds, scenes.length, shotIndex)
-    const shotContext = sanitizeSnippet(currentShot.notes || currentShot.label || currentScene.contextLines.join(' '), 220)
-    const imageBeat = sanitizeSnippet(
-      currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' '),
-      220
+    const shotContext = compactPromptText(currentShot.notes || currentShot.label || currentScene.contextLines.join(' '))
+    const imageBeat = compactPromptText(
+      currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' ')
     )
-    const videoBeat = sanitizeSnippet(
-      currentShot.motionPrompt || currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' '),
-      220
+    const videoBeat = compactPromptText(
+      currentShot.motionPrompt || currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' ')
     )
     const shotType = sanitizeSnippet(currentShot.shotType || currentShot.label || fallbackAngle, 90)
     const cameraDirection = sanitizeSnippet(currentShot.camera || '', 160)
@@ -358,6 +349,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       coverageLabel: shotCoverageLabel,
       coverageSectionIndex: currentScene.coverageSectionIndex || null,
       coverageSectionLabel: sanitizeSnippet(currentScene.coverageSectionLabel || '', 100),
+      productAction: sanitizeSnippet(currentShot.productAction || '', 180),
       productMode: sanitizeSnippet(currentShot.productMode || '', 120),
       talentMode: sanitizeSnippet(currentShot.talentMode || '', 120),
       textOverlay: sanitizeSnippet(currentShot.textOverlay || '', 220),
@@ -373,10 +365,10 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       // parseTimeSpecToSeconds on this to pin audioStart, bypassing the
       // Lyric-moment fuzzy lookup when it's present and parseable.
       startAtRaw: sanitizeSnippet(currentShot.startAt || '', 32),
-      // Keyframe + motion prompts kept raw so the music planner can compose
-      // separate shotPrompt (motion) and referenceImagePrompt (keyframe) from them.
-      keyframePromptRaw: sanitizeSnippet(currentShot.keyframePrompt || '', 320),
-      motionPromptRaw: sanitizeSnippet(currentShot.motionPrompt || '', 320),
+      // Keyframe + motion prompts stay full-length for editing and generation.
+      // Cards and compact labels should truncate visually in the UI only.
+      keyframePromptRaw: compactPromptText(currentShot.keyframePrompt || ''),
+      motionPromptRaw: compactPromptText(currentShot.motionPrompt || ''),
       locked: false,
     })
 
@@ -500,6 +492,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
         duration: '',
         takes: '',
         adBeat: '',
+        productAction: '',
         productMode: '',
         talentMode: '',
         textOverlay: '',
@@ -602,9 +595,9 @@ export function buildYoloPlanFromScript(script = '', options = {}) {
       return {
         id: shotId,
         index: shotIndex + 1,
-        beat: sanitizeSnippet(beat, 220), // Legacy field
-        imageBeat: sanitizeSnippet(beat, 220), // Storyboard keyframe moment
-        videoBeat: sanitizeSnippet(beat, 220), // Video action/motion beat
+        beat: compactPromptText(beat), // Legacy field
+        imageBeat: compactPromptText(beat), // Storyboard keyframe moment
+        videoBeat: compactPromptText(beat), // Video action/motion beat
         durationSeconds: randomizedShotDurationSeconds(variationSeed + targetDurationSeconds, sceneIndex, shotIndex),
         takesPerAngle,
         angles,
@@ -650,6 +643,7 @@ export function flattenYoloPlanVariants(plan = []) {
       const videoBeat = String(shot?.videoBeat || shot?.beat || '').trim()
       const cameraDirection = String(shot?.cameraDirection || '').trim()
       const adBeat = sanitizeSnippet(shot?.adBeat || '', 120)
+      const productAction = sanitizeSnippet(shot?.productAction || '', 180)
       const productMode = sanitizeSnippet(shot?.productMode || '', 120)
       const talentMode = sanitizeSnippet(shot?.talentMode || '', 120)
       const textOverlay = sanitizeSnippet(shot?.textOverlay || '', 220)
@@ -665,9 +659,10 @@ export function flattenYoloPlanVariants(plan = []) {
       for (const angle of angles) {
         for (let take = 1; take <= takes; take += 1) {
           const key = `${scene.id}|${shot.id}|${angle}|T${take}`
-          const isAdShot = Boolean(adBeat || productMode || talentMode || textOverlay || endCard || dialogue)
+          const isAdShot = Boolean(adBeat || productAction || productMode || talentMode || textOverlay || endCard || dialogue)
           const videoPrompt = [
             sceneBody ? `${sceneBody}.` : scene.summary,
+            productAction ? `Product action: ${productAction}.` : '',
             productMode ? `Product mode: ${productMode}.` : '',
             talentMode ? `Talent mode: ${talentMode}.` : '',
             dialogue ? `Dialogue cue for performance timing: "${dialogue}".` : '',
@@ -688,14 +683,15 @@ export function flattenYoloPlanVariants(plan = []) {
           ]
             .filter(Boolean)
             .join(' ')
-          const keyframeMoment = extractKeyframeMoment(imageBeat || scene?.summary || sceneBody)
+          const keyframePrompt = compactPromptText(imageBeat || scene?.summary || sceneBody)
           const storyboardPrompt = [
             `Single cinematic keyframe still for ${scene.id} ${shot.id}.`,
             sceneBody ? `Scene context: ${sceneBody}.` : '',
             adBeat ? `Commercial beat: ${adBeat}.` : '',
+            productAction ? `Product action: ${productAction}.` : '',
             productMode ? `Product mode: ${productMode}.` : '',
             talentMode ? `Talent mode: ${talentMode}.` : '',
-            keyframeMoment ? `Capture this exact moment: ${keyframeMoment}.` : '',
+            keyframePrompt ? `Use this full keyframe prompt: ${keyframePrompt}.` : '',
             `Camera framing: ${String(angle || 'medium shot').toLowerCase()}.`,
             cameraDirection ? `Camera treatment: ${cameraDirection}.` : '',
             textOverlay ? `Reserve clean negative space for editor-native text overlay: "${textOverlay}". Do not render the words into the image.` : '',
@@ -721,10 +717,11 @@ export function flattenYoloPlanVariants(plan = []) {
             angle,
             take,
             durationSeconds: shot.durationSeconds,
-            prompt: sanitizeSnippet(videoPrompt, 1100),
-            videoPrompt: sanitizeSnippet(videoPrompt, 1100),
-            storyboardPrompt: sanitizeSnippet(storyboardPrompt, 1100),
+            prompt: compactPromptText(videoPrompt),
+            videoPrompt: compactPromptText(videoPrompt),
+            storyboardPrompt: compactPromptText(storyboardPrompt),
             adBeat,
+            productAction,
             productMode,
             talentMode,
             textOverlay,

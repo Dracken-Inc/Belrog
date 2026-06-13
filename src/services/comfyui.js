@@ -2217,21 +2217,31 @@ export function modifyOpenAIGPTImage2Workflow(workflow, options = {}) {
   const {
     prompt = '',
     inputImage = '',
+    referenceImages = [],
     seed = Math.floor(Math.random() * 1000000000000),
     width = 1024,
     height = 1024,
     model = 'gpt-image-2',
     quality = null,
+    useCustomSize = false,
+    minimumCustomSize = false,
     filenamePrefix = 'image/gpt_image_2',
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
   const requestedWidth = Math.max(256, Math.round(Number(width) || 1024))
   const requestedHeight = Math.max(256, Math.round(Number(height) || 1024))
-  const size = resolveOpenAIGPTImage2Size(requestedWidth, requestedHeight)
-  if (size !== `${requestedWidth}x${requestedHeight}`) {
+  const customSize = minimumCustomSize
+    ? resolveOpenAIGPTImage2MinimumCustomSize(requestedWidth, requestedHeight)
+    : { width: requestedWidth, height: requestedHeight }
+  const size = useCustomSize ? 'Custom' : resolveOpenAIGPTImage2Size(requestedWidth, requestedHeight)
+  if (!useCustomSize && size !== `${requestedWidth}x${requestedHeight}`) {
     console.warn(`[modifyOpenAIGPTImage2Workflow] Unsupported size ${requestedWidth}x${requestedHeight}; mapped to ${size}`)
   }
+  const referenceImageList = (Array.isArray(referenceImages) ? referenceImages : [])
+    .map((filename) => String(filename || '').trim())
+    .filter(Boolean)
+  const usesReferenceBatch = referenceImageList.length > 0
 
   for (const node of Object.values(modified)) {
     if (!node?.inputs) continue
@@ -2240,6 +2250,8 @@ export function modifyOpenAIGPTImage2Workflow(workflow, options = {}) {
       if ('prompt' in node.inputs && typeof node.inputs.prompt === 'string') node.inputs.prompt = prompt
       if ('seed' in node.inputs) node.inputs.seed = seed
       if ('size' in node.inputs) node.inputs.size = size
+      if (useCustomSize && 'custom_width' in node.inputs) node.inputs.custom_width = customSize.width
+      if (useCustomSize && 'custom_height' in node.inputs) node.inputs.custom_height = customSize.height
       if ('model' in node.inputs) node.inputs.model = model
       if (quality && 'quality' in node.inputs) node.inputs.quality = quality
     }
@@ -2248,13 +2260,17 @@ export function modifyOpenAIGPTImage2Workflow(workflow, options = {}) {
       node.inputs.string = prompt
     }
 
-    if (inputImage && node.class_type === 'LoadImage' && 'image' in node.inputs) {
+    if (inputImage && !usesReferenceBatch && node.class_type === 'LoadImage' && 'image' in node.inputs) {
       node.inputs.image = inputImage
     }
 
     if (node.class_type === 'SaveImage' && 'filename_prefix' in node.inputs) {
       node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/gpt_image_2'
     }
+  }
+
+  if (usesReferenceBatch) {
+    applyOpenAIGPTImage2ReferenceBatch(modified, referenceImageList)
   }
 
   return modified
@@ -2299,9 +2315,63 @@ function resolveOpenAIGPTImage2Size(width, height) {
   return `${best.width}x${best.height}`
 }
 
-function resolveSeedanceResolution(height) {
-  const numericHeight = Number(height)
-  return Number.isFinite(numericHeight) && numericHeight >= 1080 ? '1080p' : '720p'
+function resolveOpenAIGPTImage2MinimumCustomSize(width, height) {
+  const w = Math.max(256, Math.round(Number(width) || 1024))
+  const h = Math.max(256, Math.round(Number(height) || 1024))
+  const ratio = w / h
+  if (ratio > 1.1) return { width: 1824, height: 1024 }
+  if (ratio < 0.9) return { width: 1024, height: 1824 }
+  return { width: 1024, height: 1024 }
+}
+
+function applyOpenAIGPTImage2ReferenceBatch(workflow, referenceImages) {
+  const filenames = (Array.isArray(referenceImages) ? referenceImages : [])
+    .map((filename) => String(filename || '').trim())
+    .filter(Boolean)
+  if (filenames.length === 0) return
+
+  const batchEntry = Object.entries(workflow).find(([, node]) => (
+    node?.class_type === 'BatchImagesNode' &&
+    Object.keys(node.inputs || {}).some((key) => /^images\.image\d+$/.test(key))
+  ))
+
+  if (!batchEntry) {
+    let index = 0
+    for (const node of Object.values(workflow)) {
+      if (node?.class_type !== 'LoadImage' || !node.inputs || !('image' in node.inputs)) continue
+      node.inputs.image = filenames[Math.min(index, filenames.length - 1)]
+      index += 1
+    }
+    return
+  }
+
+  const [, batchNode] = batchEntry
+  const batchInputKeys = Object.keys(batchNode.inputs || {})
+    .filter((key) => /^images\.image\d+$/.test(key))
+    .sort((a, b) => Number(a.match(/\d+$/)?.[0] || 0) - Number(b.match(/\d+$/)?.[0] || 0))
+
+  batchInputKeys.forEach((inputKey, index) => {
+    const filename = filenames[index]
+    if (!filename) {
+      delete batchNode.inputs[inputKey]
+      return
+    }
+    const link = batchNode.inputs[inputKey]
+    if (!Array.isArray(link)) return
+    const loadNode = workflow[String(link[0])]
+    if (loadNode?.class_type === 'LoadImage' && loadNode.inputs && 'image' in loadNode.inputs) {
+      loadNode.inputs.image = filename
+    }
+  })
+}
+
+function resolveSeedanceResolution(width, height) {
+  // Seedance's resolution tier ("720p"/"1080p") is keyed to the SHORT side, not
+  // the literal height. For portrait 9:16, "720p" is 720x1280 — keying off height
+  // (1280) wrongly rounds up to 1080p. Use the short side so portrait, landscape,
+  // and square all map to the tier the user actually selected.
+  const shortSide = Math.min(Number(width) || 0, Number(height) || 0)
+  return shortSide >= 1080 ? '1080p' : '720p'
 }
 
 function applySeedanceCommonInputs(node, {
@@ -2314,7 +2384,7 @@ function applySeedanceCommonInputs(node, {
 }) {
   if (!node?.inputs) return
   if ('model.prompt' in node.inputs) node.inputs['model.prompt'] = prompt
-  if ('model.resolution' in node.inputs) node.inputs['model.resolution'] = resolveSeedanceResolution(height)
+  if ('model.resolution' in node.inputs) node.inputs['model.resolution'] = resolveSeedanceResolution(width, height)
   if ('model.ratio' in node.inputs) node.inputs['model.ratio'] = resolveClosestAspectRatio(width, height)
   if ('model.duration' in node.inputs) node.inputs['model.duration'] = Math.max(1, Math.round(Number(duration) || 5))
   if ('model.generate_audio' in node.inputs) node.inputs['model.generate_audio'] = Boolean(generateAudio)
@@ -2342,6 +2412,12 @@ export function modifySeedance2Workflow(workflow, options = {}) {
     assetFilenames.referenceImage2,
     assetFilenames.referenceImage3,
     assetFilenames.referenceImage4,
+  ]
+  const referenceAudios = [
+    assetFilenames.referenceAudio1,
+    assetFilenames.referenceAudio2,
+    assetFilenames.referenceAudio3,
+    assetFilenames.referenceAudio4,
   ]
 
   for (const [nodeId, node] of Object.entries(modified)) {
@@ -2375,6 +2451,16 @@ export function modifySeedance2Workflow(workflow, options = {}) {
           if (!Array.isArray(node.inputs[inputKey])) return
           const loadNode = modified[String(node.inputs[inputKey][0])]
           if (loadNode?.inputs && 'image' in loadNode.inputs) loadNode.inputs.image = filename
+        })
+        referenceAudios.forEach((filename, index) => {
+          const inputKey = `model.reference_audios.audio_${index + 1}`
+          if (!filename) {
+            if (inputKey in node.inputs) delete node.inputs[inputKey]
+            return
+          }
+          if (!Array.isArray(node.inputs[inputKey])) return
+          const loadNode = modified[String(node.inputs[inputKey][0])]
+          if (loadNode?.inputs && 'audio' in loadNode.inputs) loadNode.inputs.audio = filename
         })
       }
     }

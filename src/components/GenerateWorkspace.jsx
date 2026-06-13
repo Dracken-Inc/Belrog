@@ -10,6 +10,8 @@ import ImageAnnotationModal from './ImageAnnotationModal'
 import ConfirmDialog from './ConfirmDialog'
 import ApiKeyDialog from './ApiKeyDialog'
 import AdEasyMode from './generate/AdEasyMode'
+import BusinessAdCreator from './generate/BusinessAdCreator'
+import UGCAdCreator from './generate/UGCAdCreator'
 import MusicVideoEasyMode from './generate/MusicVideoEasyMode'
 import ShortFilmEasyMode from './generate/ShortFilmEasyMode'
 import WorkflowBrowser from './generate/WorkflowBrowser'
@@ -62,9 +64,11 @@ import {
   CUSTOM_MUSIC_VIDEO_WORKFLOW_ID,
   DIRECTOR_MODE_BETA_LABEL,
   GENERATED_ASSET_FOLDERS,
+  GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID,
   HARDWARE_TIERS,
   NON_TERMINAL_JOB_STATUSES,
   SHOT_CATEGORIES,
+  SEEDANCE_UGC_VIDEO_WORKFLOW_ID,
   WORKFLOWS,
   YOLO_AD_CAMERA_CHIP_OPTIONS,
   YOLO_AD_COMMERCIAL_BEAT_OPTIONS,
@@ -134,6 +138,7 @@ const STORYBOARD_REFERENCE_WORKFLOW_IDS = new Set([
   'image-edit',
   'nano-banana-2',
   'nano-banana-pro',
+  GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID,
   CUSTOM_AD_KEYFRAME_WORKFLOW_ID,
   'image-edit-model-product',
   'seedream-5-lite-image-edit',
@@ -779,6 +784,19 @@ function buildDirectorAssetDisplayName(directorMeta, workflowId = '') {
   })()
   const workflowToken = getDirectorWorkflowShortToken(directorMeta?.workflowId || workflowId, directorMeta?.stage)
 
+  // Ads (UGC / Business) are single-scene by nature, so drop the scene token and
+  // lead with the shot. The shot number lives after "SH" in shotId (e.g. "S1_SH2"
+  // -> "2"); the generic first-digit match used above grabs the scene number, which
+  // is why every ad shot was coming out as SH01. Music video and short film keep the
+  // scene token and their existing behavior untouched.
+  if (directorMeta?.mode === 'ad') {
+    const adShotNumber = String(directorMeta?.shotId || '').match(/sh(\d+)/i)?.[1] || ''
+    const adShotToken = adShotNumber ? `SH${adShotNumber.padStart(2, '0')}` : shotToken
+    return [adShotToken, angleToken, takeToken, passToken, workflowToken]
+      .filter(Boolean)
+      .join('_')
+  }
+
   return [sceneToken, shotToken, angleToken, takeToken, passToken, workflowToken]
     .filter(Boolean)
     .join('_')
@@ -955,6 +973,86 @@ function buildAdVideoPromptWithNoTextGuard(prompt = '', options = {}) {
     .replace(/\s{2,}/g, ' ')
     .trim()
   return [cleaned, AD_VIDEO_NO_TEXT_GUARD].filter(Boolean).join(' ')
+}
+
+function stripUgcDialogueQuotes(value = '') {
+  return String(value || '').trim().replace(/^["“”]+|["“”]+$/g, '').trim()
+}
+
+function isSilentUgcDialogue(value = '') {
+  return /^(?:no\s+spoken\s+line|no\s+spoken\s+dialogue|no\s+dialogue|silent)\b/i.test(stripUgcDialogueQuotes(value))
+}
+
+function extractUgcDialogueFromText(value = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const patterns = [
+    /creator\s*dialogue\s*:\s*(.+?)(?=\s+(?:product\s*action|camera\s*mode|keyframe\s*prompt|motion\s*prompt|duration)\s*:|$)/i,
+    /dialogue\s+cue\s+for\s+performance\s+timing\s*:\s*["“]([^"”]+)["”]/i,
+    /spoken\s+dialogue\s+exactly\s*:\s*["“]([^"”]+)["”]/i,
+    /(?:creator|spokesperson)\s+(?:says|speaks|lip-syncs)[^"“]*["“]([^"”]+)["”]/i,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    const candidate = stripUgcDialogueQuotes(match?.[1] || '')
+    if (candidate && !isSilentUgcDialogue(candidate)) return candidate
+  }
+  return ''
+}
+
+function extractUgcDialogueFromVariant(variant = {}) {
+  const direct = stripUgcDialogueQuotes(variant?.dialogue || '')
+  if (direct && !isSilentUgcDialogue(direct)) return direct
+  const sources = [
+    variant?.videoPrompt,
+    variant?.prompt,
+    variant?.angle,
+    variant?.storyboardPrompt,
+  ]
+  for (const source of sources) {
+    const candidate = extractUgcDialogueFromText(source)
+    if (candidate) return candidate
+  }
+  return ''
+}
+
+function removeUgcDialogueFragments(value = '') {
+  return String(value || '')
+    .replace(/creator\s*dialogue\s*:\s*.+?(?=\s+(?:product\s*action|camera\s*mode|keyframe\s*prompt|motion\s*prompt|duration)\s*:|$)/gi, ' ')
+    .replace(/dialogue\s+cue\s+for\s+performance\s+timing\s*:\s*["“][^"”]+["”]\.?/gi, ' ')
+    .replace(/spoken\s+dialogue\s+exactly\s*:\s*["“][^"”]+["”]\.?/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+// UGC + LTX 2.3 ONLY. LTX 2.3 is audio-native: it generates the spoken audio
+// (and lip motion) from its text prompt, so any sentence-like text in the prompt
+// can get VOCALIZED by the creator. The UGC director-script "Scene context:" line
+// carries marketing copy — an audience descriptor plus Hook / Core reason to care
+// / Proof moment / CTA / Destination — and that copy is prepended to every shot's
+// video prompt. The result: the creator says the real line and then keeps talking,
+// reading the brief aloud (e.g. the line, then "...A lightweight face lotion that
+// makes..."). This strips those marketing fields so LTX speaks only the shot's own
+// dialogue line. It KEEPS the visual/identity fields (Product, Setting, Visual
+// rules, Creator direction, Tone) and everything after the scene context (product
+// action, talent mode, the dialogue cue, the motion beat, camera).
+//
+// Only ever invoked from the gated UGC-LTX branch in queueYoloVideoVariants, so
+// Seedance, WAN 2.2, the music-video creator, short film, the Business creator,
+// and keyframes are untouched. Each label match requires a FOLLOWING label (no
+// `$` fallback) so a malformed/reordered scene context fails safe — it leaves the
+// fragment rather than deleting the rest of the prompt. The quoted dialogue line
+// itself is intentionally preserved: audio-native LTX needs it in the prompt to
+// speak the line (the pre-existing removeUgcDialogueFragments does not strip a
+// script-quoted line, which is what lets LTX say it at all).
+function removeUgcSceneBriefFragments(value = '') {
+  return String(value || '')
+    // Marketing-copy fields LTX would otherwise speak as extra dialogue.
+    .replace(/\b(?:hook|core\s+reason\s+to\s+care|reason\s+to\s+care|proof\s+moment|cta|call\s+to\s+action|destination)\s*:\s*.+?(?=\s+(?:product\s*action|product\s*mode|talent\s*mode|camera\s*mode|camera\s*direction|shot\s*type|keyframe\s*prompt|motion\s*prompt|duration|core\s+reason\s+to\s+care|reason\s+to\s+care|proof\s+moment|cta|call\s+to\s+action|destination|setting|visual\s+rules|creator\s+direction|tone|product)\s*:)/gi, ' ')
+    // Audience descriptor that opens the scene context.
+    .replace(/\bcreator-style\s+vertical\s+ugc\s+for\s+.+?(?=\s+product\s*:)/gi, 'Creator-style vertical UGC.')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 function buildAdVideoNegativePrompt(baseNegativePrompt = '') {
@@ -3950,7 +4048,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             ? 'music'
             : 'ad'
       )
-      if (manifest.id === 'product-ad-easy-mode') {
+      if (manifest.id === 'product-ad-easy-mode' || manifest.id === 'business-ad-creator' || manifest.id === 'ugc-ad-creator') {
         setYoloAdStoryboardSource('cloud')
         setYoloAdStoryboardTier('quality')
         setYoloAdVideoSource('local')
@@ -4177,6 +4275,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const isAdEasyMode = generationMode === 'yolo'
     && yoloCreationType === 'ad'
     && selectedWorkflowManifest?.id === 'product-ad-easy-mode'
+  const isBusinessAdCreator = generationMode === 'yolo'
+    && yoloCreationType === 'ad'
+    && selectedWorkflowManifest?.id === 'business-ad-creator'
+  const isUgcAdCreator = generationMode === 'yolo'
+    && yoloCreationType === 'ad'
+    && selectedWorkflowManifest?.id === 'ugc-ad-creator'
+  const ActiveAdEasyComponent = isUgcAdCreator ? UGCAdCreator : isBusinessAdCreator ? BusinessAdCreator : AdEasyMode
   // Active-target plan for music mode: null id → master, otherwise the alt
   // slot's own plan[]. Defined inline here (instead of reusing the richer
   // yoloMusicActiveAltScript memo below) to avoid a declaration-order
@@ -8590,6 +8695,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     const workflowId = String(options?.workflowId || yoloAdLocalVideoWorkflowId || yoloDefaultVideoWorkflowId || '').trim()
     const workflowLabel = String(options?.workflowLabel || getWorkflowDisplayLabel(workflowId) || 'Video pass').trim()
+    const includeLinkedVideoAudio = Boolean(options?.includeLinkedVideoAudio)
+    const linkedVideoAudioTrackName = String(options?.linkedVideoAudioTrackName || 'Ad - Clip Audio').trim() || 'Ad - Clip Audio'
     const timelineResolution = {
       width: Number(options?.resolution?.width || resolution.width) || null,
       height: Number(options?.resolution?.height || resolution.height) || null,
@@ -8621,6 +8728,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
 
     const latestVideoAssetByKey = new Map()
+    // Cross-model fallback: most recent ready video per shot variant, regardless of
+    // which video model produced it. Lets a mixed Seedance / LTX / WAN ad assemble
+    // fully instead of only the currently-selected model's clips.
+    const latestVideoAssetByVariantKey = new Map()
     for (const asset of assets || []) {
       if (asset?.type !== 'video') continue
       if (asset?.yolo?.mode === 'music' || asset?.yolo?.stage !== 'video') continue
@@ -8638,6 +8749,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         const existingTime = existing ? new Date(existing.createdAt || 0).getTime() : -1
         if (!existing || assetTime >= existingTime) latestVideoAssetByKey.set(key, asset)
       }
+      if (variantKey) {
+        const existingVar = latestVideoAssetByVariantKey.get(variantKey)
+        const existingVarTime = existingVar ? new Date(existingVar.createdAt || 0).getTime() : -1
+        if (!existingVar || assetTime >= existingVarTime) latestVideoAssetByVariantKey.set(variantKey, asset)
+      }
     }
 
     const fps = Number(useTimelineStore.getState().timelineFps) || Number(timelineFps) || Number(yoloVideoFps) || 24
@@ -8654,7 +8770,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           ? latestVideoAssetByKey.get(workflowScopedKey) || null
           : null
         const fallbackAsset = variant?.key ? latestVideoAssetByKey.get(variant.key) || null : null
-        const selectedAsset = videoAsset || fallbackAsset
+        // Prefer the selected model's clip; otherwise place the most recent clip from
+        // any model so mixed-model ads (e.g. Seedance talking shots + LTX/WAN b-roll)
+        // assemble completely instead of leaving gaps.
+        const crossModelAsset = variant?.key ? latestVideoAssetByVariantKey.get(variant.key) || null : null
+        const selectedAsset = videoAsset || fallbackAsset || crossModelAsset
         if (!variant || !selectedAsset) {
           missingRows.push({ scene, shot, variant })
           cursor += requestedDuration
@@ -8730,18 +8850,31 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
 
     let insertedVideoClips = 0
+    let insertedLinkedVideoAudioClips = 0
     const videoTrack = getOrCreateTrack('video', trackName)
     if (!videoTrack) {
       const message = 'Could not create an ad video track on the timeline.'
       setFormError(message)
       return { ok: false, message }
     }
+    const linkedVideoAudioTrack = includeLinkedVideoAudio
+      ? getOrCreateTrack('audio', linkedVideoAudioTrackName, { channels: 'stereo' })
+      : null
     for (const row of rows) {
+      const shouldAddLinkedVideoAudio = Boolean(
+        linkedVideoAudioTrack
+        && row.asset?.audioEnabled !== false
+        && row.asset?.hasAudio !== false
+      )
+      const linkGroupId = shouldAddLinkedVideoAudio
+        ? `link-ugc-assembly-${row.asset?.id || 'asset'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        : undefined
       const clip = timelineAddClip(videoTrack.id, row.asset, row.startTime, fps, {
         duration: row.duration,
         saveHistory: false,
         selectAfterAdd: false,
         resolveOverlaps: false,
+        ...(linkGroupId ? { linkGroupId } : {}),
         metadata: {
           adTimelineAssembly: {
             mode: AD_TIMELINE_ASSEMBLY_MODE,
@@ -8758,7 +8891,37 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           },
         },
       })
-      if (clip) insertedVideoClips += 1
+      if (clip) {
+        insertedVideoClips += 1
+        if (shouldAddLinkedVideoAudio) {
+          const audioAsset = { ...row.asset, type: 'audio' }
+          const audioClip = timelineAddClip(linkedVideoAudioTrack.id, audioAsset, clip.startTime, fps, {
+            duration: clip.duration,
+            trimStart: clip.trimStart || 0,
+            trimEnd: clip.trimEnd,
+            saveHistory: false,
+            selectAfterAdd: false,
+            resolveOverlaps: false,
+            linkGroupId,
+            metadata: {
+              adTimelineAssembly: {
+                mode: AD_TIMELINE_ASSEMBLY_MODE,
+                kind: 'generated-video-audio',
+                assembledAt,
+                workflowId,
+                workflowLabel,
+                sceneId: row.scene?.id || '',
+                shotId: row.shot?.id || '',
+                variantKey: row.variant?.key || '',
+                assetId: row.asset?.id || '',
+                startTime: clip.startTime,
+                length: clip.duration,
+              },
+            },
+          })
+          if (audioClip) insertedLinkedVideoAudioClips += 1
+        }
+      }
     }
 
     let insertedAudioClips = 0
@@ -8788,6 +8951,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     const message = [
       `Assembled ${insertedVideoClips} ${workflowLabel} ad video clip${insertedVideoClips === 1 ? '' : 's'}`,
+      insertedLinkedVideoAudioClips > 0 ? `${insertedLinkedVideoAudioClips} linked clip audio${insertedLinkedVideoAudioClips === 1 ? '' : 's'}` : '',
       insertedAudioClips > 0 ? 'voiceover audio' : '',
       `in "${timelineResult.timelineName}"`,
       `on ${trackName}`,
@@ -8804,6 +8968,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       message,
       insertedVideoClips,
       insertedAudioClips,
+      insertedLinkedVideoAudioClips,
       missingCount: missingRows.length,
       replacedCount: previousAssemblyClipIds.length,
       timelineName: timelineResult.timelineName,
@@ -9173,9 +9338,15 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       modelAssetIdOverride = undefined,
       resolutionOverride = null,
       storyboardWorkflowIdOverride = '',
+      storyboardReferenceAssetIdsOverride = [],
     } = options
 
     const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
+    const normalizedStoryboardReferenceAssetIds = Array.from(new Set(
+      (Array.isArray(storyboardReferenceAssetIdsOverride) ? storyboardReferenceAssetIdsOverride : [])
+        .map((assetId) => String(assetId || '').trim())
+        .filter(Boolean)
+    ))
     if (!Array.isArray(variants) || variants.length === 0) {
       setFormError('No queueable shots. Build a plan first.')
       return 0
@@ -9221,6 +9392,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return Number.isFinite(parsed) ? parsed : fallback
     }
     const usesModelProductStoryboardWorkflow = effectiveStoryboardWorkflowId === 'image-edit-model-product'
+    const usesGptImage2UgcStoryboardWorkflow = effectiveStoryboardWorkflowId === GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID
     const usesCustomAdStoryboardWorkflow = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
     const usesQwenMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === 'image-edit'
     const usesCustomMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
@@ -9262,6 +9434,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         setFormError(`${usesCustomMusicStoryboardWorkflow ? 'Custom keyframe workflows' : 'Qwen Image Edit'} need a cast/reference image. Add at least one person in the Music Video People step, or switch keyframes to Nano Banana 2.`)
         return 0
       }
+    }
+    if (usesGptImage2UgcStoryboardWorkflow && normalizedStoryboardReferenceAssetIds.length === 0) {
+      setFormError('GPT Image 2 UGC keyframes need at least one creator, product, or environment reference image.')
+      return 0
     }
     const effectiveAdProductAsset = productAssetIdOverride !== undefined
       ? (assets.find((asset) => asset?.id === productAssetIdOverride) || null)
@@ -9333,6 +9509,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const storyboardReferenceAssetId2 = isYoloMusicMode
         ? (usesReferenceMusicStoryboardWorkflow ? null : musicReferenceAssetId2)
         : (effectiveAdModelAsset?.id || null)
+      const storyboardAssetFieldIds = usesGptImage2UgcStoryboardWorkflow
+        ? normalizedStoryboardReferenceAssetIds.slice(0, 3).reduce((acc, assetId, refIndex) => {
+            acc[`referenceImage${refIndex + 1}`] = assetId
+            return acc
+          }, {})
+        : {}
       return createQueuedJob({
         category: 'image',
         workflowId: effectiveStoryboardWorkflowId,
@@ -9352,6 +9534,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         // edit input, so only additional cast images go into reference slots.
         referenceAssetId1: storyboardReferenceAssetId1,
         referenceAssetId2: storyboardReferenceAssetId2,
+        ...(Object.keys(storyboardAssetFieldIds).length > 0 ? { assetFieldIds: storyboardAssetFieldIds } : {}),
         directorLabel: yoloQueueNameLabel,
         customWorkflow: usesCustomStoryboardWorkflow
           ? {
@@ -9436,6 +9619,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       modelAssetIdOverride = undefined,
       resolutionOverride = null,
       storyboardWorkflowIdOverride = '',
+      storyboardReferenceAssetIdsOverride = [],
     } = options || {}
     const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
     const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
@@ -9501,6 +9685,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       modelAssetIdOverride,
       resolutionOverride,
       storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
+      storyboardReferenceAssetIdsOverride,
     })
   }, [
     assets,
@@ -9527,6 +9712,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride = undefined,
       modelAssetIdOverride = undefined,
       storyboardWorkflowIdOverride = '',
+      storyboardReferenceAssetIdsOverride = [],
     } = options || {}
     const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
     const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
@@ -9593,6 +9779,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride,
       modelAssetIdOverride,
       storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
+      storyboardReferenceAssetIdsOverride,
     })
   }, [
     assets,
@@ -9618,6 +9805,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride = undefined,
       modelAssetIdOverride = undefined,
       storyboardWorkflowIdOverride = '',
+      storyboardReferenceAssetIdsOverride = [],
     } = options || {}
     const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
     const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
@@ -9695,6 +9883,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       productAssetIdOverride,
       modelAssetIdOverride,
       storyboardWorkflowIdOverride: effectiveStoryboardWorkflowId,
+      storyboardReferenceAssetIdsOverride,
     })
   }, [
     assets,
@@ -9722,7 +9911,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       suppressEmptyError = false,
       sourceLabel = `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel.toLowerCase()} video pass`,
       resolutionOverride = null,
+      videoReferenceAssetIds = [],
     } = options
+    const normalizedVideoReferenceAssetIds = Array.from(new Set(
+      (Array.isArray(videoReferenceAssetIds) ? videoReferenceAssetIds : [])
+        .map((assetId) => String(assetId || '').trim())
+        .filter(Boolean)
+    ))
 
     if (!Array.isArray(variants) || variants.length === 0) {
       if (!suppressEmptyError) setFormError('No queueable shots. Build a plan first.')
@@ -9731,10 +9926,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     const adVariantNeedsLipSync = (variant) => {
       if (isYoloMusicMode) return false
+      if (isUgcAdCreator || isBusinessAdCreator) return false
       if (!yoloAdVoiceoverAssetId) return false
       const talent = String(variant?.talentMode || '').toLowerCase()
       const hasTalkingTalent = talent.includes('spokesperson') || talent.includes('testimonial')
-      return hasTalkingTalent && Boolean(String(variant?.dialogue || '').trim())
+      return hasTalkingTalent && Boolean(String(variant?.dialogue || '').trim()) && !isSilentUgcDialogue(variant?.dialogue)
     }
     const resolveVariantWorkflowId = (variant) => (
       adVariantNeedsLipSync(variant) ? MUSIC_VIDEO_SHOT_WORKFLOW_ID : workflowId
@@ -9797,6 +9993,16 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const customVideoWorkflowName = yoloMusicCustomVideoWorkflow?.name || 'Custom Workflow'
       const isAdLipSyncShot = !isYoloMusicMode && effectiveWorkflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID
       const variantScopedKey = buildVideoVariantKey(variant.key, effectiveWorkflowId)
+      const isSeedanceUgcVideo = !isYoloMusicMode && effectiveWorkflowId === SEEDANCE_UGC_VIDEO_WORKFLOW_ID
+      const videoAssetFieldIds = isSeedanceUgcVideo
+        ? normalizedVideoReferenceAssetIds
+          .filter((assetId) => assetId !== storyboardAsset.id)
+          .slice(0, 3)
+          .reduce((acc, assetId, index) => {
+            acc[`referenceImage${index + 2}`] = assetId
+            return acc
+          }, {})
+        : {}
       // Same set as yoloSelectedVideoWorkflowSupportsCustomFps — only
       // workflows whose modify*Workflow helper accepts an fps input
       // get the user's YOLO FPS setting; cloud providers ignore it.
@@ -9828,10 +10034,47 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceImagePrompt: variant.storyboardPrompt || variant.prompt,
       }) : null
 
+      const adVideoPromptSource = !isYoloMusicMode
+        ? removeUgcDialogueFragments(variant.videoPrompt || variant.prompt)
+        : ''
+      // UGC + LTX 2.3 ONLY. LTX 2.3 is audio-native and speaks sentence-like text
+      // from its prompt, so the marketing copy in the shared scene context (audience
+      // descriptor, Hook, Core reason to care, Proof moment, CTA, Destination) gets
+      // read aloud after the real line. Strip those fields for this path only so the
+      // creator speaks just the shot's dialogue. The gate excludes Seedance
+      // (SEEDANCE_UGC_VIDEO_WORKFLOW_ID), WAN 2.2 (wan22-i2v), the music-video
+      // creator (isYoloMusicMode / MUSIC_VIDEO_SHOT_WORKFLOW_ID), short film
+      // (separate handleQueueShortFilmVideos path), and the Business creator
+      // (isUgcAdCreator). See removeUgcSceneBriefFragments for the rationale.
+      const isUgcLtxAdVideo = isUgcAdCreator && !isYoloMusicMode && effectiveWorkflowId === 'ltx23-i2v'
+      const adVideoPromptCleanSource = isUgcLtxAdVideo
+        ? removeUgcSceneBriefFragments(adVideoPromptSource)
+        : adVideoPromptSource
       const adVideoPrompt = !isYoloMusicMode
-        ? buildAdVideoPromptWithNoTextGuard(variant.videoPrompt || variant.prompt, {
+        ? buildAdVideoPromptWithNoTextGuard(adVideoPromptCleanSource, {
           omitTerms: [yoloAdBrandName, yoloAdProductName],
         })
+        : null
+      const seedanceUgcDialogue = isSeedanceUgcVideo ? extractUgcDialogueFromVariant(variant) : ''
+      const seedanceUgcVisualPrompt = isSeedanceUgcVideo
+        ? buildAdVideoPromptWithNoTextGuard([
+          removeUgcDialogueFragments(variant.videoPrompt || variant.prompt),
+          variant.productAction ? `Product action: ${variant.productAction}.` : '',
+        ].filter(Boolean).join(' '), {
+          omitTerms: [yoloAdBrandName, yoloAdProductName],
+        })
+        : null
+      const seedanceUgcPrompt = isSeedanceUgcVideo
+        ? [
+          `Create only this UGC video shot: ${variant.sceneId || 'Scene'} ${variant.shotId || 'Shot'}.`,
+          'Use the provided keyframe and references for identity, product, and environment continuity.',
+          'Do not include dialogue, actions, or cuts from any other shot.',
+          seedanceUgcVisualPrompt,
+          seedanceUgcDialogue
+            ? `Spoken dialogue exactly: "${seedanceUgcDialogue}". Do not say any other words.`
+            : 'No spoken dialogue. Keep the creator natural without talking.',
+          'Keep it authentic, handheld phone-shot UGC. Do not add captions, subtitles, UI text, or on-screen words.',
+        ].filter(Boolean).join(' ')
         : null
       jobs.push(createQueuedJob({
         category: 'video',
@@ -9843,7 +10086,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         inputAssetId: storyboardAsset.id,
         inputAssetName: storyboardAsset.name || variant.key,
         inputFromTimelineFrame: false,
-        prompt: musicShotPayload?.shotPrompt || adVideoPrompt || variant.videoPrompt || variant.prompt,
+        prompt: musicShotPayload?.shotPrompt || seedanceUgcPrompt || adVideoPrompt || variant.videoPrompt || variant.prompt,
         negativePrompt: !isYoloMusicMode
           ? buildAdVideoNegativePrompt(negativePrompt)
           : buildMusicVideoNegativePrompt(negativePrompt, musicShotPayload?.shotType),
@@ -9853,6 +10096,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         resolution: videoResolution,
         referenceAssetId1: null,
         referenceAssetId2: null,
+        ...(Object.keys(videoAssetFieldIds).length > 0 ? { assetFieldIds: videoAssetFieldIds } : {}),
+        ...(isSeedanceUgcVideo ? { generateAudio: true } : {}),
         directorLabel: yoloQueueNameLabel,
         // Carry the song audio asset id + mode-specific audio metadata so runJob
         // can upload it once per job and pass the uploaded filename into the
@@ -9878,6 +10123,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           take: variant.take,
           durationSeconds: variant.durationSeconds,
           adBeat: !isYoloMusicMode ? (variant.adBeat || '') : '',
+          productAction: !isYoloMusicMode ? (variant.productAction || '') : '',
           productMode: !isYoloMusicMode ? (variant.productMode || '') : '',
           talentMode: !isYoloMusicMode ? (variant.talentMode || '') : '',
           textOverlay: !isYoloMusicMode ? (variant.textOverlay || '') : '',
@@ -9926,6 +10172,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     createQueuedJob,
     generationQueue,
     getExistingYoloStageKeys,
+    isBusinessAdCreator,
+    isUgcAdCreator,
     isYoloMusicMode,
     negativePrompt,
     seed,
@@ -9958,6 +10206,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       allowExistingDoneKeys = false,
       targetWorkflowIds = null,
       resolutionOverride = null,
+      videoReferenceAssetIds = [],
     } = options || {}
     if (!isConnected) {
       setFormError('ComfyUI is not connected yet. Start ComfyUI, then queue videos.')
@@ -10021,6 +10270,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         skipConfirm: skipConfirm || targets.length > 1,
         suppressEmptyError: targets.length > 1,
         resolutionOverride,
+        videoReferenceAssetIds,
         sourceLabel: targets.length > 1
           ? `${sourceLabel} (${getWorkflowDisplayLabel(targetWorkflowId)})`
           : sourceLabel,
@@ -10161,6 +10411,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       skipStaleCheck = false,
       targetWorkflowIds = null,
       resolutionOverride = null,
+      videoReferenceAssetIds = [],
     } = options || {}
     if (!isConnected) return
     if (yoloActivePlanIsStale && !skipStaleCheck) {
@@ -10213,6 +10464,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         skipConfirm: true,
         suppressEmptyError: targets.length > 1,
         resolutionOverride,
+        videoReferenceAssetIds,
         sourceLabel: `Queued video re-render for ${sceneId} ${shotId} (${getWorkflowDisplayLabel(targetWorkflowId)})`,
       })
     }
@@ -11350,6 +11602,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             job.workflowId === 'nano-banana-2' ||
             job.workflowId === 'gpt-image-2-t2i' ||
             job.workflowId === 'gpt-image-2-edit' ||
+            job.workflowId === GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID ||
             job.workflowId === 'grok-text-to-image' ||
             job.workflowId === 'nano-banana-pro' ||
             job.workflowId === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID ||
@@ -11774,17 +12027,23 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           break
         case 'seedance2-t2v':
         case 'seedance2-flf2v':
-        case 'seedance2-r2v':
+        case 'seedance2-r2v': {
+          const seedanceAssetFilenames = { ...assetFieldFilenames }
+          if (job.workflowId === SEEDANCE_UGC_VIDEO_WORKFLOW_ID && uploadedFilename) {
+            seedanceAssetFilenames.referenceImage1 = uploadedFilename
+          }
           modifiedWorkflow = modifySeedance2Workflow(workflowJson, {
             prompt: job.prompt,
             width: job.resolution?.width,
             height: job.resolution?.height,
             duration: job.duration,
             seed: job.seed,
-            assetFilenames: assetFieldFilenames,
+            assetFilenames: seedanceAssetFilenames,
+            generateAudio: job.generateAudio !== undefined ? Boolean(job.generateAudio) : true,
             filenamePrefix: outputPrefix || `video/${job.workflowId}`,
           })
           break
+        }
         case 'multi-angles':
         case 'multi-angles-scene':
           modifiedWorkflow = modifyMultipleAnglesWorkflow(workflowJson, {
@@ -11894,6 +12153,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             width: job.resolution?.width,
             height: job.resolution?.height,
             filenamePrefix: peopleWizardImagePrefix || outputPrefix || 'image/gpt_image_2_edit',
+          })
+          break
+        case GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID:
+          modifiedWorkflow = modifyOpenAIGPTImage2Workflow(workflowJson, {
+            prompt: [
+              'Use the provided reference images as separate UGC anchors. When present, the order is: creator/talent, product, environment.',
+              'Preserve the creator identity and wardrobe, keep the product shape and general label placement believable, and borrow the environment lighting, room, surfaces, and color mood.',
+              'Create one clean vertical social-media keyframe. No text overlays, no subtitles, no extra people, no duplicate products, no warped hands, and no unreadable fake ad text.',
+              job.prompt,
+            ].filter(Boolean).join('\n\n'),
+            referenceImages: [
+              assetFieldFilenames.referenceImage1,
+              assetFieldFilenames.referenceImage2,
+              assetFieldFilenames.referenceImage3,
+            ],
+            seed: job.seed,
+            width: job.resolution?.width,
+            height: job.resolution?.height,
+            quality: 'medium',
+            useCustomSize: true,
+            minimumCustomSize: true,
+            filenamePrefix: outputPrefix || 'image/gpt_image_2_ugc_keyframe',
           })
           break
         case 'grok-text-to-image':
@@ -12789,8 +13070,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                       Back to create workflows
                     </button>
 
-                {isAdEasyMode ? (
-                  <AdEasyMode
+                {(isAdEasyMode || isBusinessAdCreator || isUgcAdCreator) ? (
+                  <ActiveAdEasyComponent
                     assets={assets}
                     generationQueue={generationQueue}
                     yoloActivePlan={yoloActivePlan}

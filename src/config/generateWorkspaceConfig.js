@@ -23,6 +23,8 @@ export const CATEGORY_ORDER = ['Shot', 'Movement', 'Angle', 'Lighting', 'Mood', 
 export const CUSTOM_GENERATE_IMAGE_WORKFLOW_ID = 'custom-generate-image'
 export const CUSTOM_GENERATE_VIDEO_WORKFLOW_ID = 'custom-generate-video'
 export const CUSTOM_AD_KEYFRAME_WORKFLOW_ID = 'custom-ad-keyframe'
+export const GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID = 'gpt-image-2-ugc-keyframe'
+export const SEEDANCE_UGC_VIDEO_WORKFLOW_ID = 'seedance2-r2v'
 
 export const WORKFLOWS = {
   video: [
@@ -198,6 +200,11 @@ export const YOLO_AD_LOCAL_VIDEO_WORKFLOW_OPTIONS = Object.freeze([
     label: 'WAN 2.2',
     description: 'Often stronger for product motion and physical movement. Use for product/demo variants.',
   },
+  {
+    id: SEEDANCE_UGC_VIDEO_WORKFLOW_ID,
+    label: 'Seedance 2.0',
+    description: 'Cloud UGC video pass that can generate spoken dialogue from the shot prompt.',
+  },
 ])
 
 export const YOLO_AD_FORMAT_PRESETS = Object.freeze([
@@ -352,6 +359,7 @@ const WORKFLOW_DISPLAY_LABELS = Object.freeze({
   'grok-text-to-image': 'Grok Imagine',
   'gpt-image-2-t2i': 'GPT Image 2',
   'gpt-image-2-edit': 'GPT Image 2 Edit',
+  [GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID]: 'GPT Image 2 UGC Keyframes',
   'longcat-text-to-image': 'LongCat Text to Image',
   'ernie-image-turbo': 'Ernie Image Turbo',
   'flux2-text-to-image': 'Flux 2 Text to Image',
@@ -504,6 +512,10 @@ const WORKFLOW_HARDWARE = Object.freeze({
     runtime: 'cloud',
   },
   'gpt-image-2-edit': {
+    tierId: 'cloud',
+    runtime: 'cloud',
+  },
+  [GPT_IMAGE_2_UGC_KEYFRAME_WORKFLOW_ID]: {
     tierId: 'cloud',
     runtime: 'cloud',
   },

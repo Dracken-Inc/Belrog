@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { PLAYBACK_CACHE_VERSION } from '../services/playbackCache'
 
 const SPRITE_GENERATION_CONCURRENCY = 2
 let activeSpriteGenerationCount = 0
@@ -1018,7 +1019,9 @@ export const useAssetsStore = create(
     const asset = get().assets.find(a => a.id === assetId)
     if (!asset) return null
     // Use playback cache URL when available (Flame-style: optimized for playback)
-    const useCache = !!asset.playbackCacheUrl && asset.playbackCacheStatus !== 'failed'
+    const useCache = !!asset.playbackCacheUrl
+      && asset.playbackCacheStatus === 'ready'
+      && asset.playbackCacheVersion === PLAYBACK_CACHE_VERSION
     const url = useCache ? asset.playbackCacheUrl : (asset.url || null)
     if (typeof localStorage !== 'undefined' && localStorage.getItem('comfystudio-debug-playback') === '1' && asset.type === 'video') {
       console.log('[PlaybackCache] getAssetUrl:', { assetId, useCache, urlHint: url ? (url.startsWith('file:') ? 'file:// (cache or original)' : url.slice(0, 50) + '...') : 'null' })
@@ -1029,13 +1032,14 @@ export const useAssetsStore = create(
   /**
    * Set playback cache path and URL for an asset (after transcode completes)
    */
-  setPlaybackCache: (assetId, playbackCachePath, playbackCacheUrl) => {
+  setPlaybackCache: (assetId, playbackCachePath, playbackCacheUrl, options = {}) => {
+    const playbackCacheVersion = options.version || PLAYBACK_CACHE_VERSION
     set((state) => ({
       assets: state.assets.map(a =>
-        a.id === assetId ? { ...a, playbackCachePath, playbackCacheUrl } : a
+        a.id === assetId ? { ...a, playbackCachePath, playbackCacheUrl, playbackCacheVersion } : a
       ),
       currentPreview: state.currentPreview?.id === assetId
-        ? { ...state.currentPreview, playbackCachePath, playbackCacheUrl }
+        ? { ...state.currentPreview, playbackCachePath, playbackCacheUrl, playbackCacheVersion }
         : state.currentPreview,
     }))
   },
@@ -1133,6 +1137,7 @@ export const useAssetsStore = create(
               ...a,
               playbackCacheUrl: undefined,
               playbackCachePath: undefined,
+              playbackCacheVersion: undefined,
               playbackCacheStatus: 'failed',
               playbackCacheError: reason,
             }
@@ -1143,6 +1148,7 @@ export const useAssetsStore = create(
             ...state.currentPreview,
             playbackCacheUrl: undefined,
             playbackCachePath: undefined,
+            playbackCacheVersion: undefined,
             playbackCacheStatus: 'failed',
             playbackCacheError: reason,
           }

@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import {
   X, Server, FolderOpen, Palette, Monitor, Save,
   HardDrive, Film, Keyboard, Wrench, Power,
-  KeyRound, CheckCircle2, ExternalLink,
+  KeyRound, CheckCircle2, ExternalLink, Loader2, RefreshCcw,
 } from 'lucide-react'
 import useProjectStore, { RESOLUTION_PRESETS, FPS_PRESETS } from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
+import useAssetsStore from '../stores/assetsStore'
 import { THEMES, getStoredThemeId, applyTheme } from '../config/themes'
 import { getPexelsApiKey, setPexelsApiKey } from '../services/pexelsSettings'
 import WorkflowSetupSection from './WorkflowSetupSection'
@@ -37,6 +38,11 @@ import {
   parseLocalComfyPortInput,
   saveLocalComfyConnectionPort,
 } from '../services/localComfyConnection'
+import {
+  generatePlaybackCachesForAllVideos,
+  hasUsablePlaybackCache,
+  isPlaybackCacheableVideoAsset,
+} from '../services/playbackCache'
 
 const AUTO_IMPORT_KEY = 'comfystudio-auto-import-comfy-outputs'
 const OUTPUT_DIRECTORY_SETTING_KEY = 'outputDirectory'
@@ -156,10 +162,15 @@ function GeneralTab({ initialSection = null }) {
   const [recordingHotkeyId, setRecordingHotkeyId] = useState(null)
   const [hotkeysError, setHotkeysError] = useState('')
   const [logViewerOpen, setLogViewerOpen] = useState(false)
+  const [playbackCacheConfirmOpen, setPlaybackCacheConfirmOpen] = useState(false)
+  const [playbackCacheBusy, setPlaybackCacheBusy] = useState(false)
+  const [playbackCacheProgress, setPlaybackCacheProgress] = useState({ completed: 0, total: 0, currentName: '' })
+  const [playbackCacheMessage, setPlaybackCacheMessage] = useState('')
   const currentHotkeyPresetId = useMemo(
     () => getEditorHotkeyPresetMatch(editorHotkeys),
     [editorHotkeys]
   )
+  const assets = useAssetsStore((state) => state.assets)
 
   const [autoImportComfyOutputs, setAutoImportComfyOutputs] = useState(() => {
     try {
@@ -181,6 +192,7 @@ function GeneralTab({ initialSection = null }) {
     showHeroBackground,
     setShowHeroBackground,
     currentProject,
+    currentProjectHandle,
     closeProject,
     defaultResolution,
     defaultFps,
@@ -418,6 +430,71 @@ function GeneralTab({ initialSection = null }) {
     }
   }
 
+  const playbackCacheCoverage = useMemo(() => {
+    const videoAssets = (assets || []).filter((asset) => asset?.type === 'video')
+    const cacheableAssets = videoAssets.filter(isPlaybackCacheableVideoAsset)
+    const ready = videoAssets.filter(hasUsablePlaybackCache).length
+    const encoding = videoAssets.filter((asset) => asset?.playbackCacheStatus === 'encoding').length
+    const failed = cacheableAssets.filter((asset) => asset?.playbackCacheStatus === 'failed').length
+    return {
+      total: videoAssets.length,
+      cacheable: cacheableAssets.length,
+      rebuildable: cacheableAssets.filter((asset) => asset?.playbackCacheStatus !== 'encoding').length,
+      ready,
+      encoding,
+      failed,
+      unavailable: videoAssets.length - cacheableAssets.length,
+    }
+  }, [assets])
+
+  const handleRebuildVideoPlaybackCache = async () => {
+    if (!currentProjectHandle || playbackCacheBusy || playbackCacheCoverage.rebuildable <= 0) return
+
+    const expectedTotal = (useAssetsStore.getState().assets || [])
+      .filter((asset) => isPlaybackCacheableVideoAsset(asset) && asset?.playbackCacheStatus !== 'encoding')
+      .length
+    if (expectedTotal <= 0) return
+
+    setPlaybackCacheConfirmOpen(false)
+    setPlaybackCacheBusy(true)
+    setPlaybackCacheMessage('')
+    setPlaybackCacheProgress({ completed: 0, total: expectedTotal, currentName: '' })
+
+    try {
+      let completed = 0
+      let currentName = ''
+      const summary = await generatePlaybackCachesForAllVideos(currentProjectHandle, {
+        force: true,
+        onStart: (asset) => {
+          currentName = asset?.name || asset?.id || 'Video'
+          setPlaybackCacheProgress((prev) => ({
+            ...prev,
+            currentName,
+          }))
+        },
+        onFinish: (asset) => {
+          completed += 1
+          setPlaybackCacheProgress({
+            completed,
+            total: expectedTotal,
+            currentName: asset?.name || currentName,
+          })
+        },
+      })
+
+      setPlaybackCacheMessage(
+        summary?.success
+          ? `Playback cache rebuilt for ${summary.encoded} video${summary.encoded === 1 ? '' : 's'}${summary.failed ? `, ${summary.failed} failed` : ''}.`
+          : (summary?.error || 'Playback cache rebuild failed.')
+      )
+    } catch (error) {
+      setPlaybackCacheMessage(error?.message || 'Playback cache rebuild failed.')
+    } finally {
+      setPlaybackCacheBusy(false)
+      setPlaybackCacheProgress({ completed: 0, total: 0, currentName: '' })
+    }
+  }
+
   const activeSectionMeta = useMemo(
     () => SETTINGS_SECTIONS.find((section) => section.id === activeSection) || SETTINGS_SECTIONS[0],
     [activeSection]
@@ -463,6 +540,105 @@ function GeneralTab({ initialSection = null }) {
               </button>
             </div>
           )}
+
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <label className="text-sm text-sf-text-primary">Video playback cache</label>
+                <p className="mt-1 text-[10px] text-sf-text-muted">
+                  Rebuild edit-friendly playback files for videos in this project&apos;s Assets panel. Original files are not changed.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                  <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-secondary">
+                    {playbackCacheCoverage.ready}/{playbackCacheCoverage.total} ready
+                  </span>
+                  {playbackCacheCoverage.encoding > 0 && (
+                    <span className="rounded bg-blue-900/40 px-2 py-1 text-blue-200">
+                      {playbackCacheCoverage.encoding} encoding
+                    </span>
+                  )}
+                  {playbackCacheCoverage.failed > 0 && (
+                    <span className="rounded bg-amber-900/40 px-2 py-1 text-amber-200">
+                      {playbackCacheCoverage.failed} failed
+                    </span>
+                  )}
+                  {playbackCacheCoverage.unavailable > 0 && (
+                    <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-muted">
+                      {playbackCacheCoverage.unavailable} unavailable
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlaybackCacheMessage('')
+                  setPlaybackCacheConfirmOpen(true)
+                }}
+                disabled={playbackCacheBusy || !currentProjectHandle || playbackCacheCoverage.rebuildable <= 0}
+                className="inline-flex flex-shrink-0 items-center gap-2 rounded bg-sf-dark-700 px-3 py-2 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {playbackCacheBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                )}
+                {playbackCacheBusy ? 'Rebuilding...' : 'Rebuild Video Cache'}
+              </button>
+            </div>
+
+            {playbackCacheConfirmOpen && !playbackCacheBusy && (
+              <div className="mt-3 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-3">
+                <p className="text-xs text-amber-100">
+                  Rebuild playback cache for {playbackCacheCoverage.rebuildable} video{playbackCacheCoverage.rebuildable === 1 ? '' : 's'} in this project?
+                </p>
+                <p className="mt-1 text-[10px] text-amber-200/80">
+                  This may take a while on large projects. You can keep editing while each asset falls back to its original video.
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlaybackCacheConfirmOpen(false)}
+                    className="rounded bg-sf-dark-800 px-3 py-1.5 text-xs text-sf-text-secondary hover:bg-sf-dark-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleRebuildVideoPlaybackCache() }}
+                    className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-sf-accent-hover"
+                  >
+                    Start Rebuild
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {playbackCacheBusy && (
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between gap-3 text-[10px] text-sf-text-muted">
+                  <span className="truncate">
+                    {playbackCacheProgress.currentName || 'Preparing video cache...'}
+                  </span>
+                  <span className="flex-shrink-0">
+                    {playbackCacheProgress.completed}/{playbackCacheProgress.total || playbackCacheCoverage.rebuildable}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-sf-dark-800">
+                  <div
+                    className="h-full rounded-full bg-sf-accent transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((playbackCacheProgress.completed / Math.max(1, playbackCacheProgress.total || playbackCacheCoverage.rebuildable)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {playbackCacheMessage && !playbackCacheBusy && (
+              <p className="mt-3 text-[10px] text-sf-text-muted">{playbackCacheMessage}</p>
+            )}
+          </div>
 
           <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div>

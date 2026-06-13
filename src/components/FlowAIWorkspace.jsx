@@ -75,6 +75,7 @@ import {
   topazVideoUpscaleModelSupportsCreativity,
 } from '../config/topazVideoUpscaleConfig'
 import { getAudioWaveformData } from '../services/audioWaveform'
+import { hasUsablePlaybackCache } from '../services/playbackCache'
 import { getSpriteFramePosition } from '../services/thumbnailSprites'
 import { computeOutputNodeAssetIds, resolveFlowNodeText, runFlowGraph } from '../services/flowAiRuntime'
 import { formatCreditsPerSecond, formatCreditsRange } from '../utils/comfyCredits'
@@ -443,7 +444,7 @@ function getFlowPreviewAssetLabel(asset = null) {
 
 function getFlowPreviewAssetUrl(asset = null) {
   if (!asset) return ''
-  if (asset.type === 'video' && asset.playbackCacheUrl && asset.playbackCacheStatus !== 'failed') {
+  if (asset.type === 'video' && asset.playbackCacheUrl && hasUsablePlaybackCache(asset)) {
     return String(asset.playbackCacheUrl || '')
   }
   return String(asset.url || '')

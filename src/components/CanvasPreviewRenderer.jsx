@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useTimelineStore from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
 import videoCache from '../services/videoCache'
+import { hasUsablePlaybackCache } from '../services/playbackCache'
 import { getAnimatedAdjustmentSettings, getAnimatedTransform } from '../utils/keyframes'
 import {
   applyAdjustmentSettingsToImageData,
@@ -102,7 +103,7 @@ function resolvePreviewUrl(clip, getAssetById, useProxyPlaybackForAssets) {
   if (clip.type === 'video') {
     const useProxy = useProxyPlaybackForAssets && !!asset?.proxyUrl && asset?.proxyStatus !== 'failed'
     if (useProxy) return asset.proxyUrl
-    const usePlaybackCache = !!asset?.playbackCacheUrl && asset?.playbackCacheStatus !== 'failed'
+    const usePlaybackCache = !!asset?.playbackCacheUrl && hasUsablePlaybackCache(asset)
     return (usePlaybackCache ? asset?.playbackCacheUrl : null) || asset?.url || clip.url || null
   }
   return asset?.url || clip.url || null

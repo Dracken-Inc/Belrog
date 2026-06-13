@@ -667,6 +667,20 @@ export const WORKFLOW_DEPENDENCY_PACKS = Object.freeze({
     docsUrl: COMFY_REGISTRY_URL,
   }),
 
+  'gpt-image-2-ugc-keyframe': Object.freeze({
+    id: 'gpt-image-2-ugc-keyframe',
+    displayName: 'GPT Image 2 UGC Keyframes',
+    requiredNodes: Object.freeze([
+      { classType: 'OpenAIGPTImage1' },
+      { classType: 'BatchImagesNode' },
+      { classType: 'LoadImage' },
+      { classType: 'SaveImage' },
+    ]),
+    requiredModels: Object.freeze([]),
+    requiresComfyOrgApiKey: true,
+    docsUrl: COMFY_REGISTRY_URL,
+  }),
+
   'google-gemini-flash-lite': Object.freeze({
     id: 'google-gemini-flash-lite',
     displayName: 'Gemini 3.1 Flash Lite Prompt Helper',

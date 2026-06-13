@@ -1,10 +1,10 @@
-import { Upload, FolderOpen, Image, Video, Music, Search, Grid, List, Trash2, Edit3, Play, FileVideo, FileAudio, FileImage, Loader2, FolderPlus, ChevronRight, ChevronDown, ChevronLeft, Home, Minus, Plus, MoreVertical, FolderInput, Wand2, Layers, Film, VolumeX, Volume2, ArrowUpDown, ArrowUp, ArrowDown, Copy, Type } from 'lucide-react'
+import { Upload, FolderOpen, Image, Video, Music, Search, Grid, List, Trash2, Edit3, Play, FileVideo, FileAudio, FileImage, Loader2, FolderPlus, ChevronRight, ChevronDown, ChevronLeft, Home, Minus, Plus, MoreVertical, FolderInput, Wand2, Layers, Film, VolumeX, Volume2, ArrowUpDown, ArrowUp, ArrowDown, Copy, Type, RefreshCcw } from 'lucide-react'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import useAssetsStore from '../../stores/assetsStore'
 import useProjectStore from '../../stores/projectStore'
 import useTimelineStore from '../../stores/timelineStore'
 import { importAsset, isElectron, writeGeneratedOverlayToProject, deleteProjectFile } from '../../services/fileSystem'
-import { enqueuePlaybackTranscode } from '../../services/playbackCache'
+import { enqueuePlaybackTranscode, generatePlaybackCachesForAllVideos, isPlaybackCacheableVideoAsset } from '../../services/playbackCache'
 import { enqueueProxyTranscode, isProxyPlaybackEnabled } from '../../services/proxyCache'
 import { unstitchSequenceAsset } from '../../services/comfyAutoImport'
 import { deleteSpriteFromProject } from '../../services/thumbnailSprites'
@@ -723,6 +723,10 @@ function AssetsPanel({ isActive = true }) {
     return asset?.type === 'video'
   }
 
+  const canRebuildPlaybackCache = (asset) => {
+    return isPlaybackCacheableVideoAsset(asset)
+  }
+
   const handleOpenTopazUpscaleDialog = (assetId) => {
     const asset = assets.find(a => a.id === assetId)
     if (!asset || !canUpscaleVideo(asset)) return
@@ -745,6 +749,48 @@ function AssetsPanel({ isActive = true }) {
       await generateAssetPoster(assetId, projectPath)
     } catch (err) {
       console.error('Failed to generate thumbnails:', err)
+    }
+  }
+
+  const handleRebuildPlaybackCache = async (assetId) => {
+    const clickedAsset = assets.find((asset) => asset.id === assetId)
+    if (!clickedAsset || !canRebuildPlaybackCache(clickedAsset) || !currentProjectHandle) {
+      setContextMenu(null)
+      return
+    }
+
+    const candidateIds = selectedAssetIds.includes(assetId) ? selectedAssetIds : [assetId]
+    const videoIds = candidateIds.filter((id) => {
+      const asset = assets.find((entry) => entry.id === id)
+      return canRebuildPlaybackCache(asset) && asset?.playbackCacheStatus !== 'encoding'
+    })
+    if (videoIds.length === 0) {
+      setContextMenu(null)
+      return
+    }
+
+    const confirmed = await requestConfirm({
+      title: 'Rebuild playback cache?',
+      message: videoIds.length === 1
+        ? `Rebuild the edit-friendly playback cache for "${clickedAsset.name || 'this video'}"?\n\nThe original file will not be changed.`
+        : `Rebuild edit-friendly playback caches for ${videoIds.length} selected videos?\n\nOriginal files will not be changed.`,
+      confirmLabel: 'Rebuild cache',
+      cancelLabel: 'Cancel',
+      tone: 'default',
+    })
+    if (!confirmed) {
+      setContextMenu(null)
+      return
+    }
+
+    setContextMenu(null)
+    try {
+      await generatePlaybackCachesForAllVideos(currentProjectHandle, {
+        force: true,
+        assetIds: videoIds,
+      })
+    } catch (err) {
+      console.error('Failed to rebuild playback cache:', err)
     }
   }
 
@@ -2465,13 +2511,15 @@ function AssetsPanel({ isActive = true }) {
             const showMask = asset && canGenerateMask(asset)
             const showThumbnails = asset && canGenerateThumbnails(asset)
             const showUpscale = asset && canUpscaleVideo(asset)
+            const showPlaybackCache = asset && canRebuildPlaybackCache(asset)
             const hasSprite = asset?.sprite?.url
             const isGenerating = asset?.spriteGenerating
+            const isPlaybackCacheEncoding = asset?.playbackCacheStatus === 'encoding'
             const showAudioToggle = asset?.type === 'video' && asset?.hasAudio !== false
             const isAudioDisabled = asset?.audioEnabled === false
             const isStitchedSequence = asset?.sequenceSource?.kind === 'comfy-stitched'
 
-            if (!showMask && !showThumbnails && !showUpscale && !showAudioToggle && !isStitchedSequence) return null
+            if (!showMask && !showThumbnails && !showUpscale && !showPlaybackCache && !showAudioToggle && !isStitchedSequence) return null
             
             return (
               <>
@@ -2497,6 +2545,21 @@ function AssetsPanel({ isActive = true }) {
                   >
                     <ArrowUpDown className="w-3 h-3 text-amber-300" />
                     Upscale Video...
+                  </button>
+                )}
+
+                {showPlaybackCache && (
+                  <button
+                    onClick={() => { void handleRebuildPlaybackCache(contextMenu.assetId) }}
+                    disabled={isPlaybackCacheEncoding}
+                    className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isPlaybackCacheEncoding ? (
+                      <Loader2 className="w-3 h-3 text-sf-accent animate-spin" />
+                    ) : (
+                      <RefreshCcw className="w-3 h-3 text-sf-accent" />
+                    )}
+                    {isPlaybackCacheEncoding ? 'Rebuilding cache...' : 'Rebuild Playback Cache'}
                   </button>
                 )}
 

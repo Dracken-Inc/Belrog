@@ -32,7 +32,9 @@ export const COMFY_PARTNER_WORKFLOWS = Object.freeze([
   'Grok Imagine (text-to-image & video)',
   'Kling O3 Omni (image-to-video)',
   'Vidu Q2 (image-to-video)',
+  'Seedance 2.0 (reference-to-video)',
   'Nano Banana 2 (image edit)',
+  'GPT Image 2 (image generation)',
   'Seedream 5 Lite (image edit)',
 ])
 

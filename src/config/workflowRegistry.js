@@ -60,6 +60,7 @@ export const BUILTIN_WORKFLOWS = [
   { id: 'nano-banana-2', label: 'Nano Banana 2 Image Edit (Cloud)', category: 'image', needsImage: false, description: 'Cloud image generation and reference editing with Nano Banana 2', file: 'api_google_nano_banana2_image_edit.json' },
   { id: 'gpt-image-2-t2i', label: 'Text to Image (GPT Image 2)', category: 'image', needsImage: false, description: 'Cloud text-to-image with OpenAI GPT Image 2', file: 'api_openai_gpt_image_2_t2i.json' },
   { id: 'gpt-image-2-edit', label: 'Image Edit (GPT Image 2)', category: 'image', needsImage: true, description: 'Cloud image edit with OpenAI GPT Image 2', file: 'api_openai_gpt_image_2_image_edit.json' },
+  { id: 'gpt-image-2-ugc-keyframe', label: 'UGC Keyframes (GPT Image 2)', category: 'image', needsImage: false, description: 'Cloud UGC keyframes with creator, product, and environment references', file: 'api_openai_gpt_image_2_ugc_keyframe.json' },
   { id: 'grok-text-to-image', label: 'Text to Image (Grok Imagine)', category: 'image', needsImage: false, description: 'Cloud text-to-image using Grok Imagine Image Beta', file: 'api_grok_text_to_image.json' },
   { id: 'seedream-5-lite-image-edit', label: 'Image Edit (Seedream 5.0 Lite)', category: 'image', needsImage: true, description: 'Cloud image edit with ByteDance Seedream 5.0 Lite', file: 'api_bytedance_seedream_5_0_lite_image_edit.json' },
   { id: 'music-gen', label: 'Music Generation', category: 'audio', needsImage: false, description: 'Generate music from tags and lyrics', file: 'music_generation.json' },
@@ -98,6 +99,7 @@ export const BUILTIN_WORKFLOW_PATHS = {
   'nano-banana-2': getBundledWorkflowPath('api_google_nano_banana2_image_edit.json'),
   'gpt-image-2-t2i': getBundledWorkflowPath('api_openai_gpt_image_2_t2i.json'),
   'gpt-image-2-edit': getBundledWorkflowPath('api_openai_gpt_image_2_image_edit.json'),
+  'gpt-image-2-ugc-keyframe': getBundledWorkflowPath('api_openai_gpt_image_2_ugc_keyframe.json'),
   'grok-text-to-image': getBundledWorkflowPath('api_grok_text_to_image.json'),
   'seedream-5-lite-image-edit': getBundledWorkflowPath('api_bytedance_seedream_5_0_lite_image_edit.json'),
   'nano-banana-pro': getBundledWorkflowPath('api_google_nano_banana2_image_edit.json'), // legacy id alias

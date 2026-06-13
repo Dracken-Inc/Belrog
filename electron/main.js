@@ -94,6 +94,74 @@ function resolvePackagedBinaryPath(binaryPath) {
 const ffmpegPath = resolvePackagedBinaryPath(ffmpegStaticPath)
 const ffprobePath = resolvePackagedBinaryPath(ffprobeStaticPath)
 
+function parseFpsRatio(value) {
+  if (!value || value === '0/0') return null
+  const [num, den] = String(value).split('/').map(Number)
+  if (!den || !num) return null
+  return num / den
+}
+
+function normalizePlaybackCacheFps(value) {
+  const fps = Number(value)
+  if (!Number.isFinite(fps) || fps <= 0) return null
+  // Playback cache should preserve normal speed, but avoid pathological
+  // variable-FPS probes producing hundreds/thousands of preview frames/sec.
+  const clamped = Math.max(1, Math.min(60, fps))
+  return Math.round(clamped * 1000) / 1000
+}
+
+async function probeVideoInfo(filePath) {
+  if (!ffprobePath || !filePath) {
+    return { success: false, error: 'FFprobe binary not available.' }
+  }
+
+  return await new Promise((resolve) => {
+    const args = [
+      '-v', 'error',
+      '-show_entries', 'stream=codec_type,codec_name,avg_frame_rate,r_frame_rate',
+      '-of', 'json',
+      filePath
+    ]
+
+    const proc = spawn(ffprobePath, args, { windowsHide: true })
+    let stdout = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+    proc.on('error', (err) => {
+      resolve({ success: false, error: err.message })
+    })
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        resolve({ success: false, error: stderr || `FFprobe exited with code ${code}` })
+        return
+      }
+      try {
+        const parsed = JSON.parse(stdout)
+        const streams = Array.isArray(parsed?.streams) ? parsed.streams : []
+        const videoStream = streams.find((stream) => stream?.codec_type === 'video') || null
+        const audioStream = streams.find((stream) => stream?.codec_type === 'audio') || null
+        const fps = parseFpsRatio(videoStream?.avg_frame_rate) || parseFpsRatio(videoStream?.r_frame_rate)
+        resolve({
+          success: true,
+          hasVideo: Boolean(videoStream),
+          fps: fps || null,
+          hasAudio: streams.some((stream) => stream?.codec_type === 'audio'),
+          videoCodec: videoStream?.codec_name || null,
+          audioCodec: audioStream?.codec_name || null,
+        })
+      } catch (err) {
+        resolve({ success: false, error: err.message })
+      }
+    })
+  })
+}
+
 async function writeFileAtomic(filePath, data, options) {
   const dir = path.dirname(filePath)
   await fs.mkdir(dir, { recursive: true })
@@ -2693,58 +2761,15 @@ ipcMain.handle('media:getVideoFps', async (event, filePath) => {
     return { success: false, error: 'FFprobe binary not available.' }
   }
 
-  const parseFps = (value) => {
-    if (!value || value === '0/0') return null
-    const [num, den] = String(value).split('/').map(Number)
-    if (!den || !num) return null
-    return num / den
+  const result = await probeVideoInfo(filePath)
+  if (!result.success) return result
+  return {
+    success: true,
+    fps: result.fps || null,
+    hasAudio: result.hasAudio,
+    videoCodec: result.videoCodec || null,
+    audioCodec: result.audioCodec || null,
   }
-
-  return await new Promise((resolve) => {
-    const args = [
-      '-v', 'error',
-      '-show_entries', 'stream=codec_type,codec_name,avg_frame_rate,r_frame_rate',
-      '-of', 'json',
-      filePath
-    ]
-
-    const proc = spawn(ffprobePath, args, { windowsHide: true })
-    let stdout = ''
-    let stderr = ''
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString()
-    })
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-    proc.on('error', (err) => {
-      resolve({ success: false, error: err.message })
-    })
-    proc.on('close', (code) => {
-      if (code !== 0) {
-        resolve({ success: false, error: stderr || `FFprobe exited with code ${code}` })
-        return
-      }
-      try {
-        const parsed = JSON.parse(stdout)
-        const streams = Array.isArray(parsed?.streams) ? parsed.streams : []
-        const videoStream = streams.find((stream) => stream?.codec_type === 'video') || null
-        const audioStream = streams.find((stream) => stream?.codec_type === 'audio') || null
-        const fps = parseFps(videoStream?.avg_frame_rate) || parseFps(videoStream?.r_frame_rate)
-        const hasAudio = streams.some((stream) => stream?.codec_type === 'audio')
-        resolve({
-          success: true,
-          fps: fps || null,
-          hasAudio,
-          videoCodec: videoStream?.codec_name || null,
-          audioCodec: audioStream?.codec_name || null,
-        })
-      } catch (err) {
-        resolve({ success: false, error: err.message })
-      }
-    })
-  })
 })
 
 const audioWaveformCache = new Map()
@@ -4519,10 +4544,21 @@ ipcMain.handle('playback:transcode', async (event, { inputPath, outputPath }) =>
     return { success: false, error: 'Missing inputPath or outputPath.' }
   }
 
-  // Same dimensions, H.264, keyframe every 6 frames, no B-frames = easy decode
+  const inputProbe = await probeVideoInfo(inputPath)
+  const targetFps = normalizePlaybackCacheFps(inputProbe?.fps)
+  const tempOutputPath = path.join(
+    path.dirname(outputPath),
+    `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp.mp4`
+  )
+
+  // Same dimensions, H.264, CFR, keyframe every 6 frames, no B-frames = easy decode.
+  // Original media stays untouched; preview swaps to this cache file after validation.
   const args = [
     '-y',
     '-i', inputPath,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
+    ...(targetFps ? ['-vf', `fps=${targetFps}`] : []),
     '-c:v', 'libx264',
     '-preset', 'fast',
     '-crf', '23',
@@ -4533,26 +4569,48 @@ ipcMain.handle('playback:transcode', async (event, { inputPath, outputPath }) =>
     '-movflags', '+faststart',
     '-c:a', 'aac',
     '-b:a', '192k',
-    outputPath
+    '-ar', '48000',
+    '-ac', '2',
+    tempOutputPath
   ]
 
   return await new Promise((resolve) => {
     const ffmpeg = spawn(ffmpegPath, args, { windowsHide: true })
     let stderr = ''
+    let settled = false
+
+    const finish = async (payload) => {
+      if (settled) return
+      settled = true
+      if (!payload?.success) {
+        try { await fs.unlink(tempOutputPath) } catch (_) { /* ignore */ }
+      }
+      resolve(payload)
+    }
 
     ffmpeg.stderr.on('data', (data) => {
-      stderr += data.toString()
+      stderr = appendLimitedStderr(stderr, data)
     })
 
     ffmpeg.on('error', (err) => {
-      resolve({ success: false, error: err.message })
+      finish({ success: false, error: err.message })
     })
 
-    ffmpeg.on('close', (code) => {
+    ffmpeg.on('close', async (code) => {
       if (code === 0) {
-        resolve({ success: true })
+        const outputProbe = await probeVideoInfo(tempOutputPath)
+        if (!outputProbe?.success || !outputProbe?.hasVideo) {
+          await finish({ success: false, error: outputProbe?.error || 'Playback cache validation failed.' })
+          return
+        }
+        try {
+          await fs.rename(tempOutputPath, outputPath)
+          await finish({ success: true, fps: outputProbe.fps || targetFps || null })
+        } catch (err) {
+          await finish({ success: false, error: err.message || 'Could not finalize playback cache file.' })
+        }
       } else {
-        resolve({ success: false, error: stderr || `FFmpeg exited with code ${code}` })
+        await finish({ success: false, error: stderr || `FFmpeg exited with code ${code}` })
       }
     })
   })

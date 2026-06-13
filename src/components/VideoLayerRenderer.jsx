@@ -6,6 +6,7 @@ import videoCache from '../services/videoCache'
 import renderCacheService from '../services/renderCache'
 import { getAnimatedTransform, getAnimatedAdjustmentSettings } from '../utils/keyframes'
 import { loadRenderCache, saveRenderCache } from '../services/fileSystem'
+import { hasUsablePlaybackCache } from '../services/playbackCache'
 import { getSpriteFramePosition } from '../services/thumbnailSprites'
 import {
   buildCssFilterFromAdjustments,
@@ -439,7 +440,7 @@ function useClipUrl(clip) {
     // it flips to 'ready'.
     const useProxy = useProxyPlaybackForAssets && !!asset.proxyUrl && asset.proxyStatus !== 'failed'
     if (useProxy) return asset.proxyUrl
-    const usePlaybackCache = !!asset.playbackCacheUrl && asset.playbackCacheStatus !== 'failed'
+    const usePlaybackCache = !!asset.playbackCacheUrl && hasUsablePlaybackCache(asset)
     return usePlaybackCache ? asset.playbackCacheUrl : (asset.url || null)
   })
 
@@ -1075,7 +1076,7 @@ function resolvePlaybackUrl(clip, getAssetById, options = {}) {
     : Boolean(useTimelineStore.getState().useProxyPlaybackForAssets)
   const useProxy = useProxyPreference && !!asset?.proxyUrl && asset?.proxyStatus !== 'failed'
   if (useProxy) return asset.proxyUrl
-  const usePlaybackCache = !!asset?.playbackCacheUrl && asset?.playbackCacheStatus !== 'failed'
+  const usePlaybackCache = !!asset?.playbackCacheUrl && hasUsablePlaybackCache(asset)
   return (usePlaybackCache ? asset?.playbackCacheUrl : null) || asset?.url || clip.url || null
 }
 
