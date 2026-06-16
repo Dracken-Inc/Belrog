@@ -38,11 +38,11 @@ const VOICE_MODEL_OPTIONS = [
   { id: 'eleven_multilingual_v2', label: 'v2 — stable', helper: 'Reliable everywhere, flatter. Delivery tags are ignored; use the slider.' },
 ]
 
-const FIXED_UGC_FPS = 30
+const FIXED_UGC_FPS = 25 // LTX 2.3's native rate (forced for the one-shot lip-sync path).
 const MIN_UGC_LENGTH_SECONDS = 3
-const MAX_UGC_LENGTH_SECONDS = 60
+const MAX_UGC_LENGTH_SECONDS = 15 // Seedance / LTX one-shot generation caps at ~15s.
 const RECOMMENDED_UGC_LENGTH_MIN = 6
-const RECOMMENDED_UGC_LENGTH_MAX = 30
+const RECOMMENDED_UGC_LENGTH_MAX = 15
 
 const UGC_FORMAT_OPTIONS = [
   { id: 'casual_review', label: 'Casual Review', emoji: '🤳', helper: '"Okay I need to show you this" - talking to camera like a friend.' },
@@ -1003,7 +1003,9 @@ function loadUgcAdDraft() {
 
 function getSuggestedShotCount(length) {
   const seconds = normalizeDraftRangeNumber(length, DEFAULT_UGC_AD_DRAFT.commercialLength, MIN_UGC_LENGTH_SECONDS, MAX_UGC_LENGTH_SECONDS)
-  const roughCount = Math.max(3, Math.min(24, Math.round(seconds / 3)))
+  // ~1 spoken beat per 5s so each line has room to land (was /3, which crammed
+  // ~6 lines into 15s and clipped the last one).
+  const roughCount = Math.max(3, Math.min(24, Math.round(seconds / 5)))
   return SHOT_COUNT_OPTIONS.reduce((best, option) => (
     Math.abs(option - roughCount) < Math.abs(best - roughCount) ? option : best
   ), SHOT_COUNT_OPTIONS[0])
@@ -1752,7 +1754,7 @@ function buildDirectorScript(data, shotOverrides = {}) {
   }))
   return [
     `Scene 1: ${[compact(data.productService || data.product, ''), compact(data.goalLabel || data.formatLabel, 'UGC Ad')].filter(Boolean).join(' ')}`,
-    `Scene context: Creator-style vertical UGC for ${compact(data.audience, 'the target viewer')}. Product: ${compact(data.productService || data.product, 'the product')}. Hook: ${compact(data.hook, 'Okay, I need to show you this.')}. Core reason to care: ${compact(data.offer || data.promise, 'the product benefit')}. Proof moment: ${compact(data.proof, 'believable product proof')}. CTA: ${compact(data.cta, 'soft call to action')}. Destination: ${compact(data.destination, 'website/contact')}. Setting: ${compact(data.location, 'natural creator environment')}. Visual rules: ${compact(data.visualRules || data.colors, 'phone-native UGC')}. Creator direction: ${data.noVisibleTalent ? 'hands-only, no face visible' : compact(data.talentDirection, 'creator talks naturally to camera')}. Tone: ${compact(data.toneText, 'casual friend energy')}.`,
+    `Scene context: Creator-style vertical UGC for ${compact(data.audience, 'the target viewer')}. Product: ${compact(data.productService || data.product, 'the product')}. Hook: ${compact(data.hook, 'Okay, I need to show you this.')}. Core reason to care: ${compact(data.offer || data.promise, 'the product benefit')}. Proof moment: ${compact(data.proof, 'believable product proof')}. CTA: ${compact(data.cta, 'soft call to action')}. Destination: ${compact(data.destination, 'website/contact')}. Setting: ${compact(data.location, 'natural creator environment')}. Visual rules: ${compact(data.visualRules || data.colors, 'phone-native UGC')}. Creator direction: ${data.noVisibleTalent ? 'hands-only, no face visible' : compact(data.talentDirection, 'creator talks naturally to camera')}. Tone: ${compact(data.toneText, 'casual friend energy')}. Pacing: keep the dialogue relaxed and unhurried — finish the final spoken line a beat before the clip ends, then hold a short natural beat (a smile or nod) so nothing gets cut off.`,
     data.environmentReferenceName
       ? `Environment reference: Treat ${data.environmentReferenceName} as the room/location anchor. Prefer this reference over generic setting words, and match its surfaces, lighting, colors, and background continuity when composing each shot.`
       : '',
@@ -2188,7 +2190,10 @@ export default function UGCAdCreator({
     resolutionLabel: outputResolutionLabel,
     videoFps,
     commercialLength,
-    shotCount,
+    // Beats scale with the chosen length so the last line isn't clipped (the
+    // generated/LLM script is always duration-appropriate, regardless of any
+    // stale shotCount).
+    shotCount: getSuggestedShotCount(commercialLength),
     noVisibleTalent,
     environmentReferenceName: environmentAsset?.name || '',
   }
@@ -3219,7 +3224,7 @@ export default function UGCAdCreator({
                   <span className="text-xs text-[#c9c6ba]">seconds</span>
                 </div>
                 <span className="mt-1 block text-[10px] text-[#95927f]">
-                  Recommended {RECOMMENDED_UGC_LENGTH_MIN}-{RECOMMENDED_UGC_LENGTH_MAX}s for UGC. Custom cuts like 11s or 18s are fine.
+                  Recommended {RECOMMENDED_UGC_LENGTH_MIN}-{RECOMMENDED_UGC_LENGTH_MAX}s. One-shot generation caps at 15s.
                 </span>
               </label>
               <div className="ugc-field-label mt-4">Quality</div>
@@ -3242,8 +3247,8 @@ export default function UGCAdCreator({
               </div>
               <div className="ugc-field-label mt-4">Frame rate</div>
               <div className="ugc-tag-row">
-                <span className="ugc-tag cyan">{FIXED_UGC_FPS} fps - phone-native</span>
-                <span className="text-[11px] text-[#95927f]">Locked to what TikTok & Reels expect.</span>
+                <span className="ugc-tag cyan">{FIXED_UGC_FPS} fps</span>
+                <span className="text-[11px] text-[#95927f]">Locked to 25 fps — LTX 2.3's native rate for clean motion and lip-sync.</span>
               </div>
             </div>
           </div>
@@ -3731,18 +3736,10 @@ export default function UGCAdCreator({
 
           <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3 space-y-3">
             <div className="flex flex-wrap items-center gap-4">
-              <label className="block text-xs text-sf-text-secondary">
-                <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Length</span>
-                <select
-                  value={oneShotDuration}
-                  onChange={(event) => setCommercialLength(Number(event.target.value))}
-                  className="mt-1 rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
-                >
-                  {[5, 8, 10, 12, 15].map((sec) => (
-                    <option key={sec} value={sec}>{sec}s</option>
-                  ))}
-                </select>
-              </label>
+              <div className="text-[10px] text-sf-text-muted">
+                <div className="uppercase tracking-wider">Length</div>
+                <div className="mt-1 text-sf-text-secondary">{oneShotDuration}s · set it in The Vibe</div>
+              </div>
               <div className="text-[10px] text-sf-text-muted">
                 <div className="uppercase tracking-wider">References</div>
                 <div className="mt-1 flex flex-wrap gap-1">
