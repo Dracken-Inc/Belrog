@@ -802,7 +802,39 @@ function buildDirectorAssetDisplayName(directorMeta, workflowId = '') {
     .join('_')
 }
 
+// Ad-mode (UGC / Business) folder names. The asset already lives under
+// Generated/Images or Generated/Videos, so the folder is named after the model
+// only — no "Director Mode beta Ad Video (…)" prefix — and with crisp names
+// instead of the verbose display labels (e.g. "Seedance 2.0" rather than
+// "Seedance 2.0 Reference to Video").
+const AD_MODEL_FOLDER_NAMES = {
+  'ltx23-i2v': 'LTX 2.3',
+  'wan22-i2v': 'WAN 2.2',
+  'seedance2-r2v': 'Seedance 2.0',
+  'music-video-shot-ltx23': 'LTX 2.3 Lip Sync',
+  'nano-banana-2': 'Nano Banana 2',
+  'image-edit-model-product': 'Qwen Image Edit',
+  'gpt-image-2-ugc-keyframe': 'GPT Image 2',
+  'custom-ad-keyframe': 'Custom Workflow',
+}
+
+function getAdModelFolderName(workflowId = '') {
+  const id = String(workflowId || '').trim()
+  if (AD_MODEL_FOLDER_NAMES[id]) return AD_MODEL_FOLDER_NAMES[id]
+  // Unknown ad model: clean the display label by dropping parenthetical tails.
+  const label = String(getWorkflowDisplayLabel(id) || id || 'Workflow')
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return label || 'Workflow'
+}
+
 function buildDirectorGeneratedFolderName(directorMeta, workflowId = '', mediaKind = '') {
+  // Ad mode (UGC / Business): name the folder after the model only. Music video
+  // and short film keep the MVC folder scheme below.
+  if (directorMeta?.mode === 'ad') {
+    return getAdModelFolderName(String(directorMeta?.workflowId || workflowId || '').trim())
+  }
   if (!directorMeta || directorMeta?.mode !== 'music') return ''
   const normalizedWorkflowId = String(directorMeta?.workflowId || workflowId || '').trim()
   if (
@@ -977,6 +1009,30 @@ function buildAdVideoPromptWithNoTextGuard(prompt = '', options = {}) {
 
 function stripUgcDialogueQuotes(value = '') {
   return String(value || '').trim().replace(/^["“”]+|["“”]+$/g, '').trim()
+}
+
+// Global (cross-project) cache of voice audition clips, keyed by ElevenLabs
+// voice name -> base64 data URL. Lives in localStorage so it persists across
+// projects and restarts; generated once via the Voiceover step.
+const VOICE_PREVIEW_STORAGE_KEY = 'comfystudio-voice-previews-v1'
+
+function readVoicePreviewCache() {
+  if (typeof localStorage === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(localStorage.getItem(VOICE_PREVIEW_STORAGE_KEY) || '{}')
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch (_) {
+    return {}
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
 }
 
 function isSilentUgcDialogue(value = '') {
@@ -6445,6 +6501,37 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     () => yoloQueueVariants.filter((variant) => yoloStoryboardAssetMap.has(variant.key)).length,
     [yoloQueueVariants, yoloStoryboardAssetMap]
   )
+  // Global voice-audition cache (cross-project), hydrated from localStorage.
+  const [voicePreviews, setVoicePreviews] = useState(() => readVoicePreviewCache())
+
+  // LTX one-shot chain: compose a reference-anchored first frame, then animate
+  // it with LTX i2v once the frame asset lands. Pending entries are matched to
+  // the composed frame by a oneShotToken; firedOneShotTokensRef prevents the
+  // watcher effect from queueing the animation twice.
+  const [pendingLtxOneShots, setPendingLtxOneShots] = useState([])
+  const firedOneShotTokensRef = useRef(new Set())
+
+  // Per-shot generated voice clips (UGC voiceover step), keyed by variant.key.
+  // Mirrors yoloStoryboardAssetMap but for audio assets stamped with
+  // yolo.stage === 'voice'. One pinned voice per ad, one clip per spoken shot;
+  // the video queue swaps LTX I2V -> IA2V when a clip exists for the shot.
+  const yoloUgcVoiceAssetMap = useMemo(() => {
+    const map = new Map()
+    for (const asset of assets) {
+      if (asset?.type !== 'audio') continue
+      const meta = asset?.yolo || asset?.settings?.yolo || null
+      if (!meta || meta.stage !== 'voice') continue
+      const key = meta.variantKey || meta.key
+      if (!key) continue
+      const modeMatches = yoloModeKey === 'music' ? meta.mode === 'music' : meta.mode !== 'music'
+      if (!modeMatches) continue
+      const existing = map.get(key)
+      const assetTime = new Date(asset.createdAt || 0).getTime()
+      const existingTime = existing ? new Date(existing.createdAt || 0).getTime() : -1
+      if (!existing || assetTime >= existingTime) map.set(key, asset)
+    }
+    return map
+  }, [assets, yoloModeKey])
   const yoloCloudCreditRows = useMemo(() => {
     const rows = []
     const keyframeRunCount = yoloQueueVariants.length
@@ -9932,9 +10019,23 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const hasTalkingTalent = talent.includes('spokesperson') || talent.includes('testimonial')
       return hasTalkingTalent && Boolean(String(variant?.dialogue || '').trim()) && !isSilentUgcDialogue(variant?.dialogue)
     }
-    const resolveVariantWorkflowId = (variant) => (
-      adVariantNeedsLipSync(variant) ? MUSIC_VIDEO_SHOT_WORKFLOW_ID : workflowId
-    )
+    // UGC voiceover: when the user generated a consistent voice clip for this
+    // shot (yoloUgcVoiceAssetMap, keyed by variant.key) and is rendering with
+    // local LTX 2.3, route to the LTX 2.3 ID-LoRA lip-sync graph so the clip
+    // drives the mouth (real lip-sync via the talkvid ID LoRA) and the voice
+    // stays identical across shots — instead of LTX I2V inventing a fresh voice
+    // per shot. (Plain ltx23-ia2v carries the audio but does NOT articulate the
+    // mouth, so it is not used here.) Silent shots keep plain I2V.
+    const ugcVoiceAssetForVariant = (variant) => {
+      if (!isUgcAdCreator || isYoloMusicMode) return null
+      if (isSilentUgcDialogue(variant?.dialogue)) return null
+      return yoloUgcVoiceAssetMap.get(variant?.key) || null
+    }
+    const resolveVariantWorkflowId = (variant) => {
+      if (adVariantNeedsLipSync(variant)) return MUSIC_VIDEO_SHOT_WORKFLOW_ID
+      if (workflowId === 'ltx23-i2v' && ugcVoiceAssetForVariant(variant)) return 'ltx23-id-lora'
+      return workflowId
+    }
     const buildVideoVariantKey = (variantKey, variantWorkflowId = workflowId) => `${String(variantKey || '')}::${variantWorkflowId}`
     const existingKeys = getExistingYoloStageKeys('video')
     const activeVideoKeys = new Set(
@@ -9994,19 +10095,30 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const isAdLipSyncShot = !isYoloMusicMode && effectiveWorkflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID
       const variantScopedKey = buildVideoVariantKey(variant.key, effectiveWorkflowId)
       const isSeedanceUgcVideo = !isYoloMusicMode && effectiveWorkflowId === SEEDANCE_UGC_VIDEO_WORKFLOW_ID
+      // Experimental: feed the consistent UGC voice clip into Seedance as a
+      // reference audio (with its own audio generation OFF) to test whether
+      // Seedance lip-syncs to a provided track. If it does, we get consistent
+      // voice + lip-sync in one model; if it only borrows the voice character,
+      // we fall back to a dedicated lip-sync pass. LTX 2.3 conditions on audio
+      // but does not articulate the mouth, so it is not a lip-sync path.
+      const seedanceVoiceAsset = isSeedanceUgcVideo ? ugcVoiceAssetForVariant(variant) : null
       const videoAssetFieldIds = isSeedanceUgcVideo
-        ? normalizedVideoReferenceAssetIds
-          .filter((assetId) => assetId !== storyboardAsset.id)
-          .slice(0, 3)
-          .reduce((acc, assetId, index) => {
-            acc[`referenceImage${index + 2}`] = assetId
-            return acc
-          }, {})
+        ? (() => {
+          const acc = normalizedVideoReferenceAssetIds
+            .filter((assetId) => assetId !== storyboardAsset.id)
+            .slice(0, 3)
+            .reduce((map, assetId, index) => {
+              map[`referenceImage${index + 2}`] = assetId
+              return map
+            }, {})
+          if (seedanceVoiceAsset) acc.referenceAudio1 = seedanceVoiceAsset.id
+          return acc
+        })()
         : {}
       // Same set as yoloSelectedVideoWorkflowSupportsCustomFps — only
       // workflows whose modify*Workflow helper accepts an fps input
       // get the user's YOLO FPS setting; cloud providers ignore it.
-      const customFpsWorkflowIds = new Set(['wan22-i2v', 'ltx23-i2v', MUSIC_VIDEO_SHOT_WORKFLOW_ID, CUSTOM_MUSIC_VIDEO_WORKFLOW_ID])
+      const customFpsWorkflowIds = new Set(['wan22-i2v', 'ltx23-i2v', 'ltx23-ia2v', 'ltx23-id-lora', MUSIC_VIDEO_SHOT_WORKFLOW_ID, CUSTOM_MUSIC_VIDEO_WORKFLOW_ID])
       const requestedFps = customFpsWorkflowIds.has(String(effectiveWorkflowId || '').trim())
         ? (Number(yoloVideoFps) || 24)
         : null
@@ -10046,7 +10158,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       // creator (isYoloMusicMode / MUSIC_VIDEO_SHOT_WORKFLOW_ID), short film
       // (separate handleQueueShortFilmVideos path), and the Business creator
       // (isUgcAdCreator). See removeUgcSceneBriefFragments for the rationale.
-      const isUgcLtxAdVideo = isUgcAdCreator && !isYoloMusicMode && effectiveWorkflowId === 'ltx23-i2v'
+      const isUgcLtxAdVideo = isUgcAdCreator && !isYoloMusicMode && (effectiveWorkflowId === 'ltx23-i2v' || effectiveWorkflowId === 'ltx23-ia2v' || effectiveWorkflowId === 'ltx23-id-lora')
+      // When this UGC shot resolved to an LTX audio-driven graph, attach the
+      // matching voice clip so runJob uploads it and feeds it in as the audio.
+      const ugcVoiceAsset = (effectiveWorkflowId === 'ltx23-ia2v' || effectiveWorkflowId === 'ltx23-id-lora') ? ugcVoiceAssetForVariant(variant) : null
       const adVideoPromptCleanSource = isUgcLtxAdVideo
         ? removeUgcSceneBriefFragments(adVideoPromptSource)
         : adVideoPromptSource
@@ -10097,7 +10212,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceAssetId1: null,
         referenceAssetId2: null,
         ...(Object.keys(videoAssetFieldIds).length > 0 ? { assetFieldIds: videoAssetFieldIds } : {}),
-        ...(isSeedanceUgcVideo ? { generateAudio: true } : {}),
+        ...(isSeedanceUgcVideo ? { generateAudio: !seedanceVoiceAsset } : {}),
+        ...(ugcVoiceAsset ? { audioAssetId: ugcVoiceAsset.id } : {}),
         directorLabel: yoloQueueNameLabel,
         // Carry the song audio asset id + mode-specific audio metadata so runJob
         // can upload it once per job and pass the uploaded filename into the
@@ -10195,7 +10311,352 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloModeLabel,
     yoloQueueNameLabel,
     yoloStoryboardAssetMap,
+    yoloUgcVoiceAssetMap,
   ])
+
+  const handleQueueUgcVoices = useCallback(async (options = {}) => {
+    const {
+      voice = 'Jessica (female, american)',
+      stability = 0.5,
+      similarityBoost = 0.75,
+      style = 0,
+      speed = 1,
+      model = 'eleven_v3',
+      planOverride = null,
+      force = false,
+      // Per-variant final spoken text (already includes any [emotion] tag the
+      // UI injected). Falls back to the variant's dialogue when absent.
+      lineOverrides = {},
+      // When set, only (re)generate these variant keys — used for per-line retakes.
+      onlyVariantKeys = null,
+    } = options || {}
+
+    if (!isConnected) {
+      setFormError('ComfyUI is not connected yet. Start ComfyUI, then generate voices.')
+      return { queued: 0, skipped: 0 }
+    }
+
+    const planToUse = Array.isArray(planOverride) && planOverride.length > 0
+      ? planOverride
+      : (yoloActivePlan.length > 0 ? yoloActivePlan : buildActiveYoloPlan())
+    if (!planToUse) return { queued: 0, skipped: 0 }
+
+    const onlyKeys = Array.isArray(onlyVariantKeys) && onlyVariantKeys.length > 0
+      ? new Set(onlyVariantKeys.map((key) => String(key)))
+      : null
+    const lineTextFor = (variant) => {
+      const override = String(lineOverrides?.[variant.key] || '').trim()
+      return override || extractUgcDialogueFromVariant(variant)
+    }
+    const voicedVariants = flattenYoloPlanVariants(planToUse).filter((variant) => {
+      if (!variant?.key) return false
+      if (onlyKeys && !onlyKeys.has(String(variant.key))) return false
+      if (isSilentUgcDialogue(variant?.dialogue)) return false
+      return Boolean(lineTextFor(variant))
+    })
+    if (voicedVariants.length === 0) {
+      setFormError('No spoken lines found. Add Creator lines in Script Review, then generate voices.')
+      return { queued: 0, skipped: 0 }
+    }
+
+    const depsOk = await validateDependenciesForQueue([ELEVENLABS_TTS_WORKFLOW_ID], 'UGC voiceover')
+    if (!depsOk) return { queued: 0, skipped: 0 }
+
+    const activeVoiceKeys = new Set(
+      generationQueue
+        .filter((job) => (
+          job?.workflowId === ELEVENLABS_TTS_WORKFLOW_ID &&
+          NON_TERMINAL_JOB_STATUSES.includes(job.status) &&
+          job?.yolo?.stage === 'voice' &&
+          job?.yolo?.variantKey
+        ))
+        .map((job) => String(job.yolo.variantKey))
+    )
+
+    let skipped = 0
+    const jobs = []
+    voicedVariants.forEach((variant, index) => {
+      if (!force && activeVoiceKeys.has(String(variant.key))) {
+        skipped += 1
+        return
+      }
+      const line = lineTextFor(variant)
+      // A retake (force) wants a genuinely different read, so vary the seed;
+      // a fresh batch stays deterministic per line.
+      const lineSeed = force
+        ? Number(seed) + index + 1 + Math.floor(Math.random() * 1000000)
+        : Number(seed) + index + 1
+      jobs.push(createQueuedJob({
+        category: 'audio',
+        workflowId: ELEVENLABS_TTS_WORKFLOW_ID,
+        workflowLabel: 'UGC Voiceover (ElevenLabs)',
+        needsImage: false,
+        inputAssetType: null,
+        inputAssetId: null,
+        inputAssetName: '',
+        prompt: line,
+        musicTags: line,
+        duration: null,
+        fps: null,
+        resolution: null,
+        seed: lineSeed,
+        directorLabel: yoloQueueNameLabel,
+        elevenLabsTts: {
+          text: line,
+          voice,
+          stability,
+          model,
+          speed,
+          similarityBoost,
+          useSpeakerBoost: false,
+          style,
+          languageCode: '',
+          outputFormat: 'mp3_44100_192',
+        },
+        yolo: {
+          mode: yoloModeKey,
+          stage: 'voice',
+          key: variant.key,
+          variantKey: variant.key,
+          workflowId: ELEVENLABS_TTS_WORKFLOW_ID,
+          sceneId: variant.sceneId,
+          shotId: variant.shotId,
+          angle: variant.angle,
+          take: variant.take,
+          dialogue: line,
+        },
+      }))
+    })
+
+    if (jobs.length === 0) {
+      setFormError(skipped > 0 ? 'Those voice lines are already generating.' : 'No voice jobs were queued.')
+      return { queued: 0, skipped }
+    }
+
+    setGenerationQueue((prev) => [...prev, ...jobs])
+    setFormError(null)
+    addComfyLog('status', `UGC voiceover queued: ${jobs.length} line${jobs.length === 1 ? '' : 's'}${skipped > 0 ? ` (${skipped} already active)` : ''}`)
+    return { queued: jobs.length, skipped }
+  }, [
+    addComfyLog,
+    buildActiveYoloPlan,
+    createQueuedJob,
+    generationQueue,
+    isConnected,
+    seed,
+    validateDependenciesForQueue,
+    yoloActivePlan,
+    yoloModeKey,
+    yoloQueueNameLabel,
+  ])
+
+  // One-time generation of voice audition clips. Each clip is a short fixed
+  // identity line on the stable v2 model; results are cached globally by
+  // saveGenerationResult (stage 'voice-preview') so this only ever runs once
+  // per voice across all projects.
+  const handleQueueUgcVoicePreviews = useCallback(async (voices = []) => {
+    if (!isConnected) {
+      setFormError('ComfyUI is not connected yet. Start ComfyUI, then generate voice previews.')
+      return { queued: 0 }
+    }
+    const list = Array.from(new Set((Array.isArray(voices) ? voices : []).map((v) => String(v || '').trim()).filter(Boolean)))
+    if (list.length === 0) return { queued: 0 }
+
+    const depsOk = await validateDependenciesForQueue([ELEVENLABS_TTS_WORKFLOW_ID], 'voice previews')
+    if (!depsOk) return { queued: 0 }
+
+    const jobs = list.map((voice, index) => {
+      const firstName = String(voice).split('(')[0].trim().split(/\s+/)[0] || 'this voice'
+      const text = `Hi, this is ${firstName}. This is what I sound like.`
+      return createQueuedJob({
+        category: 'audio',
+        workflowId: ELEVENLABS_TTS_WORKFLOW_ID,
+        workflowLabel: 'Voice Preview (ElevenLabs)',
+        needsImage: false,
+        inputAssetType: null,
+        inputAssetId: null,
+        inputAssetName: '',
+        prompt: text,
+        musicTags: text,
+        duration: null,
+        fps: null,
+        resolution: null,
+        seed: Number(seed) + index + 1,
+        elevenLabsTts: {
+          text,
+          voice,
+          stability: 0.5,
+          model: 'eleven_multilingual_v2',
+          speed: 1,
+          similarityBoost: 0.75,
+          useSpeakerBoost: false,
+          style: 0,
+          languageCode: '',
+          outputFormat: 'mp3_44100_192',
+        },
+        yolo: {
+          mode: 'ad',
+          stage: 'voice-preview',
+          voicePreviewVoice: voice,
+          workflowId: ELEVENLABS_TTS_WORKFLOW_ID,
+        },
+      })
+    })
+
+    setGenerationQueue((prev) => [...prev, ...jobs])
+    setFormError(null)
+    addComfyLog('status', `Voice previews queued: ${jobs.length}`)
+    return { queued: jobs.length }
+  }, [addComfyLog, createQueuedJob, isConnected, seed, validateDependenciesForQueue])
+
+  // UGC one-shot: produce the whole ad from one prompt + references. Two engines:
+  //  • Seedance 2.0 (cloud r2v) — multi-reference, native audio, true cuts.
+  //  • LTX 2.3 (local) — no multi-reference input, so with references we first
+  //    compose ONE reference-anchored first frame (gpt-image-2-ugc-keyframe) and
+  //    then animate it with LTX i2v (a single evolving ~15s shot). With no
+  //    references it falls back to prompt-only LTX t2v. Seedance/LTX cap ~15s.
+  const handleQueueUgcOneShot = useCallback(async (options = {}) => {
+    const {
+      model = 'seedance',
+      prompt = '',
+      framePrompt = '',
+      duration = 10,
+      width = 720,
+      height = 1280,
+      referenceAssetIds = [],
+    } = options || {}
+
+    if (!isConnected) {
+      setFormError('ComfyUI is not connected yet. Start ComfyUI, then generate.')
+      return { queued: 0 }
+    }
+    const cleanPrompt = String(prompt || '').trim()
+    if (!cleanPrompt) {
+      setFormError('Write or generate the ad prompt before generating.')
+      return { queued: 0 }
+    }
+    // Scrub brief metadata (CTA / destination URL / hook labels / "text overlay")
+    // and append the no-text guard so the model doesn't burn captions or the URL
+    // onto the video. Same cleanup the per-shot ad path uses.
+    const guardedPrompt = buildAdVideoPromptWithNoTextGuard(removeUgcSceneBriefFragments(cleanPrompt))
+    const videoNegativePrompt = buildAdVideoNegativePrompt(negativePrompt)
+
+    const refs = Array.from(new Set(
+      (Array.isArray(referenceAssetIds) ? referenceAssetIds : [])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean)
+    )).slice(0, 4)
+    const dur = Math.max(1, Math.min(15, Math.round(Number(duration) || 10)))
+    const resolution = { width: Number(width) || 720, height: Number(height) || 1280 }
+    const isLtx = model === 'ltx'
+
+    // LTX + references → compose a first frame LOCALLY (Qwen Image Edit 2509,
+    // which combines a primary image + up to 2 reference images), then the
+    // watcher effect animates it with LTX i2v. Keeps the whole LTX path local —
+    // no paid cloud model. refs order is [creator, product, environment]:
+    // creator is the primary image, product + environment become references.
+    if (isLtx && refs.length > 0) {
+      const depsOk = await validateDependenciesForQueue(['image-edit', 'ltx23-i2v'], 'UGC one-shot (LTX)')
+      if (!depsOk) return { queued: 0 }
+      const token = `oneshot_${Date.now()}`
+      const composePrompt = [
+        'Combine the provided images into one clean vertical 9:16 UGC selfie keyframe. The primary image is the creator; the reference images are the product and the environment.',
+        'Keep the creator identity and wardrobe, keep the product shape and label believable, and use the environment for the room, lighting, surfaces, and colors. The creator holds the product near their face, talking to camera. Photoreal shot-on-iPhone look, no text overlays, no extra people, no duplicate products, no warped hands.',
+        String(framePrompt || cleanPrompt),
+      ].filter(Boolean).join('\n\n').slice(0, 1500)
+      const frameJob = createQueuedJob({
+        category: 'image',
+        workflowId: 'image-edit',
+        workflowLabel: 'UGC One-Shot First Frame (Qwen Image Edit, local)',
+        needsImage: true,
+        inputAssetType: 'image',
+        inputAssetId: refs[0],
+        inputAssetName: '',
+        referenceAssetId1: refs[1] || null,
+        referenceAssetId2: refs[2] || null,
+        prompt: composePrompt,
+        negativePrompt: buildAdVideoNegativePrompt(''),
+        seed: Number(seed) + 1,
+        resolution,
+        directorLabel: 'UGC One-Shot Frame',
+        yolo: { mode: 'ad', stage: 'oneshot-frame', oneShotToken: token, workflowId: 'image-edit' },
+      })
+      setGenerationQueue((prev) => [...prev, frameJob])
+      setPendingLtxOneShots((prev) => [...prev, { token, prompt: guardedPrompt, duration: dur, width: resolution.width, height: resolution.height }])
+      setFormError(null)
+      addComfyLog('status', 'UGC one-shot: composing a first frame locally (Qwen), then LTX 2.3 animates it')
+      return { queued: 1, chained: true }
+    }
+
+    const workflowId = isLtx ? 'ltx23-t2v' : SEEDANCE_UGC_VIDEO_WORKFLOW_ID
+    const modelLabel = isLtx ? 'LTX 2.3' : 'Seedance 2.0'
+    const depsOk = await validateDependenciesForQueue([workflowId], 'UGC one-shot')
+    if (!depsOk) return { queued: 0 }
+
+    // Seedance r2v takes the references directly; LTX t2v (no refs) is prompt-only.
+    const assetFieldIds = {}
+    if (!isLtx) refs.forEach((id, index) => { assetFieldIds[`referenceImage${index + 1}`] = id })
+
+    const job = createQueuedJob({
+      category: 'video',
+      workflowId,
+      workflowLabel: `UGC One-Shot (${modelLabel})`,
+      needsImage: false,
+      inputAssetType: null,
+      inputAssetId: null,
+      inputAssetName: '',
+      prompt: guardedPrompt,
+      negativePrompt: videoNegativePrompt,
+      duration: dur,
+      fps: isLtx ? (Number(yoloVideoFps) || 24) : null,
+      resolution,
+      seed: Number(seed) + 1,
+      ...(isLtx ? {} : { generateAudio: true }),
+      ...(Object.keys(assetFieldIds).length > 0 ? { assetFieldIds } : {}),
+      directorLabel: 'UGC One-Shot',
+      yolo: { mode: 'ad', stage: 'oneshot', workflowId },
+    })
+
+    setGenerationQueue((prev) => [...prev, job])
+    setFormError(null)
+    addComfyLog('status', `UGC one-shot queued (${modelLabel})`)
+    return { queued: 1 }
+  }, [addComfyLog, createQueuedJob, isConnected, seed, validateDependenciesForQueue, yoloVideoFps])
+
+  // Watcher: when an LTX one-shot's composed first frame finishes, animate it.
+  useEffect(() => {
+    if (pendingLtxOneShots.length === 0) return
+    const animations = []
+    for (const pending of pendingLtxOneShots) {
+      if (firedOneShotTokensRef.current.has(pending.token)) continue
+      const frame = assets.find((a) => a?.type === 'image'
+        && ((a?.yolo?.oneShotToken || a?.settings?.yolo?.oneShotToken) === pending.token))
+      if (!frame) continue
+      firedOneShotTokensRef.current.add(pending.token)
+      animations.push(createQueuedJob({
+        category: 'video',
+        workflowId: 'ltx23-i2v',
+        workflowLabel: 'UGC One-Shot (LTX 2.3)',
+        needsImage: true,
+        inputAssetType: 'image',
+        inputAssetId: frame.id,
+        inputAssetName: frame.name || '',
+        prompt: pending.prompt,
+        negativePrompt: buildAdVideoNegativePrompt(negativePrompt),
+        duration: pending.duration,
+        fps: Number(yoloVideoFps) || 24,
+        resolution: { width: pending.width, height: pending.height },
+        seed: Number(seed) + 2,
+        directorLabel: 'UGC One-Shot',
+        yolo: { mode: 'ad', stage: 'oneshot', workflowId: 'ltx23-i2v' },
+      }))
+      addComfyLog('status', 'First frame ready — animating with LTX 2.3')
+    }
+    if (animations.length > 0) {
+      setGenerationQueue((prev) => [...prev, ...animations])
+      setPendingLtxOneShots((prev) => prev.filter((p) => !firedOneShotTokensRef.current.has(p.token)))
+    }
+  }, [assets, pendingLtxOneShots, createQueuedJob, negativePrompt, seed, yoloVideoFps, addComfyLog])
 
   const handleQueueYoloVideos = useCallback(async (options = {}) => {
     const {
@@ -11321,6 +11782,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         }
       }
     } else if (result.type === 'audio') {
+      // Voice audition clip: cache the bytes globally (localStorage) keyed by
+      // voice name and skip the normal project-asset save, so previews persist
+      // across projects without cluttering any one project.
+      if (directorMeta?.stage === 'voice-preview') {
+        const voiceName = directorMeta?.voicePreviewVoice || job?.elevenLabsTts?.voice || ''
+        try {
+          const url = comfyui.getMediaUrl(result.filename, result.subfolder, result.outputType)
+          const resp = await fetch(url)
+          const blob = await resp.blob()
+          const dataUrl = await blobToDataUrl(blob)
+          if (voiceName && dataUrl) {
+            setVoicePreviews((prev) => {
+              const next = { ...prev, [voiceName]: dataUrl }
+              try { localStorage.setItem(VOICE_PREVIEW_STORAGE_KEY, JSON.stringify(next)) } catch (_) { /* ignore quota */ }
+              return next
+            })
+          }
+          return { didImportAny: true, importedAssets: [] }
+        } catch (err) {
+          throw new Error(`Failed to cache voice preview: ${err?.message || err}`)
+        }
+      }
       if (markImportedSignature('audio', result.filename, result.subfolder, result.outputType)) {
         addComfyLog('status', `Skipped duplicate audio import: ${result.filename}`)
         return { didImportAny: false, importedAssets }
@@ -11339,14 +11822,15 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         const blobUrl = importsIntoActiveProject ? URL.createObjectURL(file) : null
         const newAsset = await saveImportedAssetRecord({
           ...assetInfo,
-          name: shortFilmVoiceName || autoName,
+          name: shortFilmVoiceName || (directorMeta ? resolvedName : autoName),
           type: 'audio',
           url: blobUrl,
           prompt: jobPrompt || jobTags,
           isImported: true,
+          yolo: directorMeta || undefined,
           shortFilm: shortFilmMeta || undefined,
           folderId: generatedAudioFolderId,
-          settings: { duration: job?.musicDuration, bpm: job?.bpm, keyscale: job?.keyscale, voice: shortFilmMeta?.voicePreset }
+          settings: { duration: job?.musicDuration, bpm: job?.bpm, keyscale: job?.keyscale, voice: shortFilmMeta?.voicePreset || job?.elevenLabsTts?.voice }
         }, generatedAudioFolderPath)
         if (newAsset) importedAssets.push(newAsset)
         didImportAny = true
@@ -11355,10 +11839,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         if (!importsIntoActiveProject) throw err
         const url = comfyui.getMediaUrl(result.filename, result.subfolder, result.outputType)
         const fallbackAsset = addAsset({
-          name: shortFilmVoiceName || autoName,
+          name: shortFilmVoiceName || (directorMeta ? resolvedName : autoName),
           type: 'audio',
           url,
           prompt: jobPrompt || jobTags,
+          yolo: directorMeta || undefined,
           shortFilm: shortFilmMeta || undefined,
           folderId: generatedAudioFolderId,
           settings: { duration: job?.musicDuration, bpm: job?.bpm },
@@ -11716,7 +12201,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       let uploadedAudioFilename = null
       const audioUploadAssetId = job.workflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID || job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID
         ? job.musicAudioAssetId
-        : (job.workflowId === 'ltx23-ia2v' || job.workflowId === SHORT_FILM_DIALOGUE_VIDEO_WORKFLOW_ID ? job.audioAssetId : null)
+        : (job.workflowId === 'ltx23-ia2v' || job.workflowId === 'ltx23-id-lora' || job.workflowId === SHORT_FILM_DIALOGUE_VIDEO_WORKFLOW_ID ? job.audioAssetId : null)
       if (audioUploadAssetId) {
         const audioAsset = findJobAsset(audioUploadAssetId, 'audio')
         if (!audioAsset) {
@@ -11853,6 +12338,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         modifyWAN22Workflow,
         modifyLTX23I2VWorkflow,
         modifyLTX23IA2VWorkflow,
+        modifyLTX23IdLoraWorkflow,
         modifyMultipleAnglesWorkflow,
         modifyQwenImageEdit2509Workflow,
         modifyCustomKeyframeWorkflow,
@@ -11917,6 +12403,20 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             fps: job.fps,
             seed: job.seed,
             filenamePrefix: outputPrefix || (job.workflowId === SHORT_FILM_DIALOGUE_VIDEO_WORKFLOW_ID ? 'video/short_film_dialogue_ltx23' : 'video/ltx23_ia2v'),
+          })
+          break
+        case 'ltx23-id-lora':
+          modifiedWorkflow = modifyLTX23IdLoraWorkflow(workflowJson, {
+            prompt: job.prompt,
+            negativePrompt: job.negativePrompt,
+            inputImage: uploadedFilename,
+            inputAudio: uploadedAudioFilename,
+            width: job.resolution?.width,
+            height: job.resolution?.height,
+            duration: job.duration,
+            fps: job.fps,
+            seed: job.seed,
+            filenamePrefix: outputPrefix || 'video/ltx23_id_lora',
           })
           break
         case 'frame-interpolation':
@@ -13077,6 +13577,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     yoloActivePlan={yoloActivePlan}
                     yoloQueueVariants={yoloQueueVariants}
                     yoloStoryboardAssetMap={yoloStoryboardAssetMap}
+                    yoloUgcVoiceAssetMap={yoloUgcVoiceAssetMap}
                     yoloStoryboardReadyCount={yoloStoryboardReadyCount}
                     yoloActivePlanIsStale={yoloActivePlanIsStale}
                     yoloDependencyCheckInProgress={yoloDependencyCheckInProgress}
@@ -13116,6 +13617,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleQueueYoloVideos={handleQueueYoloVideos}
                     handleQueueYoloShotVideo={handleQueueYoloShotVideo}
                     handleQueueYoloShotVideos={handleQueueYoloShotVideos}
+                    handleQueueUgcVoices={handleQueueUgcVoices}
+                    handleQueueUgcVoicePreviews={handleQueueUgcVoicePreviews}
+                    handleQueueUgcOneShot={handleQueueUgcOneShot}
+                    voicePreviews={voicePreviews}
                     handleOpenYoloAdCustomKeyframeWorkflowInComfyUi={handleOpenYoloAdCustomKeyframeWorkflowInComfyUi}
                     handleImportYoloAdCustomKeyframeWorkflow={handleImportYoloAdCustomKeyframeWorkflow}
                     handleClearYoloAdCustomKeyframeWorkflow={handleClearYoloAdCustomKeyframeWorkflow}

@@ -1577,6 +1577,64 @@ export function modifyLTX23IA2VWorkflow(workflow, options = {}) {
 }
 
 /**
+ * Workflow modifier for LTX 2.3 ID-LoRA lip-sync (image + reference audio ->
+ * talking video). Unlike modifyLTX23IA2VWorkflow, this graph drives real
+ * lip-sync via the talkvid ID LoRA + LTXVReferenceAudio node, so the provided
+ * voice clip is spoken with matching mouth motion. Control node ids come from
+ * public/workflows/video_ltx2_3_id_lora.json:
+ *   269 LoadImage, 276 LoadAudio, 340:319 prompt, 340:314 negative,
+ *   340:330 width, 340:324 height, 340:323 fps, 340:331 duration (seconds),
+ *   340:285 / 340:286 seeds.
+ */
+export function modifyLTX23IdLoraWorkflow(workflow, options = {}) {
+  const {
+    prompt = '',
+    negativePrompt = '',
+    inputImage = '',
+    inputAudio = '',
+    width = 720,
+    height = 1280,
+    duration = 5,
+    fps = 24,
+    seed = Math.floor(Math.random() * 1000000000000),
+    filenamePrefix = 'video/ltx23_id_lora',
+  } = options
+
+  const modified = JSON.parse(JSON.stringify(workflow))
+  const numericWidth = Math.max(256, Math.round(Number(width) || 720))
+  const numericHeight = Math.max(256, Math.round(Number(height) || 1280))
+  const numericDuration = Math.max(1, Number(duration) || 5)
+  const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  const numericSeed = Math.round(Number(seed) || Math.floor(Math.random() * 1000000000000))
+
+  const setInput = (nodeId, key, value) => {
+    if (modified[nodeId]?.inputs && key in modified[nodeId].inputs) modified[nodeId].inputs[key] = value
+  }
+
+  if (inputImage) setInput('269', 'image', inputImage)
+  if (inputAudio && modified['276']?.inputs) {
+    modified['276'].inputs.audio = inputAudio
+    delete modified['276'].inputs.audioUI
+  }
+  if (prompt) setInput('340:319', 'value', prompt)
+  if (negativePrompt) setInput('340:314', 'text', negativePrompt)
+  setInput('340:330', 'value', numericWidth)
+  setInput('340:324', 'value', numericHeight)
+  setInput('340:323', 'value', numericFps)
+  setInput('340:331', 'value', numericDuration)
+  setInput('340:285', 'noise_seed', numericSeed)
+  setInput('340:286', 'noise_seed', (numericSeed + 1000003) >>> 0)
+
+  for (const node of Object.values(modified)) {
+    if (node?.class_type === 'SaveVideo' && node.inputs && 'filename_prefix' in node.inputs) {
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix
+    }
+  }
+
+  return modified
+}
+
+/**
  * Workflow modifier for 1-Click Multiple Angles (Qwen Image Edit)
  * Generates 8 camera angles from a single image
  */

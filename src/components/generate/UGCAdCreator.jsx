@@ -6,12 +6,36 @@ import {
   SEEDANCE_UGC_VIDEO_WORKFLOW_ID,
 } from '../../config/generateWorkspaceConfig'
 
+// One-shot flow: brief -> references -> one Seedance generation of the whole ad.
+// (The legacy per-shot steps — Script Review / Voiceover / Keyframes / Videos —
+// are no longer in the nav; their render blocks remain but are unreachable.)
 const STEPS = [
   { id: 'setup', label: 'The Vibe' },
   { id: 'references', label: 'References' },
-  { id: 'script', label: 'Script Review' },
-  { id: 'keyframes', label: 'Keyframes' },
-  { id: 'videos', label: 'Videos + Timeline' },
+  { id: 'generate', label: 'Generate' },
+]
+
+// Ready-made ElevenLabs voices (must match the alias list in
+// normalizeElevenLabsVoiceName in services/comfyui.js). One pinned voice drives
+// every spoken shot so the creator sounds identical across the whole ad.
+const VOICE_OPTIONS = [
+  'Jessica (female, american)',
+  'Laura (female, american)',
+  'Sarah (female, american)',
+  'River (non-binary, american)',
+  'Roger (male, american)',
+  'Callum (male, american)',
+  'Eric (male, american)',
+  'Liam (male, american)',
+  'George (male, british)',
+  'Charlie (male, australian)',
+]
+
+// ElevenLabs TTS models. v3 is the most expressive and supports inline emotion
+// tags like [excited]/[skeptical]; v2 is the stable fallback (tags ignored).
+const VOICE_MODEL_OPTIONS = [
+  { id: 'eleven_v3', label: 'v3 — most expressive', helper: 'Best emotion + per-line delivery tags. Needs v3 access on your ElevenLabs plan.' },
+  { id: 'eleven_multilingual_v2', label: 'v2 — stable', helper: 'Reliable everywhere, flatter. Delivery tags are ignored; use the slider.' },
 ]
 
 const FIXED_UGC_FPS = 30
@@ -30,16 +54,56 @@ const UGC_FORMAT_OPTIONS = [
   { id: 'problem_solution', label: 'Problem / Solution', emoji: '🛠️', helper: 'Quick pain point -> product saves the day -> honest verdict.' },
 ]
 
+// Per-format structure skeletons. Injected into the external-LLM prompt so each
+// template steers the LLM toward its own camera grammar + beats + vibe, instead
+// of every format producing the same generic script.
+const UGC_ARCHETYPE_SPECS = {
+  casual_review: [
+    'Structure — Casual Review: selfie talking-to-camera review, iPhone front/back camera mix.',
+    'Beats: hook (raise the product to the lens) -> show a key detail on the back camera -> a quick real use/demo -> honest reaction -> soft recommendation.',
+    'Talking creator, natural short dialogue, handheld friend-showing-a-friend energy.',
+  ].join('\n'),
+  unboxing_asmr: [
+    'Structure — Unboxing ASMR: overhead top-down, hands-only, NO face.',
+    'Beats: tap + open the packaging -> peel/reveal the product -> lift and rotate to show it -> arrange a final beauty-shot display.',
+    'Slow deliberate movements, crisp amplified sounds (tap, peel, rustle), little or no dialogue, cozy tactile vibe.',
+  ].join('\n'),
+  demo_review: [
+    'Structure — Demo Review: "does it actually work?" real test.',
+    'Beats: set up the claim or a bit of skepticism -> use the product for real in the environment -> show the result clearly -> honest verdict.',
+    'Talking creator, often mid-activity with real effort; believable, not polished.',
+  ].join('\n'),
+  try_on_grwm: [
+    'Structure — Try-On / GRWM: fast multi-cut style edit with varied angles (POV tease, detail, low-angle, full-body, walking).',
+    'Beats: tease the item -> detail shots -> wear/style it -> confident poses -> walk-away.',
+    'Mostly visual with minimal dialogue, music-driven, editorial-but-casual; works in 9:16 or 3:4.',
+  ].join('\n'),
+  mini_testimonial: [
+    'Structure — Mini Testimonial: calm, believable everyday-use endorsement.',
+    'Beats: relatable intro -> how they actually use it day to day -> why it matters to them -> quiet soft endorsement.',
+    'Talking creator, low-key and grounded, zero hype or ad-voice.',
+  ].join('\n'),
+  reaction_hook: [
+    'Structure — Reaction Hook: curiosity-driven, strong "wait, look at this" open.',
+    'Beats: instant curiosity hook -> reveal the thing -> genuine reaction -> quick payoff / why it matters.',
+    'Talking creator, surprised and intrigued energy, fast and punchy.',
+  ].join('\n'),
+  problem_solution: [
+    'Structure — Problem / Solution: pain point, then the product fixes it.',
+    'Beats: show a relatable problem or frustration -> introduce the product -> show it solving the problem -> honest result.',
+    'Talking creator, practical and conversational.',
+  ].join('\n'),
+}
+
 const ASPECT_RATIO_OPTIONS = [
-  { id: 'vertical_9x16', label: '9:16', helper: 'Portrait: 720x1280 or 1080x1920.' },
-  { id: 'landscape_16x9', label: '16:9', helper: 'Landscape: 1280x720 or 1920x1080.' },
-  { id: 'square_1x1', label: '1:1', helper: 'Square: 720x720 or 1080x1080.' },
+  { id: 'vertical_9x16', label: '9:16', helper: 'Portrait: 720x1280 or 1080x1920. TikTok, Reels, Stories.' },
+  { id: 'square_1x1', label: '1:1', helper: 'Square: 720x720 or 1080x1080. Feed posts.' },
 ]
 const PLATFORM_OPTIONS = ASPECT_RATIO_OPTIONS
 
 const TONE_OPTIONS = [
   { id: 'casual-friend', label: 'Casual Friend', text: 'casual friend energy' },
-  { id: 'skeptical-impressed', label: 'Skeptical', text: 'skeptical at first, then genuinely impressed' },
+  { id: 'skeptical-impressed', label: 'Won Over', text: 'skeptical at first, then genuinely impressed' },
   { id: 'excited-social', label: 'Excited Social', text: 'excited social creator energy' },
   { id: 'cozy-asmr', label: 'Cozy ASMR', text: 'slow cozy ASMR pacing' },
   { id: 'premium-creator', label: 'Premium Creator', text: 'premium but still phone-native creator style' },
@@ -412,14 +476,29 @@ const UGC_HUMAN_THEME_CSS = `
     text-transform: uppercase;
   }
   .ugc-human-theme .ugc-hook-input {
-    background: transparent;
-    border: 0;
+    background: #100f0d;
+    border: 1px solid #4a473e;
+    border-radius: 8px;
     color: #f1efe8;
     font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
     font-size: 24px;
     font-weight: 700;
     outline: none;
+    padding: 10px 14px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
     width: 100%;
+  }
+  .ugc-human-theme .ugc-hook-input:hover {
+    border-color: #5f5a4e;
+  }
+  .ugc-human-theme .ugc-hook-input:focus {
+    border-color: #ff4b2e;
+    box-shadow: 0 0 0 3px rgba(255, 75, 46, 0.18);
+  }
+  .ugc-human-theme .ugc-hook-input::placeholder {
+    color: #5f6877;
+    font-style: italic;
+    font-weight: 400;
   }
   .ugc-human-theme .ugc-chip-row {
     display: flex;
@@ -822,15 +901,18 @@ const KEYFRAME_BUSY_STATUSES = new Set(['queued', 'paused', 'uploading', 'config
 const VIDEO_BUSY_STATUSES = KEYFRAME_BUSY_STATUSES
 const UGC_AD_DRAFT_STORAGE_KEY = 'comfystudio-ugc-ad-creator-draft-v1'
 const DEFAULT_UGC_AD_DRAFT = Object.freeze({
-  businessName: 'Bright Bite',
-  productService: 'teeth whitening kit',
-  hook: 'Okay, I need to show you this.',
-  audience: 'people who want a brighter smile without a complicated routine',
-  offer: 'simple whitening routine with visible fresh-smile payoff',
-  proof: 'easy to use, clean packaging, satisfying before-and-after feeling',
-  cta: 'Try it for your next morning routine',
-  destination: 'brightbite.example.com',
-  location: 'bright bathroom with natural daylight',
+  // Product-/brand-/setting-specific fields start blank so the placeholders show and
+  // the user fills in their own. Only the universal, product-agnostic defaults below
+  // (camera rules, creator direction) are pre-set.
+  businessName: '',
+  productService: '',
+  hook: '',
+  audience: '',
+  offer: '',
+  proof: '',
+  cta: '',
+  destination: '',
+  location: '',
   visualRules: 'shot on iPhone, vertical 9:16, handheld micro-shake, real skin tones, warm natural light, no studio polish, no text overlays',
   talentDirection: 'young creator talking directly to camera, relaxed and genuine, like showing a friend',
   goal: 'casual_review',
@@ -842,11 +924,17 @@ const DEFAULT_UGC_AD_DRAFT = Object.freeze({
   shotCount: 5,
   keyframeWorkflowId: 'nano-banana-2',
   videoWorkflowId: 'ltx23-i2v',
+  voiceMode: 'generate',
+  voiceId: 'Jessica (female, american)',
+  voiceModel: 'eleven_v3',
+  voiceStability: 0.4,
+  voiceDelivery: {},
   productAssetId: '',
   talentAssetId: '',
   environmentAssetId: '',
   noVisibleTalent: false,
   directorScript: '',
+  scriptManuallyEdited: false,
 })
 
 function normalizeDraftOption(value, options, fallback) {
@@ -888,11 +976,17 @@ function normalizeUgcAdDraft(rawDraft = {}) {
     shotCount: normalizeDraftNumber(raw.shotCount, SHOT_COUNT_OPTIONS, DEFAULT_UGC_AD_DRAFT.shotCount),
     keyframeWorkflowId: normalizeDraftOption(raw.keyframeWorkflowId, KEYFRAME_MODEL_OPTIONS, DEFAULT_UGC_AD_DRAFT.keyframeWorkflowId),
     videoWorkflowId: normalizeDraftOption(raw.videoWorkflowId, VIDEO_MODEL_OPTIONS, DEFAULT_UGC_AD_DRAFT.videoWorkflowId),
+    voiceMode: ['none', 'generate'].includes(String(raw.voiceMode)) ? String(raw.voiceMode) : DEFAULT_UGC_AD_DRAFT.voiceMode,
+    voiceId: VOICE_OPTIONS.includes(String(raw.voiceId)) ? String(raw.voiceId) : DEFAULT_UGC_AD_DRAFT.voiceId,
+    voiceModel: VOICE_MODEL_OPTIONS.some((option) => option.id === String(raw.voiceModel)) ? String(raw.voiceModel) : DEFAULT_UGC_AD_DRAFT.voiceModel,
+    voiceStability: normalizeDraftRangeNumber(typeof raw.voiceStability === 'number' ? raw.voiceStability * 100 : NaN, DEFAULT_UGC_AD_DRAFT.voiceStability * 100, 0, 100) / 100,
+    voiceDelivery: (raw.voiceDelivery && typeof raw.voiceDelivery === 'object') ? raw.voiceDelivery : {},
     productAssetId: String(raw.productAssetId || ''),
     talentAssetId: String(raw.talentAssetId || ''),
     environmentAssetId: String(raw.environmentAssetId || ''),
     noVisibleTalent: Boolean(raw.noVisibleTalent),
     directorScript: String(raw.directorScript || ''),
+    scriptManuallyEdited: Boolean(raw.scriptManuallyEdited),
   }
 }
 
@@ -1657,7 +1751,7 @@ function buildDirectorScript(data, shotOverrides = {}) {
     ...(shotOverrides?.[index] || {}),
   }))
   return [
-    `Scene 1: ${compact(data.businessName || data.brand, 'Brand')} ${compact(data.goalLabel || data.formatLabel, 'UGC Ad')}`,
+    `Scene 1: ${[compact(data.productService || data.product, ''), compact(data.goalLabel || data.formatLabel, 'UGC Ad')].filter(Boolean).join(' ')}`,
     `Scene context: Creator-style vertical UGC for ${compact(data.audience, 'the target viewer')}. Product: ${compact(data.productService || data.product, 'the product')}. Hook: ${compact(data.hook, 'Okay, I need to show you this.')}. Core reason to care: ${compact(data.offer || data.promise, 'the product benefit')}. Proof moment: ${compact(data.proof, 'believable product proof')}. CTA: ${compact(data.cta, 'soft call to action')}. Destination: ${compact(data.destination, 'website/contact')}. Setting: ${compact(data.location, 'natural creator environment')}. Visual rules: ${compact(data.visualRules || data.colors, 'phone-native UGC')}. Creator direction: ${data.noVisibleTalent ? 'hands-only, no face visible' : compact(data.talentDirection, 'creator talks naturally to camera')}. Tone: ${compact(data.toneText, 'casual friend energy')}.`,
     data.environmentReferenceName
       ? `Environment reference: Treat ${data.environmentReferenceName} as the room/location anchor. Prefer this reference over generic setting words, and match its surfaces, lighting, colors, and background continuity when composing each shot.`
@@ -1703,10 +1797,13 @@ function buildExternalLlmPrompt(data, currentScript) {
     '',
     'Return only the script. Do not include explanation, markdown, or notes.',
     '',
-    `Brand: ${compact(data.businessName || data.brand, 'Brand')}`,
     `Product: ${compact(data.productService || data.product, 'Product')}`,
     `Hook: ${compact(data.hook, 'Okay, I need to show you this.')}`,
     `UGC format: ${compact(data.goalLabel || data.formatLabel, 'Casual review')}`,
+    '',
+    UGC_ARCHETYPE_SPECS[data.goal] || UGC_ARCHETYPE_SPECS.casual_review,
+    'Follow this structure for THIS product specifically — translate each beat into actions that make sense for the actual product (do not copy beats that do not fit it).',
+    '',
     `Viewer: ${compact(data.audience, 'target viewer')}`,
     `Reason to care: ${compact(data.offer || data.promise, 'product benefit')}`,
     `Proof / demo moment: ${compact(data.proof, 'believable proof')}`,
@@ -1765,6 +1862,7 @@ function flattenPlanShots(plan) {
 
 export default function UGCAdCreator({
   assets,
+  yoloUgcVoiceAssetMap,
   generationQueue,
   yoloActivePlan,
   yoloQueueVariants,
@@ -1806,6 +1904,10 @@ export default function UGCAdCreator({
   handleQueueYoloShotStoryboard,
   handleQueueYoloVideos,
   handleQueueYoloShotVideo,
+  handleQueueUgcVoices,
+  handleQueueUgcVoicePreviews,
+  handleQueueUgcOneShot,
+  voicePreviews,
   handleOpenYoloAdCustomKeyframeWorkflowInComfyUi,
   handleImportYoloAdCustomKeyframeWorkflow,
   handleClearYoloAdCustomKeyframeWorkflow,
@@ -1838,6 +1940,17 @@ export default function UGCAdCreator({
   const [shotCount, setShotCount] = useState(initialDraft.shotCount)
   const [keyframeWorkflowId, setKeyframeWorkflowId] = useState(initialDraft.keyframeWorkflowId)
   const [videoWorkflowId, setVideoWorkflowId] = useState(initialDraft.videoWorkflowId)
+  const [voiceMode, setVoiceMode] = useState(initialDraft.voiceMode)
+  const [voiceId, setVoiceId] = useState(initialDraft.voiceId)
+  const [voiceModel, setVoiceModel] = useState(initialDraft.voiceModel)
+  const [voiceStability, setVoiceStability] = useState(initialDraft.voiceStability)
+  const [voiceDelivery, setVoiceDelivery] = useState(initialDraft.voiceDelivery || {})
+  const [voiceStatus, setVoiceStatus] = useState('')
+  const [isQueuingVoices, setIsQueuingVoices] = useState(false)
+  const [regeneratingVoiceKey, setRegeneratingVoiceKey] = useState('')
+  const [isGeneratingPreviews, setIsGeneratingPreviews] = useState(false)
+  const [isGeneratingOneShot, setIsGeneratingOneShot] = useState(false)
+  const [oneShotStatus, setOneShotStatus] = useState('')
   const [productAssetId, setProductAssetId] = useState(initialDraft.productAssetId)
   const [talentAssetId, setTalentAssetId] = useState(initialDraft.talentAssetId)
   const [environmentAssetId, setEnvironmentAssetId] = useState(initialDraft.environmentAssetId)
@@ -1845,6 +1958,13 @@ export default function UGCAdCreator({
   const [directorScript, setDirectorScript] = useState(initialDraft.directorScript || yoloScript || '')
   const [scriptViewMode, setScriptViewMode] = useState('full')
   const [scriptShotOverrides, setScriptShotOverrides] = useState({})
+  // True only when the user has hand-edited the raw director script. While false,
+  // the live `generatedScript` (built from the brief + per-shot Creator lines) is
+  // the source of truth for both display and generation, so the raw script can
+  // never silently disagree with — or override — the live shots. Any structured
+  // change (a Creator line, length, shot count, rebuild, re-entering this step)
+  // snaps this back to false.
+  const [scriptManuallyEdited, setScriptManuallyEdited] = useState(Boolean(initialDraft.scriptManuallyEdited))
   const [selectedShotIndex, setSelectedShotIndex] = useState(0)
   const [selectedVideoIndex, setSelectedVideoIndex] = useState(0)
   const [keyframeStatus, setKeyframeStatus] = useState('Ready to generate one keyframe.')
@@ -1881,11 +2001,17 @@ export default function UGCAdCreator({
       shotCount,
       keyframeWorkflowId,
       videoWorkflowId,
+      voiceMode,
+      voiceId,
+      voiceModel,
+      voiceStability,
+      voiceDelivery,
       productAssetId,
       talentAssetId,
       environmentAssetId,
       noVisibleTalent,
       directorScript,
+      scriptManuallyEdited,
       updatedAt: new Date().toISOString(),
     }
     try {
@@ -1900,6 +2026,7 @@ export default function UGCAdCreator({
     cta,
     destination,
     directorScript,
+    scriptManuallyEdited,
     environmentAssetId,
     goal,
     hook,
@@ -1918,6 +2045,11 @@ export default function UGCAdCreator({
     tone,
     videoFps,
     videoWorkflowId,
+    voiceMode,
+    voiceId,
+    voiceModel,
+    voiceStability,
+    voiceDelivery,
     visualRules,
   ])
 
@@ -2102,8 +2234,8 @@ export default function UGCAdCreator({
     ]
   )
   const externalLlmPrompt = useMemo(
-    () => buildExternalLlmPrompt(currentData, directorScript || generatedScript),
-    [currentData, directorScript, generatedScript]
+    () => buildExternalLlmPrompt(currentData, scriptManuallyEdited ? directorScript : generatedScript),
+    [currentData, directorScript, generatedScript, scriptManuallyEdited]
   )
 
   const buildEasyModeStyleNotes = () => ([
@@ -2185,7 +2317,7 @@ export default function UGCAdCreator({
     return ids
   }
 
-  const applyToDirector = (scriptOverride = directorScript || generatedScript) => {
+  const applyToDirector = (scriptOverride = scriptManuallyEdited ? directorScript : generatedScript) => {
     const script = scriptOverride || generatedScript
     setYoloAdBrandName(businessName)
     setYoloAdProductName(productService)
@@ -2228,7 +2360,10 @@ export default function UGCAdCreator({
   }
 
   const goTo = (nextStep) => {
-    if (nextStep === 'script') {
+    // Seed the prompt from the freshly-built script ONLY when the user hasn't
+    // hand-edited it. Once they've edited, keep their text so navigating away
+    // and back (or returning via "Build Prompt") never wipes the prompt box.
+    if ((nextStep === 'script' || nextStep === 'generate') && !scriptManuallyEdited) {
       setDirectorScript(generatedScript)
       applyToDirector(generatedScript)
     }
@@ -2264,7 +2399,7 @@ export default function UGCAdCreator({
   })
 
   const handleBuildPlan = () => {
-    const script = directorScript || generatedScript
+    const script = scriptManuallyEdited ? directorScript : generatedScript
     const styleNotes = buildEasyModeStyleNotes()
     applyToDirector(script)
     const plan = handleBuildActiveYoloPlan(buildPlanOptions(script, styleNotes))
@@ -2337,6 +2472,7 @@ export default function UGCAdCreator({
     setCommercialLength(nextLength)
     setShotCount(nextCount)
     const nextScript = buildDirectorScript({ ...currentData, commercialLength: nextLength, shotCount: nextCount }, scriptShotOverrides)
+    setScriptManuallyEdited(false)
     setDirectorScript(nextScript)
     applyToDirector(nextScript)
     setYoloTargetDuration(nextLength)
@@ -2347,6 +2483,7 @@ export default function UGCAdCreator({
     const nextCount = Number(value) || 8
     setShotCount(nextCount)
     const nextScript = buildDirectorScript({ ...currentData, shotCount: nextCount }, scriptShotOverrides)
+    setScriptManuallyEdited(false)
     setDirectorScript(nextScript)
     applyToDirector(nextScript)
     setYoloShotsPerScene(nextCount)
@@ -2362,6 +2499,7 @@ export default function UGCAdCreator({
         },
       }
       const nextScript = buildDirectorScript(currentData, next)
+      setScriptManuallyEdited(false)
       setDirectorScript(nextScript)
       setYoloScript(nextScript)
       return next
@@ -2496,6 +2634,158 @@ export default function UGCAdCreator({
     }
   }
 
+  // Voiceover: count spoken vs silent shots and how many already have a clip.
+  const voiceLineShots = useMemo(
+    () => planShots.filter(({ shot }) => !shotHasNoDialogue(shot)),
+    [planShots]
+  )
+  const voiceReadyCount = useMemo(() => voiceLineShots.reduce((count, { scene, shot }) => {
+    const variant = getFirstVariantForShot(scene.id, shot.id)
+    return variant && yoloUgcVoiceAssetMap?.has(variant.key) ? count + 1 : count
+  }, 0), [voiceLineShots, yoloUgcVoiceAssetMap, yoloQueueVariants])
+
+  // Per-shot final spoken text, keyed by variant.key. On v3 we prepend the
+  // delivery note as an emotion tag (e.g. "[excited] line"); on v2 tags are
+  // ignored so we send the bare line and rely on the stability slider.
+  const buildVoiceLineOverrides = () => {
+    const overrides = {}
+    for (const { scene, shot } of voiceLineShots) {
+      const variant = getFirstVariantForShot(scene.id, shot.id)
+      if (!variant?.key) continue
+      const baseLine = stripDialogueQuotes(shot.dialogue || '').trim()
+      if (!baseLine) continue
+      const delivery = String(voiceDelivery[shot.id] || '').trim()
+      overrides[variant.key] = (voiceModel === 'eleven_v3' && delivery)
+        ? `[${delivery}] ${baseLine}`
+        : baseLine
+    }
+    return overrides
+  }
+
+  const voiceQueueOptions = () => ({
+    voice: voiceId,
+    model: voiceModel,
+    stability: voiceStability,
+    planOverride: yoloActivePlan,
+    lineOverrides: buildVoiceLineOverrides(),
+  })
+
+  const handleGenerateAllVoices = async () => {
+    if (!handleQueueUgcVoices || planShots.length === 0) return
+    setIsQueuingVoices(true)
+    setVoiceStatus(`Generating ${voiceLineShots.length} voice line${voiceLineShots.length === 1 ? '' : 's'} with ${voiceId}...`)
+    try {
+      const result = await handleQueueUgcVoices(voiceQueueOptions())
+      const queued = result?.queued || 0
+      setVoiceStatus(
+        queued > 0
+          ? `Queued ${queued} voice line${queued === 1 ? '' : 's'}. They appear below as they finish.`
+          : (result?.skipped > 0 ? 'Those voice lines are already generating.' : 'No voice lines were queued.')
+      )
+    } catch (error) {
+      setVoiceStatus(`Could not generate voices: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setIsQueuingVoices(false)
+    }
+  }
+
+  const previewCache = voicePreviews && typeof voicePreviews === 'object' ? voicePreviews : {}
+  const cachedPreviewCount = VOICE_OPTIONS.filter((option) => previewCache[option]).length
+
+  const handleGenerateVoicePreviews = async () => {
+    if (!handleQueueUgcVoicePreviews) return
+    const missing = VOICE_OPTIONS.filter((option) => !previewCache[option])
+    if (missing.length === 0) {
+      setVoiceStatus('All voice previews are already cached.')
+      return
+    }
+    setIsGeneratingPreviews(true)
+    setVoiceStatus(`Generating ${missing.length} voice preview${missing.length === 1 ? '' : 's'} (one-time, cached for every project)...`)
+    try {
+      const result = await handleQueueUgcVoicePreviews(missing)
+      setVoiceStatus(
+        result?.queued > 0
+          ? `Queued ${result.queued} preview${result.queued === 1 ? '' : 's'}. They become playable below as they finish.`
+          : 'No previews were queued.'
+      )
+    } catch (error) {
+      setVoiceStatus(`Could not generate previews: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setIsGeneratingPreviews(false)
+    }
+  }
+
+  const handleRegenerateVoiceLine = async (scene, shot) => {
+    const variant = getFirstVariantForShot(scene.id, shot.id)
+    if (!handleQueueUgcVoices || !variant?.key) return
+    setRegeneratingVoiceKey(variant.key)
+    setVoiceStatus('Regenerating that line as a new take...')
+    try {
+      await handleQueueUgcVoices({
+        ...voiceQueueOptions(),
+        onlyVariantKeys: [variant.key],
+        force: true,
+      })
+      setVoiceStatus('Queued a new take. It replaces the old clip when it finishes.')
+    } catch (error) {
+      setVoiceStatus(`Could not regenerate: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setRegeneratingVoiceKey('')
+    }
+  }
+
+  // One-shot generate: the editable master prompt is the director script; the
+  // 3 references anchor identity; Seedance produces the whole ad + native audio.
+  const oneShotPrompt = scriptManuallyEdited ? directorScript : generatedScript
+  const oneShotDuration = Math.min(15, Math.max(5, Number(commercialLength) || 10))
+  // Order matters for the LTX first-frame composer (creator, product, environment).
+  const oneShotReferenceIds = [noVisibleTalent ? '' : talentAssetId, productAssetId, environmentAssetId].filter(Boolean)
+  // Scene description for the composed first frame (LTX path only).
+  const oneShotFramePrompt = [
+    talentDirection || 'young creator talking to camera',
+    productService ? `holding ${productService}` : (businessName ? `holding ${businessName}` : ''),
+    location ? `in ${location}` : 'in a natural home setting',
+    'vertical 9:16 UGC selfie, photoreal, handheld phone look, natural light',
+  ].filter(Boolean).join(', ')
+  const oneShotAsset = useMemo(() => {
+    const list = (assets || []).filter((a) => a?.type === 'video' && (a?.yolo?.stage === 'oneshot' || a?.settings?.yolo?.stage === 'oneshot'))
+    list.sort((a, b) => new Date(b?.createdAt || 0).getTime() - new Date(a?.createdAt || 0).getTime())
+    return list[0] || null
+  }, [assets])
+  const oneShotAssetUrl = getAssetUrl(oneShotAsset)
+
+  const handleGenerateOneShot = async (model = 'seedance') => {
+    if (!handleQueueUgcOneShot) return
+    const promptText = String(oneShotPrompt || '').trim()
+    if (!promptText) {
+      setOneShotStatus('Write or build the prompt first.')
+      return
+    }
+    const modelLabel = model === 'ltx' ? 'LTX 2.3 (local)' : 'Seedance 2.0'
+    setIsGeneratingOneShot(true)
+    setOneShotStatus(`Generating the full ad with ${modelLabel} (${oneShotDuration}s)…`)
+    try {
+      const res = await handleQueueUgcOneShot({
+        model,
+        prompt: promptText,
+        framePrompt: oneShotFramePrompt,
+        duration: oneShotDuration,
+        width: outputResolution.width,
+        height: outputResolution.height,
+        referenceAssetIds: oneShotReferenceIds,
+      })
+      setOneShotStatus(res?.queued
+        ? (res?.chained
+          ? 'Composing a first frame from your references, then LTX 2.3 will animate it. Your ad appears below when done.'
+          : `Queued (${modelLabel}). Your ad appears below when it finishes (also saved to your project assets).`)
+        : 'Nothing was queued.')
+    } catch (error) {
+      setOneShotStatus(`Could not generate: ${error?.message || 'Unknown error'}`)
+    } finally {
+      setIsGeneratingOneShot(false)
+    }
+  }
+
   const stepIndex = STEPS.findIndex((item) => item.id === step)
 
   const renderStepNav = () => (
@@ -2505,7 +2795,7 @@ export default function UGCAdCreator({
           key={item.id}
           type="button"
           onClick={() => setStep(item.id)}
-          disabled={(item.id === 'keyframes' || item.id === 'videos') && planShots.length === 0}
+          disabled={(item.id === 'voiceover' || item.id === 'keyframes' || item.id === 'videos') && planShots.length === 0}
           className={`ugc-step-btn ${item.id === step ? 'active' : index < stepIndex ? 'done' : ''} disabled:cursor-not-allowed disabled:opacity-50`}
         >
           <span className="ugc-step-kicker">Step {index + 1}</span>
@@ -2804,8 +3094,8 @@ export default function UGCAdCreator({
           </div>
 
           <div className="ugc-card-block">
-            <div className="ugc-card-title">What kind of UGC are we making?</div>
-            <div className="ugc-card-copy">This sets the shot grammar, creator voice, and default pacing. You can still edit every shot later.</div>
+            <div className="ugc-card-title">Pick a starting template</div>
+            <div className="ugc-card-copy">Each one writes a full default script — shots, dialogue, and camera — as a starting point. Pick the closest, then customize the prompt on the Generate step. These are templates, not locked formats; the real ad is yours to edit.</div>
             <div className="ugc-format-grid">
               {UGC_FORMAT_OPTIONS.map(renderFormatButton)}
             </div>
@@ -2844,21 +3134,10 @@ export default function UGCAdCreator({
           <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
             <div className="ugc-card-block">
               <div className="ugc-card-title">What are we selling?</div>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Brand</span>
-                <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="Your brand name" />
-              </label>
+              <div className="ugc-card-copy">The one thing that's in every shot.</div>
               <label className="mt-3 block">
                 <span className="ugc-field-label">Product</span>
-                <input value={productService} onChange={(e) => setProductService(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="What are you selling?" />
-              </label>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Who's scrolling past? (your audience)</span>
-                <input value={audience} onChange={(e) => setAudience(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="Who is this for? e.g. busy people who want a quick win" />
-              </label>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Why should they stop scrolling?</span>
-                <textarea value={offer} onChange={(e) => setOffer(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="The one reason to care - the payoff in plain words." />
+                <input value={productService} onChange={(e) => setProductService(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="What are you selling? e.g. a can of Red Bull" />
               </label>
             </div>
 
@@ -2877,34 +3156,10 @@ export default function UGCAdCreator({
                   </button>
                 ))}
               </div>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Creator direction (optional)</span>
-                <textarea value={talentDirection} onChange={(e) => setTalentDirection(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="mid-20s creator, talks like a friend, slightly skeptical then impressed" />
-              </label>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">The proof moment - what convinces people it's real?</span>
-                <textarea value={proof} onChange={(e) => setProof(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="The believable beat - a demo, before/after, or honest reaction." />
-              </label>
             </div>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="ugc-card-block">
-              <div className="ugc-card-title">Where's the phone?</div>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Room / location</span>
-                <input value={location} onChange={(e) => setLocation(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" />
-              </label>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Camera rules</span>
-                <textarea value={visualRules} onChange={(e) => setVisualRules(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" />
-              </label>
-              <label className="mt-3 block">
-                <span className="ugc-field-label">Final line / CTA</span>
-                <input value={cta} onChange={(e) => setCta(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" />
-              </label>
-            </div>
-
+          <div className="mt-3 grid grid-cols-1 gap-3">
             <div className="ugc-card-block">
               <div className="ugc-card-title">Delivery</div>
               <div className="ugc-field-label mt-1">Canvas</div>
@@ -2969,8 +3224,54 @@ export default function UGCAdCreator({
             </div>
           </div>
 
+          {/* "Add detail" fields hidden for now — the one-shot flow steers via the
+              prompt/AI instead. State + sensible defaults still feed the script.
+              Re-enable by flipping this false to true. */}
+          {false && (
+          <details className="ugc-card-block mt-3">
+            <summary className="cursor-pointer select-none text-sm font-semibold text-[#f1efe8]">
+              Add detail <span className="ml-2 font-mono text-[10px] font-normal uppercase tracking-wider text-[#95927f]">optional - good defaults already set</span>
+            </summary>
+            <p className="ugc-card-copy mt-2">All optional. Leave them and the workflow fills in sensible defaults; add any to steer the result. You can also tweak every line later in Script Review.</p>
+            <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <label className="block">
+                <span className="ugc-field-label">Brand</span>
+                <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="Your brand name" />
+              </label>
+              <label className="block">
+                <span className="ugc-field-label">Who's scrolling past? (your audience)</span>
+                <input value={audience} onChange={(e) => setAudience(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" placeholder="Who is this for? e.g. busy people who want a quick win" />
+              </label>
+              <label className="block lg:col-span-2">
+                <span className="ugc-field-label">Why should they stop scrolling?</span>
+                <textarea value={offer} onChange={(e) => setOffer(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="The one reason to care - the payoff in plain words." />
+              </label>
+              <label className="block lg:col-span-2">
+                <span className="ugc-field-label">The proof moment - what convinces people it's real?</span>
+                <textarea value={proof} onChange={(e) => setProof(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="The believable beat - a demo, before/after, or honest reaction." />
+              </label>
+              <label className="block lg:col-span-2">
+                <span className="ugc-field-label">Creator direction</span>
+                <textarea value={talentDirection} onChange={(e) => setTalentDirection(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" placeholder="mid-20s creator, talks like a friend, slightly skeptical then impressed" />
+              </label>
+              <label className="block">
+                <span className="ugc-field-label">Room / location</span>
+                <input value={location} onChange={(e) => setLocation(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" />
+              </label>
+              <label className="block">
+                <span className="ugc-field-label">Final line / CTA</span>
+                <input value={cta} onChange={(e) => setCta(e.target.value)} className="ugc-input w-full rounded-lg border px-3 py-2 text-xs" />
+              </label>
+              <label className="block lg:col-span-2">
+                <span className="ugc-field-label">Camera rules</span>
+                <textarea value={visualRules} onChange={(e) => setVisualRules(e.target.value)} rows={2} className="ugc-input w-full resize-y rounded-lg border px-3 py-2 text-xs" />
+              </label>
+            </div>
+          </details>
+          )}
+
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] text-[#95927f]">Fill in your brief, then drop in your product, creator, and room.</span>
+            <span className="text-[11px] text-[#95927f]">Format, hook, product, and tone are all you need — fine-tune the full script on the Generate step.</span>
             <button type="button" onClick={() => goTo('references')} className="ugc-primary rounded-lg px-4 py-2 text-xs font-semibold">
               Next: add references
             </button>
@@ -3026,7 +3327,7 @@ export default function UGCAdCreator({
               A creator reference plus a room reference keeps the same person in the same place across shots. That continuity is what makes UGC ads feel real instead of stitched together.
             </div>
           </div>
-          {renderActions('setup', 'script', 'Build Script')}
+          {renderActions('setup', 'generate', 'Build Prompt')}
         </div>
       )}
 
@@ -3187,8 +3488,9 @@ export default function UGCAdCreator({
               />
             </div>
             <textarea
-              value={directorScript || generatedScript}
+              value={scriptManuallyEdited ? directorScript : generatedScript}
               onChange={(e) => {
+                setScriptManuallyEdited(true)
                 setDirectorScript(e.target.value)
                 setYoloScript(e.target.value)
               }}
@@ -3207,6 +3509,7 @@ export default function UGCAdCreator({
               <button
                 type="button"
                 onClick={() => {
+                  setScriptManuallyEdited(false)
                   setScriptShotOverrides({})
                   const next = buildDirectorScript(currentData)
                   setDirectorScript(next)
@@ -3220,6 +3523,295 @@ export default function UGCAdCreator({
                 Create keyframes
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {step === 'voiceover' && (
+        <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-900/60 p-4 space-y-4">
+          <div>
+            <div className="ugc-kicker">One Voice, Every Shot</div>
+            <h2 className="mt-1 text-lg font-semibold text-sf-text-primary">Give the creator a single, consistent voice.</h2>
+            <p className="mt-1 text-xs text-sf-text-muted">
+              Pick one voice and generate a clip for every spoken line. LTX 2.3 lip-syncs to these clips, so the creator sounds identical across all shots instead of inventing a new voice per clip. Silent shots stay silent — add music or SFX yourself in the editor.
+            </p>
+          </div>
+
+          {planShots.length === 0 ? (
+            <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 px-3 py-3 text-xs text-sf-text-muted">
+              Build the plan first (Script Review → Create keyframes), then come back to add voices.
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {renderChoiceButton(voiceMode === 'generate', 'Generate voices', () => setVoiceMode('generate'), 'One pinned voice for the whole ad, generated with ElevenLabs.', 'voice-generate')}
+                {renderChoiceButton(voiceMode === 'none', 'No voice', () => setVoiceMode('none'), 'Skip voices. Every shot stays silent for you to score yourself.', 'voice-none')}
+              </div>
+
+              {voiceMode === 'generate' && (
+                <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block text-xs text-sf-text-secondary">
+                      <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Creator voice</span>
+                      <select
+                        value={voiceId}
+                        onChange={(event) => setVoiceId(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
+                      >
+                        {VOICE_OPTIONS.map((option) => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-xs text-sf-text-secondary">
+                      <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Model</span>
+                      <select
+                        value={voiceModel}
+                        onChange={(event) => setVoiceModel(event.target.value)}
+                        className="mt-1 w-full rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
+                      >
+                        {VOICE_MODEL_OPTIONS.map((option) => (
+                          <option key={option.id} value={option.id}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/50 px-3 py-2">
+                    <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Hear it</span>
+                    {previewCache[voiceId] ? (
+                      <audio key={voiceId} src={previewCache[voiceId]} controls className="h-7 max-w-[220px]" />
+                    ) : (
+                      <span className="text-[10px] italic text-sf-text-muted">No sample yet for this voice.</span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isGeneratingPreviews || yoloDependencyCheckInProgress || cachedPreviewCount >= VOICE_OPTIONS.length}
+                      onClick={handleGenerateVoicePreviews}
+                      className="rounded-lg border border-sf-dark-600 px-2.5 py-1 text-[10px] text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isGeneratingPreviews
+                        ? 'Generating…'
+                        : cachedPreviewCount >= VOICE_OPTIONS.length
+                          ? 'All previews ready'
+                          : `Generate voice previews (${cachedPreviewCount}/${VOICE_OPTIONS.length})`}
+                    </button>
+                    <span className="text-[10px] text-sf-text-muted">One-time, cached for every project.</span>
+                  </div>
+                  <label className="block text-xs text-sf-text-secondary">
+                    <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Expressiveness</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round((1 - voiceStability) * 100)}
+                      onChange={(event) => setVoiceStability(1 - (Number(event.target.value) / 100))}
+                      className="mt-1 w-full accent-sf-accent"
+                    />
+                    <span className="text-[10px] text-sf-text-muted">More emotional &amp; variable ⟵ ⟶ more consistent &amp; steady (stability {voiceStability.toFixed(2)})</span>
+                  </label>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={isQueuingVoices || yoloDependencyCheckInProgress || voiceLineShots.length === 0}
+                      onClick={handleGenerateAllVoices}
+                      className="rounded-lg bg-sf-accent px-3 py-2 text-xs text-white hover:bg-sf-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isQueuingVoices ? 'Queueing voices...' : `Generate ${voiceLineShots.length} Voice${voiceLineShots.length === 1 ? '' : 's'}`}
+                    </button>
+                    <span className="text-[10px] text-sf-text-muted">{voiceReadyCount}/{voiceLineShots.length} ready</span>
+                  </div>
+                  {voiceStatus && <div className="text-[10px] text-sf-text-muted">{voiceStatus}</div>}
+
+                  <div className="space-y-2">
+                    {planShots.map(({ scene, shot }, index) => {
+                      const variant = getFirstVariantForShot(scene.id, shot.id)
+                      const silent = shotHasNoDialogue(shot)
+                      const voiceAsset = variant ? yoloUgcVoiceAssetMap?.get(variant.key) : null
+                      const clipUrl = getAssetUrl(voiceAsset)
+                      const line = stripDialogueQuotes(shot.dialogue || '')
+                      const isRegenerating = variant && regeneratingVoiceKey === variant.key
+                      return (
+                        <div key={`voice-${scene.id}-${shot.id}`} className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/50 px-3 py-2">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-[10px] uppercase tracking-wider text-sf-text-muted">Shot {index + 1}</div>
+                              <div className={`mt-0.5 text-xs ${silent ? 'italic text-sf-text-muted' : 'text-sf-text-primary'}`}>
+                                {silent ? 'Silent — no spoken line' : (line || '(no line yet)')}
+                              </div>
+                            </div>
+                            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] ${
+                              silent
+                                ? 'border-sf-dark-600 text-sf-text-muted'
+                                : clipUrl
+                                  ? 'border-emerald-500/40 text-emerald-200'
+                                  : 'border-yellow-500/40 text-yellow-100'
+                            }`}>
+                              {silent ? 'Silent' : clipUrl ? 'Voice ready' : 'No voice yet'}
+                            </span>
+                          </div>
+                          {!silent && (
+                            <div className="mt-2 space-y-2">
+                              {voiceModel === 'eleven_v3' && (
+                                <input
+                                  type="text"
+                                  value={voiceDelivery[shot.id] || ''}
+                                  onChange={(event) => setVoiceDelivery((prev) => ({ ...prev, [shot.id]: event.target.value }))}
+                                  placeholder="Delivery, e.g. excited, breathless / skeptical / warm and amazed"
+                                  className="w-full rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-1.5 text-[11px] text-sf-text-primary placeholder:italic placeholder:text-sf-text-muted/70 focus:border-sf-accent focus:outline-none"
+                                />
+                              )}
+                              <div className="flex flex-wrap items-center gap-2">
+                                {clipUrl && (
+                                  <audio key={clipUrl} src={clipUrl} controls className="h-7 max-w-[220px]" />
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={isQueuingVoices || isRegenerating || yoloDependencyCheckInProgress || !line}
+                                  onClick={() => handleRegenerateVoiceLine(scene, shot)}
+                                  className="rounded-lg border border-sf-dark-600 px-2.5 py-1 text-[10px] text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {isRegenerating ? 'Queueing…' : clipUrl ? 'New take' : 'Generate this line'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-sf-text-muted">
+                    Tweak delivery and hit “New take” until a line sounds right, then move on. Change the words in Script Review. With a voice clip, LTX 2.3 voiced shots auto-route to the lip-sync graph (audio + lips in one clip). Seedance also lip-syncs to the clip but outputs silent video — lay the clip on the timeline.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={() => setStep('script')} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Back</button>
+            <button type="button" disabled={planShots.length === 0} onClick={() => setStep('keyframes')} className="ugc-primary rounded-lg px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50">Next: Keyframes</button>
+          </div>
+        </div>
+      )}
+
+      {step === 'generate' && (
+        <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-900/60 p-4 space-y-4">
+          <div>
+            <div className="ugc-kicker">One-Shot</div>
+            <h2 className="mt-1 text-lg font-semibold text-sf-text-primary">Generate the whole ad in one pass.</h2>
+            <p className="mt-1 text-xs text-sf-text-muted">
+              Seedance 2.0 takes your full prompt + the references and builds the entire ad — all the cuts, performance, and native audio — in a single clip. Pick a length, review the prompt, and generate.
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="block text-xs text-sf-text-secondary">
+                <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Length</span>
+                <select
+                  value={oneShotDuration}
+                  onChange={(event) => setCommercialLength(Number(event.target.value))}
+                  className="mt-1 rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
+                >
+                  {[5, 8, 10, 12, 15].map((sec) => (
+                    <option key={sec} value={sec}>{sec}s</option>
+                  ))}
+                </select>
+              </label>
+              <div className="text-[10px] text-sf-text-muted">
+                <div className="uppercase tracking-wider">References</div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  <span className={`rounded-full border px-2 py-0.5 ${productAssetId ? 'border-emerald-500/40 text-emerald-200' : 'border-sf-dark-600 text-sf-text-muted'}`}>Product {productAssetId ? '✓' : '—'}</span>
+                  <span className={`rounded-full border px-2 py-0.5 ${(noVisibleTalent || talentAssetId) ? 'border-emerald-500/40 text-emerald-200' : 'border-sf-dark-600 text-sf-text-muted'}`}>Creator {noVisibleTalent ? '(none)' : talentAssetId ? '✓' : '—'}</span>
+                  <span className={`rounded-full border px-2 py-0.5 ${environmentAssetId ? 'border-emerald-500/40 text-emerald-200' : 'border-sf-dark-600 text-sf-text-muted'}`}>Environment {environmentAssetId ? '✓' : '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/50 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-wider text-sf-accent">Tailor it with AI (free)</div>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-sf-text-muted">
+                    Copy this {selectedGoal.label} template's prompt, paste it into ChatGPT / Claude / Gemini / any LLM (or your own), then paste the result into the box below. It rewrites the script for your exact product — no credits, your choice of model.
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {llmCopyStatus && <span className="text-[10px] text-sf-text-muted">{llmCopyStatus}</span>}
+                  <button
+                    type="button"
+                    onClick={copyExternalLlmPrompt}
+                    className="rounded-lg border border-sf-dark-600 bg-sf-dark-700 px-2.5 py-1.5 text-[11px] font-medium text-sf-text-primary transition-colors hover:bg-sf-dark-600"
+                  >
+                    Copy AI script prompt
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <label className="block text-xs text-sf-text-secondary">
+              <span className="text-[10px] uppercase tracking-wider text-sf-text-muted">Ad prompt (the whole script)</span>
+              <textarea
+                value={oneShotPrompt || ''}
+                onChange={(event) => { setScriptManuallyEdited(true); setDirectorScript(event.target.value) }}
+                rows={12}
+                className="mt-1 w-full resize-y rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs leading-relaxed text-sf-text-primary focus:border-sf-accent focus:outline-none"
+              />
+            </label>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setScriptManuallyEdited(false); setScriptShotOverrides({}); const next = buildDirectorScript(currentData); setDirectorScript(next); applyToDirector(next) }}
+                className="rounded-lg border border-sf-dark-600 bg-sf-dark-700 px-3 py-2 text-xs font-medium text-sf-text-primary transition-colors hover:bg-sf-dark-600"
+              >
+                Rebuild from brief
+              </button>
+              <button
+                type="button"
+                disabled={isGeneratingOneShot || yoloDependencyCheckInProgress || !String(oneShotPrompt || '').trim()}
+                onClick={() => handleGenerateOneShot('seedance')}
+                title="Cloud Seedance 2.0 — uses your references to lock the product and creator. The quality path."
+                className="ugc-primary rounded-lg px-3 py-2 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isGeneratingOneShot ? 'Queueing…' : `Generate (Seedance 2.0, ${oneShotDuration}s)`}
+              </button>
+              <button
+                type="button"
+                disabled={isGeneratingOneShot || yoloDependencyCheckInProgress || !String(oneShotPrompt || '').trim()}
+                onClick={() => handleGenerateOneShot('ltx')}
+                title="Local LTX 2.3 — composes a first frame from your references, then animates it (one continuous shot). Slower on local GPUs."
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isGeneratingOneShot ? 'Queueing…' : `Generate (LTX 2.3 local, ${oneShotDuration}s)`}
+              </button>
+              <span className="text-[10px] text-sf-text-muted">{oneShotStatus}</span>
+            </div>
+            <p className="text-[10px] text-sf-text-muted">
+              Seedance (cloud) uses your references to lock the product and creator with true scene cuts. LTX 2.3 (local) auto-composes a first frame from your references, then animates it — one continuous shot, kept on your own GPU. (No references? LTX falls back to prompt-only.)
+            </p>
+          </div>
+
+          {oneShotAssetUrl && (
+            <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-sf-text-muted">Latest result</div>
+              <video
+                key={oneShotAssetUrl}
+                src={oneShotAssetUrl}
+                className="mt-2 max-h-[420px] w-full rounded-lg bg-black object-contain"
+                controls
+                autoPlay
+                loop
+                playsInline
+              />
+              <p className="mt-2 text-[10px] text-sf-text-muted">Saved to your project assets — drag it onto the timeline to edit or export. Not happy? Tweak the prompt and generate again.</p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <button type="button" onClick={() => setStep('references')} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Back</button>
+            <button type="button" onClick={() => setStep('setup')} className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:border-sf-dark-500 hover:text-sf-text-primary">Start Another Ad</button>
           </div>
         </div>
       )}
@@ -3314,7 +3906,7 @@ export default function UGCAdCreator({
                       <span className="phone-shell">
                         <span className="notch" />
                         {url ? (
-                          <img src={url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                          <img src={url} alt="" className="absolute inset-0 h-full w-full object-contain bg-black" />
                         ) : (
                           <>
                             {cardState.state === 'generating' && (
@@ -3466,7 +4058,7 @@ export default function UGCAdCreator({
                     {url ? (
                       <video
                         src={url}
-                        className="absolute inset-0 h-full w-full object-cover"
+                        className="absolute inset-0 h-full w-full object-contain bg-black"
                         muted
                         autoPlay
                         loop

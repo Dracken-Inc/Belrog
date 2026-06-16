@@ -166,11 +166,11 @@ export const YOLO_MUSIC_VIDEO_WORKFLOW_OPTIONS = Object.freeze([
 
 export const VIDEO_DURATION_PRESETS = Object.freeze([2, 3, 5, 8])
 export const LTX23_VIDEO_DURATION_PRESETS = Object.freeze([5, 8, 10, 15])
-export const SEEDANCE_VIDEO_DURATION_PRESETS = Object.freeze([5, 7, 10])
+export const SEEDANCE_VIDEO_DURATION_PRESETS = Object.freeze([5, 8, 10, 12, 15])
 
 export function getVideoDurationPresets(workflowId = '') {
   const normalized = String(workflowId || '').trim()
-  if (['ltx23-i2v', 'ltx23-ia2v', 'ltx23-t2v'].includes(normalized)) {
+  if (['ltx23-i2v', 'ltx23-ia2v', 'ltx23-id-lora', 'ltx23-t2v'].includes(normalized)) {
     return LTX23_VIDEO_DURATION_PRESETS
   }
   if (['seedance2-t2v', 'seedance2-flf2v', 'seedance2-r2v'].includes(normalized)) {
@@ -337,6 +337,7 @@ const WORKFLOW_DISPLAY_LABELS = Object.freeze({
   'wan22-t2v': 'WAN 2.2 Text to Video',
   'ltx23-i2v': 'LTX 2.3',
   'ltx23-ia2v': 'LTX 2.3 IA2V',
+  'ltx23-id-lora': 'LTX 2.3 Lip-Sync',
   'ltx23-t2v': 'LTX 2.3 Text to Video',
   [SHORT_FILM_DIALOGUE_VIDEO_WORKFLOW_ID]: 'Short Film Dialogue (LTX 2.3)',
   'frame-interpolation': 'Frame Interpolation',
