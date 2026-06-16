@@ -10576,13 +10576,15 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceAssetId2: refs[2] || null,
         prompt: composePrompt,
         negativePrompt: buildAdVideoNegativePrompt(''),
-        seed: Number(seed) + 1,
+        seed: Math.floor(Math.random() * 1000000000),
         resolution,
         directorLabel: 'UGC One-Shot Frame',
         yolo: { mode: 'ad', stage: 'oneshot-frame', oneShotToken: token, workflowId: 'image-edit' },
       })
       setGenerationQueue((prev) => [...prev, frameJob])
-      setPendingLtxOneShots((prev) => [...prev, { token, prompt: guardedPrompt, duration: dur, width: resolution.width, height: resolution.height }])
+      // Send the prompt VERBATIM (no scrub) to match what works in ComfyUI; the
+      // workflow's baked negative already suppresses text and is tuned for motion.
+      setPendingLtxOneShots((prev) => [...prev, { token, prompt: cleanPrompt, duration: dur, width: resolution.width, height: resolution.height }])
       setFormError(null)
       addComfyLog('status', 'UGC one-shot: composing a first frame locally (Qwen), then LTX 2.3 animates it')
       return { queued: 1, chained: true }
@@ -10605,12 +10607,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       inputAssetType: null,
       inputAssetId: null,
       inputAssetName: '',
-      prompt: guardedPrompt,
-      negativePrompt: videoNegativePrompt,
+      // LTX: send the prompt verbatim + leave the baked (motion-tuned) negative.
+      // Seedance: keep the scrubbed prompt + no-text negative.
+      prompt: isLtx ? cleanPrompt : guardedPrompt,
+      negativePrompt: isLtx ? '' : videoNegativePrompt,
       duration: dur,
-      fps: isLtx ? (Number(yoloVideoFps) || 24) : null,
+      fps: isLtx ? 25 : null, // LTX 2.3 native rate (25fps) — keeps motion/audio aligned for lip-sync.
       resolution,
-      seed: Number(seed) + 1,
+      seed: Math.floor(Math.random() * 1000000000),
       ...(isLtx ? {} : { generateAudio: true }),
       ...(Object.keys(assetFieldIds).length > 0 ? { assetFieldIds } : {}),
       directorLabel: 'UGC One-Shot',
@@ -10642,11 +10646,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         inputAssetId: frame.id,
         inputAssetName: frame.name || '',
         prompt: pending.prompt,
-        negativePrompt: buildAdVideoNegativePrompt(negativePrompt),
+        // Empty → modifier leaves the workflow's baked negative (tuned for motion
+        // + teeth/face), which the lip-sync depends on. Don't clobber it.
+        negativePrompt: '',
         duration: pending.duration,
-        fps: Number(yoloVideoFps) || 24,
+        fps: 25, // LTX 2.3 is natively trained at 25fps — required for lip-sync to land.
         resolution: { width: pending.width, height: pending.height },
-        seed: Number(seed) + 2,
+        seed: Math.floor(Math.random() * 1000000000),
         directorLabel: 'UGC One-Shot',
         yolo: { mode: 'ad', stage: 'oneshot', workflowId: 'ltx23-i2v' },
       }))
@@ -12378,6 +12384,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           })
           break
         case 'ltx23-i2v':
+          // Log the exact positive prompt we hand to LTX (node 320:319) so it can
+          // be inspected in the ComfyUI log panel. If prompt_enhance is ON, the
+          // gemma-rewritten version is computed inside ComfyUI — see its PreviewAny node.
+          addComfyLog('status', `LTX 2.3 prompt sent →\n${String(job.prompt || '').slice(0, 4000)}`)
           modifiedWorkflow = modifyLTX23I2VWorkflow(workflowJson, {
             prompt: job.prompt,
             negativePrompt: job.negativePrompt,

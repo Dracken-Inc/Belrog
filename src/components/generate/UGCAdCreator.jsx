@@ -1860,6 +1860,14 @@ function flattenPlanShots(plan) {
   return rows
 }
 
+// Pull the first shot's keyframe-prompt line out of the master script so the
+// LTX first-frame compose matches the ad's actual opening shot instead of a
+// fixed "creator holding the product" template.
+function extractFirstKeyframePrompt(script = '') {
+  const match = String(script || '').match(/keyframe\s*prompt\s*:\s*([^\n]+)/i)
+  return match ? match[1].trim() : ''
+}
+
 export default function UGCAdCreator({
   assets,
   yoloUgcVoiceAssetMap,
@@ -2740,8 +2748,11 @@ export default function UGCAdCreator({
   const oneShotDuration = Math.min(15, Math.max(5, Number(commercialLength) || 10))
   // Order matters for the LTX first-frame composer (creator, product, environment).
   const oneShotReferenceIds = [noVisibleTalent ? '' : talentAssetId, productAssetId, environmentAssetId].filter(Boolean)
-  // Scene description for the composed first frame (LTX path only).
-  const oneShotFramePrompt = [
+  // First-frame compose prompt (LTX path only): prefer the master script's
+  // opening-shot keyframe prompt so the frame matches the ad's actual first beat
+  // and changes with edits; fall back to a generic brief-derived line only if
+  // the script has no keyframe prompt.
+  const oneShotFramePrompt = extractFirstKeyframePrompt(oneShotPrompt) || [
     talentDirection || 'young creator talking to camera',
     productService ? `holding ${productService}` : (businessName ? `holding ${businessName}` : ''),
     location ? `in ${location}` : 'in a natural home setting',
@@ -2974,9 +2985,18 @@ export default function UGCAdCreator({
               {socialPreviewEditEnabled ? 'Stop' : 'Preview Edit'}
             </button>
           </div>
-          <div className={`preview-phone ${activePreviewClip ? 'has-video' : ''}`}>
+          <div className={`preview-phone ${(oneShotAssetUrl || activePreviewClip) ? 'has-video' : ''}`}>
             <span className="notch" />
-            {activePreviewClip ? (
+            {oneShotAssetUrl ? (
+              <video
+                key={oneShotAssetUrl}
+                src={oneShotAssetUrl}
+                className="pv-video"
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : activePreviewClip ? (
               <>
                 <video
                   key={activePreviewClip.key}
@@ -3010,13 +3030,17 @@ export default function UGCAdCreator({
               <div>💬<span className="cnt">312</span></div>
               <div>↗<span className="cnt">1.8k</span></div>
             </div>
-            <div className="pv-caption">
-              <div className="user">@{brandHandle}</div>
-              <div>{activePreviewClip ? `Shot ${activePreviewClip.index + 1}: ${activePreviewClip.caption}` : 'this is the one everyone keeps asking me about #ad'}</div>
-            </div>
-            <div className="pv-sound">
-              ♪ <span>original sound - your ad, but make it feel native</span>
-            </div>
+            {!oneShotAssetUrl && (
+              <>
+                <div className="pv-caption">
+                  <div className="user">@{brandHandle}</div>
+                  <div>{activePreviewClip ? `Shot ${activePreviewClip.index + 1}: ${activePreviewClip.caption}` : 'this is the one everyone keeps asking me about #ad'}</div>
+                </div>
+                <div className="pv-sound">
+                  ♪ <span>original sound - your ad, but make it feel native</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -3794,18 +3818,8 @@ export default function UGCAdCreator({
           </div>
 
           {oneShotAssetUrl && (
-            <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-800/40 p-3">
-              <div className="text-[10px] uppercase tracking-wider text-sf-text-muted">Latest result</div>
-              <video
-                key={oneShotAssetUrl}
-                src={oneShotAssetUrl}
-                className="mt-2 max-h-[420px] w-full rounded-lg bg-black object-contain"
-                controls
-                autoPlay
-                loop
-                playsInline
-              />
-              <p className="mt-2 text-[10px] text-sf-text-muted">Saved to your project assets — drag it onto the timeline to edit or export. Not happy? Tweak the prompt and generate again.</p>
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[10px] text-sf-text-muted">
+              Your ad is ready — hit play in the <span className="text-emerald-200">Social preview</span> to watch it. Saved to your project assets too; drag it onto the timeline to edit or export. Not happy? Tweak the prompt and generate again.
             </div>
           )}
 

@@ -1434,63 +1434,58 @@ export function modifyLTX23I2VWorkflow(workflow, options = {}) {
     prompt = '',
     negativePrompt = '',
     inputImage = '',
-    width = 1280,
-    height = 720,
-    frames = 121,
+    width = 1080,
+    height = 1920,
+    duration,
+    frames,
     fps = 24,
     seed = Math.floor(Math.random() * 1000000000000),
     filenamePrefix = 'video/ltx23_i2v',
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
-  const numericWidth = Math.max(256, Math.round(Number(width) || 1280))
-  const numericHeight = Math.max(256, Math.round(Number(height) || 720))
-  const numericFrames = Math.max(2, Math.round(Number(frames) || 121))
+  const numericWidth = Math.max(256, Math.round(Number(width) || 1080))
+  const numericHeight = Math.max(256, Math.round(Number(height) || 1920))
   const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  // This graph computes the frame count internally from duration(seconds) * fps,
+  // so it wants seconds. Prefer an explicit duration; otherwise derive seconds
+  // from a legacy frames count (callers still pass frames).
+  let numericDuration = Number(duration)
+  if (!Number.isFinite(numericDuration) || numericDuration <= 0) {
+    const numericFrames = Number(frames)
+    numericDuration = (Number.isFinite(numericFrames) && numericFrames > 1)
+      ? (numericFrames - 1) / numericFps
+      : 5
+  }
+  numericDuration = Math.max(1, Math.round(numericDuration))
   const numericSeed = Math.round(Number(seed) || Math.floor(Math.random() * 1000000000000))
 
-  if (modified['269'] && inputImage) {
-    modified['269'].inputs.image = inputImage
+  const setInput = (nodeId, key, value) => {
+    if (modified[nodeId]?.inputs && key in modified[nodeId].inputs) modified[nodeId].inputs[key] = value
   }
 
-  if (modified['267:266']) {
-    modified['267:266'].inputs.value = prompt
-  }
+  // Control nodes for public/workflows/video_ltx2_3_i2v.json (newer audio/lip-sync
+  // graph): 269 LoadImage, 320:319 prompt, 320:313 negative, 320:312 width,
+  // 320:299 height, 320:300 fps, 320:301 duration (seconds), 320:276/320:277 seeds.
+  if (inputImage) setInput('269', 'image', inputImage)
+  if (prompt) setInput('320:319', 'value', prompt)
+  if (negativePrompt) setInput('320:313', 'text', negativePrompt)
+  // prompt_enhance (320:328): when true, our prompt is routed through the LTX2
+  // prompt enhancer (gemma). We now send a clean verbatim prompt, so enhancing
+  // is safe and matches the ComfyUI setup that lip-syncs. (Set false to send the
+  // raw prompt straight to the encoder.)
+  setInput('320:328', 'value', true)
+  setInput('320:312', 'value', numericWidth)
+  setInput('320:299', 'value', numericHeight)
+  setInput('320:300', 'value', numericFps)
+  setInput('320:301', 'value', numericDuration)
+  setInput('320:276', 'noise_seed', numericSeed)
+  setInput('320:277', 'noise_seed', numericSeed)
 
-  if (modified['267:247']) {
-    modified['267:247'].inputs.text = negativePrompt
-  }
-
-  if (modified['267:257']) {
-    modified['267:257'].inputs.value = numericWidth
-  }
-
-  if (modified['267:258']) {
-    modified['267:258'].inputs.value = numericHeight
-  }
-
-  if (modified['267:225']) {
-    modified['267:225'].inputs.value = numericFrames
-  }
-
-  if (modified['267:260']) {
-    modified['267:260'].inputs.value = numericFps
-  }
-
-  if (modified['267:201']) {
-    modified['267:201'].inputs.value = false
-  }
-
-  if (modified['267:216']) {
-    modified['267:216'].inputs.noise_seed = numericSeed
-  }
-
-  if (modified['267:237']) {
-    modified['267:237'].inputs.noise_seed = numericSeed
-  }
-
-  if (modified['75']) {
-    modified['75'].inputs.filename_prefix = filenamePrefix
+  for (const node of Object.values(modified)) {
+    if (node?.class_type === 'SaveVideo' && node.inputs && 'filename_prefix' in node.inputs) {
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix
+    }
   }
 
   return modified

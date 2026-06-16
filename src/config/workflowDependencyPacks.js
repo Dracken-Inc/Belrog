@@ -170,6 +170,10 @@ export const WORKFLOW_DEPENDENCY_PACKS = Object.freeze({
       { classType: 'LTXAVTextEncoderLoader' },
       { classType: 'LTXVAudioVAELoader' },
       { classType: 'LoraLoaderModelOnly' },
+      { classType: 'LoraLoader' },
+      { classType: 'ComfyMathExpression' },
+      { classType: 'ComfySwitchNode' },
+      { classType: 'TextGenerateLTX2Prompt' },
       { classType: 'ResizeImageMaskNode' },
       { classType: 'ResizeImagesByLongerEdge' },
       { classType: 'LTXVPreprocess' },
@@ -215,7 +219,13 @@ export const WORKFLOW_DEPENDENCY_PACKS = Object.freeze({
       {
         classType: 'LoraLoaderModelOnly',
         inputKey: 'lora_name',
-        filename: 'ltx-2.3-22b-distilled-lora-384.safetensors',
+        filename: 'ltx_2.3_22b_distilled_1.1_lora_dynamic_fro09_avg_rank_111_bf16.safetensors',
+        targetSubdir: 'loras',
+      },
+      {
+        classType: 'LoraLoader',
+        inputKey: 'lora_name',
+        filename: 'gemma-3-12b-it-abliterated_lora_rank64_bf16.safetensors',
         targetSubdir: 'loras',
       },
       {
