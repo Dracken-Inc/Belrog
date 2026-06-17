@@ -207,6 +207,72 @@ function createEmptyDraft(asset) {
 // re-transcribe. Keyed by project handle; lives for the app session only.
 const timelineCaptionSessionCache = new Map()
 
+// An approximate TikTok UI overlaid on the positioning preview so the user can
+// keep captions clear of the platform chrome (right action rail + bottom
+// caption/handle/music). viewBox is the real frame size and the SVG is
+// stretched onto the preview image, so coordinates are fractions of the frame.
+function TikTokGuideOverlay({ w, h }) {
+  const railX = w * 0.9
+  const r = w * 0.04
+  const glyphFs = w * 0.034
+  const labelFs = w * 0.024
+  const stroke = Math.max(1, w * 0.005)
+
+  const actions = [
+    { cy: h * 0.5, glyph: '♥', label: '24.1k' },
+    { cy: h * 0.6, glyph: '▢', label: '318' },
+    { cy: h * 0.69, glyph: '⤴', label: '1.2k' },
+    { cy: h * 0.78, glyph: '↗', label: '882' },
+  ]
+
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className="absolute inset-0 w-full h-full pointer-events-none"
+    >
+      <defs>
+        <linearGradient id="ttBottomFade" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="rgba(0,0,0,0)" />
+          <stop offset="1" stopColor="rgba(0,0,0,0.5)" />
+        </linearGradient>
+      </defs>
+
+      {/* Bottom scrim where the caption/handle/music sits */}
+      <rect x="0" y={h * 0.74} width={w} height={h * 0.26} fill="url(#ttBottomFade)" />
+
+      {/* Right action rail */}
+      <circle cx={railX} cy={h * 0.4} r={r} fill="rgba(0,0,0,0.25)" stroke="white" strokeWidth={stroke} opacity="0.9" />
+      {actions.map((a, i) => (
+        <g key={i} opacity="0.92">
+          <circle cx={railX} cy={a.cy} r={r * 0.82} fill="rgba(0,0,0,0.28)" />
+          <text x={railX} y={a.cy + glyphFs * 0.35} fontSize={glyphFs} fill="white" textAnchor="middle">{a.glyph}</text>
+          <text x={railX} y={a.cy + r + labelFs} fontSize={labelFs} fill="white" textAnchor="middle">{a.label}</text>
+        </g>
+      ))}
+      <circle cx={railX} cy={h * 0.88} r={r} fill="rgba(0,0,0,0.4)" stroke="white" strokeWidth={stroke * 0.8} opacity="0.85" />
+
+      {/* Bottom-left handle / caption / sound */}
+      <text x={w * 0.045} y={h * 0.85} fontSize={glyphFs} fill="white" fontWeight="700">@yourbrand</text>
+      <text x={w * 0.045} y={h * 0.89} fontSize={labelFs * 1.1} fill="white" opacity="0.9">your caption goes here #fyp</text>
+      <text x={w * 0.045} y={h * 0.93} fontSize={labelFs} fill="white" opacity="0.82">♪ original sound</text>
+
+      {/* Recommended safe area (clear of the rail and bottom text) */}
+      <rect
+        x={w * 0.04}
+        y={h * 0.1}
+        width={w * 0.78}
+        height={h * 0.62}
+        fill="none"
+        stroke="rgba(125,220,150,0.9)"
+        strokeWidth={stroke}
+        strokeDasharray={`${w * 0.02} ${w * 0.014}`}
+      />
+      <text x={w * 0.05} y={h * 0.1 + labelFs * 1.4} fontSize={labelFs} fill="rgba(125,220,150,0.95)">safe area</text>
+    </svg>
+  )
+}
+
 function CaptionWorkspace({
   isOpen,
   asset,
@@ -255,6 +321,8 @@ function CaptionWorkspace({
   // a new frame is captured, to re-run the preview memo.
   const bgCanvasRef = useRef(null)
   const [bgVersion, setBgVersion] = useState(0)
+  // Preview-only TikTok chrome overlay to gauge caption placement vs platform UI.
+  const [showTikTokOverlay, setShowTikTokOverlay] = useState(false)
 
   const SUBTITLE_POSITION_OPTIONS = useMemo(() => [
     { id: 'action-safe', label: 'Action Safe' },
@@ -950,22 +1018,46 @@ function CaptionWorkspace({
                       : 'Sample caption over a frame of your footage. Adjust placement below.'}
                   </div>
                 </div>
-                <div className="text-[11px] text-sf-text-muted">
-                  {renderSettings.width}×{renderSettings.height}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTikTokOverlay((v) => !v)}
+                    className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
+                      showTikTokOverlay
+                        ? 'border-sf-accent bg-sf-accent/20 text-sf-text-primary'
+                        : 'border-sf-dark-600 bg-sf-dark-900 text-sf-text-muted hover:border-sf-dark-500 hover:text-sf-text-primary'
+                    }`}
+                    title="Show an approximate TikTok UI so you can keep captions clear of it"
+                  >
+                    TikTok overlay
+                  </button>
+                  <div className="text-[11px] text-sf-text-muted">
+                    {renderSettings.width}×{renderSettings.height}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center justify-center rounded-xl bg-black border border-sf-dark-700 overflow-hidden" style={{ maxHeight: 380 }}>
                 {positioningPreviewUrl ? (
-                  <img
-                    src={positioningPreviewUrl}
-                    alt="Caption positioning preview"
-                    className="object-contain"
-                    style={{ maxHeight: 380, maxWidth: '100%' }}
-                  />
+                  <div className="relative" style={{ maxHeight: 380, maxWidth: '100%' }}>
+                    <img
+                      src={positioningPreviewUrl}
+                      alt="Caption positioning preview"
+                      className="block"
+                      style={{ maxHeight: 380, maxWidth: '100%' }}
+                    />
+                    {showTikTokOverlay && (
+                      <TikTokGuideOverlay w={renderSettings.width} h={renderSettings.height} />
+                    )}
+                  </div>
                 ) : (
                   <div className="py-12 text-xs text-sf-text-muted">Preview unavailable.</div>
                 )}
               </div>
+              {showTikTokOverlay && (
+                <div className="mt-2 text-[10px] text-sf-text-muted">
+                  Approximate TikTok layout — keep key text inside the dashed safe area.
+                </div>
+              )}
             </section>
 
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4 space-y-3">
