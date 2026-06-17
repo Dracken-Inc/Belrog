@@ -19,7 +19,7 @@ function easeInCubic(t) { return t * t * t }
 // near-identical presets.
 export const DEFAULT_KINETIC_ACCENT_COLOR = '#A3E635' // lime
 
-function accentGlowColor(accentHex) {
+export function accentGlowColor(accentHex) {
   // Produce a semi-transparent glow in the same hue as the accent so the
   // active word lights up without needing a separate glow color setting.
   const hex = String(accentHex || DEFAULT_KINETIC_ACCENT_COLOR).replace('#', '')
@@ -37,7 +37,7 @@ export const KINETIC_CAPTION_STYLES = [
     id: 'kinetic-pop',
     name: 'Kinetic',
     description: 'Big bold words that pop in and light up as they are spoken.',
-    sampleText: 'watch this happen',
+    sampleText: 'this is your moment',
     renderer: 'kinetic',
     textColor: '#F8FAFC',
     keyWordColor: DEFAULT_KINETIC_ACCENT_COLOR,
@@ -46,6 +46,8 @@ export const KINETIC_CAPTION_STYLES = [
     fontFamily: 'Inter',
     fontWeight: '800',
     accentCustomizable: true,
+    textColorCustomizable: true,
+    defaultTextStyle: 'shadow',
   },
   {
     id: 'kinetic-traditional',
@@ -63,6 +65,42 @@ export const KINETIC_CAPTION_STYLES = [
     subtitleColor: '#FFFFFF',
     subtitlePosition: 'action-safe',
     subtitleTextStyle: 'background',
+    defaultTextStyle: 'background',
+  },
+  {
+    id: 'kinetic-neon',
+    name: 'Neon',
+    description: 'Electric colors with an intense glow. Pair with Frenetic motion.',
+    sampleText: 'feel the energy',
+    renderer: 'kinetic',
+    textColor: '#E0F2FE',
+    keyWordColor: '#22D3EE',
+    baseGlowColor: 'rgba(34, 211, 238, 0.15)',
+    glowColor: 'rgba(34, 211, 238, 0.55)',
+    fontFamily: 'Inter',
+    fontWeight: '800',
+    accentCustomizable: true,
+    textColorCustomizable: true,
+    defaultMotionProfile: 'frenetic',
+    defaultTextStyle: 'plain',
+  },
+  {
+    id: 'kinetic-bold-dark',
+    name: 'Bold Dark',
+    description: 'High-contrast white on a dark scrim. Readable over any background.',
+    sampleText: 'bold statement',
+    renderer: 'kinetic',
+    textColor: '#FFFFFF',
+    keyWordColor: '#FACC15',
+    baseGlowColor: 'rgba(255, 255, 255, 0.12)',
+    glowColor: 'rgba(250, 204, 21, 0.5)',
+    fontFamily: 'Inter',
+    fontWeight: '800',
+    accentCustomizable: true,
+    textColorCustomizable: true,
+    defaultMotionProfile: 'tamed',
+    defaultTextStyle: 'background',
+    bgScrim: 'rgba(0, 0, 0, 0.62)',
   },
 ]
 
@@ -77,6 +115,8 @@ const LEGACY_KINETIC_ID_MAP = {
   'kinetic-electric': 'kinetic-pop',
   'kinetic-violet': 'kinetic-pop',
   'kinetic-mono': 'kinetic-pop',
+  // 'Clean' was folded into 'Subtitles' (Position: Center + Text Style: Shadow).
+  'kinetic-clean': 'kinetic-traditional',
 }
 
 export function getKineticStyleById(id) {
@@ -92,6 +132,20 @@ export function buildKineticStyleWithAccent(styleOrId, accentColor) {
     keyWordColor: accentColor,
     glowColor: accentGlowColor(accentColor),
   }
+}
+
+export function buildKineticStyleWithColors(styleOrId, accentColor, textColor) {
+  const base = typeof styleOrId === 'string' ? getKineticStyleById(styleOrId) : (styleOrId || KINETIC_CAPTION_STYLES[0])
+  const result = { ...base }
+  if (accentColor && !base.traditional) {
+    result.keyWordColor = accentColor
+    result.glowColor = accentGlowColor(accentColor)
+  }
+  if (textColor && base.textColorCustomizable && !base.traditional) {
+    result.textColor = textColor
+    result.baseGlowColor = accentGlowColor(textColor).replace('0.42', '0.18')
+  }
+  return result
 }
 
 const KINETIC_MOTION_PROFILES = {
@@ -124,12 +178,6 @@ const KINETIC_MOTION_PROFILES = {
   },
 }
 
-const SIZE_PROFILE_MULTIPLIERS = {
-  small: 0.65,
-  normal: 1,
-  large: 1.25,
-}
-
 function resolveFieldWithFallback(perCue, global, fallback) {
   if (perCue && perCue !== 'auto') return perCue
   if (global && global !== 'auto') return global
@@ -150,10 +198,26 @@ function resolveKineticBehavior(style, microCue) {
     style?.defaultMotionProfile || 'excited'
   )
 
-  const sizeProfile = resolveFieldWithFallback(
-    override.sizeProfile,
-    global.sizeProfile,
-    'normal'
+  // Size: a continuous multiplier on the computed font size (1 = default).
+  const perCueSize = Number(override.sizeScale)
+  const globalSize = Number(global.sizeScale)
+  const sizeMultiplier = Number.isFinite(perCueSize)
+    ? clamp(perCueSize, 0.3, 2)
+    : (Number.isFinite(globalSize) ? clamp(globalSize, 0.3, 2) : 1)
+
+  // Vertical nudge: a continuous fraction of frame height (negative = up,
+  // positive = down) layered on top of the Top/Middle/Bottom anchor. Per-cue
+  // wins over the global slider.
+  const perCueOffset = Number(override.verticalOffset)
+  const globalOffset = Number(global.verticalOffset)
+  const verticalOffset = Number.isFinite(perCueOffset)
+    ? clamp(perCueOffset, -0.45, 0.45)
+    : (Number.isFinite(globalOffset) ? clamp(globalOffset, -0.45, 0.45) : 0)
+
+  const textStyle = resolveFieldWithFallback(
+    override.textStyle,
+    global.textStyle,
+    style?.defaultTextStyle || 'plain'
   )
 
   return {
@@ -161,7 +225,9 @@ function resolveKineticBehavior(style, microCue) {
     horizontalPlacement: resolveFieldWithFallback(override.horizontalPlacement, global.horizontalPlacement, 'auto'),
     motionProfileId,
     motionProfile: KINETIC_MOTION_PROFILES[motionProfileId] || KINETIC_MOTION_PROFILES.excited,
-    sizeMultiplier: SIZE_PROFILE_MULTIPLIERS[sizeProfile] || 1,
+    sizeMultiplier,
+    verticalOffset,
+    textStyle,
   }
 }
 
@@ -309,12 +375,12 @@ function isMicroCueHighlighted(microCue) {
 function computeFontSize(wordCount, canvasWidth, canvasHeight) {
   const shortEdge = Math.min(canvasWidth, canvasHeight)
   let ratio
-  if (wordCount <= 1) ratio = 0.28
-  else if (wordCount <= 2) ratio = 0.18
-  else ratio = 0.13
+  if (wordCount <= 1) ratio = 0.24
+  else if (wordCount <= 2) ratio = 0.15
+  else ratio = 0.115
 
   const raw = shortEdge * ratio
-  return clamp(Math.round(raw), 36, Math.round(canvasWidth * 0.35))
+  return clamp(Math.round(raw), 22, Math.round(canvasWidth * 0.4))
 }
 
 // ---------------------------------------------------------------------------
@@ -403,7 +469,7 @@ function getWordAnimState(time, enterTime, cueEnd, motionProfile) {
 // Draw word with glow
 // ---------------------------------------------------------------------------
 
-function drawWord(ctx, word, anim, color, glowColor, style) {
+function drawWord(ctx, word, anim, color, glowColor, style, textStyle = 'plain') {
   if (!anim.visible || anim.opacity <= 0.01) return
 
   ctx.save()
@@ -430,14 +496,39 @@ function drawWord(ctx, word, anim, color, glowColor, style) {
     ctx.filter = `blur(${anim.blur.toFixed(1)}px)`
   }
 
-  ctx.shadowColor = glowColor
-  ctx.shadowBlur = 28
-  ctx.shadowOffsetX = 0
-  ctx.shadowOffsetY = 0
+  const fs = word.fontSize
+
+  // Legibility treatment (applies to every word). 'background' is handled at the
+  // group level (a scrim behind the whole phrase), so here it behaves like plain.
+  if (textStyle === 'outline') {
+    ctx.lineJoin = 'round'
+    ctx.lineWidth = Math.max(2, Math.round(fs * 0.09))
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)'
+    ctx.strokeText(word.text, word.x, word.y)
+  }
+
+  // Shadow/glow pass: the spoken word always lights up in the accent glow (the
+  // signature kinetic highlight); otherwise honor the chosen text style.
+  if (anim.isActive) {
+    ctx.shadowColor = glowColor
+    ctx.shadowBlur = 28
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 0
+  } else if (textStyle === 'shadow') {
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
+    ctx.shadowBlur = Math.round(fs * 0.18)
+    ctx.shadowOffsetX = Math.round(fs * 0.04)
+    ctx.shadowOffsetY = Math.round(fs * 0.05)
+  } else {
+    ctx.shadowColor = 'transparent'
+    ctx.shadowBlur = 0
+  }
   ctx.fillStyle = color
   ctx.fillText(word.text, word.x, word.y)
 
+  // Crisp pass on top so the glyph stays sharp over its own glow/shadow.
   ctx.shadowBlur = 0
+  ctx.shadowColor = 'transparent'
   ctx.filter = 'none'
   ctx.fillStyle = color
   ctx.fillText(word.text, word.x, word.y)
@@ -482,6 +573,9 @@ function getPositionOffset(microCueIndex, microCue, width, height, positioned, b
   if (verticalPlacement === 'top') anchorY = height * 0.28
   if (verticalPlacement === 'bottom') anchorY = height * 0.72
 
+  // Continuous up/down nudge from the slider, layered on the anchor above.
+  anchorY += (behavior?.verticalOffset || 0) * height
+
   let dx = anchorX - currentCenterX
   let dy = anchorY - currentCenterY
 
@@ -525,6 +619,80 @@ function getPositionOffset(microCueIndex, microCue, width, height, positioned, b
 }
 
 // ---------------------------------------------------------------------------
+// Keep the laid-out word block inside a safe area so drift / nudge / large
+// sizes never push text off the frame. Shifts the whole block as a unit
+// (rather than clipping individual words, which looked sliced).
+// ---------------------------------------------------------------------------
+
+function clampBlockIntoSafeArea(positioned, width, height) {
+  if (!Array.isArray(positioned) || positioned.length === 0) return
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const w of positioned) {
+    minX = Math.min(minX, w.x)
+    maxX = Math.max(maxX, w.x + w.measuredWidth)
+    minY = Math.min(minY, w.y - w.fontSize)        // approx cap height above baseline
+    maxY = Math.max(maxY, w.y + w.fontSize * 0.22) // approx descender below baseline
+  }
+
+  const marginX = width * 0.04
+  const marginY = height * 0.05
+  const blockW = maxX - minX
+  const blockH = maxY - minY
+
+  let shiftX = 0
+  if (blockW <= width - marginX * 2) {
+    if (minX < marginX) shiftX = marginX - minX
+    else if (maxX > width - marginX) shiftX = (width - marginX) - maxX
+  } else {
+    shiftX = (width - blockW) / 2 - minX // too wide to fit: center horizontally
+  }
+
+  let shiftY = 0
+  if (blockH <= height - marginY * 2) {
+    if (minY < marginY) shiftY = marginY - minY
+    else if (maxY > height - marginY) shiftY = (height - marginY) - maxY
+  } else {
+    shiftY = (height - blockH) / 2 - minY // too tall to fit: center vertically
+  }
+
+  if (shiftX !== 0 || shiftY !== 0) {
+    for (const w of positioned) { w.x += shiftX; w.y += shiftY }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Background scrim for Bold Dark preset
+// ---------------------------------------------------------------------------
+
+function drawWordGroupBackground(ctx, positioned, scrimColor, opacity) {
+  if (!positioned.length || !scrimColor || opacity <= 0.01) return
+  const fontSize = positioned[0].fontSize
+  const pad = fontSize * 0.4
+  const minX = Math.min(...positioned.map((w) => w.x)) - pad
+  const maxX = Math.max(...positioned.map((w) => w.x + w.measuredWidth)) + pad
+  const minY = Math.min(...positioned.map((w) => w.y)) - fontSize * 0.85 - pad
+  const maxY = Math.max(...positioned.map((w) => w.y)) + fontSize * 0.2 + pad
+  const radius = fontSize * 0.25
+
+  ctx.save()
+  ctx.globalAlpha = opacity
+  ctx.fillStyle = scrimColor
+  ctx.beginPath()
+  ctx.moveTo(minX + radius, minY)
+  ctx.lineTo(maxX - radius, minY)
+  ctx.quadraticCurveTo(maxX, minY, maxX, minY + radius)
+  ctx.lineTo(maxX, maxY - radius)
+  ctx.quadraticCurveTo(maxX, maxY, maxX - radius, maxY)
+  ctx.lineTo(minX + radius, maxY)
+  ctx.quadraticCurveTo(minX, maxY, minX, maxY - radius)
+  ctx.lineTo(minX, minY + radius)
+  ctx.quadraticCurveTo(minX, minY, minX + radius, minY)
+  ctx.closePath()
+  ctx.fill()
+  ctx.restore()
+}
+
+// ---------------------------------------------------------------------------
 // Public: render one kinetic caption frame
 // ---------------------------------------------------------------------------
 
@@ -533,7 +701,7 @@ let microCueCacheKey = null
 
 function getMicroCues(cues) {
   const key = (Array.isArray(cues) ? cues : [])
-    .map((c) => `${c.id}|${c.start}|${c.end}|${c.text}|${JSON.stringify(c.override || {})}`)
+    .map((c) => `${c.id}|${c.start}|${c.end}|${c.text}|${JSON.stringify(c.override || {})}|${JSON.stringify(c.globalOverrides || {})}`)
     .join(',')
   if (microCueCacheKey === key && microCueCache) return microCueCache
   microCueCache = splitCuesIntoMicroCues(cues)
@@ -559,9 +727,9 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
 
   const textColor = g.subtitleColor || style.subtitleColor || style.textColor || '#FFFFFF'
   const position = g.subtitlePosition || style.subtitlePosition || 'action-safe'
-  const textStyle = g.subtitleTextStyle || style.subtitleTextStyle || 'background'
-  const sizeId = g.subtitleSize || 'medium'
-  const sizeMultiplier = sizeId === 'small' ? 0.7 : sizeId === 'large' ? 1.35 : 1
+  const textStyle = g.textStyle || g.subtitleTextStyle || style.subtitleTextStyle || 'background'
+  const sizeScale = Number(g.sizeScale)
+  const sizeMultiplier = Number.isFinite(sizeScale) ? clamp(sizeScale, 0.3, 2) : 1
 
   const fontSize = clamp(Math.round(Math.min(width, height) * 0.045 * sizeMultiplier), 16, 96)
   const lineHeight = fontSize * 1.3
@@ -596,6 +764,14 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
   } else {
     blockY = height - blockHeight - height * 0.06
   }
+
+  // Continuous up/down nudge from the slider, then keep the block on-screen.
+  const verticalOffset = Number(g.verticalOffset)
+  if (Number.isFinite(verticalOffset)) {
+    blockY += clamp(verticalOffset, -0.45, 0.45) * height
+  }
+  const safeMargin = height * 0.04
+  blockY = clamp(blockY, safeMargin, Math.max(safeMargin, height - blockHeight - safeMargin))
 
   const centerX = width / 2
 
@@ -655,7 +831,7 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
   ctx.restore()
 }
 
-export function renderKineticCaptionFrame({ ctx, width, height, style, cues, time = 0 }) {
+export function renderKineticCaptionFrame({ ctx, width, height, style, cues, time = 0, freeze = false }) {
   if (!ctx || !width || !height) return
   ctx.clearRect(0, 0, width, height)
 
@@ -674,11 +850,6 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
   const behavior = resolveKineticBehavior(resolvedStyle, active)
   const motionProfile = behavior.motionProfile
 
-  // Resolve base colors. Per-word active highlighting (below) swaps the
-  // active word to the accent color; everything else stays in the base text
-  // color. We no longer use the old cue-wide "hero word" heuristic because
-  // it highlighted a random word that had nothing to do with what was
-  // actually being spoken at that moment.
   const baseTextColor = resolvedStyle.textColor
   const accentTextColor = resolvedStyle.keyWordColor
   const baseGlowColor = resolvedStyle.baseGlowColor || 'rgba(255,255,255,0.2)'
@@ -696,25 +867,51 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
     }
   }
 
+  // Pull the whole block back inside the safe area if drift/nudge/size sent it
+  // toward an edge, so words read fully instead of getting clipped.
+  clampBlockIntoSafeArea(positioned, width, height)
+
   const mcDuration = active.end - active.start
   const wordCount = positioned.length
   const entranceSpread = Math.min(0.6, wordCount * 0.06) * mcDuration * (motionProfile.entranceSpreadMultiplier ?? 1)
 
-  // Synthesize per-word speak windows by evenly subdividing the micro-cue's
-  // time range across its words. This is an approximation (the ASR returns
-  // per-word timings upstream but the SRT pipeline loses them), but because
-  // micro-cues are only 1-3 words long, the approximation is tight enough
-  // to feel like accurate karaoke-style highlighting.
   const safeWordCount = Math.max(1, wordCount)
   const perWord = mcDuration / safeWordCount
 
+  // Clip all drawing to the canvas bounds so glow/drift never bleeds outside the frame
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(0, 0, width, height)
+  ctx.clip()
+
+  // A scrim sits behind the phrase when the preset has a baked scrim color or
+  // the user picked the 'background' text style.
+  const scrimColor = resolvedStyle.bgScrim || (behavior.textStyle === 'background' ? 'rgba(0, 0, 0, 0.6)' : null)
+  if (scrimColor) {
+    const cueAge = time - active.start
+    const cueRemaining = active.end - time
+    const enterD = motionProfile?.enterDuration ?? 0.14
+    const exitD = motionProfile?.exitDuration ?? 0.18
+    let scrimOpacity = 1
+    if (cueAge < enterD) scrimOpacity = clamp(cueAge / enterD, 0, 1)
+    if (cueRemaining < exitD && cueRemaining >= 0) scrimOpacity *= clamp(cueRemaining / exitD, 0, 1)
+    drawWordGroupBackground(ctx, positioned, scrimColor, scrimOpacity)
+  }
+
   for (let i = 0; i < positioned.length; i++) {
     const wordEnter = active.start + (entranceSpread * (i / Math.max(1, wordCount)))
-    const anim = getWordAnimState(time, wordEnter, active.end, motionProfile)
+    // freeze = a settled still (full opacity, no entrance/exit) for the preview,
+    // so it never lands on a zero-opacity entrance frame at a cue boundary.
+    const anim = freeze
+      ? { visible: true, opacity: 1, scale: 1, blur: 0 }
+      : getWordAnimState(time, wordEnter, active.end, motionProfile)
 
     const speakStart = active.start + (i * perWord)
     const speakEnd = active.start + ((i + 1) * perWord)
-    const isActiveWord = time >= speakStart && time < speakEnd
+    // In a frozen still, highlight the last word so the accent color still reads.
+    const isActiveWord = freeze
+      ? (i === positioned.length - 1)
+      : (time >= speakStart && time < speakEnd)
 
     drawWord(
       ctx,
@@ -723,15 +920,88 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
       isActiveWord ? accentTextColor : baseTextColor,
       isActiveWord ? accentGlow : baseGlowColor,
       resolvedStyle,
+      behavior.textStyle,
     )
   }
+
+  ctx.restore()
 }
 
 // ---------------------------------------------------------------------------
 // Public: preview for preset card
 // ---------------------------------------------------------------------------
 
-export function renderKineticPreviewDataUrl(styleOrId, width = 240, height = 140) {
+// A still, readable rendering of the full sample phrase for the preset card —
+// the live animation only shows a 1-3 word fragment at any instant, which made
+// some cards (e.g. a lone "your") look broken. The last word takes the accent
+// color so the card still communicates the highlight behavior.
+function drawStaticKineticPreview(ctx, width, height, style) {
+  const words = String(style.sampleText || 'Caption style').trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return
+
+  const maxLineWidth = width * 0.86
+  let fontSize = Math.round(Math.min(width, height) * 0.24)
+
+  const tooWide = () => {
+    setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+    return words.some((w) => ctx.measureText(w).width > maxLineWidth)
+  }
+  while (fontSize > 12 && tooWide()) fontSize -= 2
+  setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+
+  // Greedy wrap into at most two lines.
+  const lines = []
+  let current = words[0]
+  for (let i = 1; i < words.length; i++) {
+    const candidate = `${current} ${words[i]}`
+    if (ctx.measureText(candidate).width <= maxLineWidth && lines.length < 1) {
+      current = candidate
+    } else {
+      lines.push(current)
+      current = words[i]
+    }
+  }
+  if (current) lines.push(current)
+
+  const gap = fontSize * 0.28
+  const lineHeight = fontSize * 1.12
+  const totalHeight = lines.length * lineHeight
+  const firstBaseline = (height - totalHeight) / 2 + fontSize * 0.82
+
+  if (style.bgScrim) {
+    let minX = Infinity, maxX = -Infinity
+    lines.forEach((line) => {
+      const w = ctx.measureText(line).width
+      minX = Math.min(minX, (width - w) / 2)
+      maxX = Math.max(maxX, (width + w) / 2)
+    })
+    const pad = fontSize * 0.4
+    ctx.fillStyle = style.bgScrim
+    ctx.fillRect(minX - pad, firstBaseline - fontSize, (maxX - minX) + pad * 2, totalHeight + fontSize * 0.4)
+  }
+
+  ctx.textBaseline = 'alphabetic'
+  ctx.textAlign = 'left'
+  lines.forEach((line, li) => {
+    const lineWords = line.split(' ')
+    const widths = lineWords.map((w) => ctx.measureText(w).width)
+    const lineWidth = widths.reduce((a, b) => a + b, 0) + gap * (lineWords.length - 1)
+    let x = (width - lineWidth) / 2
+    const y = firstBaseline + li * lineHeight
+    lineWords.forEach((w, wi) => {
+      const isLastOverall = li === lines.length - 1 && wi === lineWords.length - 1
+      ctx.save()
+      ctx.shadowColor = isLastOverall ? (style.glowColor || 'rgba(255,255,255,0.4)') : (style.baseGlowColor || 'rgba(255,255,255,0.18)')
+      ctx.shadowBlur = 16
+      ctx.fillStyle = isLastOverall ? (style.keyWordColor || style.textColor) : (style.textColor || '#FFFFFF')
+      ctx.fillText(w, x, y)
+      ctx.restore()
+      x += widths[wi] + gap
+    })
+  })
+}
+
+export function renderKineticPreviewDataUrl(styleOrId, width = 240, height = 140, globalOverrides = null) {
   if (typeof document === 'undefined') return null
 
   const style = typeof styleOrId === 'string' ? getKineticStyleById(styleOrId) : (styleOrId || KINETIC_CAPTION_STYLES[0])
@@ -747,11 +1017,17 @@ export function renderKineticPreviewDataUrl(styleOrId, width = 240, height = 140
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, width, height)
 
-  const previewCues = [
-    { id: 'p1', start: 0, end: 1.5, text: style.sampleText || 'watch on mute?' },
-  ]
+  // Traditional subtitles already render their full text in one frame; animated
+  // presets get the static full-phrase rendering instead of a mid-animation grab.
+  if (style.traditional) {
+    const previewCues = [
+      { id: 'p1', start: 0, end: 1.5, text: style.sampleText || 'Simple readable subtitles.', globalOverrides },
+    ]
+    renderKineticCaptionFrame({ ctx, width, height, style, cues: previewCues, time: 0.6 })
+  } else {
+    drawStaticKineticPreview(ctx, width, height, style)
+  }
 
-  renderKineticCaptionFrame({ ctx, width, height, style, cues: previewCues, time: 0.6 })
   return canvas.toDataURL('image/png')
 }
 

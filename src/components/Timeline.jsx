@@ -1320,30 +1320,44 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
       return
     }
 
-    // If a timeline caption overlay already exists (tagged via captionScope),
-    // let the user decide whether to replace it. The actual replacement
-    // happens inside handlePlaceTimelineCaptionOnTimeline once the new
-    // overlay asset has been generated.
-    const existingTimelineCaptionClip = clips.find((clip) => {
-      if (!clip || !clip.assetId) return false
+    // Grab the frame under the playhead (topmost video clip covering it) so the
+    // captions preview can sit over real footage. Falls back to a neutral
+    // background when nothing video is under the playhead.
+    let bgVideoUrl = null
+    let bgVideoTime = null
+    for (const track of tracks.filter((t) => t.type === 'video' && t.enabled !== false)) {
+      const clip = clips.find((c) => (
+        c.trackId === track.id
+        && c.enabled !== false
+        && c.assetId
+        && playheadPosition >= (Number(c.startTime) || 0)
+        && playheadPosition < (Number(c.startTime) || 0) + (Number(c.duration) || 0)
+      ))
+      if (!clip) continue
       const asset = getAssetById(clip.assetId)
-      return asset?.settings?.captionScope === 'timeline'
-    })
-
-    if (existingTimelineCaptionClip) {
-      const confirmed = window.confirm(
-        'This project already has timeline captions. Replace them with a fresh transcription?\n\n'
-        + 'Your existing caption track will be deleted before the new one is added.'
-      )
-      if (!confirmed) return
+      if (!asset || asset.type !== 'video' || !asset.url) continue
+      const trimStart = Number(clip.trimStart) || 0
+      const timeScale = clip.sourceTimeScale || (clip.timelineFps && clip.sourceFps
+        ? clip.timelineFps / clip.sourceFps
+        : 1)
+      const clipTime = playheadPosition - (Number(clip.startTime) || 0)
+      bgVideoUrl = asset.url
+      bgVideoTime = Math.max(0, trimStart + clipTime * timeScale)
+      break
     }
 
+    // Opening the editor is non-destructive — any existing timeline caption
+    // track stays put. The replace confirmation now lives at generate time
+    // (in CaptionWorkspace), since that's when the old track is actually
+    // swapped out inside handlePlaceTimelineCaptionOnTimeline.
     setTimelineCaptionWorkspaceAsset({
       id: `timeline-mix-${Date.now()}`,
       name: 'Timeline',
       type: 'timeline',
       duration: programDuration,
       hasAudio: true,
+      bgVideoUrl,
+      bgVideoTime,
     })
   }
 
@@ -6890,6 +6904,10 @@ function Timeline({ onOpenAudioGenerate, onActiveToolChange }) {
         isOpen={Boolean(timelineCaptionWorkspaceAsset)}
         asset={timelineCaptionWorkspaceAsset}
         scope="timeline"
+        hasExistingTimelineCaptions={clips.some((clip) => {
+          if (!clip || !clip.assetId) return false
+          return getAssetById(clip.assetId)?.settings?.captionScope === 'timeline'
+        })}
         currentProjectHandle={currentProjectHandle}
         timelineSize={(() => {
           const s = useProjectStore.getState().getCurrentTimelineSettings?.()

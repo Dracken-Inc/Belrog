@@ -137,13 +137,14 @@ export function renderCaptionFrame({
   time = 0,
   transparent = true,
   previewBackground = null,
+  freeze = false,
 }) {
   if (!ctx || !width || !height) return
 
   const resolvedPreset = mergePresetWithOverrides(preset)
 
   if (isKineticPreset(resolvedPreset)) {
-    renderKineticCaptionFrame({ ctx, width, height, style: resolvedPreset, cues, time })
+    renderKineticCaptionFrame({ ctx, width, height, style: resolvedPreset, cues, time, freeze })
     return
   }
 
@@ -178,13 +179,13 @@ export function renderCaptionFrame({
   })
 }
 
-export function renderCaptionPresetPreviewDataUrl(preset, width = 240, height = 140) {
+export function renderCaptionPresetPreviewDataUrl(preset, width = 240, height = 140, globalOverrides = null) {
   if (typeof document === 'undefined') return null
 
   const resolvedPreset = mergePresetWithOverrides(preset)
 
   if (isKineticPreset(resolvedPreset)) {
-    return renderKineticPreviewDataUrl(resolvedPreset, width, height)
+    return renderKineticPreviewDataUrl(resolvedPreset, width, height, globalOverrides)
   }
 
   const canvas = document.createElement('canvas')

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, Film, Loader2, Palette, RefreshCw, RotateCcw, Sparkles, Type, Wand2, X } from 'lucide-react'
 import {
   CAPTION_PRESETS,
   DEFAULT_CAPTION_PRESET_ID,
   getCaptionPresetById,
 } from '../config/captionPresets'
-import { DEFAULT_KINETIC_ACCENT_COLOR } from '../utils/kineticCaptionRenderer'
+import { DEFAULT_KINETIC_ACCENT_COLOR, buildKineticStyleWithColors } from '../utils/kineticCaptionRenderer'
 import { isElectron, writeGeneratedOverlayToProject } from '../services/fileSystem'
 import {
   buildCaptionAssetName,
@@ -16,11 +16,25 @@ import {
 import { transcribeWithComfyUI, transcribeTimeline } from '../services/captionComfyTranscription'
 import {
   generateCaptionVideoBlob,
+  renderCaptionFrame,
   renderCaptionPresetPreviewDataUrl,
 } from '../utils/captionRenderer'
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value))
+}
+
+// Draw a source canvas/image onto ctx using object-cover math (fill the box,
+// crop the overflow), centered. Used to put a real video frame behind the
+// caption overlay in the positioning preview.
+function drawCover(ctx, src, dw, dh) {
+  const sw = src.width || src.videoWidth || 0
+  const sh = src.height || src.videoHeight || 0
+  if (!sw || !sh) return
+  const scale = Math.max(dw / sw, dh / sh)
+  const w = sw * scale
+  const h = sh * scale
+  ctx.drawImage(src, (dw - w) / 2, (dh - h) / 2, w, h)
 }
 
 function formatSeconds(value) {
@@ -135,6 +149,49 @@ function CueOverrideChips({ label, value, options, onChange }) {
   )
 }
 
+// A free color picker row used for every preset's Text / Accent colors.
+function ColorField({ icon: Icon, label, hint, value, onChange, onReset, resetDisabled }) {
+  const display = String(value || '#FFFFFF').toUpperCase()
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        {Icon ? <Icon className="w-4 h-4 text-sf-text-muted flex-shrink-0" /> : null}
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-sf-text-primary">{label}</div>
+          {hint ? <div className="text-[11px] text-sf-text-muted truncate">{hint}</div> : null}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <label
+          className="relative inline-flex w-9 h-9 rounded-lg overflow-hidden border border-sf-dark-600 cursor-pointer"
+          style={{ backgroundColor: display }}
+          title="Pick any color"
+        >
+          <input
+            type="color"
+            value={display}
+            onChange={(e) => onChange(e.target.value)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            aria-label={label}
+          />
+        </label>
+        <code className="text-[11px] text-sf-text-muted font-mono uppercase w-[58px]">{display}</code>
+        {onReset ? (
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={resetDisabled}
+            className="rounded-md border border-sf-dark-600 bg-sf-dark-900 p-1.5 text-sf-text-muted hover:text-sf-text-primary hover:bg-sf-dark-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Reset to preset default"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function createEmptyDraft(asset) {
   return {
     modelId: null,
@@ -145,12 +202,20 @@ function createEmptyDraft(asset) {
   }
 }
 
+// Session cache for timeline-scope caption work. The timeline has no source
+// asset to attach a sidecar to, so without this every reopen would force a
+// re-transcribe. Keyed by project handle; lives for the app session only.
+const timelineCaptionSessionCache = new Map()
+
 function CaptionWorkspace({
   isOpen,
   asset,
   // 'asset' (default) — transcribe a single source clip/asset.
   // 'timeline'       — transcribe the mixed program audio of the live timeline.
   scope = 'asset',
+  // Timeline scope only: whether a caption track already exists on the timeline,
+  // so generating can warn that it will be replaced.
+  hasExistingTimelineCaptions = false,
   currentProjectHandle,
   timelineSize,
   folders,
@@ -163,6 +228,7 @@ function CaptionWorkspace({
   const isTimelineScope = scope === 'timeline'
   const [selectedPresetId, setSelectedPresetId] = useState(DEFAULT_CAPTION_PRESET_ID)
   const [accentColor, setAccentColor] = useState(DEFAULT_KINETIC_ACCENT_COLOR)
+  const [textColor, setTextColor] = useState(null)
   const [draft, setDraft] = useState(() => createEmptyDraft(asset))
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -175,27 +241,20 @@ function CaptionWorkspace({
   const [globalVertical, setGlobalVertical] = useState('auto')
   const [globalHorizontal, setGlobalHorizontal] = useState('auto')
   const [globalMotion, setGlobalMotion] = useState('auto')
-  const [globalSize, setGlobalSize] = useState('normal')
+  // Continuous size multiplier (1 = default), shared by both preset modes.
+  const [globalSizeScale, setGlobalSizeScale] = useState(1)
+  // Continuous up/down nudge as a fraction of frame height (−0.45 = higher, +0.45 = lower).
+  const [globalVerticalOffset, setGlobalVerticalOffset] = useState(0)
 
-  const [subtitleColor, setSubtitleColor] = useState('#FFFFFF')
   const [subtitlePosition, setSubtitlePosition] = useState('action-safe')
-  const [subtitleTextStyle, setSubtitleTextStyle] = useState('background')
-  const [subtitleSize, setSubtitleSize] = useState('medium')
+  // Shared legibility treatment for all presets (background / outline / shadow / plain).
+  const [globalTextStyle, setGlobalTextStyle] = useState('background')
 
-  const GLOBAL_SIZE_OPTIONS = useMemo(() => [
-    { id: 'small', label: 'Small' },
-    { id: 'normal', label: 'Normal' },
-    { id: 'large', label: 'Large' },
-  ], [])
-
-  const SUBTITLE_COLOR_OPTIONS = useMemo(() => [
-    { id: '#FFFFFF', label: 'White', swatch: '#FFFFFF' },
-    { id: '#FBBF24', label: 'Yellow', swatch: '#FBBF24' },
-    { id: '#22D3EE', label: 'Cyan', swatch: '#22D3EE' },
-    { id: '#4ADE80', label: 'Green', swatch: '#4ADE80' },
-    { id: '#D1D5DB', label: 'Gray', swatch: '#D1D5DB' },
-    { id: '#FB923C', label: 'Orange', swatch: '#FB923C' },
-  ], [])
+  // A still frame grabbed from the source video, drawn behind the positioning
+  // preview so placement can be judged over real footage. bgVersion bumps when
+  // a new frame is captured, to re-run the preview memo.
+  const bgCanvasRef = useRef(null)
+  const [bgVersion, setBgVersion] = useState(0)
 
   const SUBTITLE_POSITION_OPTIONS = useMemo(() => [
     { id: 'action-safe', label: 'Action Safe' },
@@ -203,17 +262,11 @@ function CaptionWorkspace({
     { id: 'center', label: 'Center' },
   ], [])
 
-  const SUBTITLE_TEXT_STYLE_OPTIONS = useMemo(() => [
+  const TEXT_STYLE_OPTIONS = useMemo(() => [
     { id: 'background', label: 'Background' },
     { id: 'outline', label: 'Outline' },
     { id: 'shadow', label: 'Shadow' },
     { id: 'plain', label: 'Plain' },
-  ], [])
-
-  const SUBTITLE_SIZE_OPTIONS = useMemo(() => [
-    { id: 'small', label: 'Small' },
-    { id: 'medium', label: 'Medium' },
-    { id: 'large', label: 'Large' },
   ], [])
 
   const previewUrls = useMemo(() => (
@@ -228,25 +281,106 @@ function CaptionWorkspace({
     [selectedPresetId]
   )
 
-  // `renderPreset` is what actually gets passed to the renderer / exporter.
-  // It merges the selected preset with the user's customised accent color
-  // so every render path (live preview, thumbnail, final export) picks up
-  // the same color without threading a new argument through each one.
   const renderPreset = useMemo(() => {
-    if (selectedPreset?.accentCustomizable && accentColor && accentColor !== selectedPreset.keyWordColor) {
-      return {
-        ...selectedPreset,
-        keyWordColor: accentColor,
-      }
+    if (selectedPreset?.renderer === 'kinetic' && !selectedPreset.traditional) {
+      return buildKineticStyleWithColors(selectedPreset, accentColor, textColor)
     }
     return selectedPreset
-  }, [selectedPreset, accentColor])
+  }, [selectedPreset, accentColor, textColor])
+
+  // The resolved base text color: the user's free pick, or the preset's default.
+  // Used for the picker UI and (for subtitles) fed through as the text color.
+  const effectiveTextColor = useMemo(() => {
+    const presetDefault = selectedPreset?.traditional
+      ? (selectedPreset?.subtitleColor || selectedPreset?.textColor)
+      : selectedPreset?.textColor
+    return textColor || presetDefault || '#FFFFFF'
+  }, [textColor, selectedPreset])
+
+  // Shared style overrides fed to both the preset card thumbnail and the
+  // larger positioning preview, so they always agree.
+  const previewGlobalOverrides = useMemo(() => (
+    renderPreset?.traditional
+      ? { subtitleColor: effectiveTextColor, subtitlePosition, textStyle: globalTextStyle, sizeScale: globalSizeScale, verticalOffset: globalVerticalOffset }
+      : {
+          motionProfile: globalMotion !== 'auto' ? globalMotion : undefined,
+          sizeScale: globalSizeScale,
+          verticalPlacement: globalVertical !== 'auto' ? globalVertical : undefined,
+          horizontalPlacement: globalHorizontal !== 'auto' ? globalHorizontal : undefined,
+          verticalOffset: globalVerticalOffset,
+          textStyle: globalTextStyle,
+        }
+  ), [renderPreset?.traditional, globalMotion, globalSizeScale, globalVertical, globalHorizontal, globalVerticalOffset, globalTextStyle, effectiveTextColor, subtitlePosition])
+
+  // Live thumbnail for the selected preset card.
+  const selectedPreviewUrl = useMemo(() => {
+    if (!renderPreset) return null
+    return renderCaptionPresetPreviewDataUrl(renderPreset, 240, 140, previewGlobalOverrides)
+  }, [renderPreset, previewGlobalOverrides])
 
   const renderSettings = useMemo(() => ({
     width: Math.max(320, Math.round(Number(timelineSize?.width) || 1920)),
     height: Math.max(180, Math.round(Number(timelineSize?.height) || 1080)),
     fps: Math.max(12, Math.round(Number(timelineSize?.fps) || Number(asset?.fps) || 24)),
   }), [asset?.fps, timelineSize])
+
+  // Aspect-correct positioning preview: a representative caption rendered at the
+  // project's real aspect ratio, composited over a still frame of the actual
+  // footage (when available). This is the "is it placed right?" check.
+  const positioningPreviewUrl = useMemo(() => {
+    if (typeof document === 'undefined' || !renderPreset) return null
+    void bgVersion // re-run when a new background frame is captured
+
+    const projW = renderSettings.width
+    const projH = renderSettings.height
+    const longEdge = 480
+    const scale = longEdge / Math.max(projW, projH)
+    const pw = Math.max(120, Math.round(projW * scale))
+    const ph = Math.max(120, Math.round(projH * scale))
+
+    const canvas = document.createElement('canvas')
+    canvas.width = pw
+    canvas.height = ph
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+
+    if (bgCanvasRef.current) {
+      drawCover(ctx, bgCanvasRef.current, pw, ph)
+    } else {
+      // Mid-tone gradient (not near-black) so a dark subtitle pill / shadow is
+      // still visible in the preview when there's no footage frame behind it.
+      const gradient = ctx.createLinearGradient(0, 0, 0, ph)
+      gradient.addColorStop(0, '#6b7280')
+      gradient.addColorStop(1, '#374151')
+      ctx.fillStyle = gradient
+      ctx.fillRect(0, 0, pw, ph)
+    }
+
+    const overlay = document.createElement('canvas')
+    overlay.width = pw
+    overlay.height = ph
+    const octx = overlay.getContext('2d')
+    if (octx) {
+      const sampleText = String(draft.cues?.[0]?.text || renderPreset.sampleText || 'Your caption appears here').trim()
+      renderCaptionFrame({
+        ctx: octx,
+        width: pw,
+        height: ph,
+        preset: renderPreset,
+        cues: [{ id: 'positioning-preview', start: 0, end: 2.4, text: sampleText, globalOverrides: previewGlobalOverrides }],
+        time: 1.2,
+        freeze: true,
+        transparent: true,
+      })
+      ctx.drawImage(overlay, 0, 0)
+    }
+
+    try {
+      return canvas.toDataURL('image/png')
+    } catch (_) {
+      return null
+    }
+  }, [renderPreset, previewGlobalOverrides, renderSettings, draft.cues, bgVersion])
 
   useEffect(() => {
     if (!isOpen || !asset) return
@@ -260,9 +394,34 @@ function CaptionWorkspace({
     // Seed accent color from the saved preference, falling back to the
     // preset's registered default so the picker starts on-brand.
     const savedAccent = asset?.settings?.lastCaptionAccentColor
-    const presetDefault = getCaptionPresetById(nextPresetId)?.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR
+    const nextPreset = getCaptionPresetById(nextPresetId)
+    const presetDefault = nextPreset?.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR
     setAccentColor(savedAccent || presetDefault)
+    setTextColor(null)
+    setGlobalTextStyle(nextPreset?.defaultTextStyle || (nextPreset?.traditional ? 'background' : 'plain'))
+    setSubtitlePosition(nextPreset?.subtitlePosition || 'action-safe')
     setDraft(createEmptyDraft(asset))
+
+    // Timeline scope has no per-asset sidecar. Restore the session cache so the
+    // transcription and style choices survive a reopen (re-transcribe is manual).
+    if (isTimelineScope) {
+      const cached = currentProjectHandle ? timelineCaptionSessionCache.get(currentProjectHandle) : null
+      if (cached?.draft) {
+        setDraft(cached.draft)
+        if (cached.selectedPresetId) setSelectedPresetId(cached.selectedPresetId)
+        if (cached.accentColor) setAccentColor(cached.accentColor)
+        setTextColor(cached.textColor ?? null)
+        if (cached.globalTextStyle) setGlobalTextStyle(cached.globalTextStyle)
+        if (cached.subtitlePosition) setSubtitlePosition(cached.subtitlePosition)
+        if (cached.globalVertical) setGlobalVertical(cached.globalVertical)
+        if (cached.globalHorizontal) setGlobalHorizontal(cached.globalHorizontal)
+        if (cached.globalMotion) setGlobalMotion(cached.globalMotion)
+        if (typeof cached.globalSizeScale === 'number') setGlobalSizeScale(cached.globalSizeScale)
+        if (typeof cached.globalVerticalOffset === 'number') setGlobalVerticalOffset(cached.globalVerticalOffset)
+        setStatusMessage('Restored your last timeline captions — re-transcribe if the audio changed.')
+      }
+      return undefined
+    }
 
     const transcriptPath = asset?.settings?.captionTranscriptPath
     if (!currentProjectHandle || !transcriptPath) return undefined
@@ -292,6 +451,64 @@ function CaptionWorkspace({
       cancelled = true
     }
   }, [asset, currentProjectHandle, isOpen])
+
+  // Grab a representative still for the positioning preview. Asset scope uses
+  // the source clip (mid-point); timeline scope uses the frame under the
+  // playhead (passed in via the pseudo-asset). Falls back to the gradient when
+  // there's no video frame available.
+  const captureUrl = isTimelineScope ? asset?.bgVideoUrl : asset?.url
+  const captureTime = isTimelineScope ? Number(asset?.bgVideoTime) : NaN
+  useEffect(() => {
+    bgCanvasRef.current = null
+    setBgVersion((v) => v + 1)
+    if (!isOpen || !captureUrl) return undefined
+
+    let cancelled = false
+    const video = document.createElement('video')
+    video.muted = true
+    video.preload = 'auto'
+
+    const capture = () => {
+      if (cancelled) return
+      const vw = video.videoWidth
+      const vh = video.videoHeight
+      if (!vw || !vh) return
+      try {
+        const cap = 1280
+        const s = Math.min(1, cap / Math.max(vw, vh))
+        const frame = document.createElement('canvas')
+        frame.width = Math.round(vw * s)
+        frame.height = Math.round(vh * s)
+        const fctx = frame.getContext('2d')
+        if (!fctx) return
+        fctx.drawImage(video, 0, 0, frame.width, frame.height)
+        bgCanvasRef.current = frame
+        setBgVersion((v) => v + 1)
+      } catch (_) {
+        bgCanvasRef.current = null
+      }
+    }
+
+    const onLoaded = () => {
+      const fallback = Math.min(1, (Number(video.duration) || 2) / 2)
+      const target = Number.isFinite(captureTime) ? Math.max(0, captureTime) : fallback
+      try {
+        video.currentTime = target
+      } catch (_) {
+        capture()
+      }
+    }
+
+    video.addEventListener('loadeddata', onLoaded, { once: true })
+    video.addEventListener('seeked', capture, { once: true })
+    video.src = captureUrl
+
+    return () => {
+      cancelled = true
+      video.removeAttribute('src')
+      try { video.load() } catch (_) { /* noop */ }
+    }
+  }, [captureUrl, captureTime, isOpen])
 
   if (!isOpen || !asset) return null
 
@@ -359,6 +576,25 @@ function CaptionWorkspace({
     })
   }
 
+  // Persist the timeline caption setup so reopening the dialog restores the
+  // transcription and style choices instead of forcing a re-transcribe.
+  const stashTimelineSession = (draftToStash) => {
+    if (!isTimelineScope || !currentProjectHandle || !draftToStash) return
+    timelineCaptionSessionCache.set(currentProjectHandle, {
+      draft: draftToStash,
+      selectedPresetId,
+      accentColor,
+      textColor,
+      globalTextStyle,
+      subtitlePosition,
+      globalVertical,
+      globalHorizontal,
+      globalMotion,
+      globalSizeScale,
+      globalVerticalOffset,
+    })
+  }
+
   const handleTranscribe = async () => {
     setError('')
     setErrorExpanded(false)
@@ -378,10 +614,12 @@ function CaptionWorkspace({
         ? await transcribeTimeline({ onProgress })
         : await transcribeWithComfyUI(asset, { onProgress })
 
-      setDraft({
+      const normalizedDraft = {
         ...nextDraft,
         cues: normalizeCueOrder(nextDraft.cues, nextDraft.audioDuration || asset?.duration),
-      })
+      }
+      setDraft(normalizedDraft)
+      stashTimelineSession(normalizedDraft)
 
       setStatusMessage(`Transcribed ${nextDraft.cues.length} caption cues via Qwen3-ASR (ComfyUI).`)
     } catch (transcriptionError) {
@@ -403,12 +641,24 @@ function CaptionWorkspace({
       return
     }
 
+    // The destructive step lives here, not at open: generating a timeline pass
+    // replaces the caption track already on the timeline.
+    if (isTimelineScope && placeOnTimeline && hasExistingTimelineCaptions) {
+      const ok = window.confirm(
+        'This will replace the captions track currently on your timeline with the new one.\n\nContinue?'
+      )
+      if (!ok) return
+    }
+
     setError('')
     setIsGenerating(true)
 
     try {
       const normalizedCues = normalizeCueOrder(draft.cues, cueDuration)
       const timestamp = new Date().toISOString()
+
+      // Keep the timeline setup so reopening to tweak doesn't lose the transcription.
+      stashTimelineSession({ ...draft, cues: normalizedCues })
 
       // Timeline captions aren't tied to a single source asset, so we skip the
       // per-source sidecar & per-source `updateAsset` bookkeeping.
@@ -451,11 +701,11 @@ function CaptionWorkspace({
           verticalPlacement: globalVertical,
           horizontalPlacement: globalHorizontal,
           motionProfile: globalMotion,
-          sizeProfile: globalSize,
-          subtitleColor,
+          sizeScale: globalSizeScale,
+          verticalOffset: globalVerticalOffset,
+          textStyle: globalTextStyle,
+          subtitleColor: effectiveTextColor,
           subtitlePosition,
-          subtitleTextStyle,
-          subtitleSize,
         },
       }))
       const overlayBlob = await generateCaptionVideoBlob({
@@ -641,9 +891,10 @@ function CaptionWorkspace({
                 <Sparkles className="w-4 h-4 text-sf-accent" />
                 Style Presets
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-1">
+              <div className="space-y-2">
                 {CAPTION_PRESETS.map((preset) => {
                   const selected = preset.id === selectedPresetId
+                  const thumb = selected ? (selectedPreviewUrl || previewUrls[preset.id]) : previewUrls[preset.id]
                   return (
                     <button
                       key={preset.id}
@@ -651,134 +902,117 @@ function CaptionWorkspace({
                       onClick={() => {
                         setSelectedPresetId(preset.id)
                         setAccentColor(preset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)
+                        setTextColor(null)
+                        setGlobalTextStyle(preset.defaultTextStyle || (preset.traditional ? 'background' : 'plain'))
+                        setSubtitlePosition(preset.subtitlePosition || 'action-safe')
                       }}
-                      className={`rounded-2xl border overflow-hidden text-left transition-colors ${
+                      className={`w-full flex items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
                         selected
                           ? 'border-sf-accent bg-sf-dark-800'
                           : 'border-sf-dark-700 bg-sf-dark-900 hover:border-sf-dark-500'
                       }`}
                     >
-                      <div className="aspect-[16/9] bg-sf-dark-950">
-                        {previewUrls[preset.id] ? (
+                      <div className="w-[88px] h-[50px] flex-shrink-0 rounded-lg overflow-hidden bg-sf-dark-950">
+                        {thumb ? (
                           <img
-                            src={previewUrls[preset.id]}
+                            src={thumb}
                             alt={preset.name}
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-xs text-sf-text-muted">
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-sf-text-muted">
                             {preset.name}
                           </div>
                         )}
                       </div>
-                      <div className="p-3">
+                      <div className="min-w-0">
                         <div className="text-sm font-medium text-sf-text-primary">{preset.name}</div>
-                        <div className="text-xs text-sf-text-muted mt-1">{preset.description}</div>
+                        <div className="text-xs text-sf-text-muted mt-0.5 line-clamp-2">{preset.description}</div>
                       </div>
                     </button>
                   )
                 })}
               </div>
-
-              {selectedPreset?.accentCustomizable && (
-                <div className="mt-4 rounded-xl border border-sf-dark-700 bg-sf-dark-950/50 px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Palette className="w-4 h-4 text-sf-text-muted flex-shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-sf-text-primary">Accent color</div>
-                        <div className="text-[11px] text-sf-text-muted truncate">
-                          The word currently being spoken uses this color.
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <label
-                        className="relative inline-flex w-9 h-9 rounded-lg overflow-hidden border border-sf-dark-600 cursor-pointer"
-                        style={{ backgroundColor: accentColor }}
-                        title="Pick any color"
-                      >
-                        <input
-                          type="color"
-                          value={accentColor}
-                          onChange={(e) => setAccentColor(e.target.value)}
-                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          aria-label="Accent color"
-                        />
-                      </label>
-                      <code className="text-[11px] text-sf-text-muted font-mono uppercase">
-                        {String(accentColor || '').toUpperCase()}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={() => setAccentColor(selectedPreset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)}
-                        disabled={accentColor === (selectedPreset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)}
-                        className="rounded-md border border-sf-dark-600 bg-sf-dark-900 p-1.5 text-sf-text-muted hover:text-sf-text-primary hover:bg-sf-dark-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="Reset to preset default"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </section>
           </div>
 
           <div className="flex flex-col max-h-[calc(92vh-72px)]">
           <div className="p-5 overflow-y-auto flex-1 space-y-5">
+            <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-sm font-medium text-sf-text-primary">Preview</div>
+                  <div className="text-xs text-sf-text-muted mt-1">
+                    {isTimelineScope
+                      ? (asset?.bgVideoUrl
+                          ? 'Sample caption over the frame at your playhead.'
+                          : 'Sample caption at your timeline aspect ratio.')
+                      : 'Sample caption over a frame of your footage. Adjust placement below.'}
+                  </div>
+                </div>
+                <div className="text-[11px] text-sf-text-muted">
+                  {renderSettings.width}×{renderSettings.height}
+                </div>
+              </div>
+              <div className="flex items-center justify-center rounded-xl bg-black border border-sf-dark-700 overflow-hidden" style={{ maxHeight: 380 }}>
+                {positioningPreviewUrl ? (
+                  <img
+                    src={positioningPreviewUrl}
+                    alt="Caption positioning preview"
+                    className="object-contain"
+                    style={{ maxHeight: 380, maxWidth: '100%' }}
+                  />
+                ) : (
+                  <div className="py-12 text-xs text-sf-text-muted">Preview unavailable.</div>
+                )}
+              </div>
+            </section>
+
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4 space-y-3">
               <div>
-                <div className="text-sm font-medium text-sf-text-primary">Global Style</div>
+                <div className="text-sm font-medium text-sf-text-primary">Style</div>
                 <div className="text-xs text-sf-text-muted mt-1">
-                  {selectedPreset?.traditional
-                    ? 'Configure subtitle appearance for all cues.'
-                    : 'Set defaults for all cues. Per-cue overrides take priority.'}
+                  Applies to all cues. Per-cue overrides take priority.
                 </div>
               </div>
 
+              <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-950/40 px-3 py-3 space-y-3">
+                <ColorField
+                  icon={Type}
+                  label="Text color"
+                  hint="Base color for the words."
+                  value={effectiveTextColor}
+                  onChange={setTextColor}
+                  onReset={() => setTextColor(null)}
+                  resetDisabled={textColor === null}
+                />
+                {!selectedPreset?.traditional && selectedPreset?.accentCustomizable && (
+                  <ColorField
+                    icon={Palette}
+                    label="Accent color"
+                    hint="The word currently being spoken."
+                    value={accentColor}
+                    onChange={setAccentColor}
+                    onReset={() => setAccentColor(selectedPreset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)}
+                    resetDisabled={accentColor === (selectedPreset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)}
+                  />
+                )}
+              </div>
+
+              <CueOverrideChips
+                label="Text Style"
+                value={globalTextStyle}
+                options={TEXT_STYLE_OPTIONS}
+                onChange={setGlobalTextStyle}
+              />
+
               {selectedPreset?.traditional ? (
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
-                      Text Color
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SUBTITLE_COLOR_OPTIONS.map((option) => (
-                        <button
-                          key={option.id}
-                          type="button"
-                          onClick={() => setSubtitleColor(option.id)}
-                          className={`w-7 h-7 rounded-full border-2 transition-colors ${
-                            subtitleColor === option.id
-                              ? 'border-sf-accent scale-110'
-                              : 'border-sf-dark-600 hover:border-sf-dark-400'
-                          }`}
-                          style={{ backgroundColor: option.swatch }}
-                          title={option.label}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <CueOverrideChips
-                    label="Position"
-                    value={subtitlePosition}
-                    options={SUBTITLE_POSITION_OPTIONS}
-                    onChange={setSubtitlePosition}
-                  />
-                  <CueOverrideChips
-                    label="Text Style"
-                    value={subtitleTextStyle}
-                    options={SUBTITLE_TEXT_STYLE_OPTIONS}
-                    onChange={setSubtitleTextStyle}
-                  />
-                  <CueOverrideChips
-                    label="Size"
-                    value={subtitleSize}
-                    options={SUBTITLE_SIZE_OPTIONS}
-                    onChange={setSubtitleSize}
-                  />
-                </div>
+                <CueOverrideChips
+                  label="Position"
+                  value={subtitlePosition}
+                  options={SUBTITLE_POSITION_OPTIONS}
+                  onChange={setSubtitlePosition}
+                />
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   <CueOverrideChips
@@ -799,14 +1033,70 @@ function CaptionWorkspace({
                     options={CUE_MOTION_OPTIONS}
                     onChange={setGlobalMotion}
                   />
-                  <CueOverrideChips
-                    label="Size"
-                    value={globalSize}
-                    options={GLOBAL_SIZE_OPTIONS}
-                    onChange={setGlobalSize}
-                  />
                 </div>
               )}
+
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+                    Size
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGlobalSizeScale(1)}
+                    disabled={globalSizeScale === 1}
+                    className="text-[10px] text-sf-text-muted hover:text-sf-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Reset to default size"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-sf-text-muted w-10 text-right">Smaller</span>
+                  <input
+                    type="range"
+                    min={30}
+                    max={180}
+                    step={5}
+                    value={Math.round(globalSizeScale * 100)}
+                    onChange={(e) => setGlobalSizeScale(Number(e.target.value) / 100)}
+                    className="flex-1 accent-sf-accent"
+                    aria-label="Caption size"
+                  />
+                  <span className="text-[10px] text-sf-text-muted w-10">Bigger</span>
+                </div>
+              </div>
+
+              <div className="space-y-1 pt-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+                    Vertical nudge
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGlobalVerticalOffset(0)}
+                    disabled={globalVerticalOffset === 0}
+                    className="text-[10px] text-sf-text-muted hover:text-sf-text-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="Center the captions vertically"
+                  >
+                    Reset
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-sf-text-muted w-8 text-right">Up</span>
+                  <input
+                    type="range"
+                    min={-45}
+                    max={45}
+                    step={1}
+                    value={Math.round(globalVerticalOffset * 100)}
+                    onChange={(e) => setGlobalVerticalOffset(Number(e.target.value) / 100)}
+                    className="flex-1 accent-sf-accent"
+                    aria-label="Vertical nudge"
+                  />
+                  <span className="text-[10px] text-sf-text-muted w-8">Down</span>
+                </div>
+              </div>
             </section>
 
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4">
