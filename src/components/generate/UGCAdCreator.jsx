@@ -618,6 +618,18 @@ const UGC_HUMAN_THEME_CSS = `
     width: 100%;
     z-index: 0;
   }
+  .ugc-human-theme .pv-video:-webkit-full-screen {
+    object-fit: contain;
+    position: static;
+    height: 100%;
+    width: 100%;
+  }
+  .ugc-human-theme .pv-video:fullscreen {
+    object-fit: contain;
+    position: static;
+    height: 100%;
+    width: 100%;
+  }
   .ugc-human-theme .pv-sequence-badge {
     background: rgba(0,0,0,0.52);
     border: 1px solid rgba(255,255,255,0.18);
