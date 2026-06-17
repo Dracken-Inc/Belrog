@@ -102,6 +102,25 @@ export const KINETIC_CAPTION_STYLES = [
     defaultTextStyle: 'background',
     bgScrim: 'rgba(0, 0, 0, 0.62)',
   },
+  {
+    id: 'kinetic-punch',
+    name: 'Punch',
+    description: 'One word at a time, slamming into the same spot. Fast and relentless.',
+    sampleText: 'one word at a time',
+    renderer: 'kinetic',
+    textColor: '#FFFFFF',
+    keyWordColor: '#A3E635',
+    baseGlowColor: 'rgba(255, 255, 255, 0.3)',
+    glowColor: accentGlowColor('#A3E635'),
+    fontFamily: 'Inter',
+    fontWeight: '800',
+    accentCustomizable: true,
+    textColorCustomizable: true,
+    defaultMotionProfile: 'frenetic',
+    defaultTextStyle: 'shadow',
+    singleWord: true,
+    pinPlacement: true,
+  },
 ]
 
 export const DEFAULT_KINETIC_STYLE_ID = KINETIC_CAPTION_STYLES[0].id
@@ -228,6 +247,7 @@ function resolveKineticBehavior(style, microCue) {
     sizeMultiplier,
     verticalOffset,
     textStyle,
+    pinPlacement: !!style?.pinPlacement,
   }
 }
 
@@ -243,8 +263,13 @@ function isSentenceEnder(word) {
   return SENTENCE_END_RE.test(String(word || '').trim())
 }
 
-function splitCuesIntoMicroCues(cues) {
+function splitCuesIntoMicroCues(cues, wordsPerCue = 0) {
   const microCues = []
+  // wordsPerCue forces a fixed group size (1 = the "Punch" one-word-at-a-time
+  // preset). 0/unset keeps the default adaptive 1-3 word grouping.
+  const maxWords = wordsPerCue && wordsPerCue >= 1
+    ? Math.min(wordsPerCue, MAX_MICRO_CUE_WORDS)
+    : MAX_MICRO_CUE_WORDS
 
   for (const cue of cues) {
     const words = String(cue?.text || '').trim().split(/\s+/).filter(Boolean)
@@ -262,12 +287,12 @@ function splitCuesIntoMicroCues(cues) {
       const microIndex = microCues.length
       const remaining = words.length - wordIndex
 
-      let take = Math.min(MAX_MICRO_CUE_WORDS, remaining)
+      let take = Math.min(maxWords, remaining)
 
-      if (remaining > 1 && take > 1 && microIndex % SINGLE_WORD_CHANCE_EVERY === 0) {
+      if (maxWords > 1 && remaining > 1 && take > 1 && microIndex % SINGLE_WORD_CHANCE_EVERY === 0) {
         take = 1
       }
-      if (remaining === MAX_MICRO_CUE_WORDS + 1) {
+      if (maxWords > 1 && remaining === MAX_MICRO_CUE_WORDS + 1) {
         take = 2
       }
 
@@ -579,6 +604,12 @@ function getPositionOffset(microCueIndex, microCue, width, height, positioned, b
   let dx = anchorX - currentCenterX
   let dy = anchorY - currentCenterY
 
+  // Punch-style presets land every word on the same anchor (no drift, no
+  // sentence-end shift), while still honoring the placement chips + nudge.
+  if (behavior?.pinPlacement) {
+    return { dx, dy }
+  }
+
   const shouldPinCenterPunch = isHighlighted
     && microCue.wordCount === 1
     && (horizontalPlacement === 'auto' || horizontalPlacement === 'center')
@@ -699,12 +730,12 @@ function drawWordGroupBackground(ctx, positioned, scrimColor, opacity) {
 let microCueCache = null
 let microCueCacheKey = null
 
-function getMicroCues(cues) {
-  const key = (Array.isArray(cues) ? cues : [])
+function getMicroCues(cues, wordsPerCue = 0) {
+  const key = `wpc:${wordsPerCue}|` + (Array.isArray(cues) ? cues : [])
     .map((c) => `${c.id}|${c.start}|${c.end}|${c.text}|${JSON.stringify(c.override || {})}|${JSON.stringify(c.globalOverrides || {})}`)
     .join(',')
   if (microCueCacheKey === key && microCueCache) return microCueCache
-  microCueCache = splitCuesIntoMicroCues(cues)
+  microCueCache = splitCuesIntoMicroCues(cues, wordsPerCue)
   microCueCacheKey = key
   return microCueCache
 }
@@ -842,7 +873,7 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
     return
   }
 
-  const microCues = getMicroCues(cues)
+  const microCues = getMicroCues(cues, resolvedStyle.singleWord ? 1 : 0)
 
   const activeIndex = microCues.findIndex((mc) => time >= mc.start && time < mc.end)
   if (activeIndex < 0) return
@@ -913,12 +944,18 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
       ? (i === positioned.length - 1)
       : (time >= speakStart && time < speakEnd)
 
+    // Single-word presets (Punch) show one word at a time, so every word would
+    // be "active" the whole time — keep them in the base color and reserve the
+    // accent for genuine emphasis words (numbers, sentence enders). Other
+    // presets accent whichever word is currently being spoken.
+    const accentOn = resolvedStyle.singleWord ? isMicroCueHighlighted(active) : isActiveWord
+
     drawWord(
       ctx,
       positioned[i],
       { ...anim, isActive: isActiveWord },
-      isActiveWord ? accentTextColor : baseTextColor,
-      isActiveWord ? accentGlow : baseGlowColor,
+      accentOn ? accentTextColor : baseTextColor,
+      accentOn ? accentGlow : baseGlowColor,
       resolvedStyle,
       behavior.textStyle,
     )
