@@ -174,7 +174,8 @@ const KINETIC_MOTION_PROFILES = {
     startScale: 0.74,
     overshoot: 0.6,
     blurStart: 4,
-    positionVarietyMultiplier: 0.4,
+    // Tamed holds its position: words stay on their anchor line, no wandering.
+    positionVarietyMultiplier: 0,
     entranceSpreadMultiplier: 0.82,
   },
   excited: {
@@ -183,7 +184,8 @@ const KINETIC_MOTION_PROFILES = {
     startScale: 0.5,
     overshoot: 1.7,
     blurStart: 8,
-    positionVarietyMultiplier: 1,
+    // Excited: noticeable but contained movement around the anchor.
+    positionVarietyMultiplier: 0.5,
     entranceSpreadMultiplier: 1,
   },
   frenetic: {
@@ -192,7 +194,8 @@ const KINETIC_MOTION_PROFILES = {
     startScale: 0.38,
     overshoot: 2.35,
     blurStart: 12,
-    positionVarietyMultiplier: 1.45,
+    // Frenetic: words land all over the frame.
+    positionVarietyMultiplier: 1.6,
     entranceSpreadMultiplier: 0.72,
   },
 }
@@ -620,7 +623,7 @@ function getPositionOffset(microCueIndex, microCue, width, height, positioned, b
   }
 
   if (microCue.isSentenceEnd && verticalPlacement === 'auto') {
-    dy += -height * 0.08
+    dy += -height * 0.08 * variety
   }
 
   const idx = microCueIndex
