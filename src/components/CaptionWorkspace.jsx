@@ -104,9 +104,49 @@ const CUE_MOTION_OPTIONS = [
   { id: 'frenetic', label: 'Frenetic' },
 ]
 
+const CAPTION_FONT_OPTIONS = [
+  { id: 'Inter', label: 'Inter', value: 'Inter' },
+  { id: 'Arial', label: 'Arial', value: 'Arial' },
+  { id: 'Impact', label: 'Impact', value: 'Impact' },
+  { id: 'Trebuchet', label: 'Trebuchet', value: 'Trebuchet MS' },
+  { id: 'Georgia', label: 'Georgia', value: 'Georgia' },
+  { id: 'Mono', label: 'Mono', value: 'Courier New' },
+]
+
+const SAVED_CAPTION_STYLES_KEY = 'comfystudio-saved-caption-styles'
+
 const VALID_VERTICAL_PLACEMENTS = new Set(CUE_VERTICAL_OPTIONS.map((option) => option.id))
 const VALID_HORIZONTAL_PLACEMENTS = new Set(CUE_HORIZONTAL_OPTIONS.map((option) => option.id))
 const VALID_MOTION_PROFILES = new Set(CUE_MOTION_OPTIONS.map((option) => option.id))
+
+function loadSavedCaptionStyles() {
+  if (typeof localStorage === 'undefined') return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SAVED_CAPTION_STYLES_KEY) || '[]')
+    return Array.isArray(parsed)
+      ? parsed.filter((style) => style && typeof style === 'object' && style.id && style.name)
+      : []
+  } catch (error) {
+    console.warn('[CaptionWorkspace] Could not load saved caption styles:', error)
+    return []
+  }
+}
+
+function persistSavedCaptionStyles(styles) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(SAVED_CAPTION_STYLES_KEY, JSON.stringify(styles))
+  } catch (error) {
+    console.warn('[CaptionWorkspace] Could not save caption styles:', error)
+  }
+}
+
+function createCaptionStyleId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `caption-style-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
 function normalizeCueOverride(override = {}) {
   const safeOverride = override && typeof override === 'object' ? override : {}
@@ -187,6 +227,55 @@ function ColorField({ icon: Icon, label, hint, value, onChange, onReset, resetDi
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+function RangeField({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  unit = '',
+  leftLabel = '',
+  rightLabel = '',
+  onChange,
+  onReset,
+  resetDisabled,
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+          {label}
+          <span className="ml-2 font-mono normal-case tracking-normal text-sf-text-secondary">{value}{unit}</span>
+        </div>
+        {onReset ? (
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={resetDisabled}
+            className="text-[10px] text-sf-text-muted hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Reset
+          </button>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2">
+        {leftLabel ? <span className="w-10 text-right text-[10px] text-sf-text-muted">{leftLabel}</span> : null}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 accent-sf-accent"
+          aria-label={label}
+        />
+        {rightLabel ? <span className="w-10 text-[10px] text-sf-text-muted">{rightLabel}</span> : null}
       </div>
     </div>
   )
@@ -303,6 +392,9 @@ function CaptionWorkspace({
   const [error, setError] = useState('')
   const [errorExpanded, setErrorExpanded] = useState(false)
   const [errorCopied, setErrorCopied] = useState(false)
+  const [savedCaptionStyles, setSavedCaptionStyles] = useState(() => loadSavedCaptionStyles())
+  const [captionStyleName, setCaptionStyleName] = useState('')
+  const [activeSavedStyleId, setActiveSavedStyleId] = useState(null)
 
   const [globalVertical, setGlobalVertical] = useState('auto')
   const [globalHorizontal, setGlobalHorizontal] = useState('auto')
@@ -315,6 +407,17 @@ function CaptionWorkspace({
   const [subtitlePosition, setSubtitlePosition] = useState('action-safe')
   // Shared legibility treatment for all presets (background / outline / shadow / plain).
   const [globalTextStyle, setGlobalTextStyle] = useState('background')
+  const [globalFontFamily, setGlobalFontFamily] = useState('Inter')
+  const [backgroundColor, setBackgroundColor] = useState('#000000')
+  const [backgroundOpacity, setBackgroundOpacity] = useState(65)
+  const [backgroundPadding, setBackgroundPadding] = useState(45)
+  const [backgroundRadius, setBackgroundRadius] = useState(25)
+  const [outlineColor, setOutlineColor] = useState('#000000')
+  const [outlineThickness, setOutlineThickness] = useState(9)
+  const [shadowColor, setShadowColor] = useState('#000000')
+  const [shadowOpacity, setShadowOpacity] = useState(75)
+  const [shadowBlur, setShadowBlur] = useState(18)
+  const [shadowDistance, setShadowDistance] = useState(5)
 
   // A still frame grabbed from the source video, drawn behind the positioning
   // preview so placement can be judged over real footage. bgVersion bumps when
@@ -374,12 +477,145 @@ function CaptionWorkspace({
     return textColor || presetDefault || '#FFFFFF'
   }, [textColor, selectedPreset])
 
+  const captionStyleControls = useMemo(() => ({
+    fontFamily: globalFontFamily,
+    backgroundColor,
+    backgroundOpacity,
+    backgroundPadding,
+    backgroundRadius,
+    outlineColor,
+    outlineThickness,
+    shadowColor,
+    shadowOpacity,
+    shadowBlur,
+    shadowDistance,
+  }), [
+    globalFontFamily,
+    backgroundColor,
+    backgroundOpacity,
+    backgroundPadding,
+    backgroundRadius,
+    outlineColor,
+    outlineThickness,
+    shadowColor,
+    shadowOpacity,
+    shadowBlur,
+    shadowDistance,
+  ])
+
+  const applyCaptionStyle = useCallback((style) => {
+    if (!style || typeof style !== 'object') return
+    const presetId = style.presetId || DEFAULT_CAPTION_PRESET_ID
+    const preset = getCaptionPresetById(presetId)
+    const controls = style.styleControls && typeof style.styleControls === 'object'
+      ? style.styleControls
+      : {}
+
+    setSelectedPresetId(presetId)
+    setAccentColor(style.accentColor || preset?.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)
+    setTextColor(style.textColor ?? null)
+    setGlobalTextStyle(style.textStyle || preset?.defaultTextStyle || (preset?.traditional ? 'background' : 'plain'))
+    setGlobalFontFamily(controls.fontFamily || preset?.fontFamily || 'Inter')
+    setBackgroundColor(controls.backgroundColor || '#000000')
+    setBackgroundOpacity(typeof controls.backgroundOpacity === 'number' ? controls.backgroundOpacity : 65)
+    setBackgroundPadding(typeof controls.backgroundPadding === 'number' ? controls.backgroundPadding : (preset?.traditional ? 60 : 45))
+    setBackgroundRadius(typeof controls.backgroundRadius === 'number' ? controls.backgroundRadius : (preset?.traditional ? 30 : 25))
+    setOutlineColor(controls.outlineColor || '#000000')
+    setOutlineThickness(typeof controls.outlineThickness === 'number' ? controls.outlineThickness : 9)
+    setShadowColor(controls.shadowColor || '#000000')
+    setShadowOpacity(typeof controls.shadowOpacity === 'number' ? controls.shadowOpacity : 75)
+    setShadowBlur(typeof controls.shadowBlur === 'number' ? controls.shadowBlur : (preset?.traditional ? 25 : 18))
+    setShadowDistance(typeof controls.shadowDistance === 'number' ? controls.shadowDistance : 5)
+    setSubtitlePosition(style.subtitlePosition || preset?.subtitlePosition || 'action-safe')
+    setGlobalVertical(style.globalVertical || 'auto')
+    setGlobalHorizontal(style.globalHorizontal || 'auto')
+    setGlobalMotion(style.globalMotion || 'auto')
+    setGlobalSizeScale(typeof style.globalSizeScale === 'number' ? style.globalSizeScale : 1)
+    setGlobalVerticalOffset(typeof style.globalVerticalOffset === 'number' ? style.globalVerticalOffset : 0)
+    setActiveSavedStyleId(style.id || null)
+    setCaptionStyleName(style.name || '')
+    setStatusMessage(style.name ? `Applied caption style "${style.name}".` : 'Applied saved caption style.')
+  }, [])
+
+  const buildSavedCaptionStyle = useCallback((name, existingStyle = null) => {
+    const timestamp = new Date().toISOString()
+    return {
+      id: existingStyle?.id || createCaptionStyleId(),
+      name,
+      presetId: selectedPresetId,
+      presetName: selectedPreset?.name || 'Caption',
+      accentColor,
+      textColor,
+      textStyle: globalTextStyle,
+      subtitlePosition,
+      globalVertical,
+      globalHorizontal,
+      globalMotion,
+      globalSizeScale,
+      globalVerticalOffset,
+      styleControls: captionStyleControls,
+      createdAt: existingStyle?.createdAt || timestamp,
+      updatedAt: timestamp,
+    }
+  }, [
+    accentColor,
+    captionStyleControls,
+    globalHorizontal,
+    globalMotion,
+    globalSizeScale,
+    globalTextStyle,
+    globalVertical,
+    globalVerticalOffset,
+    selectedPreset?.name,
+    selectedPresetId,
+    subtitlePosition,
+    textColor,
+  ])
+
+  const saveCurrentCaptionStyle = useCallback(({ forceNew = false } = {}) => {
+    const fallbackName = `${selectedPreset?.name || 'Caption'} style`
+    const name = captionStyleName.trim() || fallbackName
+    const existingStyle = !forceNew && activeSavedStyleId
+      ? savedCaptionStyles.find((style) => style.id === activeSavedStyleId)
+      : null
+    const nextStyle = buildSavedCaptionStyle(name, existingStyle)
+    const nextStyles = existingStyle
+      ? savedCaptionStyles.map((style) => (style.id === existingStyle.id ? nextStyle : style))
+      : [nextStyle, ...savedCaptionStyles]
+
+    setSavedCaptionStyles(nextStyles)
+    persistSavedCaptionStyles(nextStyles)
+    setActiveSavedStyleId(nextStyle.id)
+    setCaptionStyleName(nextStyle.name)
+    setStatusMessage(existingStyle ? `Updated caption style "${nextStyle.name}".` : `Saved caption style "${nextStyle.name}".`)
+  }, [activeSavedStyleId, buildSavedCaptionStyle, captionStyleName, savedCaptionStyles, selectedPreset?.name])
+
+  const deleteSavedCaptionStyle = useCallback((styleId) => {
+    const style = savedCaptionStyles.find((item) => item.id === styleId)
+    const nextStyles = savedCaptionStyles.filter((item) => item.id !== styleId)
+    setSavedCaptionStyles(nextStyles)
+    persistSavedCaptionStyles(nextStyles)
+    if (activeSavedStyleId === styleId) {
+      setActiveSavedStyleId(null)
+      setCaptionStyleName('')
+    }
+    setStatusMessage(style?.name ? `Deleted caption style "${style.name}".` : 'Deleted caption style.')
+  }, [activeSavedStyleId, savedCaptionStyles])
+
   // Shared style overrides fed to both the preset card thumbnail and the
   // larger positioning preview, so they always agree.
   const previewGlobalOverrides = useMemo(() => (
     renderPreset?.traditional
-      ? { subtitleColor: effectiveTextColor, subtitlePosition, textStyle: globalTextStyle, sizeScale: globalSizeScale, verticalOffset: globalVerticalOffset }
+      ? {
+          ...captionStyleControls,
+          subtitleColor: effectiveTextColor,
+          subtitlePosition,
+          textStyle: globalTextStyle,
+          sizeScale: globalSizeScale,
+          verticalOffset: globalVerticalOffset,
+        }
       : {
+          ...captionStyleControls,
           motionProfile: globalMotion !== 'auto' ? globalMotion : undefined,
           sizeScale: globalSizeScale,
           verticalPlacement: globalVertical !== 'auto' ? globalVertical : undefined,
@@ -387,7 +623,7 @@ function CaptionWorkspace({
           verticalOffset: globalVerticalOffset,
           textStyle: globalTextStyle,
         }
-  ), [renderPreset?.traditional, globalMotion, globalSizeScale, globalVertical, globalHorizontal, globalVerticalOffset, globalTextStyle, effectiveTextColor, subtitlePosition])
+  ), [captionStyleControls, renderPreset?.traditional, globalMotion, globalSizeScale, globalVertical, globalHorizontal, globalVerticalOffset, globalTextStyle, effectiveTextColor, subtitlePosition])
 
   // Live thumbnail for the selected preset card.
   const selectedPreviewUrl = useMemo(() => {
@@ -505,6 +741,8 @@ function CaptionWorkspace({
     setError('')
     setStatusMessage('Transcribe audio locally to begin.')
     setPlaceOnTimeline(true)
+    setActiveSavedStyleId(null)
+    setCaptionStyleName('')
     const nextPresetId = asset?.settings?.lastCaptionPresetId || DEFAULT_CAPTION_PRESET_ID
     setSelectedPresetId(nextPresetId)
     // Seed accent color from the saved preference, falling back to the
@@ -515,6 +753,17 @@ function CaptionWorkspace({
     setAccentColor(savedAccent || presetDefault)
     setTextColor(null)
     setGlobalTextStyle(nextPreset?.defaultTextStyle || (nextPreset?.traditional ? 'background' : 'plain'))
+    setGlobalFontFamily(nextPreset?.fontFamily || 'Inter')
+    setBackgroundColor('#000000')
+    setBackgroundOpacity(65)
+    setBackgroundPadding(nextPreset?.traditional ? 60 : 45)
+    setBackgroundRadius(nextPreset?.traditional ? 30 : 25)
+    setOutlineColor('#000000')
+    setOutlineThickness(9)
+    setShadowColor('#000000')
+    setShadowOpacity(75)
+    setShadowBlur(nextPreset?.traditional ? 25 : 18)
+    setShadowDistance(5)
     setSubtitlePosition(nextPreset?.subtitlePosition || 'action-safe')
     setIsPreviewPlaying(false)
     previewTimeRef.current = 1.2
@@ -531,6 +780,17 @@ function CaptionWorkspace({
         if (cached.accentColor) setAccentColor(cached.accentColor)
         setTextColor(cached.textColor ?? null)
         if (cached.globalTextStyle) setGlobalTextStyle(cached.globalTextStyle)
+        if (cached.globalFontFamily) setGlobalFontFamily(cached.globalFontFamily)
+        if (cached.backgroundColor) setBackgroundColor(cached.backgroundColor)
+        if (typeof cached.backgroundOpacity === 'number') setBackgroundOpacity(cached.backgroundOpacity)
+        if (typeof cached.backgroundPadding === 'number') setBackgroundPadding(cached.backgroundPadding)
+        if (typeof cached.backgroundRadius === 'number') setBackgroundRadius(cached.backgroundRadius)
+        if (cached.outlineColor) setOutlineColor(cached.outlineColor)
+        if (typeof cached.outlineThickness === 'number') setOutlineThickness(cached.outlineThickness)
+        if (cached.shadowColor) setShadowColor(cached.shadowColor)
+        if (typeof cached.shadowOpacity === 'number') setShadowOpacity(cached.shadowOpacity)
+        if (typeof cached.shadowBlur === 'number') setShadowBlur(cached.shadowBlur)
+        if (typeof cached.shadowDistance === 'number') setShadowDistance(cached.shadowDistance)
         if (cached.subtitlePosition) setSubtitlePosition(cached.subtitlePosition)
         if (cached.globalVertical) setGlobalVertical(cached.globalVertical)
         if (cached.globalHorizontal) setGlobalHorizontal(cached.globalHorizontal)
@@ -558,6 +818,24 @@ function CaptionWorkspace({
           audioDuration: existingDraft.audioDuration || Number(asset?.duration) || null,
         })
         setSelectedPresetId(existingDraft.presetId || asset?.settings?.lastCaptionPresetId || DEFAULT_CAPTION_PRESET_ID)
+        if (existingDraft.accentColor) setAccentColor(existingDraft.accentColor)
+        setTextColor(existingDraft.textColor ?? null)
+        if (existingDraft.textStyle) setGlobalTextStyle(existingDraft.textStyle)
+        if (existingDraft.subtitlePosition) setSubtitlePosition(existingDraft.subtitlePosition)
+        const existingStyleControls = existingDraft.styleControls && typeof existingDraft.styleControls === 'object'
+          ? existingDraft.styleControls
+          : {}
+        if (existingStyleControls.fontFamily) setGlobalFontFamily(existingStyleControls.fontFamily)
+        if (existingStyleControls.backgroundColor) setBackgroundColor(existingStyleControls.backgroundColor)
+        if (typeof existingStyleControls.backgroundOpacity === 'number') setBackgroundOpacity(existingStyleControls.backgroundOpacity)
+        if (typeof existingStyleControls.backgroundPadding === 'number') setBackgroundPadding(existingStyleControls.backgroundPadding)
+        if (typeof existingStyleControls.backgroundRadius === 'number') setBackgroundRadius(existingStyleControls.backgroundRadius)
+        if (existingStyleControls.outlineColor) setOutlineColor(existingStyleControls.outlineColor)
+        if (typeof existingStyleControls.outlineThickness === 'number') setOutlineThickness(existingStyleControls.outlineThickness)
+        if (existingStyleControls.shadowColor) setShadowColor(existingStyleControls.shadowColor)
+        if (typeof existingStyleControls.shadowOpacity === 'number') setShadowOpacity(existingStyleControls.shadowOpacity)
+        if (typeof existingStyleControls.shadowBlur === 'number') setShadowBlur(existingStyleControls.shadowBlur)
+        if (typeof existingStyleControls.shadowDistance === 'number') setShadowDistance(existingStyleControls.shadowDistance)
         setStatusMessage('Loaded the last saved caption draft for this video.')
       } catch (loadError) {
         if (!cancelled) {
@@ -705,6 +983,17 @@ function CaptionWorkspace({
       accentColor,
       textColor,
       globalTextStyle,
+      globalFontFamily,
+      backgroundColor,
+      backgroundOpacity,
+      backgroundPadding,
+      backgroundRadius,
+      outlineColor,
+      outlineThickness,
+      shadowColor,
+      shadowOpacity,
+      shadowBlur,
+      shadowDistance,
       subtitlePosition,
       globalVertical,
       globalHorizontal,
@@ -789,6 +1078,11 @@ function CaptionWorkspace({
           sourceAssetName: asset.name,
           sourceAssetPath: asset.path || null,
           presetId: selectedPreset.id,
+          accentColor,
+          textColor,
+          textStyle: globalTextStyle,
+          subtitlePosition,
+          styleControls: captionStyleControls,
           modelId: draft.modelId,
           transcriptText: cuesToTranscript(normalizedCues),
           words: draft.words,
@@ -817,6 +1111,7 @@ function CaptionWorkspace({
       const renderCues = normalizedCues.map((cue) => ({
         ...cue,
         globalOverrides: {
+          ...captionStyleControls,
           verticalPlacement: globalVertical,
           horizontalPlacement: globalHorizontal,
           motionProfile: globalMotion,
@@ -941,7 +1236,7 @@ function CaptionWorkspace({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_1fr] gap-0 max-h-[calc(92vh-72px)]">
+        <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_1fr] gap-0 h-[calc(92vh-72px)]">
           <div className="border-r border-sf-dark-700 p-5 overflow-y-auto space-y-5">
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
@@ -1022,7 +1317,20 @@ function CaptionWorkspace({
                         setAccentColor(preset.keyWordColor || DEFAULT_KINETIC_ACCENT_COLOR)
                         setTextColor(null)
                         setGlobalTextStyle(preset.defaultTextStyle || (preset.traditional ? 'background' : 'plain'))
+                        setGlobalFontFamily(preset.fontFamily || 'Inter')
+                        setBackgroundColor('#000000')
+                        setBackgroundOpacity(65)
+                        setBackgroundPadding(preset.traditional ? 60 : 45)
+                        setBackgroundRadius(preset.traditional ? 30 : 25)
+                        setOutlineColor('#000000')
+                        setOutlineThickness(9)
+                        setShadowColor('#000000')
+                        setShadowOpacity(75)
+                        setShadowBlur(preset.traditional ? 25 : 18)
+                        setShadowDistance(5)
                         setSubtitlePosition(preset.subtitlePosition || 'action-safe')
+                        setActiveSavedStyleId(null)
+                        setCaptionStyleName('')
                       }}
                       className={`w-full flex items-center gap-3 rounded-xl border p-2 text-left transition-colors ${
                         selected
@@ -1050,12 +1358,55 @@ function CaptionWorkspace({
                     </button>
                   )
                 })}
+                {savedCaptionStyles.length > 0 && (
+                  <div className="pt-3">
+                    <div className="mb-2 text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+                      Saved Styles
+                    </div>
+                    <div className="space-y-2">
+                      {savedCaptionStyles.map((style) => {
+                        const selected = style.id === activeSavedStyleId
+                        return (
+                          <div
+                            key={style.id}
+                            className={`flex items-center gap-2 rounded-xl border p-2 transition-colors ${
+                              selected
+                                ? 'border-sf-accent bg-sf-dark-800'
+                                : 'border-sf-dark-700 bg-sf-dark-900 hover:border-sf-dark-500'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => applyCaptionStyle(style)}
+                              className="min-w-0 flex-1 rounded-lg px-1 py-1 text-left"
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-medium text-sf-text-primary">{style.name}</div>
+                                <div className="mt-0.5 truncate text-xs text-sf-text-muted">
+                                  {style.presetName || getCaptionPresetById(style.presetId)?.name || 'Caption style'}
+                                </div>
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteSavedCaptionStyle(style.id)}
+                              className="rounded-md border border-sf-dark-600 bg-sf-dark-950 px-2 py-1 text-[10px] text-sf-text-muted hover:border-sf-error/60 hover:text-sf-error"
+                              title={`Delete ${style.name}`}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           </div>
 
-          <div className="flex flex-col max-h-[calc(92vh-72px)]">
-          <div className="p-5 overflow-y-auto flex-1 space-y-5">
+          <div className="flex min-h-0 flex-col">
+          <div className="flex-shrink-0 border-b border-sf-dark-700 bg-sf-dark-950 p-5">
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
@@ -1146,11 +1497,48 @@ function CaptionWorkspace({
               )}
             </section>
 
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-5">
             <section className="rounded-2xl border border-sf-dark-700 bg-sf-dark-900/60 p-4 space-y-3">
               <div>
                 <div className="text-sm font-medium text-sf-text-primary">Style</div>
                 <div className="text-xs text-sf-text-muted mt-1">
                   Applies to all cues. Per-cue overrides take priority.
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-sf-dark-700 bg-sf-dark-950/40 px-3 py-3 space-y-2">
+                <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+                  Save Style
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={captionStyleName}
+                    onChange={(event) => setCaptionStyleName(event.target.value)}
+                    placeholder="Name this caption style"
+                    className="min-w-0 flex-1 rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-sm text-sf-text-primary placeholder:text-sf-text-muted focus:border-sf-accent focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => saveCurrentCaptionStyle()}
+                    className="rounded-lg bg-sf-accent px-3 py-2 text-xs font-medium text-white hover:bg-sf-accent/90"
+                  >
+                    {activeSavedStyleId ? 'Update Style' : 'Save Style'}
+                  </button>
+                  {activeSavedStyleId && (
+                    <button
+                      type="button"
+                      onClick={() => saveCurrentCaptionStyle({ forceNew: true })}
+                      className="rounded-lg border border-sf-dark-600 bg-sf-dark-900 px-3 py-2 text-xs font-medium text-sf-text-primary hover:bg-sf-dark-800"
+                    >
+                      Save New
+                    </button>
+                  )}
+                </div>
+                <div className="text-[11px] text-sf-text-muted">
+                  Saves the look only: preset, font, colors, background, outline, shadow, size, motion, and placement.
                 </div>
               </div>
 
@@ -1175,12 +1563,163 @@ function CaptionWorkspace({
                 )}
               </div>
 
+              <label className="block text-xs text-sf-text-secondary">
+                <span className="mb-1 block text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">
+                  Font
+                </span>
+                <select
+                  value={globalFontFamily}
+                  onChange={(event) => setGlobalFontFamily(event.target.value)}
+                  className="w-full rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-sm text-sf-text-primary focus:border-sf-accent focus:outline-none"
+                >
+                  {CAPTION_FONT_OPTIONS.map((font) => (
+                    <option key={font.id} value={font.value}>
+                      {font.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <CueOverrideChips
                 label="Text Style"
                 value={globalTextStyle}
                 options={TEXT_STYLE_OPTIONS}
                 onChange={setGlobalTextStyle}
               />
+
+              <details className="rounded-xl border border-sf-dark-700 bg-sf-dark-950/40 px-3 py-3">
+                <summary className="cursor-pointer select-none text-xs font-medium text-sf-text-secondary hover:text-sf-text-primary">
+                  Advanced style
+                </summary>
+                <div className="mt-3 space-y-4">
+                  <div className="space-y-2">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">Background</div>
+                    <ColorField
+                      label="Color"
+                      hint="Used when Text Style is Background."
+                      value={backgroundColor}
+                      onChange={setBackgroundColor}
+                      onReset={() => setBackgroundColor('#000000')}
+                      resetDisabled={backgroundColor === '#000000'}
+                    />
+                    <RangeField
+                      label="Opacity"
+                      value={backgroundOpacity}
+                      min={0}
+                      max={100}
+                      step={5}
+                      unit="%"
+                      leftLabel="Clear"
+                      rightLabel="Solid"
+                      onChange={setBackgroundOpacity}
+                      onReset={() => setBackgroundOpacity(65)}
+                      resetDisabled={backgroundOpacity === 65}
+                    />
+                    <RangeField
+                      label="Padding"
+                      value={backgroundPadding}
+                      min={10}
+                      max={90}
+                      step={5}
+                      unit="%"
+                      leftLabel="Tight"
+                      rightLabel="Roomy"
+                      onChange={setBackgroundPadding}
+                      onReset={() => setBackgroundPadding(selectedPreset?.traditional ? 60 : 45)}
+                      resetDisabled={backgroundPadding === (selectedPreset?.traditional ? 60 : 45)}
+                    />
+                    <RangeField
+                      label="Radius"
+                      value={backgroundRadius}
+                      min={0}
+                      max={60}
+                      step={5}
+                      unit="%"
+                      leftLabel="Sharp"
+                      rightLabel="Round"
+                      onChange={setBackgroundRadius}
+                      onReset={() => setBackgroundRadius(selectedPreset?.traditional ? 30 : 25)}
+                      resetDisabled={backgroundRadius === (selectedPreset?.traditional ? 30 : 25)}
+                    />
+                  </div>
+
+                  <div className="space-y-2 border-t border-sf-dark-700 pt-3">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">Outline</div>
+                    <ColorField
+                      label="Color"
+                      hint="Used when Text Style is Outline."
+                      value={outlineColor}
+                      onChange={setOutlineColor}
+                      onReset={() => setOutlineColor('#000000')}
+                      resetDisabled={outlineColor === '#000000'}
+                    />
+                    <RangeField
+                      label="Thickness"
+                      value={outlineThickness}
+                      min={0}
+                      max={22}
+                      step={1}
+                      unit="%"
+                      leftLabel="Thin"
+                      rightLabel="Thick"
+                      onChange={setOutlineThickness}
+                      onReset={() => setOutlineThickness(9)}
+                      resetDisabled={outlineThickness === 9}
+                    />
+                  </div>
+
+                  <div className="space-y-2 border-t border-sf-dark-700 pt-3">
+                    <div className="text-[10px] uppercase tracking-[0.12em] text-sf-text-muted">Shadow</div>
+                    <ColorField
+                      label="Color"
+                      hint="Used when Text Style is Shadow."
+                      value={shadowColor}
+                      onChange={setShadowColor}
+                      onReset={() => setShadowColor('#000000')}
+                      resetDisabled={shadowColor === '#000000'}
+                    />
+                    <RangeField
+                      label="Opacity"
+                      value={shadowOpacity}
+                      min={0}
+                      max={100}
+                      step={5}
+                      unit="%"
+                      leftLabel="Clear"
+                      rightLabel="Solid"
+                      onChange={setShadowOpacity}
+                      onReset={() => setShadowOpacity(75)}
+                      resetDisabled={shadowOpacity === 75}
+                    />
+                    <RangeField
+                      label="Blur"
+                      value={shadowBlur}
+                      min={0}
+                      max={60}
+                      step={2}
+                      unit="%"
+                      leftLabel="Hard"
+                      rightLabel="Soft"
+                      onChange={setShadowBlur}
+                      onReset={() => setShadowBlur(selectedPreset?.traditional ? 25 : 18)}
+                      resetDisabled={shadowBlur === (selectedPreset?.traditional ? 25 : 18)}
+                    />
+                    <RangeField
+                      label="Distance"
+                      value={shadowDistance}
+                      min={0}
+                      max={30}
+                      step={1}
+                      unit="%"
+                      leftLabel="Near"
+                      rightLabel="Far"
+                      onChange={setShadowDistance}
+                      onReset={() => setShadowDistance(5)}
+                      resetDisabled={shadowDistance === 5}
+                    />
+                  </div>
+                </div>
+              </details>
 
               {selectedPreset?.traditional ? (
                 <CueOverrideChips

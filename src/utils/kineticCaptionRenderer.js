@@ -9,6 +9,34 @@ function easeOutBack(t, overshoot = 1.7) {
 }
 function easeInCubic(t) { return t * t * t }
 
+function normalizePercent(value, fallback, min = 0, max = 100) {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? clamp(numeric, min, max) : fallback
+}
+
+function parseHexColor(value) {
+  const raw = String(value || '').trim()
+  if (!raw.startsWith('#')) return null
+  const hex = raw.slice(1)
+  const normalized = hex.length === 3
+    ? hex.split('').map((c) => c + c).join('')
+    : hex.padEnd(6, '0').slice(0, 6)
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null
+  return {
+    r: parseInt(normalized.slice(0, 2), 16),
+    g: parseInt(normalized.slice(2, 4), 16),
+    b: parseInt(normalized.slice(4, 6), 16),
+  }
+}
+
+function colorWithOpacity(value, opacityPercent = 100, fallback = 'rgba(0, 0, 0, 1)') {
+  const parsed = parseHexColor(value)
+  const alpha = normalizePercent(opacityPercent, 100) / 100
+  if (parsed) return `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, ${alpha})`
+  const raw = String(value || '').trim()
+  return raw || fallback
+}
+
 // ---------------------------------------------------------------------------
 // Kinetic caption style
 // ---------------------------------------------------------------------------
@@ -242,6 +270,20 @@ function resolveKineticBehavior(style, microCue) {
     style?.defaultTextStyle || 'plain'
   )
 
+  const styleControls = {
+    fontFamily: resolveFieldWithFallback(override.fontFamily, global.fontFamily, style?.fontFamily || 'Inter'),
+    backgroundColor: resolveFieldWithFallback(override.backgroundColor, global.backgroundColor, '#000000'),
+    backgroundOpacity: normalizePercent(override.backgroundOpacity ?? global.backgroundOpacity, 65),
+    backgroundPadding: normalizePercent(override.backgroundPadding ?? global.backgroundPadding, 45, 10, 90),
+    backgroundRadius: normalizePercent(override.backgroundRadius ?? global.backgroundRadius, 25, 0, 80),
+    outlineColor: resolveFieldWithFallback(override.outlineColor, global.outlineColor, '#000000'),
+    outlineThickness: normalizePercent(override.outlineThickness ?? global.outlineThickness, 9, 0, 22),
+    shadowColor: resolveFieldWithFallback(override.shadowColor, global.shadowColor, '#000000'),
+    shadowOpacity: normalizePercent(override.shadowOpacity ?? global.shadowOpacity, 75),
+    shadowBlur: normalizePercent(override.shadowBlur ?? global.shadowBlur, 18, 0, 60),
+    shadowDistance: normalizePercent(override.shadowDistance ?? global.shadowDistance, 5, 0, 30),
+  }
+
   return {
     verticalPlacement: resolveFieldWithFallback(override.verticalPlacement, global.verticalPlacement, 'auto'),
     horizontalPlacement: resolveFieldWithFallback(override.horizontalPlacement, global.horizontalPlacement, 'auto'),
@@ -250,6 +292,7 @@ function resolveKineticBehavior(style, microCue) {
     sizeMultiplier,
     verticalOffset,
     textStyle,
+    styleControls,
     pinPlacement: !!style?.pinPlacement,
   }
 }
@@ -497,7 +540,7 @@ function getWordAnimState(time, enterTime, cueEnd, motionProfile) {
 // Draw word with glow
 // ---------------------------------------------------------------------------
 
-function drawWord(ctx, word, anim, color, glowColor, style, textStyle = 'plain') {
+function drawWord(ctx, word, anim, color, glowColor, style, textStyle = 'plain', styleControls = {}) {
   if (!anim.visible || anim.opacity <= 0.01) return
 
   ctx.save()
@@ -530,8 +573,9 @@ function drawWord(ctx, word, anim, color, glowColor, style, textStyle = 'plain')
   // group level (a scrim behind the whole phrase), so here it behaves like plain.
   if (textStyle === 'outline') {
     ctx.lineJoin = 'round'
-    ctx.lineWidth = Math.max(2, Math.round(fs * 0.09))
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.92)'
+    const outlineThickness = normalizePercent(styleControls.outlineThickness, 9, 0, 22)
+    ctx.lineWidth = Math.max(0, Math.round(fs * outlineThickness / 100))
+    ctx.strokeStyle = colorWithOpacity(styleControls.outlineColor || '#000000', 100)
     ctx.strokeText(word.text, word.x, word.y)
   }
 
@@ -543,10 +587,13 @@ function drawWord(ctx, word, anim, color, glowColor, style, textStyle = 'plain')
     ctx.shadowOffsetX = 0
     ctx.shadowOffsetY = 0
   } else if (textStyle === 'shadow') {
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
-    ctx.shadowBlur = Math.round(fs * 0.18)
-    ctx.shadowOffsetX = Math.round(fs * 0.04)
-    ctx.shadowOffsetY = Math.round(fs * 0.05)
+    const shadowBlur = normalizePercent(styleControls.shadowBlur, 18, 0, 60)
+    const shadowDistance = normalizePercent(styleControls.shadowDistance, 5, 0, 30)
+    const distance = Math.round(fs * shadowDistance / 100)
+    ctx.shadowColor = colorWithOpacity(styleControls.shadowColor || '#000000', normalizePercent(styleControls.shadowOpacity, 75))
+    ctx.shadowBlur = Math.round(fs * shadowBlur / 100)
+    ctx.shadowOffsetX = distance
+    ctx.shadowOffsetY = distance
   } else {
     ctx.shadowColor = 'transparent'
     ctx.shadowBlur = 0
@@ -698,19 +745,22 @@ function clampBlockIntoSafeArea(positioned, width, height) {
 // Background scrim for Bold Dark preset
 // ---------------------------------------------------------------------------
 
-function drawWordGroupBackground(ctx, positioned, scrimColor, opacity) {
+function drawWordGroupBackground(ctx, positioned, scrimColor, opacity, styleControls = {}) {
   if (!positioned.length || !scrimColor || opacity <= 0.01) return
   const fontSize = positioned[0].fontSize
-  const pad = fontSize * 0.4
+  const pad = fontSize * normalizePercent(styleControls.backgroundPadding, 45, 10, 90) / 100
   const minX = Math.min(...positioned.map((w) => w.x)) - pad
   const maxX = Math.max(...positioned.map((w) => w.x + w.measuredWidth)) + pad
   const minY = Math.min(...positioned.map((w) => w.y)) - fontSize * 0.85 - pad
   const maxY = Math.max(...positioned.map((w) => w.y)) + fontSize * 0.2 + pad
-  const radius = fontSize * 0.25
+  const radius = fontSize * normalizePercent(styleControls.backgroundRadius, 25, 0, 80) / 100
 
   ctx.save()
   ctx.globalAlpha = opacity
-  ctx.fillStyle = scrimColor
+  ctx.fillStyle = colorWithOpacity(
+    styleControls.backgroundColor || scrimColor,
+    normalizePercent(styleControls.backgroundOpacity, 65)
+  )
   ctx.beginPath()
   ctx.moveTo(minX + radius, minY)
   ctx.lineTo(maxX - radius, minY)
@@ -762,15 +812,16 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
   const textColor = g.subtitleColor || style.subtitleColor || style.textColor || '#FFFFFF'
   const position = g.subtitlePosition || style.subtitlePosition || 'action-safe'
   const textStyle = g.textStyle || g.subtitleTextStyle || style.subtitleTextStyle || 'background'
+  const fontFamily = g.fontFamily || style.fontFamily || 'Inter'
   const sizeScale = Number(g.sizeScale)
   const sizeMultiplier = Number.isFinite(sizeScale) ? clamp(sizeScale, 0.3, 2) : 1
 
   const fontSize = clamp(Math.round(Math.min(width, height) * 0.045 * sizeMultiplier), 16, 96)
   const lineHeight = fontSize * 1.3
-  const padding = fontSize * 0.6
+  const padding = fontSize * normalizePercent(g.backgroundPadding, 60, 10, 90) / 100
   const maxWidth = width * 0.88
 
-  setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+  setFont(ctx, fontSize, fontFamily, style.fontWeight)
   ctx.textBaseline = 'alphabetic'
   ctx.textAlign = 'center'
 
@@ -819,10 +870,10 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
   ctx.globalAlpha = opacity
 
   if (textStyle === 'background') {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
+    ctx.fillStyle = colorWithOpacity(g.backgroundColor || '#000000', normalizePercent(g.backgroundOpacity, 65))
     const boxWidth = Math.min(maxWidth + padding * 2, width * 0.92)
     const boxX = centerX - boxWidth / 2
-    const radius = Math.round(fontSize * 0.3)
+    const radius = Math.round(fontSize * normalizePercent(g.backgroundRadius, 30, 0, 80) / 100)
     ctx.beginPath()
     ctx.moveTo(boxX + radius, blockY)
     ctx.lineTo(boxX + boxWidth - radius, blockY)
@@ -837,12 +888,12 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
     ctx.fill()
   }
 
-  setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+  setFont(ctx, fontSize, fontFamily, style.fontWeight)
   ctx.fillStyle = textColor
 
   if (textStyle === 'outline') {
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = Math.max(2, Math.round(fontSize * 0.08))
+    ctx.strokeStyle = colorWithOpacity(g.outlineColor || '#000000', 100)
+    ctx.lineWidth = Math.max(0, Math.round(fontSize * normalizePercent(g.outlineThickness, 9, 0, 22) / 100))
     ctx.lineJoin = 'round'
     lines.forEach((line, index) => {
       const y = blockY + padding + (index + 0.75) * lineHeight
@@ -851,10 +902,11 @@ function renderTraditionalSubtitle(ctx, width, height, style, cues, time) {
   }
 
   if (textStyle === 'shadow') {
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)'
-    ctx.shadowBlur = Math.round(fontSize * 0.25)
-    ctx.shadowOffsetX = Math.round(fontSize * 0.06)
-    ctx.shadowOffsetY = Math.round(fontSize * 0.06)
+    const shadowDistance = Math.round(fontSize * normalizePercent(g.shadowDistance, 5, 0, 30) / 100)
+    ctx.shadowColor = colorWithOpacity(g.shadowColor || '#000000', normalizePercent(g.shadowOpacity, 75))
+    ctx.shadowBlur = Math.round(fontSize * normalizePercent(g.shadowBlur, 25, 0, 60) / 100)
+    ctx.shadowOffsetX = shadowDistance
+    ctx.shadowOffsetY = shadowDistance
   }
 
   lines.forEach((line, index) => {
@@ -883,6 +935,11 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
   const active = microCues[activeIndex]
   const behavior = resolveKineticBehavior(resolvedStyle, active)
   const motionProfile = behavior.motionProfile
+  const styleControls = behavior.styleControls || {}
+  const renderStyle = {
+    ...resolvedStyle,
+    fontFamily: styleControls.fontFamily || resolvedStyle.fontFamily,
+  }
 
   const baseTextColor = resolvedStyle.textColor
   const accentTextColor = resolvedStyle.keyWordColor
@@ -891,7 +948,7 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
 
   const baseFontSize = computeFontSize(active.wordCount, width, height)
   const fontSize = Math.round(baseFontSize * (behavior.sizeMultiplier || 1))
-  const positioned = layoutMicroCue(ctx, active, fontSize, resolvedStyle, width, height)
+  const positioned = layoutMicroCue(ctx, active, fontSize, renderStyle, width, height)
 
   const { dx, dy } = getPositionOffset(activeIndex, active, width, height, positioned, behavior)
   if (dx !== 0 || dy !== 0) {
@@ -920,7 +977,7 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
 
   // A scrim sits behind the phrase when the preset has a baked scrim color or
   // the user picked the 'background' text style.
-  const scrimColor = resolvedStyle.bgScrim || (behavior.textStyle === 'background' ? 'rgba(0, 0, 0, 0.6)' : null)
+  const scrimColor = resolvedStyle.bgScrim || (behavior.textStyle === 'background' ? (styleControls.backgroundColor || '#000000') : null)
   if (scrimColor) {
     const cueAge = time - active.start
     const cueRemaining = active.end - time
@@ -929,7 +986,7 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
     let scrimOpacity = 1
     if (cueAge < enterD) scrimOpacity = clamp(cueAge / enterD, 0, 1)
     if (cueRemaining < exitD && cueRemaining >= 0) scrimOpacity *= clamp(cueRemaining / exitD, 0, 1)
-    drawWordGroupBackground(ctx, positioned, scrimColor, scrimOpacity)
+    drawWordGroupBackground(ctx, positioned, scrimColor, scrimOpacity, styleControls)
   }
 
   for (let i = 0; i < positioned.length; i++) {
@@ -959,8 +1016,9 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
       { ...anim, isActive: isActiveWord },
       accentOn ? accentTextColor : baseTextColor,
       accentOn ? accentGlow : baseGlowColor,
-      resolvedStyle,
+      renderStyle,
       behavior.textStyle,
+      styleControls,
     )
   }
 
@@ -975,7 +1033,13 @@ export function renderKineticCaptionFrame({ ctx, width, height, style, cues, tim
 // the live animation only shows a 1-3 word fragment at any instant, which made
 // some cards (e.g. a lone "your") look broken. The last word takes the accent
 // color so the card still communicates the highlight behavior.
-function drawStaticKineticPreview(ctx, width, height, style) {
+function drawStaticKineticPreview(ctx, width, height, style, globalOverrides = null) {
+  const behavior = resolveKineticBehavior(style, { globalOverrides })
+  const styleControls = behavior.styleControls || {}
+  const renderStyle = {
+    ...style,
+    fontFamily: styleControls.fontFamily || style.fontFamily,
+  }
   const words = String(style.sampleText || 'Caption style').trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return
 
@@ -983,11 +1047,11 @@ function drawStaticKineticPreview(ctx, width, height, style) {
   let fontSize = Math.round(Math.min(width, height) * 0.24)
 
   const tooWide = () => {
-    setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+    setFont(ctx, fontSize, renderStyle.fontFamily, renderStyle.fontWeight)
     return words.some((w) => ctx.measureText(w).width > maxLineWidth)
   }
   while (fontSize > 12 && tooWide()) fontSize -= 2
-  setFont(ctx, fontSize, style.fontFamily, style.fontWeight)
+  setFont(ctx, fontSize, renderStyle.fontFamily, renderStyle.fontWeight)
 
   // Greedy wrap into at most two lines.
   const lines = []
@@ -1008,15 +1072,18 @@ function drawStaticKineticPreview(ctx, width, height, style) {
   const totalHeight = lines.length * lineHeight
   const firstBaseline = (height - totalHeight) / 2 + fontSize * 0.82
 
-  if (style.bgScrim) {
+  if (style.bgScrim || behavior.textStyle === 'background') {
     let minX = Infinity, maxX = -Infinity
     lines.forEach((line) => {
       const w = ctx.measureText(line).width
       minX = Math.min(minX, (width - w) / 2)
       maxX = Math.max(maxX, (width + w) / 2)
     })
-    const pad = fontSize * 0.4
-    ctx.fillStyle = style.bgScrim
+    const pad = fontSize * normalizePercent(styleControls.backgroundPadding, 45, 10, 90) / 100
+    ctx.fillStyle = colorWithOpacity(
+      styleControls.backgroundColor || '#000000',
+      normalizePercent(styleControls.backgroundOpacity, 65)
+    )
     ctx.fillRect(minX - pad, firstBaseline - fontSize, (maxX - minX) + pad * 2, totalHeight + fontSize * 0.4)
   }
 
@@ -1034,6 +1101,18 @@ function drawStaticKineticPreview(ctx, width, height, style) {
       ctx.shadowColor = isLastOverall ? (style.glowColor || 'rgba(255,255,255,0.4)') : (style.baseGlowColor || 'rgba(255,255,255,0.18)')
       ctx.shadowBlur = 16
       ctx.fillStyle = isLastOverall ? (style.keyWordColor || style.textColor) : (style.textColor || '#FFFFFF')
+      if (behavior.textStyle === 'outline') {
+        ctx.lineJoin = 'round'
+        ctx.lineWidth = Math.max(0, Math.round(fontSize * normalizePercent(styleControls.outlineThickness, 9, 0, 22) / 100))
+        ctx.strokeStyle = colorWithOpacity(styleControls.outlineColor || '#000000', 100)
+        ctx.strokeText(w, x, y)
+      } else if (behavior.textStyle === 'shadow' && !isLastOverall) {
+        const shadowDistance = Math.round(fontSize * normalizePercent(styleControls.shadowDistance, 5, 0, 30) / 100)
+        ctx.shadowColor = colorWithOpacity(styleControls.shadowColor || '#000000', normalizePercent(styleControls.shadowOpacity, 75))
+        ctx.shadowBlur = Math.round(fontSize * normalizePercent(styleControls.shadowBlur, 18, 0, 60) / 100)
+        ctx.shadowOffsetX = shadowDistance
+        ctx.shadowOffsetY = shadowDistance
+      }
       ctx.fillText(w, x, y)
       ctx.restore()
       x += widths[wi] + gap
@@ -1065,7 +1144,7 @@ export function renderKineticPreviewDataUrl(styleOrId, width = 240, height = 140
     ]
     renderKineticCaptionFrame({ ctx, width, height, style, cues: previewCues, time: 0.6 })
   } else {
-    drawStaticKineticPreview(ctx, width, height, style)
+    drawStaticKineticPreview(ctx, width, height, style, globalOverrides)
   }
 
   return canvas.toDataURL('image/png')
