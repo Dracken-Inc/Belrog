@@ -51,3 +51,6 @@ __pycache__/
 release/
 .runtime/
 belrog-release/
+
+# Belrog release artifacts
+belrog-release/
