@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <div align="center">
 
 # Belrog
@@ -314,3 +315,7 @@ See:
 Belrog is licensed under the GNU General Public License v3.0. See `LICENSE`.
 
 Versions released before this license change remain available under the license terms they were released with.
+=======
+# Belrog
+Fork of Velorn
+>>>>>>> 0d81e1aed1711fe7fd14211633dc2f93e445a402
