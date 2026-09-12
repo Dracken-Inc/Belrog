@@ -50,3 +50,4 @@ __pycache__/
 # Electron
 release/
 .runtime/
+belrog-release/
