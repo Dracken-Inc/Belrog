@@ -1,4 +1,4 @@
-# Velorn - AI Animatic Studio
+# belrog - AI Animatic Studio
 
 ## Overview
 AI-powered video editing app with DaVinci Resolve-style UI. Integrates with ComfyUI for AI video generation.
@@ -19,14 +19,14 @@ npm run dev
 ```
 Opens at `http://localhost:5173`
 
-**Splash screen:** Place your splash image at **`public/splash.png`** (or `public/splash.jpg`). It is shown for 3 seconds when starting the Electron app (`npm run electron:dev` or the built app) before the main window opens. Subtitle on splash: "Velorn — AI Animatic Studio".
+**Splash screen:** Place your splash image at **`public/splash.png`** (or `public/splash.jpg`). It is shown for 3 seconds when starting the Electron app (`npm run electron:dev` or the built app) before the main window opens. Subtitle on splash: "belrog — AI Animatic Studio".
 
 ## Layout Structure
 
 ### Normal Mode (Contracted Left Panel)
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  [🏠] Velorn │ Project Name │ [💾]    Title Bar      │
+│  [🏠] belrog │ Project Name │ [💾]    Title Bar      │
 ├──┬──────────┬─────────────────────────┬──────────────┬──┤
 │I │  Left    │                         │   Inspector  │I │
 │C │  Panel   │        Preview          │   Panel      │C │
@@ -50,7 +50,7 @@ Opens at `http://localhost:5173`
 ### Expanded Mode (Full Height Left Panel - Resolve-style)
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  [🏠] Velorn │ Project Name │ [💾]    Title Bar      │
+│  [🏠] belrog │ Project Name │ [💾]    Title Bar      │
 ├──┬──────────┬─────────────────────────┬──────────────┬──┤
 │I │  Left    │                         │   Inspector  │I │
 │C │  Panel   │        Preview          │   Panel      │C │

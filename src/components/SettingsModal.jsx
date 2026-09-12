@@ -4,6 +4,7 @@ import {
   HardDrive, Film, Keyboard, Wrench, Power,
   KeyRound, CheckCircle2, ExternalLink, Loader2, RefreshCcw,
   Volume2, Play, Bot, Copy, MessageSquare, Globe2,
+  Wifi, WifiOff, Plug, Unplug,
 } from 'lucide-react'
 import useProjectStore, { RESOLUTION_PRESETS, FPS_PRESETS } from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
@@ -68,7 +69,7 @@ import { useI18n } from '../i18n/I18nContext'
 const AUTO_IMPORT_KEY = 'comfystudio-auto-import-comfy-outputs'
 const OUTPUT_DIRECTORY_SETTING_KEY = 'outputDirectory'
 const WORKFLOWS_DIRECTORY_SETTING_KEY = 'workflowsDirectory'
-const OUTPUT_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\Velorn\\outputs'
+const OUTPUT_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\Belrog\\outputs'
 const WORKFLOWS_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\ComfyUI\\workflow_API'
 const HOTKEY_CATEGORY_KEY = {
   'Timeline selection': 'selection',
@@ -110,7 +111,13 @@ const SETTINGS_SECTIONS = [
     id: 'launcher',
     title: 'ComfyUI Launcher',
     icon: Power,
-    description: 'Let Velorn start, stop, and restart your local ComfyUI process.',
+    description: 'Let Belrog start, stop, and restart your local ComfyUI process.',
+  },
+  {
+    id: 'remote-server',
+    title: 'Remote Server',
+    icon: Wifi,
+    description: 'Connect to a remote ComfyUI server via SSH tunnel. Requires SSH access to the remote machine.',
   },
   {
     id: 'paths',
@@ -128,7 +135,7 @@ const SETTINGS_SECTIONS = [
     id: 'language',
     title: 'Language',
     icon: Globe2,
-    description: 'Choose the language used in the Velorn interface.',
+    description: 'Choose the language used in the Belrog interface.',
   },
   {
     id: 'appearance',
@@ -237,6 +244,28 @@ function GeneralTab({ initialSection = null }) {
   const [playbackCacheMessage, setPlaybackCacheMessage] = useState('')
   const [mcpStatus, setMcpStatus] = useState(null)
   const [mcpCopied, setMcpCopied] = useState('')
+
+  // Remote Server / SSH Tunnel state
+  const [remoteServerSettings, setRemoteServerSettingsState] = useState({
+    enabled: false,
+    sshHost: '',
+    sshPort: 22,
+    sshUsername: '',
+    sshKeyPath: '',
+    comfyModelRoot: '',
+    comfyNodesRoot: '',
+    tunnelLocalPort: 8188,
+    tunnelRemotePort: 8188,
+  })
+  const [tunnelStatus, setTunnelStatus] = useState({ active: false, connecting: false })
+  const [tunnelConnectError, setTunnelConnectError] = useState('')
+  const [remoteModels, setRemoteModels] = useState([])
+  const [remoteNodes, setRemoteNodes] = useState([])
+  const [remoteModelsLoading, setRemoteModelsLoading] = useState(false)
+  const [remoteNodesLoading, setRemoteNodesLoading] = useState(false)
+  const [installNodeUrl, setInstallNodeUrl] = useState('')
+  const [installNodeBusy, setInstallNodeBusy] = useState(false)
+  const [installNodeResult, setInstallNodeResult] = useState(null)
   const currentHotkeyPresetId = useMemo(
     () => getEditorHotkeyPresetMatch(editorHotkeys),
     [editorHotkeys]
@@ -328,6 +357,18 @@ function GeneralTab({ initialSection = null }) {
           messageKey: 'settings.connection.status.loadFailed',
           values: { port: DEFAULT_COMFY_PORT },
         })
+      }
+
+      // Load remote server settings
+      try {
+        if (window.electronAPI) {
+          const settings = await window.electronAPI.invoke('belrog:getRemoteServerSettings')
+          setRemoteServerSettingsState(settings)
+          const status = await window.electronAPI.invoke('belrog:getTunnelStatus')
+          setTunnelStatus(status)
+        }
+      } catch {
+        // Remote server not available
       }
     })()
   }, [])
@@ -563,6 +604,125 @@ function GeneralTab({ initialSection = null }) {
     })
   }
 
+  // ===============================
+  // Remote Server / SSH Tunnel Handlers
+  // ===============================
+
+  const handleSaveRemoteServerSettings = async () => {
+    if (!window.electronAPI) return
+    try {
+      await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteServerSettings)
+    } catch (err) {
+      console.error('Failed to save remote server settings:', err)
+    }
+  }
+
+  const handleRemoteServerFieldChange = (field, value) => {
+    setRemoteServerSettingsState((prev) => ({ ...prev, [field]: value }))
+  }
+
+  const handleConnectRemote = async () => {
+    if (!window.electronAPI) return
+    setTunnelConnectError('')
+    setTunnelStatus((prev) => ({ ...prev, connecting: true }))
+    try {
+      // Save settings first
+      await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteServerSettings)
+      const result = await window.electronAPI.invoke('belrog:connect')
+      if (result.success) {
+        setTunnelStatus({ active: true, connecting: false })
+      } else {
+        setTunnelConnectError(result.error || 'Connection failed')
+        setTunnelStatus({ active: false, connecting: false })
+      }
+    } catch (err) {
+      setTunnelConnectError(err?.message || 'Connection failed')
+      setTunnelStatus({ active: false, connecting: false })
+    }
+  }
+
+  const handleDisconnectRemote = async () => {
+    if (!window.electronAPI) return
+    try {
+      await window.electronAPI.invoke('belrog:disconnect')
+      setTunnelStatus({ active: false, connecting: false })
+      setTunnelConnectError('')
+    } catch (err) {
+      console.error('Disconnect failed:', err)
+    }
+  }
+
+  const handleLoadRemoteModels = async () => {
+    if (!window.electronAPI) return
+    setRemoteModelsLoading(true)
+    try {
+      const result = await window.electronAPI.invoke('belrog:listRemoteModels')
+      if (result.success) {
+        setRemoteModels(result.models || [])
+      } else {
+        setRemoteModels([])
+      }
+    } catch {
+      setRemoteModels([])
+    } finally {
+      setRemoteModelsLoading(false)
+    }
+  }
+
+  const handleLoadRemoteNodes = async () => {
+    if (!window.electronAPI) return
+    setRemoteNodesLoading(true)
+    try {
+      const result = await window.electronAPI.invoke('belrog:listRemoteNodes')
+      if (result.success) {
+        setRemoteNodes(result.nodes || [])
+      } else {
+        setRemoteNodes([])
+      }
+    } catch {
+      setRemoteNodes([])
+    } finally {
+      setRemoteNodesLoading(false)
+    }
+  }
+
+  const handleInstallRemoteNode = async () => {
+    if (!window.electronAPI || !installNodeUrl.trim()) return
+    setInstallNodeBusy(true)
+    setInstallNodeResult(null)
+    try {
+      const result = await window.electronAPI.invoke('belrog:installRemoteNode', installNodeUrl.trim())
+      setInstallNodeResult(result)
+      if (result.success) {
+        setInstallNodeUrl('')
+        // Refresh node list
+        await handleLoadRemoteNodes()
+      }
+    } catch (err) {
+      setInstallNodeResult({ success: false, error: err?.message || 'Install failed' })
+    } finally {
+      setInstallNodeBusy(false)
+    }
+  }
+
+  const handleChooseSshKey = async () => {
+    if (!window.electronAPI?.selectFile) {
+      console.warn('File picker is not available')
+      return
+    }
+    try {
+      const selectedPath = await window.electronAPI.selectFile({
+        title: 'Select SSH Private Key',
+        filters: [{ name: 'All Files', extensions: ['*'] }],
+      })
+      if (selectedPath) {
+        handleRemoteServerFieldChange('sshKeyPath', selectedPath)
+      }
+    } catch (error) {
+      console.error('Could not open file picker:', error)
+    }
+  }
+
   const handleChooseDirectory = async ({ title, currentPath, onSelect }) => {
     if (!window.electronAPI?.selectDirectory) {
       console.warn('Directory picker is not available in this environment.')
@@ -628,7 +788,7 @@ function GeneralTab({ initialSection = null }) {
       hardwareExportFfmpegInputDirtyRef.current = false
       setHardwareExportFfmpegMessage(
         result.status?.source === 'environment'
-          ? 'Saved. VELORN_FFMPEG_PATH still takes priority for this app session.'
+          ? 'Saved. Belrog_FFMPEG_PATH still takes priority for this app session.'
           : 'Hardware-export FFmpeg saved and ready to test.'
       )
     } catch (error) {
@@ -654,8 +814,8 @@ function GeneralTab({ initialSection = null }) {
       setHardwareExportFfmpegStatus(result.status || null)
       setHardwareExportFfmpegMessage(
         result.status?.source === 'environment'
-          ? 'Saved path cleared. VELORN_FFMPEG_PATH remains active.'
-          : 'Velorn will use its bundled FFmpeg for hardware checks and software fallback.'
+          ? 'Saved path cleared. Belrog_FFMPEG_PATH remains active.'
+          : 'Belrog will use its bundled FFmpeg for hardware checks and software fallback.'
       )
     } catch (error) {
       setHardwareExportFfmpegMessage(error?.message || 'Could not restore the bundled FFmpeg setting.')
@@ -1157,19 +1317,302 @@ function GeneralTab({ initialSection = null }) {
         </div>
       )
       break
+    case 'remote-server':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <p className="text-xs text-sf-text-muted">
+            Connect to a remote ComfyUI server via SSH tunnel. The tunnel forwards localhost:8188 to the remote ComfyUI instance.
+          </p>
+
+          {/* Enable Remote Server Toggle */}
+          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div>
+              <label className="text-sm font-medium text-sf-text-primary">Enable Remote Server</label>
+              <p className="text-[10px] text-sf-text-muted">Use SSH tunnel to connect to remote ComfyUI</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={remoteServerSettings.enabled}
+              onClick={() => handleRemoteServerFieldChange('enabled', !remoteServerSettings.enabled)}
+              className={`w-10 h-5 rounded-full transition-colors flex-shrink-0 relative ${remoteServerSettings.enabled ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${remoteServerSettings.enabled ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
+                aria-hidden
+              />
+            </button>
+          </div>
+
+          {/* SSH Connection Settings */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-sf-text-primary flex items-center gap-2">
+              <Plug className="h-4 w-4" />
+              SSH Connection
+            </h3>
+
+            <div>
+              <label className="block text-xs text-sf-text-muted mb-1">SSH Host</label>
+              <input
+                type="text"
+                value={remoteServerSettings.sshHost}
+                onChange={(e) => handleRemoteServerFieldChange('sshHost', e.target.value)}
+                placeholder="100.117.179.45"
+                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-sf-text-muted mb-1">SSH Port</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={remoteServerSettings.sshPort}
+                  onChange={(e) => handleRemoteServerFieldChange('sshPort', parseInt(e.target.value) || 22)}
+                  className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-sf-text-muted mb-1">SSH Username</label>
+                <input
+                  type="text"
+                  value={remoteServerSettings.sshUsername}
+                  onChange={(e) => handleRemoteServerFieldChange('sshUsername', e.target.value)}
+                  placeholder="henlafon"
+                  className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-sf-text-muted mb-1">SSH Private Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={remoteServerSettings.sshKeyPath}
+                  onChange={(e) => handleRemoteServerFieldChange('sshKeyPath', e.target.value)}
+                  placeholder="C:\Users\...\.ssh\id_ed25519"
+                  className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent truncate"
+                />
+                <button
+                  type="button"
+                  onClick={handleChooseSshKey}
+                  className="px-3 py-2 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors flex-shrink-0"
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Remote Paths Settings */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-sf-text-primary flex items-center gap-2">
+              <FolderOpen className="h-4 w-4" />
+              Remote ComfyUI Paths
+            </h3>
+
+            <div>
+              <label className="block text-xs text-sf-text-muted mb-1">Remote Models Root Path</label>
+              <input
+                type="text"
+                value={remoteServerSettings.comfyModelRoot}
+                onChange={(e) => handleRemoteServerFieldChange('comfyModelRoot', e.target.value)}
+                placeholder="/home/henlafon/ComfyUI/models"
+                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
+              />
+              <p className="text-[10px] text-sf-text-muted mt-1">Full path to the models folder on the remote server</p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-sf-text-muted mb-1">Remote Custom Nodes Root Path</label>
+              <input
+                type="text"
+                value={remoteServerSettings.comfyNodesRoot}
+                onChange={(e) => handleRemoteServerFieldChange('comfyNodesRoot', e.target.value)}
+                placeholder="/home/henlafon/ComfyUI/custom_nodes"
+                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
+              />
+              <p className="text-[10px] text-sf-text-muted mt-1">Full path to the custom_nodes folder on the remote server</p>
+            </div>
+          </div>
+
+          {/* Connection Status and Actions */}
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className={`w-2.5 h-2.5 rounded-full ${
+                  tunnelStatus.active ? 'bg-green-500' :
+                  tunnelStatus.connecting ? 'bg-yellow-400 animate-pulse' :
+                  tunnelConnectError ? 'bg-red-500' :
+                  'bg-sf-dark-500'
+                }`} />
+                <span className="text-xs text-sf-text-muted">
+                  {tunnelStatus.active ? 'Connected via SSH tunnel' :
+                   tunnelStatus.connecting ? 'Connecting...' :
+                   tunnelConnectError ? tunnelConnectError :
+                   'Not connected'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {tunnelStatus.active ? (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectRemote}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-xs text-red-400 transition-colors"
+                  >
+                    <Unplug className="h-3 w-3" />
+                    Disconnect
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleConnectRemote}
+                    disabled={tunnelStatus.connecting || !remoteServerSettings.enabled}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sf-accent hover:bg-sf-accent/90 disabled:bg-sf-dark-600 disabled:text-sf-text-muted rounded text-xs text-white transition-colors"
+                  >
+                    {tunnelStatus.connecting ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Plug className="h-3 w-3" />
+                    )}
+                    Connect
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {tunnelStatus.active && (
+              <div className="text-[10px] text-sf-text-muted">
+                Tunnel active: localhost:{remoteServerSettings.tunnelLocalPort || 8188} → {remoteServerSettings.sshHost}:{remoteServerSettings.tunnelRemotePort || 8188}
+              </div>
+            )}
+          </div>
+
+          {/* Remote Models Browser */}
+          {tunnelStatus.active && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-sf-text-primary">Remote Models</h3>
+                <button
+                  type="button"
+                  onClick={handleLoadRemoteModels}
+                  disabled={remoteModelsLoading}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
+                >
+                  <RefreshCcw className={`h-3 w-3 ${remoteModelsLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+              {remoteModels.length > 0 ? (
+                <div className="max-h-40 overflow-y-auto bg-sf-dark-800 rounded border border-sf-dark-600">
+                  {remoteModels.slice(0, 20).map((model, i) => (
+                    <div key={i} className="px-3 py-1.5 text-xs text-sf-text-secondary border-b border-sf-dark-700 last:border-b-0 truncate">
+                      {model}
+                    </div>
+                  ))}
+                  {remoteModels.length > 20 && (
+                    <div className="px-3 py-1.5 text-xs text-sf-text-muted">
+                      ...and {remoteModels.length - 20} more
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-sf-text-muted bg-sf-dark-800 rounded px-3 py-2">
+                  {remoteModelsLoading ? 'Loading...' : 'No models found or models root not set'}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Remote Custom Nodes Browser */}
+          {tunnelStatus.active && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-sf-text-primary">Remote Custom Nodes</h3>
+                <button
+                  type="button"
+                  onClick={handleLoadRemoteNodes}
+                  disabled={remoteNodesLoading}
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
+                >
+                  <RefreshCcw className={`h-3 w-3 ${remoteNodesLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+              {remoteNodes.length > 0 ? (
+                <div className="max-h-40 overflow-y-auto bg-sf-dark-800 rounded border border-sf-dark-600">
+                  {remoteNodes.map((node, i) => (
+                    <div key={i} className="px-3 py-1.5 text-xs text-sf-text-secondary border-b border-sf-dark-700 last:border-b-0 truncate">
+                      {node}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-sf-text-muted bg-sf-dark-800 rounded px-3 py-2">
+                  {remoteNodesLoading ? 'Loading...' : 'No custom nodes found or nodes root not set'}
+                </p>
+              )}
+
+              {/* Install Custom Node */}
+              <div className="space-y-2">
+                <label className="block text-xs text-sf-text-muted">Install Custom Node (git URL)</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={installNodeUrl}
+                    onChange={(e) => setInstallNodeUrl(e.target.value)}
+                    placeholder="https://github.com/user/comfyui-custom-node"
+                    className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleInstallRemoteNode}
+                    disabled={installNodeBusy || !installNodeUrl.trim()}
+                    className="px-3 py-2 bg-sf-accent hover:bg-sf-accent/90 disabled:bg-sf-dark-600 disabled:text-sf-text-muted rounded text-xs text-white transition-colors"
+                  >
+                    {installNodeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Install'}
+                  </button>
+                </div>
+                {installNodeResult && (
+                  <div className={`text-xs px-3 py-2 rounded ${installNodeResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                    {installNodeResult.success ? (
+                      installNodeResult.warning ? `Installed (warning: ${installNodeResult.warning})` : 'Installed successfully'
+                    ) : (
+                      installNodeResult.error || 'Installation failed'
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Save Button */}
+          <button
+            type="button"
+            onClick={handleSaveRemoteServerSettings}
+            className="w-full px-4 py-2 bg-sf-accent hover:bg-sf-accent/90 rounded text-sm text-white font-medium transition-colors"
+          >
+            Save Remote Server Settings
+          </button>
+        </div>
+      )
+      break
     case 'feedback':
       activeSectionContent = <FeedbackSection />
       break
     case 'agents': {
       const mcpUrl = mcpStatus?.url || 'http://127.0.0.1:19790/mcp'
-      const codexCommand = `codex mcp add velorn --url ${mcpUrl}`
-      const claudeCommand = `claude mcp add --transport http velorn ${mcpUrl}`
+      const codexCommand = `codex mcp add Belrog --url ${mcpUrl}`
+      const claudeCommand = `claude mcp add --transport http Belrog ${mcpUrl}`
       activeSectionContent = (
         <div className="space-y-4">
           <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-sf-text-primary">Velorn MCP server</div>
+                <div className="text-sm font-medium text-sf-text-primary">Belrog MCP server</div>
                 <p className="mt-1 text-[11px] text-sf-text-muted">
                   {t('settings.agents.serverDescription')}
                 </p>
@@ -1244,7 +1687,7 @@ function GeneralTab({ initialSection = null }) {
           <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div className="text-xs font-semibold text-sf-text-primary">Available tools</div>
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-sf-text-secondary">
-              {['get_project', 'create_project', 'duplicate_project', 'get_timeline', 'get_assets', 'get_ai_review_passes', 'get_mcp_recipes', 'find_timeline_items', 'check_media_health', 'inspect_export_file', 'guide_comfyui_setup', 'diagnose_comfyui_connection', 'set_comfyui_connection', 'repair_comfyui_connection', 'control_comfyui_launcher', 'get_comfyui_launcher_logs', 'validate_comfyui_nodes', 'list_velorn_workflows', 'inspect_velorn_workflow', 'check_export_readiness', 'inspect_clip', 'inspect_timeline_frame', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_h3_reference_video', 'get_generation_queue_status', 'queue_prompt_generation_batch', 'inspect_timeline_range', 'inspect_visible_shots', 'get_generation_status', 'get_music_video_status', 'get_music_video_plan', 'inspect_music_video_keyframe', 'regenerate_music_video_keyframe', 'inspect_music_video_video', 'regenerate_music_video_video', 'analyze_timeline', 'analyze_music_video_workflow', 'undo', 'redo', 'set_playhead', 'select_clips', 'select_assets', 'create_project_checkpoint', 'restore_project_checkpoint', 'set_in_out_range', 'run_mcp_action_plan', 'import_asset_from_path', 'relink_asset', 'set_clip_style', 'set_clip_label_color', 'set_clips_enabled', 'add_timeline_markers', 'remove_timeline_markers', 'set_timeline_marker_properties', 'create_timeline', 'switch_timeline', 'rename_timeline', 'duplicate_timeline', 'delete_timeline', 'create_asset_folder', 'move_assets_to_folder', 'move_unused_assets_to_folder', 'add_track', 'update_track', 'remove_track', 'add_transition', 'update_transition', 'remove_transitions', 'move_clips', 'trim_clips', 'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset', 'add_solid_color', 'add_adjustment_clip', 'add_text_clip', 'add_shape_clip', 'duplicate_clip', 'update_text_clip', 'update_shape_clip', 'list_glsl_effects', 'add_glsl_effect', 'update_glsl_effect', 'remove_glsl_effect', 'set_clip_keyframes', 'add_dip_to_black', 'export_timeline', 'export_delivery_batch', 'export_fcpxml'].map((tool) => (
+              {['get_project', 'create_project', 'duplicate_project', 'get_timeline', 'get_assets', 'get_ai_review_passes', 'get_mcp_recipes', 'find_timeline_items', 'check_media_health', 'inspect_export_file', 'guide_comfyui_setup', 'diagnose_comfyui_connection', 'set_comfyui_connection', 'repair_comfyui_connection', 'control_comfyui_launcher', 'get_comfyui_launcher_logs', 'validate_comfyui_nodes', 'list_Belrog_workflows', 'inspect_Belrog_workflow', 'check_export_readiness', 'inspect_clip', 'inspect_timeline_frame', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_h3_reference_video', 'get_generation_queue_status', 'queue_prompt_generation_batch', 'inspect_timeline_range', 'inspect_visible_shots', 'get_generation_status', 'get_music_video_status', 'get_music_video_plan', 'inspect_music_video_keyframe', 'regenerate_music_video_keyframe', 'inspect_music_video_video', 'regenerate_music_video_video', 'analyze_timeline', 'analyze_music_video_workflow', 'undo', 'redo', 'set_playhead', 'select_clips', 'select_assets', 'create_project_checkpoint', 'restore_project_checkpoint', 'set_in_out_range', 'run_mcp_action_plan', 'import_asset_from_path', 'relink_asset', 'set_clip_style', 'set_clip_label_color', 'set_clips_enabled', 'add_timeline_markers', 'remove_timeline_markers', 'set_timeline_marker_properties', 'create_timeline', 'switch_timeline', 'rename_timeline', 'duplicate_timeline', 'delete_timeline', 'create_asset_folder', 'move_assets_to_folder', 'move_unused_assets_to_folder', 'add_track', 'update_track', 'remove_track', 'add_transition', 'update_transition', 'remove_transitions', 'move_clips', 'trim_clips', 'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset', 'add_solid_color', 'add_adjustment_clip', 'add_text_clip', 'add_shape_clip', 'duplicate_clip', 'update_text_clip', 'update_shape_clip', 'list_glsl_effects', 'add_glsl_effect', 'update_glsl_effect', 'remove_glsl_effect', 'set_clip_keyframes', 'add_dip_to_black', 'export_timeline', 'export_delivery_batch', 'export_fcpxml'].map((tool) => (
                 <span key={tool} className="rounded bg-sf-dark-800 px-2 py-1">{tool}</span>
               ))}
             </div>
@@ -1312,7 +1755,7 @@ function GeneralTab({ initialSection = null }) {
               <div>
                 <div className="text-sm font-medium text-sf-text-primary">Hardware export FFmpeg</div>
                 <p className="mt-1 text-[10px] text-sf-text-muted">
-                  Advanced: choose an FFmpeg build with NVENC on Linux. It is used only for final H.264/H.265 hardware video encoding; Velorn keeps its bundled FFmpeg for media tools and as the safe CPU fallback.
+                  Advanced: choose an FFmpeg build with NVENC on Linux. It is used only for final H.264/H.265 hardware video encoding; Belrog keeps its bundled FFmpeg for media tools and as the safe CPU fallback.
                 </p>
               </div>
               <span className="flex-shrink-0 rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-[10px] text-sf-text-secondary">
@@ -1389,7 +1832,7 @@ function GeneralTab({ initialSection = null }) {
 
             {hardwareExportFfmpegStatus?.environmentPath && (
               <p className="mt-2 text-[10px] text-yellow-300">
-                VELORN_FFMPEG_PATH is active and takes priority over the saved path until Velorn is restarted without it.
+                Belrog_FFMPEG_PATH is active and takes priority over the saved path until Belrog is restarted without it.
               </p>
             )}
             {hardwareExportFfmpegStatus?.warning && (
@@ -1424,11 +1867,11 @@ function GeneralTab({ initialSection = null }) {
       activeSectionContent = (
         <div className="space-y-5">
           <div>
-            <label htmlFor="velorn-display-language" className="block text-xs text-sf-text-muted mb-1">
+            <label htmlFor="Belrog-display-language" className="block text-xs text-sf-text-muted mb-1">
               {t('settings.languageLabel')}
             </label>
             <select
-              id="velorn-display-language"
+              id="Belrog-display-language"
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
               className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"

@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Platform info
   platform: process.platform,
   isElectron: true,
+  
+  // Generic invoke for dynamic IPC calls
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  
   getSystemFonts: (forceRefresh = false) => ipcRenderer.invoke('fonts:listSystem', forceRefresh === true),
   
   // ============================================
@@ -174,7 +178,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Direct NVIDIA RTX Video Super Resolution. The optional runtime is
-  // managed by Velorn and does not require a running ComfyUI server.
+  // managed by Belrog and does not require a running ComfyUI server.
   checkRtxVideoUpscaleRuntime: () => ipcRenderer.invoke('rtx:checkRuntime'),
   installRtxVideoUpscaleRuntime: () => ipcRenderer.invoke('rtx:installRuntime'),
   runRtxVideoUpscale: (options) => ipcRenderer.invoke('rtx:run', options),
@@ -520,7 +524,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ============================================
-  // Velorn Bridge
+  // Belrog Bridge
   // ============================================
 
   comfyBridge: {
@@ -575,6 +579,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_, state) => cb(state)
     ipcRenderer.on('window:stateChanged', handler)
     return () => ipcRenderer.removeListener('window:stateChanged', handler)
+  },
+
+  // ============================================
+  // Belrog Remote Server (SSH Tunnel)
+  // ============================================
+
+  belrog: {
+    getRemoteServerSettings: () => ipcRenderer.invoke('belrog:getRemoteServerSettings'),
+    saveRemoteServerSettings: (settings) => ipcRenderer.invoke('belrog:saveRemoteServerSettings', settings),
+    connect: () => ipcRenderer.invoke('belrog:connect'),
+    disconnect: () => ipcRenderer.invoke('belrog:disconnect'),
+    getTunnelStatus: () => ipcRenderer.invoke('belrog:getTunnelStatus'),
+    checkRemoteComfyUI: () => ipcRenderer.invoke('belrog:checkRemoteComfyUI'),
+    listRemoteModels: () => ipcRenderer.invoke('belrog:listRemoteModels'),
+    listRemoteNodes: () => ipcRenderer.invoke('belrog:listRemoteNodes'),
+    checkRemoteModel: (modelPath) => ipcRenderer.invoke('belrog:checkRemoteModel', modelPath),
+    installRemoteNode: (nodeId, installUrl) => ipcRenderer.invoke('belrog:installRemoteNode', nodeId, installUrl),
+    execRemoteCommand: (command) => ipcRenderer.invoke('belrog:execRemoteCommand', command),
   },
 })
 

@@ -1,5 +1,5 @@
 {
-  "name": "velorn",
+  "name": "belrog",
   "version": "0.3.32",
   "description": "AI-native video editing built around real creative timelines, generative workflows, and local agent control.",
   "main": "electron/main.js",
@@ -65,14 +65,14 @@
     "video-editing",
     "electron"
   ],
-  "author": "Velorn contributors",
+  "author": "belrog contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/VelornLabs/velorn.git"
+    "url": "git+https://github.com/belrogLabs/belrog.git"
   },
-  "homepage": "https://velorn.ai",
+  "homepage": "https://belrog.ai",
   "bugs": {
-    "url": "https://github.com/VelornLabs/velorn/issues"
+    "url": "https://github.com/belrogLabs/belrog/issues"
   },
   "license": "GPL-3.0-only",
   "dependencies": {
@@ -108,7 +108,7 @@
   },
   "build": {
     "appId": "com.comfystudio.app",
-    "productName": "Velorn",
+    "productName": "belrog",
     "copyright": "Copyright © 2024-2026",
     "beforePack": "scripts/electron-builder-before-pack.cjs",
     "afterPack": "scripts/electron-builder-after-pack.cjs",
@@ -188,8 +188,8 @@
       "azureSignOptions": {
         "publisherName": "Jaime Aguirre",
         "endpoint": "https://eus.codesigning.azure.net",
-        "codeSigningAccountName": "velorn-signing",
-        "certificateProfileName": "velorn-public"
+        "codeSigningAccountName": "belrog-signing",
+        "certificateProfileName": "belrog-public"
       }
     },
     "mac": {
@@ -216,7 +216,7 @@
       ],
       "icon": "build/icons",
       "category": "Video",
-      "maintainer": "Velorn contributors <opensource@velorn.ai>",
+      "maintainer": "belrog contributors <opensource@belrog.ai>",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "nsis": {

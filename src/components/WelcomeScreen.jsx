@@ -208,8 +208,8 @@ function WelcomeScreen() {
     ? Math.round((mediaPreparationCompleted / mediaPreparationTotal) * 100)
     : 0
   const showMediaPreparation = Boolean(isLoading && mediaPreparation?.active && mediaPreparationTotal > 0)
-  const welcomeHeroVideoSrc = getWelcomeAssetPath('velorn-project-selection-page.mp4')
-  const welcomeHeroPosterSrc = getWelcomeAssetPath('velorn-home-balanced-plate-4.webp')
+  const welcomeHeroVideoSrc = getWelcomeAssetPath('Belrog-project-selection-page.mp4')
+  const welcomeHeroPosterSrc = getWelcomeAssetPath('Belrog-home-balanced-plate-4.webp')
   const desktopMode = isElectronMode()
   
   // Keep partner-key status fresh so the chip in the header reflects
@@ -481,7 +481,7 @@ function WelcomeScreen() {
           <div className="max-w-md w-full mx-4">
           {/* Branding */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-sf-text-primary">Velorn</h1>
+            <h1 className="text-4xl font-bold text-sf-text-primary">Belrog</h1>
           </div>
           
           {/* Browser Support Warning - only show in web mode */}
@@ -689,7 +689,7 @@ function WelcomeScreen() {
           </div>
           {/* Subtle attribution */}
           <div className="absolute bottom-3 right-4 text-[10px] uppercase tracking-wider text-white/40 pointer-events-none">
-            Made with Velorn
+            Made with Belrog
           </div>
         </div>
       ) : null}

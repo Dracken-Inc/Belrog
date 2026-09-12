@@ -25,37 +25,37 @@ const COMFY_BINARY_EVENT_TYPES = Object.freeze({
   TEXT: 3,
 })
 const UTF8_DECODER = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null
-// Canonical marker titles are VELORN_*; legacy COMFYSTUDIO_* titles from
+// Canonical marker titles are Belrog_*; legacy COMFYSTUDIO_* titles from
 // graphs tagged before the rename still match (see endpointTitleAliases).
 export const CUSTOM_KEYFRAME_ENDPOINTS = Object.freeze({
-  inputImage: 'VELORN_INPUT_IMAGE',
-  prompt: 'VELORN_PROMPT',
-  seed: 'VELORN_SEED',
-  width: 'VELORN_WIDTH',
-  height: 'VELORN_HEIGHT',
-  referenceImage1: 'VELORN_REFERENCE_IMAGE_1',
-  referenceImage2: 'VELORN_REFERENCE_IMAGE_2',
-  outputImage: 'VELORN_OUTPUT_IMAGE',
+  inputImage: 'Belrog_INPUT_IMAGE',
+  prompt: 'Belrog_PROMPT',
+  seed: 'Belrog_SEED',
+  width: 'Belrog_WIDTH',
+  height: 'Belrog_HEIGHT',
+  referenceImage1: 'Belrog_REFERENCE_IMAGE_1',
+  referenceImage2: 'Belrog_REFERENCE_IMAGE_2',
+  outputImage: 'Belrog_OUTPUT_IMAGE',
 })
 export const CUSTOM_VIDEO_ENDPOINTS = Object.freeze({
-  inputImage: 'VELORN_INPUT_IMAGE',
-  prompt: 'VELORN_PROMPT',
-  seed: 'VELORN_SEED',
-  width: 'VELORN_WIDTH',
-  height: 'VELORN_HEIGHT',
-  fps: 'VELORN_FPS',
-  duration: 'VELORN_DURATION',
-  inputAudio: 'VELORN_AUDIO',
-  outputVideo: 'VELORN_OUTPUT_VIDEO',
+  inputImage: 'Belrog_INPUT_IMAGE',
+  prompt: 'Belrog_PROMPT',
+  seed: 'Belrog_SEED',
+  width: 'Belrog_WIDTH',
+  height: 'Belrog_HEIGHT',
+  fps: 'Belrog_FPS',
+  duration: 'Belrog_DURATION',
+  inputAudio: 'Belrog_AUDIO',
+  outputVideo: 'Belrog_OUTPUT_VIDEO',
 })
-const VELORN_OUTPUT_RESIZE_TITLE = 'Velorn Output Resize'
+const Belrog_OUTPUT_RESIZE_TITLE = 'Belrog Output Resize'
 const LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE = 'ComfyStudio Output Resize'
-const OUTPUT_RESIZE_TITLES = [VELORN_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
+const OUTPUT_RESIZE_TITLES = [Belrog_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
 
 // Users commonly organize ComfyUI model folders into subfolders (e.g.
 // models/diffusion_models/WAN/wan2.2_i2v.safetensors); ComfyUI then lists the
 // file to loader nodes as the relative path "WAN/wan2.2_i2v.safetensors".
-// Velorn's built-in workflows reference bare filenames, so an unmatched
+// Belrog's built-in workflows reference bare filenames, so an unmatched
 // model input is resolved against the node's actual choice list by basename
 // before queueing (see resolveSubfolderModelPaths).
 const MODEL_FILE_INPUT_RE = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx)$/i
@@ -113,7 +113,7 @@ function normalizeEndpointTitle(value = '') {
 }
 
 function endpointTitleAliases(endpointName) {
-  return [endpointName, endpointName.replace(/^VELORN_/, 'COMFYSTUDIO_')]
+  return [endpointName, endpointName.replace(/^Belrog_/, 'COMFYSTUDIO_')]
 }
 
 function titleMatchesEndpoint(title, endpointName) {
@@ -152,7 +152,7 @@ const REQUIRED_CUSTOM_VIDEO_ENDPOINT_KEYS = ['inputImage', 'prompt', 'outputVide
 
 /**
  * Pre-check a UI-format graph (as saved in the personal workflow library)
- * against a custom slot's VELORN node-title contract. Mirrors the
+ * against a custom slot's Belrog node-title contract. Mirrors the
  * required markers of validateCustomKeyframeWorkflow /
  * validateCustomVideoWorkflow but reads LiteGraph `node.title`, so it can run
  * without converting the graph to API format first.
@@ -269,7 +269,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
     workflow[resizeNodeId] = {
       class_type: 'ImageScale',
       inputs: {},
-      _meta: { title: VELORN_OUTPUT_RESIZE_TITLE },
+      _meta: { title: Belrog_OUTPUT_RESIZE_TITLE },
     }
   }
 
@@ -285,7 +285,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
   }
   resizeNode._meta = {
     ...(resizeNode._meta || {}),
-    title: VELORN_OUTPUT_RESIZE_TITLE,
+    title: Belrog_OUTPUT_RESIZE_TITLE,
   }
 
   const resizeRef = [resizeNodeId, 0]
@@ -309,7 +309,7 @@ function normalizeComfyStudioOutputResize(workflow) {
     resizeNode.inputs.crop = 'center'
     resizeNode._meta = {
       ...(resizeNode._meta || {}),
-      title: VELORN_OUTPUT_RESIZE_TITLE,
+      title: Belrog_OUTPUT_RESIZE_TITLE,
     }
   }
   return workflow
@@ -1462,7 +1462,7 @@ export function modifyMaskWorkflow(workflow, options = {}) {
   const {
     inputFilename = '',       // The uploaded filename in ComfyUI
     textPrompt = '',          // What to segment (e.g., "person on the left")
-    outputPrefix = 'VelornMask',  // Output filename prefix
+    outputPrefix = 'BelrogMask',  // Output filename prefix
     scoreThreshold = 0.04,    // Detection sensitivity (lower = more sensitive)
     frameIdx = 0,             // Which frame to use for initial detection
   } = options;
@@ -1524,20 +1524,20 @@ export function modifyWAN22Workflow(workflow, options = {}) {
     frames = 81,
     fps = 16,
     seed = Math.floor(Math.random() * 1000000000000),
-    filenamePrefix = 'video/Velorn_wan',
+    filenamePrefix = 'video/Belrog_wan',
     qualityPreset = 'balanced', // balanced | face-lock
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
-  const useFaceLockPreset = String(qualityPreset || 'balanced') === 'face-lock'
+  const useFaceLockPreset = String(qualityPreset || 'face-lock') === 'face-lock'
   const positivePrompt = String(prompt || '')
   const effectiveNegativePrompt = String(negativePrompt || '')
 
-  const samplerSteps = useFaceLockPreset ? 6 : 4
-  const samplerCfg = useFaceLockPreset ? 1.3 : 1
+  const samplerSteps = useFaceLockPreset ? 8 : 6
+  const samplerCfg = useFaceLockPreset ? 1.5 : 1.3
   const splitStep = Math.max(2, Math.floor(samplerSteps / 2))
-  const modelShift = useFaceLockPreset ? 4.5 : 5.0
-  const loraStrength = useFaceLockPreset ? 1.05 : 1.0
+  const modelShift = useFaceLockPreset ? 4.0 : 4.5
+  const loraStrength = useFaceLockPreset ? 1.15 : 1.05
   const numericFps = Math.max(1, Math.round(Number(fps) || 16))
   const numericFrames = Math.max(2, Math.round(Number(frames) || 81))
   const numericDuration = Math.max(0.1, (numericFrames - 1) / numericFps)
@@ -1922,11 +1922,11 @@ export function modifyMultipleAnglesWorkflow(workflow, options = {}) {
     }
   }
 
-  // Update save prefixes to Velorn
+  // Update save prefixes to Belrog
   const saveNodes = { '31': 'close_up', '34': 'wide_shot', '36': '45_right', '38': '90_right', '47': '90_left', '41': 'aerial_view', '43': 'low_angle', '45': '45_left' }
   for (const [nodeId, suffix] of Object.entries(saveNodes)) {
     if (modified[nodeId]) {
-      modified[nodeId].inputs.filename_prefix = `Velorn-${suffix}`
+      modified[nodeId].inputs.filename_prefix = `Belrog-${suffix}`
     }
   }
 
@@ -1938,10 +1938,10 @@ export function modifyMultipleAnglesWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   VELORN_PROMPT, VELORN_OUTPUT_IMAGE
+ *   Belrog_PROMPT, Belrog_OUTPUT_IMAGE
  * - Optional node titles:
- *   VELORN_INPUT_IMAGE, VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
- *   VELORN_REFERENCE_IMAGE_1, VELORN_REFERENCE_IMAGE_2
+ *   Belrog_INPUT_IMAGE, Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
+ *   Belrog_REFERENCE_IMAGE_1, Belrog_REFERENCE_IMAGE_2
  */
 export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
   const {
@@ -1999,10 +1999,10 @@ export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   VELORN_INPUT_IMAGE, VELORN_PROMPT, VELORN_OUTPUT_VIDEO
+ *   Belrog_INPUT_IMAGE, Belrog_PROMPT, Belrog_OUTPUT_VIDEO
  * - Optional node titles:
- *   VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
- *   VELORN_FPS, VELORN_DURATION, VELORN_AUDIO
+ *   Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
+ *   Belrog_FPS, Belrog_DURATION, Belrog_AUDIO
  */
 export function modifyCustomVideoWorkflow(workflow, options = {}) {
   const {
@@ -2125,7 +2125,7 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     }
     // Save Image: set prefix
     if (cls === 'SaveImage' && node.inputs && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Velorn_edit'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Belrog_edit'
     }
   }
 
@@ -2214,10 +2214,10 @@ export function modifyLocalApiWorkflow(workflow, options = {}) {
     }
 
     if (cls === 'SaveImage' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/velorn_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Belrog_local'
     }
     if (cls === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/Belrog_local'
     }
 
     if (cls === 'CLIPTextEncode' && typeof node.inputs.text === 'string') {
@@ -2791,7 +2791,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     height = 1440,
     duration = 5,
     seed = Math.floor(Math.random() * 1000000000000),
-    filenamePrefix = 'video/velorn_minimax_h3',
+    filenamePrefix = 'video/Belrog_minimax_h3',
     assetFilenames = {},
   } = options
 
@@ -2823,7 +2823,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     }
 
     if (node.class_type === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_minimax_h3'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/Belrog_minimax_h3'
     }
   }
 
@@ -3481,7 +3481,7 @@ export function modifyMusicWorkflow(workflow, options = {}) {
   }
   // Output prefix (node 107)
   if (modified['107']) {
-    modified['107'].inputs.filename_prefix = 'audio/Velorn'
+    modified['107'].inputs.filename_prefix = 'audio/Belrog'
   }
 
   return modified

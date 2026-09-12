@@ -285,7 +285,7 @@ function collectExportTracks(clips, tracks, assetsById) {
       let track = tracksById.get(clip.trackId)
       if (!track) {
         const fallbackType = clip.type === 'audio' ? 'audio' : 'video'
-        const fallbackId = `velorn-orphan-${fallbackType}`
+        const fallbackId = `Belrog-orphan-${fallbackType}`
         if (!orphanTracks.has(fallbackId)) {
           orphanTracks.set(fallbackId, {
             id: fallbackId,
@@ -366,7 +366,7 @@ function buildTrackElements({
 }
 
 export function buildPremiereXml({
-  projectName = 'Velorn Project',
+  projectName = 'Belrog Project',
   timelineName = 'Timeline',
   timelineSettings = {},
   timeline = {},
@@ -419,7 +419,7 @@ export function buildPremiereXml({
   })
 
   const sequenceId = sanitizeId(`sequence-${timelineName}`, 'sequence-1')
-  const projectLabel = sanitizeName(projectName, 'Velorn Project')
+  const projectLabel = sanitizeName(projectName, 'Belrog Project')
   const sequenceLabel = sanitizeName(timelineName, 'Timeline')
 
   return [
@@ -456,7 +456,7 @@ export function buildPremiereXml({
     ...audioTrackElements,
     `      </audio>`,
     `    </media>`,
-    `    <description>Exported from Velorn project: ${escapeXml(projectLabel)}</description>`,
+    `    <description>Exported from Belrog project: ${escapeXml(projectLabel)}</description>`,
     `  </sequence>`,
     `</xmeml>`,
     '',

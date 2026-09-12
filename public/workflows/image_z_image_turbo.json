@@ -72,7 +72,7 @@
   },
   "57:27": {
     "inputs": {
-      "text": "Latina female with thick wavy hair, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. ",
+      "text": "[CHARACTER_SHEET] Latina female with thick wavy hair, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. ",
       "clip": [
         "57:30",
         0
@@ -81,6 +81,25 @@
     "class_type": "CLIPTextEncode",
     "_meta": {
       "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "57:34": {
+    "inputs": {
+      "filename": "character_sheet.png",
+      "image_key": "character_sheet"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Character Sheet"
+    }
+  },
+  "57:35": {
+    "inputs": {
+      "text": "B-roll shot with character from character sheet, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. Camera pans to show full scene with character integrated."
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (B-roll Prompt)"
     }
   },
   "57:13": {

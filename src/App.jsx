@@ -31,7 +31,7 @@ import { startComfyAutoImport } from './services/comfyAutoImport'
 import { startMcpSnapshotPublisher } from './services/mcpSnapshot'
 import { MCP_ACTION_BRIDGE_VERSION, startMcpActionBridge } from './services/mcpActions'
 import { attachProjectDirtyWatchers, isProjectDirty } from './services/projectDirtyTracker'
-import { VELORN_OPEN_STOCK_EVENT } from './services/pexelsStock'
+import { Belrog_OPEN_STOCK_EVENT } from './services/pexelsStock'
 import {
   DISCOVER_TAB_VISIBILITY_CHANGED_EVENT,
   getShowDiscoverTab,
@@ -375,8 +375,8 @@ function App() {
 
   useEffect(() => {
     const handler = () => setMainTab('stock')
-    window.addEventListener(VELORN_OPEN_STOCK_EVENT, handler)
-    return () => window.removeEventListener(VELORN_OPEN_STOCK_EVENT, handler)
+    window.addEventListener(Belrog_OPEN_STOCK_EVENT, handler)
+    return () => window.removeEventListener(Belrog_OPEN_STOCK_EVENT, handler)
   }, [])
 
   // Reveal-in-assets (timeline clip menu / Shift+F): make sure the Assets
@@ -765,7 +765,7 @@ function App() {
                 title="Save the workflow currently open below to your library (Generate → Custom), so you can reopen it here anytime"
               >
                 {comfySaveState.phase === 'busy' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
-                Save to Velorn
+                Save to Belrog
               </button>
             )}
             <button
@@ -1162,3 +1162,4 @@ function App() {
 }
 
 export default App
+

@@ -2,11 +2,11 @@
 
 Last updated: 2026-08-12
 
-This is the live state for moving Velorn development from the old Windows checkout to a clean repository state that can be cloned on Ubuntu.
+This is the live state for moving Belrog development from the old Windows checkout to a clean repository state that can be cloned on Ubuntu.
 
 ## Merged Migration
 
-- Worktree: `C:\Users\papa\Documents\coding_projects\general\velorn-migration-cleanup`
+- Worktree: `C:\Users\papa\Documents\coding_projects\general\belrog-migration-cleanup`
 - PR: `#99` - merged into `main` on 2026-08-12
 - Merge commit: `c4be213`
 - Latest release remains `v0.3.25`; the recovered changes are on `main` but have not been released yet.
@@ -32,7 +32,7 @@ At migration start it was on local `main` at `6b450ce` (`v0.3.23`), three commit
 
 A safety inventory exists at:
 
-`C:\Users\papa\Documents\coding_projects\general\velorn-migration-backup-2026-08-12`
+`C:\Users\papa\Documents\coding_projects\general\belrog-migration-backup-2026-08-12`
 
 It contains:
 
@@ -54,9 +54,9 @@ Do not reset, pull, delete, or repurpose the old checkout until the maintainer h
 Clean, fully superseded worktrees removed on 2026-08-12:
 
 - `comfystudio-license-gplv3`
-- `velorn-long-source-export`
-- `velorn-my-workflows-mcp`
-- `velorn-native-rtx-upscale`
+- `belrog-long-source-export`
+- `belrog-my-workflows-mcp`
+- `belrog-native-rtx-upscale`
 
 Old worktrees retained because they contain uncommitted or unique work:
 
@@ -64,14 +64,14 @@ Old worktrees retained because they contain uncommitted or unique work:
 - `comfystudio-pr49` - one modified Generate file on a detached PR test.
 - `comfystudio-pr49-local-test` - staged and unstaged ASR/music-video test changes.
 - `comfyui_pr50_merge_check` - staged custom-workflow/media changes, two untracked covers, and two commits not represented in `main`.
-- `velorn-infinite-canvas` - uncommitted canvas UI, schema, store, and test work.
+- `belrog-infinite-canvas` - uncommitted canvas UI, schema, store, and test work.
 
 Do not delete those retained worktrees without a separate review and explicit maintainer approval.
 
 ## Remaining Work
 
 1. On Ubuntu, clone `main` fresh; do not copy `node_modules` or the Windows `.codex` directory.
-2. Run the Ubuntu startup commands below and verify Velorn opens.
+2. Run the Ubuntu startup commands below and verify belrog opens.
 3. Keep Windows available for Windows packaging, Azure signing behavior, and NVIDIA RTX export testing.
 4. Review retained worktrees individually before any further deletion.
 

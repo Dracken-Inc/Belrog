@@ -5,18 +5,18 @@ const MY_WORKFLOW_ID_PREFIX = 'my-workflow:'
 const CUSTOM_WORKFLOWS_DIR_NAME = 'custom-workflows'
 
 const ENDPOINTS = Object.freeze({
-  inputImage: 'VELORN_INPUT_IMAGE',
-  prompt: 'VELORN_PROMPT',
-  seed: 'VELORN_SEED',
-  width: 'VELORN_WIDTH',
-  height: 'VELORN_HEIGHT',
-  referenceImage1: 'VELORN_REFERENCE_IMAGE_1',
-  referenceImage2: 'VELORN_REFERENCE_IMAGE_2',
-  fps: 'VELORN_FPS',
-  duration: 'VELORN_DURATION',
-  inputAudio: 'VELORN_AUDIO',
-  outputImage: 'VELORN_OUTPUT_IMAGE',
-  outputVideo: 'VELORN_OUTPUT_VIDEO',
+  inputImage: 'Belrog_INPUT_IMAGE',
+  prompt: 'Belrog_PROMPT',
+  seed: 'Belrog_SEED',
+  width: 'Belrog_WIDTH',
+  height: 'Belrog_HEIGHT',
+  referenceImage1: 'Belrog_REFERENCE_IMAGE_1',
+  referenceImage2: 'Belrog_REFERENCE_IMAGE_2',
+  fps: 'Belrog_FPS',
+  duration: 'Belrog_DURATION',
+  inputAudio: 'Belrog_AUDIO',
+  outputImage: 'Belrog_OUTPUT_IMAGE',
+  outputVideo: 'Belrog_OUTPUT_VIDEO',
 })
 
 function normalizeEndpointTitle(value = '') {
@@ -28,7 +28,7 @@ function normalizeEndpointTitle(value = '') {
 }
 
 function endpointTitleAliases(endpointName) {
-  return [endpointName, endpointName.replace(/^VELORN_/, 'COMFYSTUDIO_')]
+  return [endpointName, endpointName.replace(/^Belrog_/, 'COMFYSTUDIO_')]
 }
 
 function titleMatchesEndpoint(title, endpointName) {

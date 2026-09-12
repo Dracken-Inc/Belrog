@@ -6,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // same-origin and same-process, the parent scripts its DOM directly and
 // mirrors the active preview element (compositor canvas or preview <video>)
 // onto a canvas in the child with one drawImage per child animation frame.
-const POPOUT_NAME = 'velorn-preview-popout'
-const BOUNDS_KEY = 'velorn-preview-popout-bounds'
+const POPOUT_NAME = 'Belrog-preview-popout'
+const BOUNDS_KEY = 'Belrog-preview-popout-bounds'
 
 export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
   const [isPoppedOut, setIsPoppedOut] = useState(false)
@@ -47,11 +47,11 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
 
     // Re-adopting a still-open window (e.g. after HMR) must not stack blit
     // loops: each adoption bumps the token and stale loops see the mismatch.
-    const blitToken = (child.__velornBlitToken || 0) + 1
-    child.__velornBlitToken = blitToken
+    const blitToken = (child.__BelrogBlitToken || 0) + 1
+    child.__BelrogBlitToken = blitToken
 
     const doc = child.document
-    doc.title = 'Velorn Preview'
+    doc.title = 'Belrog Preview'
     doc.documentElement.style.height = '100%'
     doc.body.style.cssText = 'margin:0;height:100%;background:#000;overflow:hidden;'
     doc.body.textContent = ''
@@ -61,7 +61,7 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
     const ctx = canvas.getContext('2d')
 
     const blit = () => {
-      if (child.closed || child.__velornBlitToken !== blitToken) return
+      if (child.closed || child.__BelrogBlitToken !== blitToken) return
       const source = getSourceRef.current?.()
       if (source) {
         const isVideo = typeof source.videoWidth === 'number' && source.videoWidth > 0
