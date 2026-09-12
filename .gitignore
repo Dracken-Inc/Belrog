@@ -54,3 +54,6 @@ belrog-release/
 
 # Belrog release artifacts
 belrog-release/
+
+# Security - never commit these
+ssh-keys/
