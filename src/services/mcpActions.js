@@ -44,7 +44,7 @@ import { getPexelsApiKey } from './pexelsSettings'
 import {
   PEXELS_DEFAULT_PER_PAGE,
   PEXELS_MAX_MCP_IMPORT_ITEMS,
-  VELORN_OPEN_STOCK_EVENT,
+  Belrog_OPEN_STOCK_EVENT,
   buildDefaultPexelsFolderPath,
   buildPexelsAssetRecord,
   downloadPexelsMediaItem,
@@ -170,14 +170,14 @@ function resolveMcpGenerationResolution(payload = {}) {
 }
 
 function sanitizeExportBaseName(value) {
-  return String(value || 'Velorn_Timeline')
+  return String(value || 'Belrog_Timeline')
     .trim()
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 120)
-    || 'Velorn_Timeline'
+    || 'Belrog_Timeline'
 }
 
 function isAbsoluteMcpFilePath(filePath) {
@@ -325,7 +325,7 @@ async function buildCreateProjectPlan(payload = {}) {
   const fps = normalizeProjectFps(payload.fps, projectState.defaultFps ?? FPS_PRESETS.find((item) => item.value === 24)?.value ?? 24)
   const defaultProjectsHandle = projectState.defaultProjectsHandle
   if (!defaultProjectsHandle) {
-    throw new Error('No default projects folder is set. Choose a projects folder in Velorn before creating projects through MCP.')
+    throw new Error('No default projects folder is set. Choose a projects folder in Belrog before creating projects through MCP.')
   }
 
   const targetPath = await resolveProjectPath(defaultProjectsHandle, name)
@@ -571,7 +571,7 @@ async function buildDuplicateProjectPlan(payload = {}) {
       path: predictedPath,
     },
     willOpenDuplicate: true,
-    note: 'Uses Velorn duplicate behavior: copies the whole project folder, remaps saved paths, creates a sibling "copy" project, and opens it.',
+    note: 'Uses Belrog duplicate behavior: copies the whole project folder, remaps saved paths, creates a sibling "copy" project, and opens it.',
   }
 }
 
@@ -1174,7 +1174,7 @@ function buildEffectClipSummary(clip) {
 function getClipByIdForEffects(state, clipId) {
   const selectedIds = Array.isArray(state.selectedClipIds) ? state.selectedClipIds.filter(Boolean) : []
   const id = String(clipId || '').trim() || (selectedIds.length === 1 ? selectedIds[0] : '')
-  if (!id) throw new Error('Provide clipId for the target clip, or select exactly one visual clip in Velorn.')
+  if (!id) throw new Error('Provide clipId for the target clip, or select exactly one visual clip in Belrog.')
   const clip = (state.clips || []).find((candidate) => candidate.id === id)
   if (!clip) throw new Error(`Clip ${id} was not found.`)
   const clipType = String(clip.type || '').toLowerCase()
@@ -2038,7 +2038,7 @@ async function waitForGenerateWorkspaceReady(timeoutMs = 30000) {
       }))
       if (settled) return
       if (Date.now() - startedAt >= readyTimeoutMs) {
-        finish(reject, new Error('The Generate workspace did not become ready. Open a Velorn project and try again.'))
+        finish(reject, new Error('The Generate workspace did not become ready. Open a Belrog project and try again.'))
         return
       }
       probeTimer = setTimeout(probe, 100)
@@ -2189,7 +2189,7 @@ async function handleReplaceMusicVideoTimelineShot(payload = {}) {
 async function handleSaveProject(payload = {}) {
   const projectState = useProjectStore.getState()
   if (!projectState.currentProjectHandle || !projectState.currentProject) {
-    throw new Error('Open a Velorn project before saving.')
+    throw new Error('Open a Belrog project before saving.')
   }
   const previewOnly = payload.previewOnly !== false
   const project = {
@@ -2206,7 +2206,7 @@ async function handleSaveProject(payload = {}) {
     }
   }
   const saved = await projectState.saveProject()
-  if (!saved) throw new Error('Velorn could not save the current project.')
+  if (!saved) throw new Error('Belrog could not save the current project.')
   const nextProject = useProjectStore.getState().currentProject
   return {
     success: true,
@@ -2525,7 +2525,7 @@ async function handleInstallWorkflowSetup(payload = {}) {
     return { success: true, message: 'Nothing to install — dependencies are satisfied or manual-only.', plan: planSummary }
   }
   if (!rootValidation.isValid) {
-    throw new Error(rootValidation.error || 'The ComfyUI folder is not configured or failed validation — set it in Velorn first.')
+    throw new Error(rootValidation.error || 'The ComfyUI folder is not configured or failed validation — set it in Belrog first.')
   }
 
   const job = startWorkflowInstall({
@@ -3848,7 +3848,7 @@ function handleRemoveTrack(payload = {}) {
   }
 
   const removed = state.removeTrack?.(trackId)
-  if (!removed) throw new Error('Could not remove the track. Velorn may be protecting the last track of that type.')
+  if (!removed) throw new Error('Could not remove the track. Belrog may be protecting the last track of that type.')
   return {
     removed: true,
     trackId,
@@ -3959,7 +3959,7 @@ function handleDeleteTimeline(payload = {}) {
   }
 
   const deleted = projectState.deleteTimeline?.(timelineId)
-  if (!deleted) throw new Error('Could not delete the timeline. Velorn may be protecting the last sequence.')
+  if (!deleted) throw new Error('Could not delete the timeline. Belrog may be protecting the last sequence.')
   return {
     deleted: true,
     timelineId,
@@ -6724,7 +6724,7 @@ async function handleExportTimeline(payload = {}) {
   const format = String(payload.format || 'mp4').toLowerCase() === 'mp4' ? 'mp4' : 'mp4'
   const videoCodec = String(payload.videoCodec || 'h264').toLowerCase() === 'h265' ? 'h265' : 'h264'
   const outputExtension = 'mp4'
-  const filename = sanitizeExportBaseName(payload.filename || `${project.name || 'Velorn'}_export`)
+  const filename = sanitizeExportBaseName(payload.filename || `${project.name || 'Belrog'}_export`)
   const outputFolder = await api.pathJoin(projectPath, 'renders')
   await api.createDirectory(outputFolder)
   const defaultOutputPath = await api.pathJoin(outputFolder, `${filename}_${Date.now()}.${outputExtension}`)
@@ -6885,7 +6885,7 @@ async function handleExportFcpXml(payload = {}) {
     ? timelineState.getTimelineEndTime()
     : getTimelineEndTimeForMcp(timelineState.clips || [], timelineState.duration || currentTimeline?.duration || 0)
   const xml = exportConfig.buildXml({
-    projectName: project.name || 'Velorn Project',
+    projectName: project.name || 'Belrog Project',
     timelineName,
     timelineSettings: { width, height, fps },
     timeline: {
@@ -6903,7 +6903,7 @@ async function handleExportFcpXml(payload = {}) {
   const outputPath = String(payload.outputPath || '').trim()
     || await api.pathJoin(
       outputFolder,
-      `${sanitizeExportBaseName(payload.filename || `${project.name || 'Velorn'}_${timelineName}`)}_${Date.now()}.${exportConfig.extension}`
+      `${sanitizeExportBaseName(payload.filename || `${project.name || 'Belrog'}_${timelineName}`)}_${Date.now()}.${exportConfig.extension}`
     )
   const writeResult = await api.writeFile(outputPath, xml, { encoding: 'utf8' })
   if (!writeResult?.success) {
@@ -7713,7 +7713,7 @@ function handleCreateProjectCheckpoint(payload = {}) {
     label: checkpoint.label,
     createdAt: checkpoint.createdAt,
     checkpointCount: MCP_PROJECT_CHECKPOINTS.size,
-    message: 'Created an in-memory MCP project checkpoint for this Velorn session.',
+    message: 'Created an in-memory MCP project checkpoint for this Belrog session.',
   }
 }
 
@@ -7791,7 +7791,7 @@ async function handleRestoreProjectCheckpoint(payload = {}) {
     savedProject: Boolean(savedProject),
     message: savedProject
       ? 'Restored the MCP checkpoint and saved the project file.'
-      : 'Restored the MCP checkpoint in the open Velorn session.',
+      : 'Restored the MCP checkpoint in the open Belrog session.',
   }
 }
 
@@ -7806,7 +7806,7 @@ function publishPexelsSearchToStockTab(searchResult, { openStockTab = true } = {
   }
   writePexelsStockPanelState(stockState)
   if (openStockTab && typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(VELORN_OPEN_STOCK_EVENT, { detail: { stockState } }))
+    window.dispatchEvent(new CustomEvent(Belrog_OPEN_STOCK_EVENT, { detail: { stockState } }))
   }
   return stockState
 }
@@ -7814,7 +7814,7 @@ function publishPexelsSearchToStockTab(searchResult, { openStockTab = true } = {
 async function getPexelsKeyForMcp() {
   const apiKey = String(await getPexelsApiKey() || '').trim()
   if (!apiKey) {
-    throw new Error('Add a Pexels API key in Velorn Settings > Stock (Pexels), then try again.')
+    throw new Error('Add a Pexels API key in Belrog Settings > Stock (Pexels), then try again.')
   }
   return apiKey
 }
@@ -7887,7 +7887,7 @@ function resolveStockImportFolder(payload, query) {
 
 async function buildStockMediaImportPlan(payload = {}) {
   if (!useProjectStore.getState().currentProjectHandle) {
-    throw new Error('Open a saved Velorn project before importing stock media.')
+    throw new Error('Open a saved Belrog project before importing stock media.')
   }
 
   const resultIds = normalizeStringArray(payload.resultIds || payload.pexelsIds || payload.ids)
@@ -8083,7 +8083,7 @@ async function resolveMcpImageSequence(sourcePath) {
 async function handleImportAssetFromPath(payload = {}) {
   const sourcePath = String(payload.path || payload.filePath || payload.sourcePath || '').trim()
   if (!sourcePath) throw new Error('Provide path, filePath, or sourcePath for import_asset_from_path.')
-  if (!useProjectStore.getState().currentProjectHandle) throw new Error('Open a saved Velorn project before importing assets.')
+  if (!useProjectStore.getState().currentProjectHandle) throw new Error('Open a saved Belrog project before importing assets.')
   if (!isAbsoluteMcpFilePath(sourcePath)) throw new Error('Provide an absolute local file path to import.')
 
   // Image sequences: a directory or any numbered frame imports the whole run
@@ -8236,7 +8236,7 @@ async function handleImportAssetFromPath(payload = {}) {
   return {
     success: true,
     action: 'import_asset_from_path',
-    message: 'Imported local file into the active Velorn project.',
+    message: 'Imported local file into the active Belrog project.',
     sourcePath,
     category,
     folderId,

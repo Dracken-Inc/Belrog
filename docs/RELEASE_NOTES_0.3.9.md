@@ -1,4 +1,4 @@
-# Velorn v0.3.9
+# belrog v0.3.9
 
 ## Highlights
 

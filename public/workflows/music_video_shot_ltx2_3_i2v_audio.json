@@ -18,7 +18,8 @@
   "268": {
     "inputs": {
       "sage_attention": "auto",
-      "allow_compile": false,
+      "allow_compile": true,
+      "triton_kernels": false,
       "model": ["1570", 0]
     },
     "class_type": "PathchSageAttentionKJ",

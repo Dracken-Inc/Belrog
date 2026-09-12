@@ -59,6 +59,21 @@ const {
 } = require('./mainWindowBounds')
 const { createRifeInterpolationCache } = require('./rifeInterpolation')
 const { resolveRifeRuntime } = require('./rifeRuntime')
+const {
+  DEFAULT_REMOTE_SERVER_SETTINGS,
+  REMOTE_SERVER_SETTING_KEY,
+  establishTunnel,
+  closeTunnel,
+  getTunnelStatus,
+  getRemoteServerSettings,
+  saveRemoteServerSettings,
+  checkRemoteComfyUI,
+  listRemoteModels,
+  listRemoteNodes,
+  checkRemoteModel,
+  installRemoteNode,
+  execRemoteCommand,
+} = require('./sshTunnelManager')
 
 const isDev = !app.isPackaged
 
@@ -107,14 +122,14 @@ let settingsWriteQueue = Promise.resolve()
 
 function performMcpRendererAction(request = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    return Promise.reject(new Error('No Velorn window is available.'))
+    return Promise.reject(new Error('No Belrog window is available.'))
   }
 
   const id = `mcp-action-${crypto.randomUUID()}`
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingMcpActionRequests.delete(id)
-      reject(new Error('Timed out waiting for Velorn to apply MCP action.'))
+      reject(new Error('Timed out waiting for Belrog to apply MCP action.'))
     }, 60000)
 
     pendingMcpActionRequests.set(id, { resolve, reject, timeout })
@@ -167,7 +182,7 @@ function getFfmpegUnavailableError(binaryPath = ffmpegPath) {
   if (!binaryPath) return 'FFmpeg binary not available.'
   if (!fsSync.existsSync(binaryPath)) {
     const recovery = binaryPath === ffmpegPath
-      ? 'Reinstall Velorn (or run npm install in a dev checkout) to restore it.'
+      ? 'Reinstall Belrog (or run npm install in a dev checkout) to restore it.'
       : 'Choose another hardware-export FFmpeg path or restore the selected file.'
     return `FFmpeg binary is missing at ${binaryPath}. ${recovery}`
   }
@@ -195,7 +210,7 @@ async function resolveHardwareExportFfmpegSelection() {
     ...selection,
     path: ffmpegPath,
     source: 'bundled',
-    warning: `${sourceLabel} is not a usable FFmpeg executable: ${versionProbe.error} Velorn will use its bundled FFmpeg.`,
+    warning: `${sourceLabel} is not a usable FFmpeg executable: ${versionProbe.error} Belrog will use its bundled FFmpeg.`,
   }
 }
 
@@ -1200,8 +1215,8 @@ async function getComfyStudioBridgeStatusInternal() {
     comfyRootPath: root.normalizedPath,
     customNodesPath: root.customNodesPath,
     message: installed
-      ? 'Velorn Bridge is installed. Restart ComfyUI if the Send button is not visible yet.'
-      : 'Velorn Bridge is not installed yet.',
+      ? 'Belrog Bridge is installed. Restart ComfyUI if the Send button is not visible yet.'
+      : 'Belrog Bridge is not installed yet.',
   }
 }
 
@@ -1222,7 +1237,7 @@ async function installComfyStudioBridgeInternal() {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: `Bundled Velorn Bridge files are missing: ${sourceDir}`,
+      error: `Bundled Belrog Bridge files are missing: ${sourceDir}`,
     }
   }
 
@@ -1235,8 +1250,8 @@ async function installComfyStudioBridgeInternal() {
     copied,
     restartRequired: true,
     message: copied > 0
-      ? `Installed Velorn Bridge (${copied} file${copied === 1 ? '' : 's'} updated). Restart ComfyUI to load it.`
-      : 'Velorn Bridge is already up to date. Restart ComfyUI if the Send button is not visible.',
+      ? `Installed Belrog Bridge (${copied} file${copied === 1 ? '' : 's'} updated). Restart ComfyUI to load it.`
+      : 'Belrog Bridge is already up to date. Restart ComfyUI if the Send button is not visible.',
   }
 }
 
@@ -2292,31 +2307,31 @@ function buildComfyConnectionRecommendations(diagnosis) {
   if (systemOk && objectInfoOk) {
     recommendations.push('ComfyUI is reachable and its node registry is available. If generation fails, check the specific workflow/custom node error next.')
   } else if (systemOk) {
-    recommendations.push('Something is answering on the configured ComfyUI port, but Velorn could not read /object_info. Confirm this URL is actually ComfyUI and not another local web app or proxy.')
+    recommendations.push('Something is answering on the configured ComfyUI port, but Belrog could not read /object_info. Confirm this URL is actually ComfyUI and not another local web app or proxy.')
   } else {
-    recommendations.push(`Start ComfyUI and confirm its browser URL is http://127.0.0.1:${connection.port || DEFAULT_LOCAL_COMFY_PORT}. If it uses another port, set that port in Velorn Settings > ComfyUI Connection.`)
+    recommendations.push(`Start ComfyUI and confirm its browser URL is http://127.0.0.1:${connection.port || DEFAULT_LOCAL_COMFY_PORT}. If it uses another port, set that port in Belrog Settings > ComfyUI Connection.`)
   }
 
   if (!systemOk && mode === 'docker') {
-    recommendations.push('For Docker, publish the ComfyUI container port to the host, for example -p 8188:8188, and make sure ComfyUI listens inside the container. Velorn connects to localhost on the Windows/macOS host.')
+    recommendations.push('For Docker, publish the ComfyUI container port to the host, for example -p 8188:8188, and make sure ComfyUI listens inside the container. Belrog connects to localhost on the Windows/macOS host.')
   } else if (!systemOk && mode === 'portable') {
     recommendations.push('For Windows portable ComfyUI, pick run_nvidia_gpu.bat or run_cpu.bat in Settings > ComfyUI Launcher, then use the same port ComfyUI prints in its terminal.')
   } else if (!systemOk && mode === 'desktop') {
-    recommendations.push('For ComfyUI Desktop, open the desktop app first and confirm its local server URL/port. Then set that same local port in Velorn.')
+    recommendations.push('For ComfyUI Desktop, open the desktop app first and confirm its local server URL/port. Then set that same local port in Belrog.')
   } else if (!systemOk && !launcher.hasLauncherTarget) {
-    recommendations.push('No launcher target is configured. Either start ComfyUI yourself before using Velorn, or configure Velorn Launcher so it can start ComfyUI for you.')
+    recommendations.push('No launcher target is configured. Either start ComfyUI yourself before using Belrog, or configure Belrog Launcher so it can start ComfyUI for you.')
   }
 
   if (launcher.configuredPortHint && launcher.configuredPortHint !== connection.port) {
-    recommendations.push(`The launcher extra args mention port ${launcher.configuredPortHint}, but Velorn is configured for port ${connection.port}. Make those match.`)
+    recommendations.push(`The launcher extra args mention port ${launcher.configuredPortHint}, but Belrog is configured for port ${connection.port}. Make those match.`)
   }
 
   if (diagnosis?.api?.systemStats?.status === 403 || diagnosis?.api?.objectInfo?.status === 403) {
-    recommendations.push('ComfyUI returned HTTP 403. If you started ComfyUI manually, relaunch with --enable-cors-header * or use Velorn’s built-in launcher.')
+    recommendations.push('ComfyUI returned HTTP 403. If you started ComfyUI manually, relaunch with --enable-cors-header * or use Belrog’s built-in launcher.')
   }
 
   if (diagnosis?.portOwner?.pid && !systemOk) {
-    recommendations.push(`Port ${connection.port} is held by ${diagnosis.portOwner.name || `pid ${diagnosis.portOwner.pid}`}. If that is not ComfyUI, stop it or change the Velorn port.`)
+    recommendations.push(`Port ${connection.port} is held by ${diagnosis.portOwner.name || `pid ${diagnosis.portOwner.pid}`}. If that is not ComfyUI, stop it or change the Belrog port.`)
   }
 
   return recommendations
@@ -2445,8 +2460,8 @@ async function setComfyUIConnectionInternal(options = {}) {
     before,
     after,
     recommendations: [
-      `Set Velorn's local ComfyUI connection to ${after.httpBase}.`,
-      'This changes Velorn settings only; it does not restart ComfyUI or edit launcher scripts.',
+      `Set Belrog's local ComfyUI connection to ${after.httpBase}.`,
+      'This changes Belrog settings only; it does not restart ComfyUI or edit launcher scripts.',
     ],
   }
 
@@ -2699,7 +2714,7 @@ async function loadMcpWorkflowCatalog({ refresh = false } = {}) {
   if (!bundledCatalog?.success && !myWorkflowCatalog?.success) {
     return {
       success: false,
-      error: bundledCatalog?.error || 'Could not read Velorn workflows.',
+      error: bundledCatalog?.error || 'Could not read Belrog workflows.',
       workflowsDir: bundledCatalog?.workflowsDir || null,
       myWorkflowsDir: myWorkflowCatalog?.workflowsDir || null,
       workflows: [],
@@ -2868,7 +2883,7 @@ async function listComfyStudioWorkflowsInternal(options = {}) {
   }
 
   return {
-    action: 'list_velorn_workflows',
+    action: 'list_Belrog_workflows',
     success: true,
     workflowsDir: catalog.workflowsDir,
     myWorkflowsDir: catalog.myWorkflowsDir,
@@ -2980,7 +2995,7 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   const installHints = buildWorkflowNodeHints(missing, hintManifest)
   const recommendations = []
   if (resolved.workflow.source === 'my-workflows' && resolved.workflow.mcpRunnable === false) {
-    recommendations.push(resolved.workflow.readinessMessage || 'Add the missing Velorn marker nodes and save the workflow again.')
+    recommendations.push(resolved.workflow.readinessMessage || 'Add the missing Belrog marker nodes and save the workflow again.')
   }
   if (includeValidation && validation?.validation?.ok) {
     recommendations.push('All workflow node classes are available in the configured local ComfyUI.')
@@ -2999,7 +3014,7 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   }
 
   return {
-    action: 'inspect_velorn_workflow',
+    action: 'inspect_Belrog_workflow',
     success: true,
     workflow: {
       id: resolved.workflow.id,
@@ -3162,7 +3177,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       blocked: false,
       needed: true,
       risk: 'medium',
-      summary: 'Velorn will start ComfyUI using the configured launcher.',
+      summary: 'Belrog will start ComfyUI using the configured launcher.',
     }
   }
 
@@ -3180,7 +3195,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
         blocked: true,
         needed: true,
         risk: 'high',
-        summary: 'Velorn cannot safely stop this ComfyUI process because it was started outside Velorn.',
+        summary: 'Belrog cannot safely stop this ComfyUI process because it was started outside Belrog.',
         recommendations: ['Stop ComfyUI from the terminal, Docker, or desktop app that launched it.'],
       }
     }
@@ -3188,7 +3203,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       blocked: false,
       needed: true,
       risk: 'high',
-      summary: 'Velorn will stop the ComfyUI process it owns. This can interrupt queued or running generations.',
+      summary: 'Belrog will stop the ComfyUI process it owns. This can interrupt queued or running generations.',
     }
   }
 
@@ -3198,7 +3213,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
         blocked: true,
         needed: true,
         risk: 'high',
-        summary: 'Velorn cannot safely restart an external ComfyUI process.',
+        summary: 'Belrog cannot safely restart an external ComfyUI process.',
         recommendations: ['Restart ComfyUI from the terminal, Docker, or desktop app that launched it.'],
       }
     }
@@ -3216,7 +3231,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       needed: true,
       risk: alreadyActive ? 'high' : 'medium',
       summary: alreadyActive
-        ? 'Velorn will stop and start the ComfyUI process it owns. This can interrupt queued or running generations.'
+        ? 'Belrog will stop and start the ComfyUI process it owns. This can interrupt queued or running generations.'
         : 'ComfyUI is not running, so restart will behave like start.',
     }
   }
@@ -3582,7 +3597,7 @@ async function createWindow(restoredWindowState = null) {
       appLog('!!! MAIN WINDOW UNRESPONSIVE')
     })
   } else {
-    console.error(`[Velorn] Could not write ${appLogPath}; main-window console mirroring disabled for this session.`)
+    console.error(`[Belrog] Could not write ${appLogPath}; main-window console mirroring disabled for this session.`)
   }
   mainWindow.webContents.on('render-process-gone', () => {
     abortOpticalFlowJobsForOwner(mainWindowContentsId)
@@ -3793,11 +3808,11 @@ async function createWindow(restoredWindowState = null) {
       // Detached preview ("clean feed") window — an about:blank child the
       // renderer scripts directly (see src/hooks/usePreviewPopout.js). No
       // parent option: it must be free to sit on any display independently.
-      if (frameName === 'velorn-preview-popout') {
+      if (frameName === 'Belrog-preview-popout') {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            title: 'Velorn Preview',
+            title: 'Belrog Preview',
             autoHideMenuBar: true,
             backgroundColor: '#000000',
             minWidth: 240,
@@ -3888,9 +3903,9 @@ async function createWindow(restoredWindowState = null) {
         buttons: ['Stop ComfyUI & quit', 'Leave ComfyUI running', 'Cancel'],
         defaultId: 0,
         cancelId: 2,
-        title: 'Quit Velorn?',
+        title: 'Quit Belrog?',
         message: 'ComfyUI is still running.',
-        detail: 'Velorn started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Velorn will quit but ComfyUI stays up. Handy when you\'re just relaunching Velorn and don\'t want to wait for ComfyUI to boot again.',
+        detail: 'Belrog started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Belrog will quit but ComfyUI stays up. Handy when you\'re just relaunching Belrog and don\'t want to wait for ComfyUI to boot again.',
       })
       if (choice.response === 2) return
       launcherQuitConfirmed = true
@@ -4930,6 +4945,117 @@ ipcMain.handle('settings:delete', async (event, key) => {
 })
 
 // ============================================
+// Belrog Remote Server / SSH Tunnel
+// ============================================
+
+ipcMain.handle('belrog:getRemoteServerSettings', async () => {
+  try {
+    return await getRemoteServerSettings(readSettingsRaw)
+  } catch (error) {
+    return { ...DEFAULT_REMOTE_SERVER_SETTINGS }
+  }
+})
+
+ipcMain.handle('belrog:saveRemoteServerSettings', async (event, settings) => {
+  try {
+    return await saveRemoteServerSettings(writeSettingsRaw, settings)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:connect', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    if (!settings.enabled) {
+      return { success: false, error: 'Remote server is not enabled' }
+    }
+    if (!settings.sshHost || !settings.sshUsername || !settings.sshKeyPath) {
+      return { success: false, error: 'SSH host, username, and key path are required' }
+    }
+    const result = await establishTunnel({
+      sshHost: settings.sshHost,
+      sshPort: settings.sshPort || 22,
+      sshUsername: settings.sshUsername,
+      sshKeyPath: settings.sshKeyPath,
+      tunnelLocalPort: settings.tunnelLocalPort || 8188,
+      tunnelRemotePort: settings.tunnelRemotePort || 8188,
+    })
+    if (result.success) {
+      // Verify ComfyUI is reachable
+      const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
+      if (!comfyCheck.ok) {
+        closeTunnel()
+        return { success: false, error: `Connected to SSH but ComfyUI not reachable: ${comfyCheck.message}` }
+      }
+    }
+    return result
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:disconnect', async () => {
+  try {
+    return closeTunnel()
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:getTunnelStatus', async () => {
+  return getTunnelStatus()
+})
+
+ipcMain.handle('belrog:checkRemoteComfyUI', async (event, port = 8188) => {
+  return await checkRemoteComfyUI(port)
+})
+
+ipcMain.handle('belrog:listRemoteModels', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await listRemoteModels(settings.comfyModelRoot)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:listRemoteNodes', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await listRemoteNodes(settings.comfyNodesRoot)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:checkRemoteModel', async (event, modelName) => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await checkRemoteModel(settings.comfyModelRoot, modelName)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:installRemoteNode', async (event, gitUrl, nodeName = null) => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await installRemoteNode(settings.comfyNodesRoot, gitUrl, nodeName)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:execRemoteCommand', async (event, command) => {
+  try {
+    return await execRemoteCommand(command)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+// ============================================
 // NVIDIA RTX Video Super Resolution
 // ============================================
 
@@ -5234,7 +5360,7 @@ ipcMain.handle('comfyLauncher:pickMacApp', async () => {
 })
 
 // ============================================
-// Velorn Bridge IPC
+// Belrog Bridge IPC
 // ============================================
 
 ipcMain.handle('comfyBridge:getStatus', async () => {
@@ -5245,7 +5371,7 @@ ipcMain.handle('comfyBridge:getStatus', async () => {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: error?.message || 'Could not check the Velorn Bridge.',
+      error: error?.message || 'Could not check the Belrog Bridge.',
     }
   }
 })
@@ -5258,7 +5384,7 @@ ipcMain.handle('comfyBridge:install', async () => {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: error?.message || 'Could not install the Velorn Bridge.',
+      error: error?.message || 'Could not install the Belrog Bridge.',
     }
   }
 })
@@ -5745,7 +5871,7 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
   // temp directory and says so, instead of failing silently while crash
   // messages point at a log that never updates.
   const workerLogPrimaryPath = path.join(app.getPath('userData'), 'export-worker.log')
-  const workerLogFallbackPath = path.join(app.getPath('temp'), 'velorn-export-worker.log')
+  const workerLogFallbackPath = path.join(app.getPath('temp'), 'Belrog-export-worker.log')
   let workerLogActivePath = workerLogPrimaryPath
   let workerLogWarned = false
   const noteWorkerLogFailure = (err) => {
@@ -5800,7 +5926,7 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     workerLog(`!!! RENDER PROCESS GONE: ${JSON.stringify(details)}`)
     abortGifExportsForOwner(workerContentsId)
     const pngSequenceRecoveryNote = jobPayload?.options?.format === 'png-seq' && jobPayload?.outputPath
-      ? ` An incomplete PNG sequence may remain at ${jobPayload.outputPath}; Velorn did not delete it because the worker could not confirm folder ownership after the crash.`
+      ? ` An incomplete PNG sequence may remain at ${jobPayload.outputPath}; Belrog did not delete it because the worker could not confirm folder ownership after the crash.`
       : ''
     finishWorker(
       'export:error',
@@ -6903,7 +7029,7 @@ ipcMain.handle('opticalFlow:generate', async (event, options = {}) => {
   const unavailable = getFfmpegUnavailableError()
   if (unavailable) return { success: false, error: unavailable }
   if (!ffprobePath || !fsSync.existsSync(ffprobePath)) {
-    return { success: false, error: 'FFprobe is unavailable. Reinstall Velorn to restore native media tools.' }
+    return { success: false, error: 'FFprobe is unavailable. Reinstall Belrog to restore native media tools.' }
   }
   const rifeRuntime = resolveRifeRuntime({
     packaged: app.isPackaged,
@@ -7789,7 +7915,7 @@ ipcMain.handle('export:checkNvenc', async (event, options = {}) => {
 // version. Scoped to 127.0.0.1/localhost only (http and ws) — remote hosts
 // are untouched. Packaged file:// pages also have no HTTP Referer, while the
 // YouTube embedded-player contract requires desktop clients to identify
-// themselves with one. requestHeaderRewrite adds Velorn's installed app ID
+// themselves with one. requestHeaderRewrite adds Belrog's installed app ID
 // only to youtube.com/youtube-nocookie.com /embed/ document requests.
 function installRequestHeaderRewrite() {
   const filter = { urls: REQUEST_HEADER_REWRITE_URLS }
@@ -7815,7 +7941,7 @@ app.whenReady().then(async () => {
   })
   mcpServer.start()
     .then((status) => {
-      console.log(`[MCP] Velorn MCP server running at ${status.url}`)
+      console.log(`[MCP] Belrog MCP server running at ${status.url}`)
     })
     .catch((error) => {
       console.warn('[MCP] server failed to start:', error?.message || error)
@@ -7877,9 +8003,9 @@ app.on('before-quit', async (event) => {
       buttons: ['Stop ComfyUI & quit', 'Leave ComfyUI running', 'Cancel'],
       defaultId: 0,
       cancelId: 2,
-      title: 'Quit Velorn?',
+      title: 'Quit Belrog?',
       message: 'ComfyUI is still running.',
-      detail: 'Velorn started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Velorn will quit but ComfyUI stays up. Handy when you\'re just relaunching Velorn and don\'t want to wait for ComfyUI to boot again.',
+      detail: 'Belrog started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Belrog will quit but ComfyUI stays up. Handy when you\'re just relaunching Belrog and don\'t want to wait for ComfyUI to boot again.',
     })
     if (choice.response === 2) {
       return

@@ -1296,7 +1296,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   // prepared sources live under that owned directory so a failed/cancelled
   // export can remove everything without ever touching the selected parent.
   const tempFolder = pngSequenceExport
-    ? await window.electronAPI.pathJoin(outputPath, '.velorn-export-temp')
+    ? await window.electronAPI.pathJoin(outputPath, '.Belrog-export-temp')
     : await window.electronAPI.pathJoin(outputFolder, `export_${Date.now()}`)
   if (pngSequenceExport) {
     const tempFolderResult = await window.electronAPI.createDirectory(tempFolder, { recursive: false })
@@ -4042,7 +4042,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   let encodeResult = null
   if (gifExport) {
     if (!window.electronAPI?.encodeGif || !window.electronAPI?.abortGifEncode) {
-      throw new Error('GIF export requires the Velorn desktop app. Restart Velorn and try again.')
+      throw new Error('GIF export requires the Belrog desktop app. Restart Belrog and try again.')
     }
     throwIfCancelled()
     const gifEncodeSessionId = globalThis.crypto?.randomUUID?.()
@@ -4215,7 +4215,7 @@ export const exportTimeline = async (options = {}, onProgress = () => {}) => {
 
   const api = typeof window !== 'undefined' ? window.electronAPI : null
   if (!api?.exists || !api?.createDirectory || !api?.deleteDirectory || !api?.pathJoin || !api?.writeFileFromArrayBuffer) {
-    throw new Error('PNG sequence export requires the Velorn desktop app.')
+    throw new Error('PNG sequence export requires the Belrog desktop app.')
   }
 
   return withOwnedPngSequenceOutput({

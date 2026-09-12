@@ -10,7 +10,7 @@
    ============================================= */
 
 :root {
-  /* ---- Velorn (default) ---- */
+  /* ---- Belrog (default) ---- */
   --sf-dark-950: 3 6 16;
   --sf-dark-900: 8 12 26;
   --sf-dark-800: 17 23 42;
@@ -122,7 +122,7 @@
   --sf-text-muted: 110 110 124;
 }
 
-[data-theme="velorn"] {
+[data-theme="Belrog"] {
   --sf-dark-950: 3 6 16;
   --sf-dark-900: 8 12 26;
   --sf-dark-800: 17 23 42;
@@ -401,3 +401,4 @@ html[data-input-modality="pointer"] [role="button"]:focus {
 .inspector-tab-tinted:hover {
   color: color-mix(in srgb, var(--tab-hue) 70%, rgb(var(--sf-text-primary)));
 }
+

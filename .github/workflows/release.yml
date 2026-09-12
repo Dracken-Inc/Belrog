@@ -68,7 +68,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --draft \
               --verify-tag \
-              --title "Velorn $RELEASE_TAG" \
+              --title "Belrog $RELEASE_TAG" \
               --notes-file docs/RELEASE_DRAFT_TEMPLATE.md
           fi
 
@@ -172,7 +172,7 @@ jobs:
         run: |
           $resources = Join-Path $PWD 'release\win-unpacked\resources'
           foreach ($executable in @(
-            (Join-Path $PWD 'release\win-unpacked\Velorn.exe'),
+            (Join-Path $PWD 'release\win-unpacked\Belrog.exe'),
             (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
             (Join-Path $resources 'bin\ffmpeg.exe'),
             (Join-Path $resources 'bin\ffprobe.exe')
@@ -187,7 +187,7 @@ jobs:
             --platform win32 `
             --arch x64 `
             --signed-package `
-            --host-executable (Join-Path $PWD 'release\win-unpacked\Velorn.exe')
+            --host-executable (Join-Path $PWD 'release\win-unpacked\Belrog.exe')
 
       - name: Upload Windows release assets
         shell: pwsh
@@ -196,8 +196,8 @@ jobs:
         run: |
           $version = "${{ steps.app_version.outputs.app_version }}"
           gh release upload $env:RELEASE_TAG `
-            "release/Velorn-$version-windows-installer-x64.exe#Windows Installer" `
-            "release/Velorn-$version-windows-portable-x64.exe#Windows Portable" `
+            "release/Belrog-$version-windows-installer-x64.exe#Windows Installer" `
+            "release/Belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
   build-linux:
@@ -300,8 +300,8 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Velorn-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
-            "release/Velorn-${VERSION}-linux-amd64.deb#Linux deb" \
+            "release/Belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
+            "release/Belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
 
   build-macos:
@@ -403,9 +403,9 @@ jobs:
 
       - name: Verify packaged macOS runtime and signatures
         run: |
-          APP_PATH=$(find release -type d -name 'Velorn.app' -print -quit)
+          APP_PATH=$(find release -type d -name 'Belrog.app' -print -quit)
           if [ -z "$APP_PATH" ]; then
-            echo "Packaged Velorn.app was not found" >&2
+            echo "Packaged Belrog.app was not found" >&2
             exit 1
           fi
           RESOURCES="$APP_PATH/Contents/Resources"
@@ -421,7 +421,7 @@ jobs:
             --platform darwin \
             --arch "${{ matrix.arch }}" \
             --signed-package \
-            --host-executable "$APP_PATH/Contents/MacOS/Velorn"
+            --host-executable "$APP_PATH/Contents/MacOS/Belrog"
 
       - name: Upload macOS release assets
         env:
@@ -429,5 +429,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Velorn-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
+            "release/Belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
             --clobber

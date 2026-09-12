@@ -27,7 +27,7 @@ test('falls back to English for unavailable languages and missing messages', () 
 })
 
 test('interpolates named values without removing unknown placeholders', () => {
-  assert.equal(interpolate('Hello {{name}} {{missing}}', { name: 'Velorn' }), 'Hello Velorn {{missing}}')
+  assert.equal(interpolate('Hello {{name}} {{missing}}', { name: 'Belrog' }), 'Hello Belrog {{missing}}')
 })
 
 test('registered language dictionaries have the same keys and placeholders as English', () => {

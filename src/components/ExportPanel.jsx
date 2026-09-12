@@ -357,13 +357,13 @@ function isAbsoluteFilePath(filePath) {
 }
 
 function sanitizeExportBaseName(value) {
-  return String(value || 'Velorn_Timeline')
+  return String(value || 'Belrog_Timeline')
     .trim()
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
-    || 'Velorn_Timeline'
+    || 'Belrog_Timeline'
 }
 
 function ExportPanel() {
@@ -1029,7 +1029,7 @@ function ExportPanel() {
   const rtxSourceResolution = resolveResolution()
   const rtxTargetResolution = resolveRtx4kDimensions(rtxSourceResolution.width, rtxSourceResolution.height)
   const rtxToggleDisabledReason = !window.electronAPI?.checkRtxVideoUpscaleRuntime
-    ? 'RTX upscale is available only in the Velorn desktop app.'
+    ? 'RTX upscale is available only in the Belrog desktop app.'
     : settings.transparent
       ? 'RTX upscale does not preserve transparent backgrounds.'
       : window.electronAPI.platform !== 'win32'
@@ -1245,7 +1245,7 @@ function ExportPanel() {
         let finalOutputPath
         if (isPngSequence) {
           if (!window.electronAPI.selectDirectory) {
-            throw new Error('PNG image sequence folder selection is unavailable. Restart Velorn and try again.')
+            throw new Error('PNG image sequence folder selection is unavailable. Restart Belrog and try again.')
           }
           setExportStatus('Choose where to save the PNG image sequence...')
           const selectedParentFolder = await window.electronAPI.selectDirectory({
@@ -1282,7 +1282,7 @@ function ExportPanel() {
           }
         }
         const sourceOutputPath = shouldRunRtxUpscale
-          ? await window.electronAPI.pathJoin(outputFolder, `.velorn-rtx-source-${Date.now()}.mp4`)
+          ? await window.electronAPI.pathJoin(outputFolder, `.Belrog-rtx-source-${Date.now()}.mp4`)
           : finalOutputPath
         const postProcess = shouldRunRtxUpscale
           ? {
@@ -1340,7 +1340,7 @@ function ExportPanel() {
           if (workerExportCompletionRef.current === completionRecord) {
             workerExportCompletionRef.current = null
           }
-          throw new Error('Could not correlate the export worker job. Restart Velorn and try again.')
+          throw new Error('Could not correlate the export worker job. Restart Belrog and try again.')
         }
         return await workerExportCompletion
       } catch (err) {
@@ -1362,14 +1362,14 @@ function ExportPanel() {
       throw new Error(
         window.electronAPI.runExportInWorker
           ? 'Export worker unavailable: the project location is not a local folder path. Re-open the project from disk and try again.'
-          : 'Export worker unavailable. Restart Velorn and try again.'
+          : 'Export worker unavailable. Restart Belrog and try again.'
       )
     }
 
     if (isVisualOnlyFormat) {
       setExportStatus('Export failed')
       setIsExporting(false)
-      throw new Error(`${isGif ? 'Animated GIF' : 'PNG image sequence'} export is available in the Velorn desktop app.`)
+      throw new Error(`${isGif ? 'Animated GIF' : 'PNG image sequence'} export is available in the Belrog desktop app.`)
     }
 
     const directAbortController = new AbortController()
