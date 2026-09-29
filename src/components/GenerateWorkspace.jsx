@@ -145,6 +145,8 @@ import {
   parseLyricsWithTags,
   parseTimedLyrics,
   parseTimeSpecToSeconds,
+  QWEN_KEYFRAME_EDIT_PREFIX,
+  QWEN_KEYFRAME_NEGATIVE,
   resolveCastMembersFromNameList,
   resolveMusicVideoShotTypeFromText,
   splitCastNameList,
@@ -1434,11 +1436,11 @@ function composeMusicShotReferencePrompt({
   const shotFocus = shotTypeOption?.id === 'b_roll'
     ? 'Environment-focused cinematic cutaway.'
     : shotTypeOption?.id === 'performance_wide'
-      ? 'Artist visible in a wider framing, natural body posture, readable expression.'
-      : 'Artist visible with a readable face, natural performance posture.'
+      ? 'Artist visible in a wider framing, natural body posture, readable expression. Preserve ONLY the facial identity from the input image; fully replace wardrobe, background, framing and pose per the keyframe description.'
+      : 'Artist visible with a readable face, natural performance posture. Preserve ONLY the facial identity from the input image; fully replace wardrobe, background, framing and pose per the keyframe description.'
   const continuityFocus = shotTypeOption?.id === 'b_roll'
     ? 'Use cohesive environment, lighting, art direction, and key props.'
-    : 'Maintain consistent subject identity and wardrobe across the video.'
+    : 'Keep ONLY the face consistent with the reference image. Re-dress and re-stage completely for every shot: new wardrobe, new background, new framing and pose. Never copy the source costume, pose or framing.'
   const renderRule = shotTypeOption?.id === 'b_roll'
     ? 'Create one full-frame cinematic still with one uninterrupted camera view.'
     : 'Render one cinematic keyframe still, no collage, no split screen, no multiple panels.'
@@ -10534,9 +10536,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             return acc
           }, {})
         : {}
-      const storyboardPrompt = usesPromptOnlyFallback
+      const QWEN_EDIT_PREFIX = QWEN_KEYFRAME_EDIT_PREFIX
+      const rawStoryboardPrompt = usesPromptOnlyFallback
         ? buildPromptOnlyBrollFallbackPrompt(variant)
         : (variant.storyboardPrompt || variant.prompt)
+      const storyboardPrompt = (!usesPromptOnlyFallback && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit') && rawStoryboardPrompt && !rawStoryboardPrompt.includes('preserve ONLY the facial identity'))
+        ? QWEN_EDIT_PREFIX + rawStoryboardPrompt
+        : rawStoryboardPrompt
       return createQueuedJob({
         category: 'image',
         workflowId: jobWorkflowId,
@@ -16435,6 +16441,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         case 'image-edit-model-product':
           modifiedWorkflow = modifyQwenImageEdit2509Workflow(workflowJson, {
             prompt: job.prompt,
+            negativePrompt: QWEN_KEYFRAME_NEGATIVE,
             inputImage: uploadedFilename,
             seed: job.seed,
             width: job.resolution?.width,

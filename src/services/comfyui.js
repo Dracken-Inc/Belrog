@@ -2054,12 +2054,19 @@ export function modifyCustomVideoWorkflow(workflow, options = {}) {
 export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
   const {
     prompt = 'edit the image',
+    negativePrompt = '',
     inputImage = '',
     seed = Math.floor(Math.random() * 1000000000000),
     width = null,
     height = null,
     referenceImages = [],
     filenamePrefix = '',
+    // Optional sampler overrides. Defaults preserve current behavior
+    // (Lightning 4-step, cfg 1, denoise 1). Pass explicit values to test
+    // stronger prompt adherence without forking the workflow JSON.
+    denoise = null,
+    steps = null,
+    cfg = null,
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
@@ -2103,12 +2110,25 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
         node.inputs.image = inputImage
       }
     }
-    // Text prompt: node with string/prompt/text or value (only if node looks like a prompt node)
+    // Text prompt: positive nodes get the edit instruction; negative nodes
+    // get negativePrompt when provided. Previously EVERY node with a
+    // prompt/text/string key was overwritten with the positive prompt,
+    // which could clobber the negative conditioning pass.
     if (node.inputs) {
       const key = ['prompt', 'text', 'string'].find(k => k in node.inputs)
       const valueKey = (key === undefined && 'value' in node.inputs && (title.includes('Prompt') || cls.includes('Prompt'))) ? 'value' : null
-      if (key) node.inputs[key] = prompt
-      else if (valueKey) node.inputs[valueKey] = prompt
+      const targetKey = key || valueKey
+      if (targetKey) {
+        // Image-stage negative conditioning only. The LTX video stage has
+        // its own CLIPTextEncode 'Motion Prompt (Negative)' node, which must
+        // keep its existing behavior — do not reroute it.
+        const isNegativeNode = /negative/i.test(title) && (cls === 'TextEncodeQwenImageEditPlus' || /conditioning/i.test(title))
+        if (isNegativeNode) {
+          if (negativePrompt) node.inputs[targetKey] = negativePrompt
+        } else {
+          node.inputs[targetKey] = prompt
+        }
+      }
     }
     // Seed: apply to edit-specific nodes and sampler nodes.
     // The 2509 workflows use KSampler seed directly, so this must be updated per take.
@@ -2122,6 +2142,18 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     )
     if (node.inputs && 'seed' in node.inputs && isSeedTargetNode) {
       node.inputs.seed = seed
+    }
+    // Optional sampler tuning (KSampler nodes only). Null = leave workflow default.
+    if (cls === 'KSampler' && node.inputs) {
+      // Null = leave the workflow default untouched. (Number(null) === 0, so
+      // Number.isFinite(Number(x)) would wrongly treat the null default as 0
+      // and clobber the Lightning 4/1/1 sampler for every existing user.)
+      const dDenoise = denoise == null ? null : Number(denoise)
+      const dSteps = steps == null ? null : Number(steps)
+      const dCfg = cfg == null ? null : Number(cfg)
+      if (dDenoise != null && Number.isFinite(dDenoise) && 'denoise' in node.inputs) node.inputs.denoise = Math.max(0, Math.min(1, dDenoise))
+      if (dSteps != null && Number.isFinite(dSteps) && 'steps' in node.inputs) node.inputs.steps = Math.max(1, Math.round(dSteps))
+      if (dCfg != null && Number.isFinite(dCfg) && 'cfg' in node.inputs) node.inputs.cfg = dCfg
     }
     // Save Image: set prefix
     if (cls === 'SaveImage' && node.inputs && 'filename_prefix' in node.inputs) {

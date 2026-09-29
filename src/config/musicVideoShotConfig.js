@@ -12,6 +12,26 @@ export const MUSIC_VIDEO_SHOT_WORKFLOW_ID = 'music-video-shot-ltx23'
 export const VOCAL_EXTRACT_WORKFLOW_ID = 'vocal-extract-melband'
 
 /**
+ * Qwen-Image-Edit-2509 keyframe dialect.
+ *
+ * Qwen-Edit is an EDIT model, not T2I: the cast photo rides along as pixels
+ * (LoadImage -> image1 conditioning + VAEEncode latent) and the 4-step
+ * Lightning LoRA at cfg 1 strongly preserves source composition. A plain
+ * scene description ("Royal Court, grey stone pillars") is read as "keep
+ * this photo, change the backdrop slightly" -> the purple-robe clone.
+ *
+ * Every keyframe prompt sent to the 'image-edit' workflow MUST carry
+ * QWEN_KEYFRAME_EDIT_PREFIX (face-only preservation + explicit re-dress /
+ * re-stage order). QWEN_KEYFRAME_NEGATIVE deliberately says "inconsistent
+ * FACIAL identity" and never "wrong clothing" / "inconsistent character
+ * identity" - those two phrases punish wardrobe changes and freeze the
+ * source costume in place.
+ */
+export const QWEN_KEYFRAME_EDIT_PREFIX = 'Qwen image-edit instruction: preserve ONLY the facial identity of the person in the input image. Fully replace everything else - background, wardrobe, lighting, framing, pose and camera angle - exactly as described below. Do not copy the source costume, pose or framing. '
+export const QWEN_KEYFRAME_NEGATIVE = 'floating objects, random text, subtitles, watermark, logo, signature, extra limbs, extra fingers, deformed hands, warped face, asymmetric eyes, cross-eyed, blank stare, lifeless expression, frozen mannequin face, bad anatomy, disfigured body, duplicate person, cloned face, blurry, lowres, jpeg artifacts, oversaturated, plastic skin, inconsistent facial identity, garbled lettering'
+
+
+/**
  * Shot-type taxonomy.
  *
  * Director Mode's planner tags every shot with exactly one shot_type.
