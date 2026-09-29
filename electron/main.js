@@ -4955,6 +4955,39 @@ ipcMain.handle('belrog:getRemoteServerSettings', async () => {
     return { ...DEFAULT_REMOTE_SERVER_SETTINGS }
   }
 })
+const MCP_EXPOSURE_SETTING_KEY = 'mcpExposure'
+const DEFAULT_MCP_EXPOSURE_SETTINGS = { enabled: false, host: '0.0.0.0', token: '' }
+
+async function getMcpExposureSettings() {
+  try {
+    const raw = await readSettingsRaw()
+    const v = raw?.[MCP_EXPOSURE_SETTING_KEY]
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(v && typeof v === 'object' ? v : {}) }
+  } catch {
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
+  }
+}
+
+ipcMain.handle('belrog:getMcpExposure', async () => {
+  try {
+    return await getMcpExposureSettings()
+  } catch (error) {
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
+  }
+})
+
+ipcMain.handle('belrog:saveMcpExposure', async (event, settings) => {
+  try {
+    const next = { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(settings || {}) }
+    if (next.enabled && (next.host || '0.0.0.0') === '0.0.0.0' && !next.token) {
+      return { success: false, error: 'A token is required when binding 0.0.0.0.' }
+    }
+    await writeSettingsRaw((current) => ({ ...(current || {}), [MCP_EXPOSURE_SETTING_KEY]: next }))
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
 
 ipcMain.handle('belrog:saveRemoteServerSettings', async (event, settings) => {
   try {
@@ -7927,9 +7960,33 @@ function installRequestHeaderRewrite() {
 app.whenReady().then(async () => {
   registerFileProtocol()
   installRequestHeaderRewrite()
+  // Allow the Director Script tab to embed perchance.org/belrog: strip
+  // frame-busting response headers for the planner origin only.
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['*://perchance.org/*', '*://*.perchance.org/*'] },
+    (details, callback) => {
+      const headers = details.responseHeaders || {}
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === 'x-frame-options') delete headers[key]
+        if (key.toLowerCase() === 'content-security-policy') {
+          const vals = Array.isArray(headers[key]) ? headers[key] : [headers[key]]
+          headers[key] = vals.map((v) => String(v).split(';').filter((d) => !/frame-ancestors/i.test(d)).join(';'))
+        }
+      }
+      callback({ responseHeaders: headers })
+    }
+  )
+  const mcpExposure = (await readSettingsRaw().catch(() => ({})))?.mcpExposure
+    || { enabled: false, host: '127.0.0.1', token: '' }
+  if (mcpExposure.enabled && (mcpExposure.host || '0.0.0.0') === '0.0.0.0' && !mcpExposure.token) {
+    console.error('[MCP] Refusing to expose MCP on 0.0.0.0 without a token — falling back to 127.0.0.1.')
+    mcpExposure.enabled = false
+  }
   mcpServer = createComfyStudioMcpServer({
     port: DEFAULT_MCP_PORT,
     version: app.getVersion(),
+    bindHost: mcpExposure.enabled ? (mcpExposure.host || '0.0.0.0') : '127.0.0.1',
+    authToken: mcpExposure.enabled ? (mcpExposure.token || null) : null,
     performAction: performMcpRendererAction,
     diagnoseComfyUIConnection: diagnoseComfyUIConnectionInternal,
     setComfyUIConnection: setComfyUIConnectionInternal,
@@ -7946,6 +8003,34 @@ app.whenReady().then(async () => {
     .catch((error) => {
       console.warn('[MCP] server failed to start:', error?.message || error)
     })
+  // Auto-reconnect the remote ComfyUI SSH tunnel if the user enabled it.
+  ;(async () => {
+    try {
+      const settings = await getRemoteServerSettings(readSettingsRaw)
+      if (!settings?.enabled || !settings.sshHost) return
+      const result = await establishTunnel({
+        sshHost: settings.sshHost,
+        sshPort: settings.sshPort || 22,
+        sshUsername: settings.sshUsername,
+        sshKeyPath: settings.sshKeyPath,
+        tunnelLocalPort: settings.tunnelLocalPort || 8188,
+        tunnelRemotePort: settings.tunnelRemotePort || 8188,
+      })
+      if (result.success) {
+        const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
+        if (!comfyCheck.ok) {
+          closeTunnel()
+          console.warn('[sshTunnel] Auto-connect: SSH up but remote ComfyUI not reachable:', comfyCheck.message)
+        } else {
+          console.log(`[sshTunnel] Auto-reconnected ${settings.sshUsername}@${settings.sshHost} → local :${settings.tunnelLocalPort || 8188}`)
+        }
+      } else {
+        console.warn('[sshTunnel] Auto-connect failed:', result.error)
+      }
+    } catch (error) {
+      console.warn('[sshTunnel] Auto-connect error:', error?.message || String(error))
+    }
+  })()
   initComfyLauncher()
     .then(() => maybeAutoStartComfyLauncher())
     .catch((error) => {
@@ -8041,3 +8126,20 @@ app.on('will-quit', () => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error)
 })
+;/* BELROG_ADBLOCK_v1 - why: perchance iframe loads prebid/quantumdex ads that loop 400s
+   and, combined with allow-scripts+allow-same-origin sandbox escape, precede the
+   bad_message.cc renderer kill on image gen. Cancel those requests in Electron. */
+try {
+  const _eb = (typeof require !== "undefined") ? require("electron") : null;
+  const _app2 = _eb && (_eb.app || null);
+  const _sess = () => { try { return (_eb.session && _eb.session.defaultSession) || null; } catch(e){ return null; } };
+  const _install = () => {
+    try {
+      const s = _sess(); if (!s || !s.webRequest || !s.webRequest.onBeforeRequest) return;
+      s.webRequest.onBeforeRequest({ urls: ["*://*.quantumdex.io/*","*://*prebid*/*","*://*.doubleclick.net/*","*://*.googlesyndication.com/*","*://*.amazon-adsystem.com/*"] },
+        (d, cb) => cb({ cancel: true }));
+      console.log("[belrog] adblock installed");
+    } catch(e){ console.warn("[belrog] adblock failed: "+e.message); }
+  };
+  if (_app2 && _app2.whenReady) _app2.whenReady().then(_install); else _install();
+} catch(e) {}

@@ -10523,6 +10523,8 @@ class ComfyStudioMcpServer {
   constructor({
     port = DEFAULT_MCP_PORT,
     version = '0.1.0',
+    bindHost = '127.0.0.1',
+    authToken = null,
     performAction = null,
     diagnoseComfyUIConnection = null,
     setComfyUIConnection = null,
@@ -10534,6 +10536,8 @@ class ComfyStudioMcpServer {
   } = {}) {
     this.port = port
     this.version = version
+    this.bindHost = bindHost || '127.0.0.1'
+    this.authToken = authToken || null
     this.performAction = typeof performAction === 'function' ? performAction : null
     this.diagnoseComfyUIConnection = typeof diagnoseComfyUIConnection === 'function' ? diagnoseComfyUIConnection : null
     this.setComfyUIConnection = typeof setComfyUIConnection === 'function' ? setComfyUIConnection : null
@@ -10565,7 +10569,7 @@ class ComfyStudioMcpServer {
 
     await new Promise((resolve, reject) => {
       this.server.once('error', reject)
-      this.server.listen(this.port, '127.0.0.1', () => {
+      this.server.listen(this.port, this.bindHost, () => {
         this.server.off('error', reject)
         this.running = true
         this.error = null
@@ -10600,7 +10604,7 @@ class ComfyStudioMcpServer {
     return {
       running: this.running,
       port: this.port,
-      url: `http://127.0.0.1:${this.port}/mcp`,
+      url: `http://${this.bindHost === '0.0.0.0' ? '0.0.0.0' : this.bindHost}:${this.port}/mcp`,
       error: this.error,
       toolCount: this.tools.length,
       lastSnapshotAt: this.lastSnapshotAt,
@@ -10615,6 +10619,15 @@ class ComfyStudioMcpServer {
       res.writeHead(204)
       res.end()
       return
+    }
+
+    if (this.authToken) {
+      const provided = req.headers['authorization'] === `Bearer ${this.authToken}`
+        || req.headers['x-belrog-mcp-token'] === this.authToken
+      if (!provided) {
+        this.writeJson(res, 401, { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized.' } })
+        return
+      }
     }
 
     const url = new URL(req.url || '/', `http://127.0.0.1:${this.port}`)
@@ -14767,9 +14780,13 @@ class ComfyStudioMcpServer {
   }
 
   writeCorsHeaders(res) {
-    res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1')
+    const reqOrigin = res.req?.headers?.origin
+    const allowOrigin = this.bindHost === '0.0.0.0' && typeof reqOrigin === 'string' && reqOrigin.startsWith('http')
+      ? reqOrigin
+      : 'http://127.0.0.1'
+    res.setHeader('Access-Control-Allow-Origin', allowOrigin)
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Protocol-Version')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Protocol-Version, Authorization, X-Belrog-Mcp-Token')
   }
 
   writeJson(res, statusCode, payload) {

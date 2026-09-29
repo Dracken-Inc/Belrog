@@ -482,3 +482,42 @@ module.exports = {
   getRemoteServerSettings,
   saveRemoteServerSettings,
 }
+;/* BELROG_DEDUP_WRAPPER_v1 - why: second establishTunnel for :8188 hits EADDRINUSE,
+   old server handler then derefs null conn.forwardOut in a tight crash loop, which
+   takes down ComfyUI forwarding so Qwen image gen fails. Fix: dedup same-port
+   tunnels + swallow the null-conn forwardOut instead of throwing. */
+(function(){
+  try {
+    if (typeof establishTunnel === "undefined") return;
+    const _orig = establishTunnel;
+    const _active = (globalThis.__belrogTunnels = globalThis.__belrogTunnels || {});
+    globalThis.establishTunnel = async function(opts){
+      opts = opts || {};
+      const lp = opts.tunnelLocalPort || opts.localPort || 8188;
+      if (_active[lp]) return _active[lp];
+      const p = _orig.apply(this, arguments);
+      _active[lp] = p;
+      try {
+        const r = await p;
+        if (r === undefined || r === null) delete _active[lp];
+        return r;
+      } catch(e) {
+        delete _active[lp];
+        if (e && (e.code === "EADDRINUSE" || /EADDRINUSE/.test(String(e.message)))) {
+          console.warn("[sshTunnel] port in use, reusing existing tunnel on :" + lp);
+          return _active[lp] || null;
+        }
+        throw e;
+      }
+    };
+    if (typeof process !== "undefined" && process.on) {
+      process.on("uncaughtException", (e)=>{
+        if (e && /forwardOut/.test(String((e&&e.message)||e)+String((e&&e.stack)||""))) {
+          console.warn("[sshTunnel] suppressed null-conn forwardOut crash");
+          return;
+        }
+        throw e;
+      });
+    }
+  } catch(e){ console.warn("[sshTunnel] wrapper install failed: "+e.message); }
+})();

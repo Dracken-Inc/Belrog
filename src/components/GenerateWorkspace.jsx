@@ -3647,6 +3647,18 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // buildMusicVideoPlanFromScript. Empty by default — users click "Start from
   // template" or paste their own.
   const [yoloMusicScript, setYoloMusicScript] = useState(persistedState?.yoloMusicScript || '')
+  // Receive the director script from the embedded Perchance planner
+  // (Director Script tab in App.jsx). The text lands in yoloMusicScript;
+  // the user then presses the existing Parse button in the Director Script step.
+  useEffect(() => {
+    const handler = (event) => {
+      const text = String(event.detail?.text || '')
+      if (!text) return
+      setYoloMusicScript(text)
+    }
+    window.addEventListener('director-script-received', handler)
+    return () => window.removeEventListener('director-script-received', handler)
+  }, [])
   // Alt-pass script library. Each alt script is a second-unit coverage pass
   // of the same song — alt performance (different setting), environmental
   // b-roll (no performers), or detail b-roll (macro inserts). They all share
@@ -9425,6 +9437,34 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     addComfyLog('status', 'Music video LLM brief copied.')
   }, [
     addComfyLog,
+    yoloMusicAudioAsset?.name,
+    yoloMusicSongDurationSeconds,
+    yoloMusicTargetDuration,
+    yoloMusicConcept,
+    yoloMusicBriefStyleNotes,
+    yoloMusicLyrics,
+    yoloMusicResolvedCast,
+  ])
+  // Send the LLM brief to the embedded Director Script planner (App.jsx
+  // relays it into the Perchance iframe). Same payload as "Copy Brief":
+  // the standalone module-scope builder, fed from the current form state.
+  useEffect(() => {
+    const handler = () => {
+      const brief = buildMusicVideoLLMPrompt({
+        songName: yoloMusicAudioAsset?.name || '',
+        songDurationSeconds: yoloMusicSongDurationSeconds,
+        targetDuration: yoloMusicTargetDuration,
+        concept: yoloMusicConcept,
+        styleNotes: yoloMusicBriefStyleNotes,
+        lyrics: yoloMusicLyrics,
+        cast: yoloMusicResolvedCast,
+        coveragePlan: null,
+      })
+      window.dispatchEvent(new CustomEvent('director-script-brief-ready', { detail: { brief } }))
+    }
+    window.addEventListener('director-script-request-brief', handler)
+    return () => window.removeEventListener('director-script-request-brief', handler)
+  }, [
     yoloMusicAudioAsset?.name,
     yoloMusicSongDurationSeconds,
     yoloMusicTargetDuration,

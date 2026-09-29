@@ -120,6 +120,12 @@ const SETTINGS_SECTIONS = [
     description: 'Connect to a remote ComfyUI server via SSH tunnel. Requires SSH access to the remote machine.',
   },
   {
+    id: 'mcp-exposure',
+    title: 'MCP Exposure',
+    icon: Server,
+    description: 'Expose the MCP server beyond this laptop (LAN / Tailscale) with a bearer token.',
+  },
+  {
     id: 'paths',
     title: 'File Paths',
     icon: FolderOpen,
@@ -244,6 +250,32 @@ function GeneralTab({ initialSection = null }) {
   const [playbackCacheMessage, setPlaybackCacheMessage] = useState('')
   const [mcpStatus, setMcpStatus] = useState(null)
   const [mcpCopied, setMcpCopied] = useState('')
+  // MCP Exposure (LAN / Tailscale) state — persisted in settings.json under `mcpExposure`
+  const [mcpExposure, setMcpExposure] = useState({ enabled: false, host: '0.0.0.0', token: '' })
+  const [mcpExposureMsg, setMcpExposureMsg] = useState('')
+
+  useEffect(() => {
+    if (activeSection !== 'mcp-exposure') return undefined
+    window.electronAPI?.invoke('belrog:getMcpExposure').then((v) => {
+      if (v) setMcpExposure((prev) => ({ ...prev, ...v }))
+    }).catch(() => {})
+    return undefined
+  }, [activeSection])
+
+  const handleSaveMcpExposure = async () => {
+    setMcpExposureMsg('')
+    const res = await window.electronAPI?.invoke('belrog:saveMcpExposure', mcpExposure).catch(() => null)
+    setMcpExposureMsg(res?.success ? 'Saved. Restart Belrog to apply.' : (res?.error || 'Save failed.'))
+  }
+
+  const handleGenerateMcpToken = () => {
+    const bytes = new Uint8Array(24)
+    crypto.getRandomValues(bytes)
+    setMcpExposure((prev) => ({
+      ...prev,
+      token: [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(''),
+    }))
+  }
 
   // Remote Server / SSH Tunnel state
   const [remoteServerSettings, setRemoteServerSettingsState] = useState({
@@ -1313,6 +1345,62 @@ function GeneralTab({ initialSection = null }) {
                 aria-hidden
               />
             </button>
+          </div>
+        </div>
+      )
+      break
+    case 'mcp-exposure':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <p className="text-xs text-sf-text-muted">
+            Expose this laptop&apos;s MCP server (port 19790) to your LAN / Tailscale
+            so other machines can drive Belrog. Loopback stays unauthenticated;
+            anything off-loopback requires the token. Applies on restart.
+          </p>
+          <label className="flex items-center gap-2 text-[12px]">
+            <input
+              type="checkbox"
+              checked={!!mcpExposure.enabled}
+              onChange={(e) => setMcpExposure({ ...mcpExposure, enabled: e.target.checked })}
+            />
+            Enable LAN / Tailscale exposure
+          </label>
+          <div className="grid grid-cols-2 gap-2 text-[12px]">
+            <label className="block"> Bind host
+              <input
+                value={mcpExposure.host || ''}
+                onChange={(e) => setMcpExposure({ ...mcpExposure, host: e.target.value })}
+                placeholder="0.0.0.0"
+                className="mt-1 w-full rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
+              />
+            </label>
+            <label className="block"> Bearer token
+              <div className="mt-1 flex gap-1.5">
+                <input
+                  value={mcpExposure.token || ''}
+                  onChange={(e) => setMcpExposure({ ...mcpExposure, token: e.target.value })}
+                  placeholder="required for 0.0.0.0"
+                  className="w-full rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={handleGenerateMcpToken}
+                  className="shrink-0 rounded bg-sf-accent/15 px-2 py-1 text-sf-accent hover:bg-sf-accent/25"
+                >
+                  Generate
+                </button>
+              </div>
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveMcpExposure}
+              className="rounded bg-sf-accent/15 px-3 py-1.5 text-[12px] font-semibold text-sf-accent hover:bg-sf-accent/25"
+            >
+              Save
+            </button>
+            {mcpExposureMsg && <span className="text-[11px] text-sf-text-muted">{mcpExposureMsg}</span>}
           </div>
         </div>
       )

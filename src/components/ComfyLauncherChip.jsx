@@ -83,6 +83,9 @@ function ComfyLauncherChip() {
   const [error, setError] = useState('')
   const [logViewerOpen, setLogViewerOpen] = useState(false)
   const [portOwner, setPortOwner] = useState(null) // { pid, name, port } | null
+  const [remoteSettings, setRemoteSettings] = useState(null)
+  const [remoteStatus, setRemoteStatus] = useState(null)
+  const [remoteError, setRemoteError] = useState('')
   // Which edge of the trigger button the popover anchors to. 'right' means the
   // popover extends leftward (good when the chip lives on the right side of a
   // header); 'left' means it extends rightward (needed when the chip lives
@@ -107,6 +110,12 @@ function ComfyLauncherChip() {
       setLogs(getComfyLauncherLogs())
     })
     return unsub
+  }, [open])
+  useEffect(() => {
+    if (!open) return undefined
+    window.electronAPI?.invoke('belrog:getRemoteServerSettings').then(setRemoteSettings).catch(() => {})
+    window.electronAPI?.invoke('belrog:getTunnelStatus').then(setRemoteStatus).catch(() => {})
+    return undefined
   }, [open])
 
   useEffect(() => {
@@ -214,6 +223,27 @@ function ComfyLauncherChip() {
   const handleStop = () => wrap(stopComfyLauncher)
   const handleRestart = () => wrap(restartComfyLauncher)
   const handleRefresh = () => wrap(refreshComfyLauncher)
+  const handleRemoteConnect = () => wrap(async () => {
+    const saved = await window.electronAPI.invoke('belrog:saveRemoteServerSettings', {
+      ...remoteSettings,
+      enabled: true,
+    })
+    if (!saved?.success) throw new Error(saved?.error || 'Could not save remote settings.')
+    const res = await window.electronAPI.invoke('belrog:connect')
+    const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
+    if (st) setRemoteStatus(st)
+    return res
+  })
+  const handleRemoteDisconnect = () => wrap(async () => {
+    const res = await window.electronAPI.invoke('belrog:disconnect')
+    const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
+    if (st) setRemoteStatus(st)
+    return res
+  })
+  const handleSaveRemoteSettings = async () => {
+    const saved = await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteSettings)
+    setRemoteError(saved?.success ? 'Saved.' : (saved?.error || 'Save failed.'))
+  }
 
   const handlePickLauncher = async () => {
     const result = await pickComfyLauncherScript()
@@ -495,6 +525,99 @@ function ComfyLauncherChip() {
           </div>
           )}
 
+          {/* Remote Server (SSH tunnel) — fast-path reconnect + login settings.
+              The full editor (model root, node root, model listing, node install)
+              stays in Settings → Remote Server; this is the one-click path. */}
+          {remoteSettings && (
+            <div className="px-3.5 py-3 space-y-2.5 border-b border-sf-dark-700">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold">
+                  Remote server (SSH tunnel)
+                </div>
+                <span className={`w-2 h-2 rounded-full ${remoteStatus?.active
+                  ? 'bg-emerald-400'
+                  : remoteStatus?.connecting
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-slate-500'}`} />
+              </div>
+              <div className="text-[11px] text-sf-text-muted truncate">
+                {remoteStatus?.active
+                  ? `Connected — ${remoteSettings.sshHost}:${remoteSettings.tunnelRemotePort} → local :${remoteSettings.tunnelLocalPort}`
+                  : remoteSettings.sshHost
+                    ? `Not connected — ${remoteSettings.sshUsername || 'user'}@${remoteSettings.sshHost}`
+                    : 'No remote server configured (Settings → Remote Server)'}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleRemoteConnect}
+                  disabled={busy || remoteStatus?.connecting}
+                  className={`flex-1 h-8 rounded-md text-white text-[11px] font-semibold transition-colors ${remoteStatus?.active
+                    ? 'bg-sky-500/90 hover:bg-sky-500'
+                    : 'bg-emerald-500/90 hover:bg-emerald-500'} disabled:bg-sf-dark-700 disabled:text-sf-text-muted`}
+                >
+                  {remoteStatus?.active ? 'Reconnect' : 'Connect'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemoteDisconnect}
+                  disabled={busy || !remoteStatus?.active}
+                  className="flex-1 h-8 rounded-md bg-red-500/90 hover:bg-red-500 disabled:bg-sf-dark-700 disabled:text-sf-text-muted text-white text-[11px] font-semibold transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <input
+                  value={remoteSettings.sshHost || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshHost: e.target.value })}
+                  placeholder="ssh host / ip"
+                  className="col-span-2 rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshPort || 22}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshPort: Number(e.target.value) || 22 })}
+                  placeholder="port"
+                  className="rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshUsername || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshUsername: e.target.value })}
+                  placeholder="username"
+                  className="rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshKeyPath || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshKeyPath: e.target.value })}
+                  placeholder="path to private key"
+                  className="col-span-2 rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[11px] text-sf-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={!!remoteSettings.enabled}
+                    onChange={(e) => setRemoteSettings({ ...remoteSettings, enabled: e.target.checked })}
+                  />
+                  auto-connect on app start
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSaveRemoteSettings}
+                  className="px-2 py-1 rounded bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25 text-[10.5px] font-semibold"
+                >
+                  Save
+                </button>
+              </div>
+              {remoteError && (
+                <div className="text-[11px] text-red-200 break-words flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span>{remoteError}</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="px-3.5 py-2.5">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold flex items-center gap-1">
