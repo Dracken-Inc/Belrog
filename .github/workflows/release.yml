@@ -39,6 +39,30 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
+  secrets-probe:
+    name: Probe Signing Secrets
+    runs-on: ubuntu-latest
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Apple signing secrets present?
+        id: apple
+        run: |
+          ok=true
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then ok=false; break; fi
+          done
+          echo "apple=$ok" >> "$GITHUB_OUTPUT"
+          if [ "$ok" = "true" ]; then
+            echo "Apple signing secrets present - macOS build eligible."
+          else
+            echo "Apple signing secrets absent - macOS build will be skipped (unsigned mac apps cannot run)."
+          fi
+
   preflight:
     name: Release Preflight
     runs-on: ubuntu-latest
@@ -354,15 +378,12 @@ jobs:
   build-macos:
     name: Build macOS (${{ matrix.arch }})
     # macOS signing/notarization credentials are a hard requirement (an
-    # unsigned mac app won't run), so the whole job skips when they're absent
-    # instead of failing the run.
+    # unsigned mac app won't run), so the job skips when they're absent
+    # instead of failing the run. The secrets context is not available in
+    # job-level `if:`, so presence is resolved by the secrets-probe job.
     if: ${{ (github.event_name == 'push' || inputs.build == 'all')
-      && secrets.CSC_LINK != ''
-      && secrets.CSC_KEY_PASSWORD != ''
-      && secrets.APPLE_ID != ''
-      && secrets.APPLE_APP_SPECIFIC_PASSWORD != ''
-      && secrets.APPLE_TEAM_ID != '' }}
-    needs: [ensure-release, preflight]
+      && needs.secrets-probe.outputs.apple == 'true' }}
+    needs: [ensure-release, preflight, secrets-probe]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -485,5 +506,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-                      "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ asset_label }}" \
-                      --clobber
+                      "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
+            --clobber
