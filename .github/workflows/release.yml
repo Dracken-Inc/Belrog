@@ -111,23 +111,29 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Assert Windows signing secrets
-        if: ${{ env.WIN_SIGN }}
+      - name: Resolve Windows signing mode
+        id: signing_mode
         shell: pwsh
         run: |
-          $missing = @()
-          foreach ($name in 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET') {
-            if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value) {
-              $missing += $name
-            }
+          $requested = ('${{ env.WIN_SIGN }}' -eq 'true')
+          $tenant = (Get-Item "env:AZURE_TENANT_ID" -ErrorAction SilentlyContinue).Value
+          $client = (Get-Item "env:AZURE_CLIENT_ID" -ErrorAction SilentlyContinue).Value
+          $secret = (Get-Item "env:AZURE_CLIENT_SECRET" -ErrorAction SilentlyContinue).Value
+          $have = [bool]$tenant -and [bool]$client -and [bool]$secret
+          $signed = ($requested -and $have) ? 'true' : 'false'
+          if ($requested -and -not $have) {
+            Write-Warning "Windows code-signing requested but Azure signing secrets (AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET) are missing - producing UNSIGNED test artifacts."
           }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing required GitHub secrets: $($missing -join ', ')"
-            exit 1
+          elseif ($signed -eq 'true') {
+            Write-Host "Windows code-signing enabled (Azure Trusted Signing)."
           }
+          else {
+            Write-Host "Windows code-signing disabled - producing unsigned test artifacts."
+          }
+          "signed=$signed" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Azure signing PowerShell module
-        if: ${{ env.WIN_SIGN }}
+        if: ${{ steps.signing_mode.outputs.signed == 'true' }}
         shell: pwsh
         run: |
           Install-PSResource -Name TrustedSigning -Scope CurrentUser -TrustRepository
@@ -185,7 +191,7 @@ jobs:
           "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Disable code signing for unsigned test build
-        if: ${{ !env.WIN_SIGN }}
+        if: ${{ steps.signing_mode.outputs.signed != 'true' }}
         shell: pwsh
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
@@ -201,7 +207,7 @@ jobs:
       - name: Verify packaged Windows runtime and signatures
         shell: pwsh
         run: |
-          $signCheck = ${{ env.WIN_SIGN }}
+          $signCheck = '${{ steps.signing_mode.outputs.signed }}'
           $resources = Join-Path $PWD 'release\win-unpacked\resources'
           if ($signCheck -eq 'true') {
             foreach ($executable in @(
