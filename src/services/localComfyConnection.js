@@ -12,11 +12,42 @@ let hydrated = false
 let hydrationPromise = null
 let connectionVersion = 0
 
+// Remote-ComfyUI mode state (see resolveEffectivePort). The SSH tunnel
+// forwards the remote ComfyUI onto 127.0.0.1:<tunnelLocalPort>, so when the
+// tunnel is up the connection port MUST follow it - a stale localStorage
+// port must never win (that was the silent mis-route: generation pointed at
+// a dead local port while the tunnel served the real server).
+let remoteModeEnabled = false
+let tunnelActive = false
+let tunnelLocalPort = null
+
 function normalizePort(value) {
   const parsed = Number(value)
   if (!Number.isInteger(parsed)) return null
   if (parsed < 1 || parsed > 65535) return null
   return parsed
+}
+
+/**
+ * Mode-explicit port resolution - the single source of truth for which port
+ * the ComfyUI connection targets. Precedence:
+ *   1. remote mode ON + tunnel up  -> tunnelLocalPort (the tunnel serves the
+ *      remote server on loopback; the localStorage cache is ignored)
+ *   2. otherwise                    -> cachedPort (local behavior unchanged)
+ * Never probes a port to decide the mode - the mode is the explicit
+ * belrogRemoteServer.enabled flag + tunnel state, per plan B.3.4.
+ */
+function resolveEffectivePort() {
+  if (remoteModeEnabled && tunnelActive) {
+    const tunnelPort = normalizePort(tunnelLocalPort)
+    if (tunnelPort) return tunnelPort
+  }
+  return cachedPort
+}
+
+/** True when remote mode is on but the tunnel is not currently serving. */
+function isReconnecting() {
+  return remoteModeEnabled && !tunnelActive
 }
 
 function isLoopbackHost(hostname) {
@@ -30,13 +61,15 @@ function isLoopbackHost(hostname) {
     .every((value) => Number.isInteger(value) && value >= 0 && value <= 255)
 }
 
-function buildConnection(port) {
+function buildConnection(port, { mode = 'local', reconnecting = false } = {}) {
   const safePort = normalizePort(port) || DEFAULT_COMFY_PORT
   return {
     host: LOCAL_COMFY_HOST,
     port: safePort,
     httpBase: `http://${LOCAL_COMFY_HOST}:${safePort}`,
     wsBase: `ws://${LOCAL_COMFY_HOST}:${safePort}`,
+    mode,
+    reconnecting,
   }
 }
 
@@ -156,7 +189,10 @@ export function isLoopbackHttpUrl(value) {
 }
 
 export function getLocalComfyConnectionSync() {
-  return buildConnection(cachedPort)
+  return buildConnection(resolveEffectivePort(), {
+    mode: remoteModeEnabled ? 'remote' : 'local',
+    reconnecting: isReconnecting(),
+  })
 }
 
 export function getLocalComfyHttpBaseSync() {
@@ -199,6 +235,10 @@ export async function hydrateLocalComfyConnection() {
       }
     }
 
+    // Resolve remote mode + tunnel state BEFORE sealing hydration: if the
+    // tunnel is up, its local port wins over any cached port.
+    await refreshComfyConnectionMode()
+
     hydrated = true
     const config = getLocalComfyConnectionSync()
     hydrationPromise = null
@@ -206,6 +246,44 @@ export async function hydrateLocalComfyConnection() {
   })()
 
   return hydrationPromise
+}
+
+/**
+ * Re-resolve mode + tunnel state from the main process and refresh the
+ * effective connection. Called on startup (inside hydrate) and whenever the
+ * tunnel connects/disconnects (wired by the caller - see
+ * ComfyLauncherChip / App remote-status effects). Never throws: a failed
+ * poll keeps the last known mode.
+ */
+export async function refreshComfyConnectionMode() {
+  const api = typeof window !== 'undefined' ? window?.electronAPI : null
+  if (!api) return getLocalComfyConnectionSync()
+
+  let changed = false
+  try {
+    const remote = await api.getRemoteServerSettings?.()
+    const enabled = Boolean(remote?.enabled)
+    if (enabled !== remoteModeEnabled) {
+      remoteModeEnabled = enabled
+      changed = true
+    }
+    const status = await api.getTunnelStatus?.()
+    const active = Boolean(status?.active)
+    const port = normalizePort(status?.settings?.tunnelLocalPort ?? remote?.tunnelLocalPort)
+    const stateChanged = active !== tunnelActive || port !== tunnelLocalPort
+    tunnelActive = active
+    if (port) tunnelLocalPort = port
+    if (stateChanged) changed = true
+  } catch {
+    // IPC unavailable (dev/browser context) or transient failure:
+    // keep the last known mode rather than guessing.
+  }
+
+  if (changed) {
+    connectionVersion += 1
+    dispatchConnectionChanged(getLocalComfyConnectionSync())
+  }
+  return getLocalComfyConnectionSync()
 }
 
 export async function saveLocalComfyConnectionPort(input) {
@@ -319,5 +397,19 @@ export async function checkLocalComfyConnection(options = {}) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Test-only: reset hydration + mode state so each test can install its own
+ * window mock and re-hydrate. Production code never calls this.
+ */
+export function __resetLocalComfyConnectionForTests() {
+  hydrated = false
+  hydrationPromise = null
+  connectionVersion = 0
+  remoteModeEnabled = false
+  tunnelActive = false
+  tunnelLocalPort = null
+  cachedPort = DEFAULT_COMFY_PORT
 }
 

@@ -36,6 +36,7 @@ import {
   describeComfyLauncherPortOwner,
   connectComfyLauncherExternal,
 } from '../services/comfyLauncher'
+import { refreshComfyConnectionMode } from '../services/localComfyConnection'
 
 const STATE_STYLES = {
   unknown: { dot: 'bg-slate-400', label: 'ComfyUI', tone: 'idle' },
@@ -117,6 +118,18 @@ function ComfyLauncherChip() {
     window.electronAPI?.invoke('belrog:getTunnelStatus').then(setRemoteStatus).catch(() => {})
     return undefined
   }, [open])
+
+  // Keep the ComfyUI connection resolver in sync with tunnel state. The main
+  // process auto-connects/reconnects the SSH tunnel independently of this UI,
+  // and the connection port MUST follow the tunnel (see localComfyConnection
+  // resolveEffectivePort). Cheap no-op when mode/port are unchanged.
+  useEffect(() => {
+    refreshComfyConnectionMode().catch(() => {})
+    const timer = setInterval(() => {
+      refreshComfyConnectionMode().catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -232,12 +245,14 @@ function ComfyLauncherChip() {
     const res = await window.electronAPI.invoke('belrog:connect')
     const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
     if (st) setRemoteStatus(st)
+    refreshComfyConnectionMode().catch(() => {})
     return res
   })
   const handleRemoteDisconnect = () => wrap(async () => {
     const res = await window.electronAPI.invoke('belrog:disconnect')
     const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
     if (st) setRemoteStatus(st)
+    refreshComfyConnectionMode().catch(() => {})
     return res
   })
   const handleSaveRemoteSettings = async () => {
