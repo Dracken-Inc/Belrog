@@ -196,7 +196,7 @@ jobs:
         run: |
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
           if ($pkg.build.win.azureSignOptions) {
-            $pkg.build.win | Remove-Member -Name azureSignOptions
+            $pkg.build.win | Remove-Property -Name azureSignOptions
             $pkg | ConvertTo-Json -Depth 32 | Set-Content -Encoding utf8 package.json
             Write-Host "Removed azureSignOptions - building unsigned test artifacts"
           }
@@ -242,8 +242,8 @@ jobs:
         run: |
           $version = "${{ steps.app_version.outputs.app_version }}"
           gh release upload $env:RELEASE_TAG `
-            "release/Belrog-$version-windows-installer-x64.exe#Windows Installer" `
-            "release/Belrog-$version-windows-portable-x64.exe#Windows Portable" `
+            "release/belrog-$version-windows-installer-x64.exe#Windows Installer" `
+            "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
   build-linux:
@@ -347,13 +347,21 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
-            "release/Belrog-${VERSION}-linux-amd64.deb#Linux deb" \
+            "release/belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
+            "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    if: ${{ github.event_name == 'push' || inputs.build == 'all' }}
+    # macOS signing/notarization credentials are a hard requirement (an
+    # unsigned mac app won't run), so the whole job skips when they're absent
+    # instead of failing the run.
+    if: ${{ (github.event_name == 'push' || inputs.build == 'all')
+      && secrets.CSC_LINK != ''
+      && secrets.CSC_KEY_PASSWORD != ''
+      && secrets.APPLE_ID != ''
+      && secrets.APPLE_APP_SPECIFIC_PASSWORD != ''
+      && secrets.APPLE_TEAM_ID != '' }}
     needs: [ensure-release, preflight]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -477,5 +485,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
-            --clobber
+                      "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ asset_label }}" \
+                      --clobber
