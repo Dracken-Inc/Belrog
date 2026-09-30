@@ -206,7 +206,7 @@
   },
   "48:12": {
     "inputs": {
-      "unet_name": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+      "unet_name": "qwen_image_edit_2511_bf16.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -216,7 +216,7 @@
   },
   "48:20": {
     "inputs": {
-      "lora_name": "Qwen-Edit-2509-Multiple-angles.safetensors",
+      "lora_name": "qwen-image-edit-2511-multiple-angles-lora.safetensors",
       "strength_model": 1,
       "model": [
         "48:26",
@@ -230,7 +230,7 @@
   },
   "48:26": {
     "inputs": {
-      "lora_name": "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors",
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
       "strength_model": 1,
       "model": [
         "48:12",

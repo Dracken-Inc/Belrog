@@ -858,7 +858,7 @@ export const WORKFLOW_DEPENDENCY_PACKS = Object.freeze({
       {
         classType: 'LoraLoaderModelOnly',
         inputKey: 'lora_name',
-        filename: 'Qwen-Edit-2509-Multiple-angles.safetensors',
+        filename: 'qwen-image-edit-2511-multiple-angles-lora.safetensors',
         targetSubdir: 'loras',
       },
     ]),
@@ -877,7 +877,7 @@ export const WORKFLOW_DEPENDENCY_PACKS = Object.freeze({
       {
         classType: 'LoraLoaderModelOnly',
         inputKey: 'lora_name',
-        filename: 'Qwen-Edit-2509-Multiple-angles.safetensors',
+        filename: 'qwen-image-edit-2511-multiple-angles-lora.safetensors',
         targetSubdir: 'loras',
       },
     ]),
