@@ -35,13 +35,13 @@ const QWEN_IMAGE_EDIT_SHARED_MODELS = Object.freeze([
   {
     classType: 'UNETLoader',
     inputKey: 'unet_name',
-    filename: 'qwen_image_edit_2509_fp8_e4m3fn.safetensors',
+    filename: 'qwen_image_edit_2511_bf16.safetensors',
     targetSubdir: 'diffusion_models',
   },
   {
     classType: 'LoraLoaderModelOnly',
     inputKey: 'lora_name',
-    filename: 'Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors',
+    filename: 'Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors',
     targetSubdir: 'loras',
   },
 ])

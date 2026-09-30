@@ -130,7 +130,7 @@ export const YOLO_MUSIC_KEYFRAME_WORKFLOW_OPTIONS = Object.freeze([
     id: 'image-edit',
     label: 'Qwen Image Edit',
     runtimeLabel: 'Local',
-    description: 'Fully local keyframes using Qwen Image Edit 2509. Uses the resolved cast/reference image as the edit source.',
+    description: 'Fully local keyframes using Qwen Image Edit 2511. Uses the resolved cast/reference image as the edit source.',
   },
   {
     id: 'nano-banana-2',
@@ -332,7 +332,7 @@ export const YOLO_VIDEO_WORKFLOW_TARGET_OPTIONS = Object.freeze([
 
 const WORKFLOW_DISPLAY_LABELS = Object.freeze({
   'z-image-turbo': 'Z-Image Turbo',
-  'image-edit': 'Qwen Image Edit 2509',
+  'image-edit': 'Qwen Image Edit 2511',
   'nano-banana-2': 'Nano Banana 2 Image Edit (Cloud)',
   'wan22-i2v': 'WAN 2.2',
   'wan22-t2v': 'WAN 2.2 Text to Video',
@@ -370,7 +370,7 @@ const WORKFLOW_DISPLAY_LABELS = Object.freeze({
   'google-gemini-flash-lite': 'Prompt Helper (Gemini 3.1 Flash Lite)',
   'sonilo-v2m': 'Sonilo Video to Music',
   'seedream-5-lite-image-edit': 'Seedream 5.0 Lite',
-  'image-edit-model-product': 'Qwen Image Edit 2509 (Model + Product)',
+  'image-edit-model-product': 'Qwen Image Edit 2511 (Model + Product)',
   'mask-gen': 'Mask Generation',
 })
 

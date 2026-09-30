@@ -165,7 +165,7 @@ const LONG_DESCRIPTIONS = {
   'caption-qwen-asr': 'Local caption and timed-lyrics transcription using Qwen ASR through TTS-Audio-Suite. Used by the timeline caption tool and by Music Video\'s "Transcribe to SRT" button to generate timestamped lyrics before building the director script.',
   'multi-angles': 'One-click character turnaround. Give it one character image and it generates 8 matching camera angles so you can build consistent shot sheets or look-dev reference sets.',
   'multi-angles-scene': 'Same idea as the character turnaround, but for environments and scenes. Produces 8 camera angles of a single scene image for coverage, storyboards, or establishing shots.',
-  'image-edit': 'Local image editing with Qwen Image Edit 2509. Paint a mask (or describe the change) and apply targeted text-prompted edits to a still image while keeping the rest intact.',
+  'image-edit': 'Local image editing with Qwen Image Edit 2511. Paint a mask (or describe the change) and apply targeted text-prompted edits to a still image while keeping the rest intact.',
   'image-edit-model-product': 'Specialised Qwen Image Edit graph for putting a product onto a model, or swapping a model/product while keeping the other element anchored. Great for e-commerce mockups.',
   'z-image-turbo': 'Local text-to-image using Z Image Turbo. Extremely fast single-image generation — a good default for quick ideation and for producing reference frames to feed into the image-to-video workflows.',
   'nano-banana-2': 'Cloud image generation and reference editing using Google Nano Banana 2 via the Comfy Partner API. Music Video uses it for cloud keyframes when you want stronger reference-image and identity consistency. Requires an API key and credits.',

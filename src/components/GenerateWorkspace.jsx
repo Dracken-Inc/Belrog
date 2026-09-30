@@ -6945,7 +6945,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const imageWorkflowId = String(yoloAdStoryboardProfile?.storyboardWorkflowId || '').trim()
     const videoWorkflowId = String(yoloDefaultVideoWorkflowId || yoloAdVideoProfile?.videoWorkflowId || '').trim()
     const imageLabel = imageWorkflowId === 'image-edit-model-product'
-      ? 'Qwen Image Edit 2509'
+      ? 'Qwen Image Edit 2511'
       : imageWorkflowId === 'nano-banana-2'
         ? 'Nano Banana 2'
         : getWorkflowDisplayLabel(imageWorkflowId)
@@ -11769,7 +11769,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const resolution = { width: Number(width) || 720, height: Number(height) || 1280 }
     const isLtx = model === 'ltx'
 
-    // LTX + references → compose a first frame LOCALLY (Qwen Image Edit 2509,
+    // LTX + references → compose a first frame LOCALLY (Qwen Image Edit 2511,
     // which combines a primary image + up to 2 reference images), then the
     // watcher effect animates it with LTX i2v. Keeps the whole LTX path local —
     // no paid cloud model. refs order is [creator, product, environment]:

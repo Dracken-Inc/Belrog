@@ -127,7 +127,7 @@ const DEFAULT_KEYFRAME_WORKFLOW_OPTIONS = Object.freeze([
     id: 'image-edit',
     label: 'Qwen Image Edit',
     runtimeLabel: 'Local',
-    description: 'Fully local keyframes using Qwen Image Edit 2509. Uses the resolved cast/reference image as the edit source.',
+    description: 'Fully local keyframes using Qwen Image Edit 2511. Uses the resolved cast/reference image as the edit source.',
   },
   {
     id: 'nano-banana-2',

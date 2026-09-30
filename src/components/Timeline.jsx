@@ -3469,21 +3469,45 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       }
     }
 
+    // Resolve-style eased auto-follow: instead of snapping scrollLeft on every
+    // tick, a rAF loop eases toward the follow target so the timeline glides.
+    // Same cached-metric discipline as before: the hot path is arithmetic and
+    // layout is only read while a follow is actually in flight.
+    let followTargetX = null
+    let followRaf = null
+    const stepFollow = () => {
+      followRaf = null
+      if (!el || followTargetX == null) return
+      const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+      const clampedTarget = Math.max(0, Math.min(followTargetX, maxScrollLeft))
+      const current = el.scrollLeft
+      const delta = clampedTarget - current
+      if (Math.abs(delta) < 0.5) {
+        el.scrollLeft = clampedTarget
+        cachedScrollLeft = clampedTarget
+        return
+      }
+      // Exponential ease: close a quarter of the remaining distance per frame.
+      const next = current + delta * 0.25
+      el.scrollLeft = next
+      cachedScrollLeft = next
+      if (Math.abs(clampedTarget - next) > 0.5) {
+        followRaf = requestAnimationFrame(stepFollow)
+      }
+    }
     const followPlayhead = (time) => {
       if (!el || !Number.isFinite(Number(time))) return
       const targetX = Number(time) * pixelsPerSecond
       const padding = Math.max(80, cachedClientWidth * 0.18)
       if (targetX > cachedScrollLeft + cachedClientWidth - padding) {
-        const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-        const next = Math.min(Math.max(0, targetX - (cachedClientWidth * 0.35)), maxScrollLeft)
-        el.scrollLeft = next
-        cachedScrollLeft = next
+        followTargetX = Math.min(Math.max(0, targetX - (cachedClientWidth * 0.35)), el.scrollWidth - el.clientWidth)
       } else if (targetX < cachedScrollLeft + padding) {
-        const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-        const next = Math.max(0, Math.min(targetX - padding, maxScrollLeft))
-        el.scrollLeft = next
-        cachedScrollLeft = next
+        followTargetX = Math.max(0, Math.min(targetX - padding, el.scrollWidth - el.clientWidth))
+      } else {
+        followTargetX = null
+        return
       }
+      if (followRaf == null) followRaf = requestAnimationFrame(stepFollow)
     }
 
     const unsubscribe = useTimelineStore.subscribe((state, prevState) => {
@@ -6078,8 +6102,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     }}
                   >
                     <div
-                      className={`absolute top-0 bottom-0 rounded-sm overflow-hidden ${
-                        selectedClipIds.includes(clip.id) ? 'ring-2 ring-white ring-offset-1 ring-offset-sf-dark-900' : ''
+                      className={`absolute top-0 bottom-0 rounded overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-1px_0_rgba(0,0,0,0.25),0_1px_3px_rgba(0,0,0,0.35)] ${
+                        selectedClipIds.includes(clip.id) ? 'ring-2 ring-orange-300 ring-offset-1 ring-offset-sf-dark-900' : ''
                       } ${trimState?.targetClipIds?.includes(clip.id) ? 'ring-2 ring-sf-accent' : ''} ${
                         slipState?.clipId === clip.id ? 'ring-2 ring-yellow-400 cursor-ew-resize z-30' : ''
                       } ${
@@ -7252,9 +7276,9 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             className={`absolute top-0 bottom-0 z-10 ${isScrubbing ? 'pointer-events-none' : ''}`}
             style={{ left: `${getLivePlayhead() * pixelsPerSecond}px`, width: '2px' }}
           >
-            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.45)]" />
+            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-orange-300 via-orange-400 to-orange-500 shadow-[0_0_8px_rgba(251,146,60,0.55)]" />
             {/* Playhead handle (draggable) */}
-            <div 
+            <div
               className="absolute -top-1 left-1/2 -translate-x-1/2 w-5 h-4 cursor-ew-resize flex items-start justify-center"
               onMouseDown={(e) => {
                 e.stopPropagation()
@@ -7264,8 +7288,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
               title="Drag to scrub"
             >
               <div
-                className="w-3 h-3 bg-orange-400 border border-orange-200/70 hover:bg-orange-300 transition-colors shadow-[0_3px_8px_rgba(0,0,0,0.38)]"
-                style={{ clipPath: 'polygon(12% 0, 88% 0, 100% 55%, 50% 100%, 0 55%)' }}
+                className="w-3.5 h-3.5 bg-gradient-to-b from-orange-300 to-orange-500 hover:from-orange-200 hover:to-orange-400 transition-colors shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+                style={{ clipPath: 'polygon(15% 0, 85% 0, 100% 55%, 50% 100%, 0 55%)' }}
               />
             </div>
             {/* Notch at active track (Flame-style) — aligns with primary track */}
