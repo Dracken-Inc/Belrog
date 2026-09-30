@@ -397,8 +397,8 @@ test('scratch estimate accounts for both decoded and interpolated lossless PNG f
 
 test('stale cleanup removes only old direct owned RIFE work directories', async () => {
   const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'belrog-rife-stale-'))
-  const oldName = '.cache.belrog-rife-old.work'
-  const freshName = '.cache.belrog-rife-fresh.work'
+  const oldName = '.cache.Belrog-rife-old.work'
+  const freshName = '.cache.Belrog-rife-fresh.work'
   const unrelatedName = '.cache.other.work'
   try {
     await Promise.all([
