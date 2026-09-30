@@ -216,14 +216,18 @@ jobs:
 
       - name: Disable code signing for unsigned test build
         if: ${{ steps.signing_mode.outputs.signed != 'true' }}
-        shell: pwsh
         run: |
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          if ($pkg.build.win.azureSignOptions) {
-            $pkg.build.win | Remove-Property -Name azureSignOptions
-            $pkg | ConvertTo-Json -Depth 32 | Set-Content -Encoding utf8 package.json
-            Write-Host "Removed azureSignOptions - building unsigned test artifacts"
-          }
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (pkg.build && pkg.build.win && pkg.build.win.azureSignOptions) {
+              delete pkg.build.win.azureSignOptions;
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+              console.log('Removed azureSignOptions - building unsigned test artifacts');
+            } else {
+              console.log('azureSignOptions already absent - nothing to strip');
+            }
+          "
 
       - name: Build Windows artifacts
         run: npm run build && npx electron-builder --win --x64 --publish never
