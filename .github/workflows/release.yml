@@ -274,6 +274,17 @@ jobs:
             "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
+      - name: Keep Windows artifacts as job artifacts (fallback)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: belrog-windows-x64
+          path: |
+            release/belrog-*-windows-installer-x64.exe
+            release/belrog-*-windows-portable-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
   build-linux:
     name: Build Linux
     if: ${{ github.event_name == 'push' || inputs.build == 'all' }}
@@ -378,6 +389,17 @@ jobs:
             "release/belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
             "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
+
+      - name: Keep Linux artifacts as job artifacts (fallback)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: belrog-linux-x64
+          path: |
+            release/belrog-*-linux-x86_64.AppImage
+            release/belrog-*-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 30
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
