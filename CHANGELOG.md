@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.1 (Belrog 0.4.10) — 2026-09-30
+
+### Bug fix (critical)
+- **"Load in ComfyUI" now actually loads the selected workflow.** The v0.34.0 frontend boots, loads its default/persisted graph (~1.6 s after start), and only then settles. The old injector fired as soon as the load function *existed* — so the injected graph was clobbered by the boot load and you were left staring at the default template. The injector now waits for the frontend's boot-time graph load to **settle** (node count stable across samples) before injecting, then **verifies** the node count landed and retries (up to 8 attempts) instead of claiming success. The renderer now reports a verified claim ("N nodes confirmed on the canvas"). Verified live against the running ComfyUI v0.34.0: early injection at 1.2 s — previously crashed with `Cannot read properties of undefined (reading 'setGraph')` — now loads all 94 nodes of the 2511 multi-angles workflow stably. Bonus: the v0.34.0 draft store keeps the loaded workflow across reloads.
+
+### Director workspace (new)
+- **Asset library** — a persistent (localStorage, cross-project) character/prop/location reference store. After building a director-script plan, a "Missing references" panel reports gaps: unresolved cast names (characters) plus props/locations mentioned across multiple shots. One click stubs them into the library with their verbatim script description and shot provenance; re-runs are idempotent (only genuinely-new items are added).
+- **Regenerate-All** — queues a `z-image-turbo` reference-sheet job for every library entry that has a description but no reference image yet. Entries without a description are skipped with a reason (no garbage generations), the queue is capped at 50 with a "N more wait" note, and a time estimate is shown. Generated reference images wire back to their entry on completion so the next run skips them.
+- **Export / Import** — the library exports to a portable JSON file and imports merge-safely (known slugs keep the local id and your verbatim description; unknown slugs are added with fresh local ids).
+
+### Remote ComfyUI mode (server routing)
+- **Workflow-setup installs now run on the remote server in remote mode.** Model downloads execute server-side (aria2c with wget/curl fallback, resumable, detached via `nohup` so the SSH tunnel can't stall them), with a disk-space preflight, stall detection during the poll, and sha256 verification after the download. Node packs route through the existing remote installer. All helpers are pure and tested with an injectable command runner (10/10).
+- **Mode-explicit connection resolver** — the embedded ComfyUI tab and every ComfyUI action now resolve against the mode you actually selected (local vs. remote) instead of implicit fallback.
+- **Verified sha256** added to the 2511 multiple-angles LoRA recipe (hash matched against the on-disk file) so the remote installer can verify it end-to-end.
+
+### Models
+- Multiple-angles keyframe workflows pinned to the 2511 stack (checkpoint + Lightning LoRA + multi-angles LoRA).
+
+### Tests
+- New `scriptGapDetection` suite (14 tests) including the **golden director-script format pin** — if the script format ever drifts, CI fails instead of silently producing wrong reference stubs.
+
 ## v0.4.0 (Belrog 0.4.00) — 2026-09-29
 
 ### Security
