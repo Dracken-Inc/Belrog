@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.3 (Belrog 0.4.30) — 2026-10-01
+
+### Cast — the official character/prop/location management window (left panel)
+- **New "Cast" tab in the left panel** (under Assets, next to Text/Effects/Settings) — the official home of the reference library. Always visible and fully functional when empty: manual add form (Character / Prop / Location + name + description), filter tabs with counts, search, reference-image thumbnails, **inline-editable descriptions** (the text is exactly what the reference generator uses), per-entry **Gen / Re-gen / Delete**, **Regenerate-All**, and always-visible **Export / Import**.
+- **Global shared library.** Cast, the Director "Assets" tab, and the People-tab detection all read/write ONE library (new `assetLibraryStore`), so an entry added in Cast is immediately usable in the Generate workspace and vice versa.
+- **Generate from Cast works even before the Generate tab is open.** The Cast panel queues reference generations through a small bridge; the Generate workspace drains it on mount and on each request, routing them through the same `z-image-turbo` reference-sheet jobs (and wires the finished image back to the entry).
+- **Director Script → People tab** now shows a "Detected from your Director Script" strip (unresolved cast names as characters, multi-shot props/locations) with one-click **Add to Cast (N)** — idempotent, re-runs only add what's new.
+
+### Verification
+- Store + bridge + detection verified by Node smoke test against real field shapes (idempotent re-runs add 0, import preserves local id + asset wiring, no duplicates).
+
 ## v0.4.2 (Belrog 0.4.20) — 2026-10-01
 
 ### Asset library (the visible part)

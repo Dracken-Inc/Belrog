@@ -516,6 +516,8 @@ export default function MusicVideoEasyMode({
   setYoloMusicScript,
   yoloMusicCast,
   yoloMusicResolvedCast,
+  assetLibraryGapDetection = null,
+  onAddGapsToCast = null,
   setYoloMusicCast,
   handleYoloMusicCastAdd,
   handleYoloMusicCastRemove,
@@ -2643,6 +2645,52 @@ export default function MusicVideoEasyMode({
       {renderStepHeader(
         'Define who appears on camera.',
         'Add reference images for artists, band members, or performers so the script can route shots by Artist fields.'
+      )}
+
+      {/* Detected from the Director Script → one-click into Cast */}
+      {assetLibraryGapDetection && (assetLibraryGapDetection.gaps || []).length > 0 && (
+        <div className="rounded-lg border border-sf-accent/40 bg-sf-accent/5 px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-sf-accent/90">
+                Detected from your Director Script
+              </div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {assetLibraryGapDetection.gaps.slice(0, 12).map((gap) => (
+                  <span
+                    key={`pl-gaps-${gap.kind}-${gap.slug}`}
+                    className={`rounded px-1.5 py-0.5 text-[10px] leading-none ${
+                      gap.kind === 'character'
+                        ? 'bg-sf-accent/20 text-sf-accent'
+                        : gap.kind === 'prop'
+                          ? 'bg-sf-dark-600 text-sf-text-secondary'
+                          : 'bg-sf-dark-600 text-sf-text-muted'
+                    }`}
+                    title={`${gap.kind} — from shot${(gap.shots || []).length === 1 ? '' : 's'} ${(gap.shots || []).join(', ') || '?'}`}
+                  >
+                    {gap.name}
+                  </span>
+                ))}
+                {assetLibraryGapDetection.gaps.length > 12 && (
+                  <span className="self-center text-[10px] text-sf-text-muted">+{assetLibraryGapDetection.gaps.length - 12} more</span>
+                )}
+              </div>
+            </div>
+            {onAddGapsToCast && (
+              <button
+                type="button"
+                onClick={onAddGapsToCast}
+                className="shrink-0 rounded bg-sf-accent px-2.5 py-1.5 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
+                title="Add every detected character, prop and location to the Cast library (idempotent — re-runs only add what's new)"
+              >
+                Add to Cast ({assetLibraryGapDetection.gaps.length})
+              </button>
+            )}
+          </div>
+          <div className="mt-1.5 text-[10px] text-sf-text-muted">
+            Characters from unresolved cast names; props and locations from shot descriptions. Add them to Cast, then describe them once to reuse the same reference across every future script.
+          </div>
+        </div>
       )}
 
       <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-4">

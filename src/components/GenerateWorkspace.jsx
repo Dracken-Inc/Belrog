@@ -37,6 +37,11 @@ import useProjectStore from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
 import useGenerationMonitorStore from '../stores/generationMonitorStore'
 import { useFrameForAIStore } from '../stores/frameForAIStore'
+import { useAssetLibraryStore } from '../stores/assetLibraryStore'
+import {
+  drainAssetLibraryReferences,
+  ASSET_LIBRARY_QUEUE_EVENT,
+} from '../services/assetLibraryBridge'
 import { BUILTIN_WORKFLOW_PATHS } from '../config/workflowRegistry'
 import { comfyui, validateCustomKeyframeWorkflow, validateCustomVideoWorkflow } from '../services/comfyui'
 import { convertCustomLibraryWorkflowToApi } from '../services/customWorkflowLibrary'
@@ -3800,15 +3805,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const [yoloMusicPlanWarnings, setYoloMusicPlanWarnings] = useState([])
 
   // ── Asset library (C4): global character/prop/location references ──────
-  // Persisted in localStorage; survives across projects and sessions.
-  const [assetLibrary, setAssetLibrary] = useState(() => {
-    try { return loadAssetLibrary() } catch { return { characters: [], props: [], locations: [] } }
-  })
-  const commitAssetLibrary = useCallback((next) => {
-    setAssetLibrary(next)
-    saveAssetLibrary(next)
-  }, [])
-  const [assetLibraryNotice, setAssetLibraryNotice] = useState(null) // { tone, text }
+  // Now backed by the GLOBAL assetLibraryStore so the LEFT-PANEL Cast tab and
+  // this workspace share ONE library. The names below are kept as aliases so
+  // the many existing handlers/panels continue to work unchanged.
+  const assetLibrary = useAssetLibraryStore((s) => s.library)
+  const commitAssetLibrary = useAssetLibraryStore((s) => s.commit)
+  const assetLibraryNotice = useAssetLibraryStore((s) => s.notice)
+  const setAssetLibraryNotice = useAssetLibraryStore((s) => s.setNotice)
 
   // Generation queue state
   const [generationQueue, setGenerationQueue] = useState(() => loadPersistedGenerationQueue())
@@ -7974,6 +7977,35 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       },
     })
     setAssetLibraryNotice({ tone: 'success', text: `Queued a reference image for "${entry?.name || 'entry'}" (~1 min).` })
+  }, [queuePeopleWizardJob])
+
+  // ── Drain reference-generation requests from the Cast panel ────────────
+  // The Cast panel (left sidebar) queues reference images through the
+  // assetLibraryBridge because it can't reach this component's local queue
+  // directly. We drain that pending queue on mount (catches anything queued
+  // before the Generate tab was ever opened) and on every queued event,
+  // routing each through the same z-image-turbo job shape used above.
+  useEffect(() => {
+    const queueOne = (item) => {
+      if (!item?.entryId || !item?.prompt) return
+      queuePeopleWizardJob({
+        workflowId: 'z-image-turbo',
+        prompt: item.prompt,
+        negativePrompt: item.negative || referenceNegative(item.kind),
+        assetPrefix: item.entryId,
+        peopleWizard: {
+          assetPrefix: item.entryId,
+          kind: 'asset-library-reference',
+          assetKind: item.kind,
+          assetLibraryEntryId: item.entryId,
+          assetName: item.name,
+        },
+      })
+    }
+    const drain = () => { drainAssetLibraryReferences(queueOne) }
+    drain() // catch anything queued before this component mounted
+    window.addEventListener(ASSET_LIBRARY_QUEUE_EVENT, drain)
+    return () => window.removeEventListener(ASSET_LIBRARY_QUEUE_EVENT, drain)
   }, [queuePeopleWizardJob])
 
   const buildPeopleWizardAssetName = useCallback((prefix, suffix, fallbackName) => {
@@ -15814,11 +15846,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           // to its library entry so the next Regenerate-All skips it.
           if (newAsset?.id && imageIndex === 0 && job?.peopleWizard?.assetLibraryEntryId) {
             const entryId = job.peopleWizard.assetLibraryEntryId
-            setAssetLibrary((prev) => {
-              const { library: wired } = setEntryAssetId(prev || { characters: [], props: [], locations: [] }, entryId, newAsset.id)
-              saveAssetLibrary(wired)
-              return wired
-            })
+            useAssetLibraryStore.getState().setAssetId(entryId, newAsset.id)
           }
         } catch (err) {
           console.warn('Failed to save image:', err)
@@ -17845,6 +17873,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     setYoloMusicScript={setYoloMusicScript}
                     yoloMusicCast={yoloMusicCast}
                     yoloMusicResolvedCast={yoloMusicResolvedCast}
+                    assetLibraryGapDetection={assetLibraryGapDetection}
+                    onAddGapsToCast={handleAddGapsToLibrary}
                     setYoloMusicCast={setYoloMusicCast}
                     yoloMusicKeyframeWorkflowId={yoloStoryboardWorkflowId}
                     setYoloMusicKeyframeWorkflowId={setYoloMusicKeyframeWorkflowId}
