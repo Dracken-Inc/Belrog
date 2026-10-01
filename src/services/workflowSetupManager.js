@@ -462,9 +462,15 @@ export async function openUiWorkflowInComfyUi(uiWorkflow, { label = 'ComfyUI tem
       throw new Error(loadResult?.error || 'Could not load the workflow into the embedded ComfyUI tab.')
     }
 
+    // The main process verifies the graph actually landed (node count readback).
+    // Surface that in the hint so a "Loaded" message is a verified claim.
+    const nodeCount = Number(loadResult.nodeCount)
+    const loadedNote = Number.isFinite(nodeCount) && nodeCount > 0
+      ? ` ${nodeCount} nodes confirmed on the canvas.`
+      : ''
     return {
       success: true,
-      hint: `Loaded ${label} into the embedded ComfyUI tab.`,
+      hint: `Loaded ${label} into the embedded ComfyUI tab.${loadedNote}`,
     }
   } catch (error) {
     return {

@@ -74,6 +74,7 @@ const {
   installRemoteNode,
   execRemoteCommand,
 } = require('./sshTunnelManager')
+const remoteModelInstall = require('./remoteModelInstall')
 
 const isDev = !app.isPackaged
 
@@ -1947,63 +1948,116 @@ async function loadWorkflowGraphInEmbeddedComfy({ workflowGraph, comfyBaseUrl, w
     throw new Error('Could not locate the embedded ComfyUI tab. Enable the ComfyUI tab and make sure the local server is running.')
   }
 
+  const expectedNodeCount = workflowGraph && Array.isArray(workflowGraph.nodes) ? workflowGraph.nodes.length : 0
   const script = `
     (async () => {
       const graphData = ${JSON.stringify(workflowGraph)};
+      const expectedNodeCount = ${Number.isFinite(expectedNodeCount) ? expectedNodeCount : 0};
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const ensureCanvasVisible = async (appInstance) => {
-        for (let attempt = 0; attempt < 20; attempt += 1) {
-          const canvasEl = appInstance?.canvasEl || appInstance?.canvas?.canvas || document.querySelector('canvas');
-          const rect = canvasEl?.getBoundingClientRect?.();
-          if (rect && rect.width > 0 && rect.height > 0) {
-            return true;
-          }
-          await sleep(100);
-        }
-        return false;
-      };
 
-      let comfyApp = globalThis.app || globalThis.__COMFYUI_APP__ || null;
-      for (let attempt = 0; attempt < 20; attempt += 1) {
+      const resolveApp = () => {
+        try {
+          return globalThis.app
+            || globalThis.__COMFYUI_APP__
+            || (globalThis.comfyAPI && globalThis.comfyAPI.app ? globalThis.comfyAPI.app.app : null)
+            || null;
+        } catch (_) { return null }
+      };
+      const readNodeCount = (appInstance) => {
+        try {
+          return appInstance && appInstance.graph && Array.isArray(appInstance.graph.nodes)
+            ? appInstance.graph.nodes.length
+            : null;
+        } catch (_) { return null }
+      };
+      const isUsable = (appInstance) => Boolean(
+        appInstance
+        && typeof appInstance.loadGraphData === 'function'
+        && appInstance.canvas
+        && readNodeCount(appInstance) !== null
+      );
+
+      // Phase 1: wait for the frontend to be usable AND for its boot-time
+      // graph load to SETTLE (node count stable across two samples ~250ms
+      // apart). ComfyUI v0.34+ loads its default/persisted workflow roughly
+      // 1.5s+ after boot; injecting before that lands gets silently replaced
+      // by the boot load - the "tab opens with the default workflow" bug.
+      let settled = false;
+      let lastCount = null;
+      const settleDeadline = Date.now() + 15000;
+      while (Date.now() < settleDeadline) {
+        let comfyApp = resolveApp();
         if (!comfyApp) {
           try {
             const appModule = await import('/scripts/app.js');
-            comfyApp = appModule?.app || globalThis.app || globalThis.__COMFYUI_APP__ || null;
+            comfyApp = (appModule && appModule.app) || resolveApp();
           } catch (_) {
-            // Ignore temporary frontend boot timing failures and keep polling.
+            // Frontend still booting; keep polling.
           }
         }
-
-        if (comfyApp?.loadGraphData) break;
+        if (isUsable(comfyApp)) {
+          const count = readNodeCount(comfyApp);
+          if (count !== null && count === lastCount) {
+            settled = true;
+            break;
+          }
+          lastCount = count;
+        }
         await sleep(250);
-        comfyApp = comfyApp || globalThis.app || globalThis.__COMFYUI_APP__ || null;
       }
 
-      if (!comfyApp?.loadGraphData) {
-        return { success: false, error: 'ComfyUI frontend app is not ready yet.' };
+      let comfyApp = resolveApp();
+      if (!comfyApp) {
+        try {
+          const appModule = await import('/scripts/app.js');
+          comfyApp = (appModule && appModule.app) || null;
+        } catch (_) {
+          // Ignore; the load loop below keeps polling.
+        }
+      }
+      if (!comfyApp || typeof comfyApp.loadGraphData !== 'function' || !comfyApp.canvas) {
+        return { success: false, error: 'ComfyUI frontend graph is not ready yet.' };
       }
 
-      try {
-        const canvasVisible = await ensureCanvasVisible(comfyApp);
-        if (!canvasVisible) {
-          return { success: false, error: 'ComfyUI canvas is still hidden, so the workflow could not be loaded safely yet.' };
+      // Phase 2: load with post-load verification. If the node count we read
+      // back doesn't match what we sent, the load was lost (or clobbered) -
+      // retry instead of reporting success.
+      let lastError = '';
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+          if (!comfyApp || typeof comfyApp.loadGraphData !== 'function') {
+            comfyApp = resolveApp();
+            if (!comfyApp || typeof comfyApp.loadGraphData !== 'function') {
+              lastError = 'ComfyUI frontend app is not ready yet.';
+              await sleep(400);
+              continue;
+            }
+          }
+          await comfyApp.loadGraphData(graphData);
+          await sleep(30);
+          if (comfyApp.canvas && typeof comfyApp.canvas.resize === 'function') {
+            comfyApp.canvas.resize();
+          }
+          if (comfyApp.canvas && typeof comfyApp.canvas.setDirty === 'function') {
+            comfyApp.canvas.setDirty(true, true);
+          }
+          if (comfyApp.canvas && typeof comfyApp.canvas.draw === 'function') {
+            comfyApp.canvas.draw(true, true);
+          }
+          const loaded = readNodeCount(comfyApp);
+          if (expectedNodeCount > 0 && loaded !== expectedNodeCount) {
+            lastError = 'Verification failed: expected ' + expectedNodeCount + ' nodes after load, found ' + loaded + '.';
+            await sleep(500);
+            continue;
+          }
+          return { success: true, nodeCount: loaded, bootSettled: settled };
+        } catch (error) {
+          lastError = error && error.message ? error.message : String(error);
+          comfyApp = resolveApp();
+          await sleep(500);
         }
-
-        await comfyApp.loadGraphData(graphData);
-        await sleep(0);
-        if (comfyApp.canvas?.resize) {
-          comfyApp.canvas.resize();
-        }
-        if (comfyApp.canvas?.setDirty) {
-          comfyApp.canvas.setDirty(true, true);
-        }
-        if (comfyApp.canvas?.draw) {
-          comfyApp.canvas.draw(true, true);
-        }
-        return { success: true };
-      } catch (error) {
-        return { success: false, error: error?.message || String(error) };
       }
+      return { success: false, error: lastError || 'ComfyUI refused to load the workflow graph.' };
     })()
   `
 
@@ -5551,9 +5605,104 @@ ipcMain.handle('workflowSetup:validateRoot', async (event, rootPath) => {
   }
 })
 
+/**
+ * Remote-ComfyUI context (plan C3). Mode is explicit: remote mode is ON
+ * only when belrogRemoteServer.enabled is true AND the tunnel is currently
+ * active AND the remote model root is configured. No probing.
+ */
+async function resolveRemoteComfyContext() {
+  const [tunnelStatus, remoteSettings] = await Promise.all([
+    getTunnelStatus(),
+    getRemoteServerSettings(readSettingsRaw),
+  ])
+  if (!remoteSettings?.enabled || !tunnelStatus?.active) {
+    return { remote: false }
+  }
+  const modelsRoot = String(remoteSettings.comfyModelRoot || '').trim()
+  const nodesRoot = String(remoteSettings.comfyNodesRoot || '').trim()
+  if (!modelsRoot) {
+    return {
+      remote: false,
+      remoteMisconfigured: true,
+      remoteError: 'Remote mode is on but the remote models folder is not set (Settings → Remote Server → comfyModelRoot).',
+    }
+  }
+  return {
+    remote: true,
+    modelsRoot,
+    nodesRoot,
+    sshHost: String(remoteSettings.sshHost || ''),
+    tunnelLocalPort: Number(remoteSettings.tunnelLocalPort) || 8188,
+  }
+}
+
+/** Validate the remote ComfyUI target over the tunnel (replaces the local folder validation). */
+async function validateRemoteComfyRootForSetup(context) {
+  const comfyCheck = await checkRemoteComfyUI(context.tunnelLocalPort)
+  if (!comfyCheck.ok) {
+    return {
+      success: false,
+      isValid: false,
+      error: `Remote ComfyUI not reachable through the tunnel: ${comfyCheck.message}`,
+      warnings: [],
+      remote: true,
+      normalizedPath: '',
+      customNodesPath: context.nodesRoot || '',
+      modelsPath: context.modelsRoot || '',
+      pythonCommand: '',
+      python: null,
+    }
+  }
+  const nodesCheck = context.nodesRoot
+    ? await listRemoteNodes(context.nodesRoot)
+    : { success: false, error: 'not configured' }
+  return {
+    success: true,
+    isValid: true,
+    error: '',
+    warnings: nodesCheck.success ? [] : [`Remote custom_nodes folder not readable (${nodesCheck.error}) — node packs will need manual install.`],
+    remote: true,
+    normalizedPath: `remote:${context.sshHost}`,
+    customNodesPath: context.nodesRoot || '',
+    modelsPath: context.modelsRoot || '',
+    pythonCommand: '',
+    python: null,
+  }
+}
+
 ipcMain.handle('workflowSetup:checkFiles', async (_event, payload = {}) => {
   const results = []
   try {
+    // Remote mode: models live on the server; existence checks run over SSH.
+    const remoteCtx = await resolveRemoteComfyContext()
+    if (remoteCtx.remote) {
+      const remoteValidation = await validateRemoteComfyRootForSetup(remoteCtx)
+      if (!remoteValidation.isValid) {
+        return { success: false, error: remoteValidation.error || 'Remote ComfyUI not reachable.', results, remote: true }
+      }
+      const files = Array.isArray(payload?.files) ? payload.files : []
+      for (const file of files) {
+        const filename = String(file?.filename || '').trim()
+        const targetSubdir = String(file?.targetSubdir || '').trim()
+        if (!filename) {
+          results.push({ filename: '', targetSubdir, exists: false, remote: true })
+          continue
+        }
+        const rootDir = targetSubdir
+          ? `${remoteCtx.modelsRoot}/${targetSubdir}`
+          : remoteCtx.modelsRoot
+        const check = await checkRemoteModel(rootDir, filename)
+        results.push({
+          filename,
+          targetSubdir,
+          exists: Boolean(check?.exists),
+          resolvedPath: check?.exists ? check.path : '',
+          remote: true,
+        })
+      }
+      return { success: true, results, remote: true, modelsPath: remoteCtx.modelsRoot }
+    }
+
     const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
     if (!validation.isValid || !validation.modelsPath) {
       return {
@@ -5678,6 +5827,35 @@ ipcMain.handle('workflowSetup:checkFiles', async (_event, payload = {}) => {
 
 ipcMain.handle('workflowSetup:diskSpace', async (_event, payload = {}) => {
   try {
+    // Remote mode: disk space is checked ON THE SERVER (df over SSH), not on
+    // the local machine - that's the partition the models will land on.
+    const remoteCtx = await resolveRemoteComfyContext()
+    if (remoteCtx.remote) {
+      const probe = await execRemoteCommand(
+        `mkdir -p ${remoteModelInstall.quoteRemoteArg(remoteCtx.modelsRoot)} 2>/dev/null; df -P -B1 ${remoteCtx.modelsRoot} 2>/dev/null | tail -1`
+      )
+      if (!probe.success) {
+        return {
+          success: false,
+          error: `Could not check remote disk space: ${probe.stderr || probe.error}`,
+          freeBytes: null,
+          totalBytes: null,
+          remote: true,
+        }
+      }
+      // df -P -B1 output: Filesystem 1024-blocks Used Available Capacity Mounted
+      const parts = String(probe.stdout || '').trim().split(/\s+/)
+      const totalBlocks = Number(parts[1])
+      const availableBlocks = Number(parts[3])
+      return {
+        success: true,
+        freeBytes: Number.isFinite(availableBlocks) ? availableBlocks : null,
+        totalBytes: Number.isFinite(totalBlocks) ? totalBlocks : null,
+        modelsPath: remoteCtx.modelsRoot,
+        remote: true,
+      }
+    }
+
     const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
     if (!validation.isValid || !validation.modelsPath) {
       return {
@@ -5737,6 +5915,201 @@ ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
     overallPercent: totalTasks > 0 ? 0 : 100,
     message: 'Starting workflow setup install...',
   })
+
+  // Remote mode: node packs + model bytes land ON THE SERVER. Node packs go
+  // through the existing installRemoteNode (git clone + pip over SSH); models
+  // download server-side (aria2c/wget/curl, resumable) and are verified with
+  // a remote sha256sum against the recipe's pinned hash. Nothing local.
+  const remoteCtx = await resolveRemoteComfyContext()
+  if (remoteCtx.remote) {
+    const remoteValidation = await validateRemoteComfyRootForSetup(remoteCtx)
+    if (!remoteValidation.isValid) {
+      return {
+        success: false,
+        error: remoteValidation.error || 'Remote ComfyUI not reachable.',
+        validation: remoteValidation,
+        nodePacks: nodePackResults,
+        models: modelResults,
+        errors,
+        restartRecommended: false,
+        remote: true,
+      }
+    }
+
+    for (const task of nodePacks) {
+      const currentTaskIndex = completedTasks + 1
+      const gitUrl = String(task?.repoUrl || '').trim()
+      const targetDir = String(task?.installDirName || '').trim()
+      try {
+        if (!gitUrl) {
+          nodePackResults.push({ skipped: false, success: false, error: 'Node pack has no repo URL.', remote: true })
+          errors.push(`No repo URL for ${task?.displayName || task?.id || 'node pack'}.`)
+        } else {
+          const res = await installRemoteNode(remoteCtx.nodesRoot || remoteValidation.customNodesPath, gitUrl, targetDir || undefined)
+          if (res?.success) {
+            nodePackResults.push({ skipped: false, success: true, path: res.path, remote: true })
+          } else if (String(res?.error || '').startsWith('Node already installed')) {
+            nodePackResults.push({ skipped: true, success: true, path: res.error.replace('Node already installed at ', '').replace(' already installed at ', ''), remote: true })
+          } else {
+            nodePackResults.push({ skipped: false, success: false, error: res?.error || 'Remote node install failed.', remote: true })
+            errors.push(`Remote node install failed (${task?.displayName || task?.id}): ${res?.error || 'unknown'}`)
+          }
+        }
+      } catch (error) {
+        const message = error?.message || `Failed to install ${task?.displayName || task?.id || 'node pack'} on the remote server.`
+        nodePackResults.push({ skipped: false, success: false, error: message, remote: true })
+        errors.push(message)
+      }
+      completedTasks += 1
+      emitWorkflowSetupProgress({
+        stage: 'node-pack',
+        status: 'active',
+        taskType: 'node-pack',
+        currentLabel: task?.displayName || task?.id || 'Custom node pack',
+        currentTaskIndex,
+        totalTasks,
+        completedTasks,
+        overallPercent: getWorkflowSetupOverallPercent({ completedTasks, totalTasks }),
+        message: `Installed remote node ${task?.displayName || task?.id || 'pack'} on ${remoteCtx.sshHost || 'server'}.`,
+        remote: true,
+      })
+    }
+
+    for (const task of models) {
+      const currentTaskIndex = completedTasks + 1
+      const filename = String(task?.filename || '').trim()
+      const targetSubdir = String(task?.targetSubdir || '').trim()
+      const downloadUrl = String(task?.downloadUrl || '').trim()
+      const targetDir = targetSubdir ? `${remoteCtx.modelsRoot}/${targetSubdir}` : remoteCtx.modelsRoot
+      const label = task?.displayName || filename || 'Model'
+      try {
+        if (!filename) {
+          modelResults.push({ success: false, error: 'Missing filename.', remote: true })
+          errors.push(`Model task has no filename (${task?.targetSubdir || 'models'}).`)
+          completedTasks += 1
+          continue
+        }
+        const existing = await checkRemoteModel(targetDir, filename)
+        if (existing?.exists) {
+          modelResults.push({ success: true, skipped: true, path: existing.path, remote: true })
+          emitWorkflowSetupProgress({
+            stage: 'download', status: 'active', taskType: 'model',
+            currentLabel: label, currentTaskIndex, totalTasks, completedTasks,
+            overallPercent: getWorkflowSetupOverallPercent({ completedTasks: completedTasks + 1, totalTasks }),
+            message: `${label}: already on ${remoteCtx.sshHost || 'server'}, skipping.`, remote: true,
+          })
+          completedTasks += 1
+          continue
+        }
+        if (!/^https?:\/\//i.test(downloadUrl)) {
+          modelResults.push({ success: false, error: 'No curated download URL.', remote: true })
+          errors.push(`No download URL for ${label} - install it manually on ${remoteCtx.sshHost || 'the server'}.`)
+          completedTasks += 1
+          continue
+        }
+        // 1) Disk preflight on the server (size + 10% headroom).
+        const disk = await remoteModelInstall.checkRemoteDiskSpace(
+          execRemoteCommand,
+          targetDir,
+          Number(task?.sizeBytes) > 0 ? Number(task.sizeBytes) : 0,
+        )
+        if (!disk.ok) {
+          modelResults.push({ success: false, error: disk.error, remote: true })
+          errors.push(disk.error)
+          completedTasks += 1
+          continue
+        }
+        // 2) Start the download DETACHED on the server.
+        const started = await remoteModelInstall.startRemoteDownload(execRemoteCommand, {
+          url: downloadUrl,
+          targetDir,
+          filename,
+        })
+        if (!started.ok) {
+          modelResults.push({ success: false, error: started.error, remote: true })
+          errors.push(started.error)
+          completedTasks += 1
+          continue
+        }
+        // 3) Poll the remote file size to completion, streaming progress.
+        let lastReported = -1
+        const expectedBytes = Number(task?.sizeBytes) > 0 ? Number(task.sizeBytes) : null
+        const poll = await remoteModelInstall.pollRemoteDownload(execRemoteCommand, {
+          targetDir,
+          filename,
+          expectedBytes,
+          onProgress: (size, total) => {
+            const pct = Number.isFinite(total) && total > 0 ? Math.min(100, Math.round((size / total) * 100)) : null
+            // Report at most every 5% to keep the progress channel quiet.
+            if (pct !== null && (pct - lastReported >= 5 || pct >= 100)) {
+              lastReported = pct
+              emitWorkflowSetupProgress({
+                stage: 'download', status: 'active', taskType: 'model',
+                currentLabel: label, currentTaskIndex, totalTasks, completedTasks: completedTasks + 1,
+                taskPercent: pct,
+                overallPercent: pct,
+                message: `Downloading ${label} on ${remoteCtx.sshHost || 'server'}: ${remoteModelInstall.formatBytes(size)}${total ? ` / ${remoteModelInstall.formatBytes(total)}` : ''}`,
+                remote: true,
+              })
+            }
+          },
+        })
+        if (!poll.ok) {
+          modelResults.push({ success: false, error: poll.error, remote: true })
+          errors.push(poll.error)
+          completedTasks += 1
+          continue
+        }
+        // 4) Verify the remote sha256 against the recipe's pinned hash.
+        const verify = await remoteModelInstall.verifyRemoteFile(execRemoteCommand, {
+          targetDir,
+          filename,
+          expectedSha256: String(task?.sha256 || ''),
+        })
+        if (!verify.ok) {
+          modelResults.push({ success: false, error: verify.error, remote: true })
+          errors.push(verify.error)
+          completedTasks += 1
+          continue
+        }
+        modelResults.push({ success: true, path: `${targetDir}/${filename}`, sha256: verify.hash, remote: true })
+        emitWorkflowSetupProgress({
+          stage: 'download', status: 'active', taskType: 'model',
+          currentLabel: label, currentTaskIndex, totalTasks, completedTasks: completedTasks + 1,
+          taskPercent: 100, overallPercent: getWorkflowSetupOverallPercent({ completedTasks: completedTasks + 1, totalTasks }),
+          message: `${label} verified on ${remoteCtx.sshHost || 'server'} (sha256 ${verify.hash.slice(0, 12)}…).`, remote: true,
+        })
+      } catch (error) {
+        const message = error?.message || `Failed to download ${label} on the remote server.`
+        modelResults.push({ success: false, error: message, remote: true })
+        errors.push(message)
+      }
+      completedTasks += 1
+    }
+
+    emitWorkflowSetupProgress({
+      stage: 'install',
+      status: 'finished',
+      level: errors.length === 0 ? 'success' : 'warning',
+      totalTasks,
+      completedTasks: totalTasks,
+      overallPercent: 100,
+      message: errors.length === 0
+        ? `Workflow setup install finished on ${remoteCtx.sshHost || 'remote server'}.`
+        : `Workflow setup install finished on the remote server with errors.`,
+      remote: true,
+    })
+
+    return {
+      success: errors.length === 0,
+      validation: remoteValidation,
+      nodePacks: nodePackResults,
+      models: modelResults,
+      errors,
+      restartRecommended: nodePackResults.some((entry) => !entry?.skipped),
+      remote: true,
+    }
+  }
 
   for (const task of nodePacks) {
     const currentTaskIndex = completedTasks + 1
