@@ -350,7 +350,7 @@ export function buildRegenerateAllPreview({ library, cap = 50 }) {
   }
 }
 
-function buildReferencePrompt(entry) {
+export function buildReferencePrompt(entry) {
   const base = String(entry?.description || '').trim()
   if (!base) return null // §A.5.5: skip, don't generate garbage
   const kindLabel = entry.kind === 'character' ? 'character reference sheet'
@@ -365,7 +365,7 @@ function buildReferencePrompt(entry) {
   return text.length > 800 ? `${text.slice(0, 797)}...` : text
 }
 
-function referenceNegative(kind) {
+export function referenceNegative(kind) {
   if (kind === 'character') {
     return 'text, watermark, extra people, cropped head, deformed hands, extra fingers, inconsistent face'
   }

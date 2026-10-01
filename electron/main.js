@@ -5884,7 +5884,41 @@ ipcMain.handle('workflowSetup:diskSpace', async (_event, payload = {}) => {
 })
 
 ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
-  const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
+  // Remote mode is resolved FIRST: when the tunnelled server is the target,
+  // there is no local ComfyUI folder to validate, so the local root gate is
+  // bypassed entirely and the remote root is validated over SSH instead.
+  const remoteCtx = await resolveRemoteComfyContext()
+  // Misconfigured remote mode (remote on + tunnel active + models root empty):
+  // fail loudly instead of silently falling back to the LOCAL install path —
+  // explicit remote intent must not install into a local folder.
+  if (!remoteCtx.remote && remoteCtx.remoteMisconfigured) {
+    const message = remoteCtx.remoteError || 'Remote mode is on but the remote models folder is not set.'
+    return {
+      success: false,
+      error: message,
+      validation: null,
+      nodePacks: [],
+      models: [],
+      errors: [message],
+      restartRecommended: false,
+      remote: true,
+    }
+  }
+  const remoteValidation = remoteCtx.remote ? await validateRemoteComfyRootForSetup(remoteCtx) : null
+  if (remoteCtx.remote && !remoteValidation?.isValid) {
+    return {
+      success: false,
+      error: remoteValidation?.error || 'Remote ComfyUI not reachable through the tunnel.',
+      validation: remoteValidation,
+      nodePacks: [],
+      models: [],
+      errors: [remoteValidation?.error || 'Remote ComfyUI not reachable.'],
+      restartRecommended: false,
+      remote: true,
+    }
+  }
+
+  const validation = remoteCtx.remote ? null : await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
   if (!validation.isValid) {
     return {
       success: false,
@@ -5920,22 +5954,8 @@ ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
   // through the existing installRemoteNode (git clone + pip over SSH); models
   // download server-side (aria2c/wget/curl, resumable) and are verified with
   // a remote sha256sum against the recipe's pinned hash. Nothing local.
-  const remoteCtx = await resolveRemoteComfyContext()
+  // (remoteCtx + remoteValidation were resolved at the top of this handler.)
   if (remoteCtx.remote) {
-    const remoteValidation = await validateRemoteComfyRootForSetup(remoteCtx)
-    if (!remoteValidation.isValid) {
-      return {
-        success: false,
-        error: remoteValidation.error || 'Remote ComfyUI not reachable.',
-        validation: remoteValidation,
-        nodePacks: nodePackResults,
-        models: modelResults,
-        errors,
-        restartRecommended: false,
-        remote: true,
-      }
-    }
-
     for (const task of nodePacks) {
       const currentTaskIndex = completedTasks + 1
       const gitUrl = String(task?.repoUrl || '').trim()

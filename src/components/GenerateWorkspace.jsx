@@ -70,6 +70,8 @@ import {
   saveAssetLibrary,
   upsertLibraryEntry,
   setEntryAssetId,
+  removeLibraryEntry,
+  findLibraryEntry,
   importLibraryJson,
   serializeLibraryForExport,
 } from '../services/assetLibraryStore'
@@ -77,6 +79,8 @@ import {
   detectScriptGaps,
   buildStubUpserts,
   buildRegenerateAllPreview,
+  buildReferencePrompt,
+  referenceNegative,
 } from '../services/scriptGapDetection'
 import { useWorkflowSetupFlow } from '../hooks/useWorkflowSetupFlow'
 import { useI18n } from '../i18n/I18nContext'
@@ -212,6 +216,11 @@ const DIRECTOR_SUBTABS = [
     id: 'video-pass',
     label: '4. Videos',
     helper: 'Step 4: create videos from keyframe images.',
+  },
+  {
+    id: 'asset-library',
+    label: '5. Assets',
+    helper: 'Reference library: characters, props, and locations reused across scripts.',
   },
 ]
 
@@ -7898,6 +7907,74 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     reader.onerror = () => setAssetLibraryNotice({ tone: 'error', text: 'Could not read that file.' })
     reader.readAsText(file)
   }, [assetLibrary, commitAssetLibrary])
+
+  // Manual add form state (Assets tab): the ONLY way to create entries that
+  // gap detection didn't find (named characters, custom props, etc.).
+  const [assetForm, setAssetForm] = useState({ kind: 'character', name: '', description: '' })
+  const handleAddAssetEntry = useCallback(() => {
+    const name = String(assetForm.name || '').trim()
+    if (!name) {
+      setAssetLibraryNotice({ tone: 'error', text: 'Give the entry a name first (e.g. "Rose", "the rusty gate", "Midnight Pier").' })
+      return
+    }
+    const { library: next, created } = upsertLibraryEntry(assetLibrary, {
+      kind: assetForm.kind,
+      name,
+      slug: slugifyNameToken(name, { fallback: 'entry', maxLength: 48 }),
+      description: String(assetForm.description || '').trim(),
+      provenance: { source: 'manual', scriptVersion: null, shots: [] },
+    })
+    commitAssetLibrary(next)
+    setAssetForm((prev) => ({ ...prev, name: '', description: '' }))
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: created ? `Added "${name}" to the asset library.` : `"${name}" already existed — its description was kept/merged.`,
+    })
+  }, [assetForm, assetLibrary, commitAssetLibrary])
+
+  const handleEditAssetDescription = useCallback((id, description) => {
+    const found = findLibraryEntry(assetLibrary, id)
+    if (!found) return
+    const kindKey = found.kind === 'character' ? 'characters' : found.kind === 'prop' ? 'props' : 'locations'
+    const next = {
+      ...assetLibrary,
+      [kindKey]: (assetLibrary[kindKey] || []).map((entry) => (entry?.id === id
+        ? { ...entry, description: String(description || '').trim(), updatedAt: new Date().toISOString() }
+        : entry)),
+    }
+    commitAssetLibrary(next)
+  }, [assetLibrary, commitAssetLibrary])
+
+  const handleDeleteAssetEntry = useCallback((id) => {
+    const found = findLibraryEntry(assetLibrary, id)
+    if (!found) return
+    if (!window.confirm(`Delete "${found.name}" from the asset library? (The reference image itself is kept.)`)) return
+    const { library: next } = removeLibraryEntry(assetLibrary, id)
+    commitAssetLibrary(next)
+    setAssetLibraryNotice({ tone: 'info', text: `Deleted "${found.name}" from the asset library.` })
+  }, [assetLibrary, commitAssetLibrary])
+
+  const handleRegenerateOneReference = useCallback((entry) => {
+    const prompt = buildReferencePrompt(entry)
+    if (!prompt) {
+      setAssetLibraryNotice({ tone: 'error', text: `"${entry?.name || 'This entry'}" has no description yet — write one, then regenerate.` })
+      return
+    }
+    queuePeopleWizardJob({
+      workflowId: 'z-image-turbo',
+      prompt,
+      negativePrompt: referenceNegative(entry?.kind),
+      assetPrefix: entry?.id,
+      peopleWizard: {
+        assetPrefix: entry?.id,
+        kind: 'asset-library-reference',
+        assetKind: entry?.kind,
+        assetLibraryEntryId: entry?.id,
+        assetName: entry?.name,
+      },
+    })
+    setAssetLibraryNotice({ tone: 'success', text: `Queued a reference image for "${entry?.name || 'entry'}" (~1 min).` })
+  }, [queuePeopleWizardJob])
 
   const buildPeopleWizardAssetName = useCallback((prefix, suffix, fallbackName) => {
     const base = slugifyNameToken(prefix || '', { fallback: '', maxLength: 48 })
@@ -18852,6 +18929,190 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                           </div>
                         )}
                       </>
+                    )}
+
+                    {directorSubTab === 'asset-library' && (
+                      <div className="space-y-3">
+                        {/* Manual add */}
+                        <div className="rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 p-3">
+                          <div className="mb-2 text-[10px] uppercase tracking-wider text-sf-text-secondary">
+                            Add a reference entry
+                          </div>
+                          <div className="flex flex-wrap items-end gap-2">
+                            <div>
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">Type</label>
+                              <select
+                                value={assetForm.kind}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, kind: e.target.value }))}
+                                className="rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              >
+                                <option value="character">Character</option>
+                                <option value="prop">Prop</option>
+                                <option value="location">Location</option>
+                              </select>
+                            </div>
+                            <div className="min-w-[10rem] flex-1">
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">Name</label>
+                              <input
+                                type="text"
+                                value={assetForm.name}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
+                                placeholder="e.g. Rose / the rusty gate / Midnight Pier"
+                                className="w-full rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              />
+                            </div>
+                            <div className="min-w-[16rem] flex-1">
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">
+                                Description <span className="text-sf-text-muted/70">(this becomes the generation prompt)</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={assetForm.description}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, description: e.target.value }))}
+                                placeholder="Aging woman, silver braid, worn green dress, kind face, weathered hands…"
+                                className="w-full rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddAssetEntry}
+                              className="rounded bg-sf-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          <div className="mt-1.5 text-[10px] text-sf-text-muted">
+                            Descriptions stay verbatim — they are exactly what the reference generator uses. Leave it empty to add a placeholder and fill it in below.
+                          </div>
+                        </div>
+
+                        {/* Library toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/40 px-3 py-2">
+                          <div className="text-[11px] text-sf-text-secondary">
+                            <span className="text-sf-text-primary">{assetLibrary.characters.length}</span> characters ·{' '}
+                            <span className="text-sf-text-primary">{assetLibrary.props.length}</span> props ·{' '}
+                            <span className="text-sf-text-primary">{assetLibrary.locations.length}</span> locations
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleRegenerateLibraryReferences}
+                              className="px-2 py-1 rounded border border-sf-accent/60 bg-sf-accent/15 text-[11px] text-sf-accent hover:bg-sf-accent/25"
+                              title="Queue reference images for every entry that has a description but no reference yet"
+                            >
+                              Regenerate-All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleExportAssetLibrary}
+                              className="px-2 py-1 rounded border border-sf-dark-500 text-[11px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400"
+                            >
+                              Export
+                            </button>
+                            <label className="px-2 py-1 rounded border border-sf-dark-500 text-[11px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 cursor-pointer">
+                              Import
+                              <input
+                                type="file"
+                                accept="application/json,.json"
+                                className="hidden"
+                                onChange={(event) => {
+                                  handleImportAssetLibrary(event.target.files?.[0] || null)
+                                  event.target.value = ''
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Entry list */}
+                        {assetLibraryGapDetection && assetLibraryGapDetection.gaps.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 px-3 py-2">
+                            <div className="text-[11px] text-sf-text-secondary">
+                              Detected from the current script: {assetLibraryGapDetection.gaps.map((g) => g.name).join(', ')}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddGapsToLibrary}
+                              className="rounded bg-sf-accent px-2.5 py-1 text-[11px] text-white hover:opacity-90"
+                            >
+                              Add all ({assetLibraryGapDetection.gaps.length})
+                            </button>
+                          </div>
+                        )}
+
+                        {(() => {
+                          const allEntries = [
+                            ...assetLibrary.characters.map((e) => ({ ...e, _kind: 'character' })),
+                            ...assetLibrary.props.map((e) => ({ ...e, _kind: 'prop' })),
+                            ...assetLibrary.locations.map((e) => ({ ...e, _kind: 'location' })),
+                          ]
+                          if (allEntries.length === 0) {
+                            return (
+                              <div className="rounded-lg border border-dashed border-sf-dark-600 px-4 py-8 text-center text-[11px] text-sf-text-muted">
+                                Empty asset library. Add entries above, or build a director-script plan and the 'Add all' button appears for anything detected in it.
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className="space-y-1.5">
+                              {allEntries.map((entry) => {
+                                const refAsset = entry.assetId ? assets.find((a) => a?.id === entry.assetId) : null
+                                return (
+                                  <div key={entry.id} className="flex items-start gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 p-2">
+                                    {refAsset?.url ? (
+                                      <img src={refAsset.url} alt="" className="h-14 w-14 shrink-0 rounded object-cover border border-sf-dark-600" />
+                                    ) : (
+                                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded border border-dashed border-sf-dark-600 text-[9px] uppercase text-sf-text-muted">
+                                        {entry._kind}
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`rounded px-1.5 py-0.5 text-[9px] leading-none ${
+                                          entry._kind === 'character' ? 'bg-sf-accent/20 text-sf-accent' : 'bg-sf-dark-600 text-sf-text-secondary'
+                                        }`}>
+                                          {entry._kind}
+                                        </span>
+                                        <span className="truncate text-[12px] font-medium text-sf-text-primary">{entry.name}</span>
+                                        {entry.gap?.source === 'director-script' && (
+                                          <span className="text-[9px] text-sf-text-muted" title={`From director script, shot${(entry.gap.shotRefs || []).length === 1 ? '' : 's'} ${(entry.gap.shotRefs || []).join(', ')}`}>
+                                            from script
+                                          </span>
+                                        )}
+                                      </div>
+                                      <input
+                                        type="text"
+                                        value={entry.description || ''}
+                                        onChange={(e) => handleEditAssetDescription(entry.id, e.target.value)}
+                                        placeholder="Write a description — it becomes the reference generation prompt…"
+                                        className="mt-1 w-full rounded border border-sf-dark-600 bg-sf-dark-900/70 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                                      />
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRegenerateOneReference(entry)}
+                                        className="rounded border border-sf-dark-500 px-2 py-1 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400"
+                                        title={refAsset ? 'Regenerate the reference image' : 'Generate the reference image'}
+                                      >
+                                        {refAsset ? 'Regenerate' : 'Generate'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteAssetEntry(entry.id)}
+                                        className="rounded border border-sf-dark-500 px-2 py-1 text-[10px] text-sf-text-muted hover:text-red-300 hover:border-red-500/40"
+                                        title="Delete this entry (keeps the generated image)"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </div>
                     )}
 
                     {directorSubTab === 'plan-script' && !isYoloMusicMode && (

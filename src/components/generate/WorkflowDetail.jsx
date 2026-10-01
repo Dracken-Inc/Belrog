@@ -329,17 +329,26 @@ export default function WorkflowDetail({
 
             {setupMode === 'choose-root' && (
               <>
-                <button
-                  type="button"
-                  onClick={() => { void setup.chooseComfyFolder() }}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sf-accent-hover"
-                >
-                  <FolderSearch className="h-4 w-4" />
-                  Choose your ComfyUI folder
-                </button>
-                <div className="mt-1.5 text-center text-[10px] text-sf-text-muted">
-                  {setup.rootValidation?.error || 'Point Belrog at your ComfyUI install so it can download the missing files for you.'}
-                </div>
+                {setup.remoteContext?.remote && setup.remoteContext?.misconfigured ? (
+                  <div className="mt-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+                    <div className="mb-1 font-semibold">Remote ComfyUI paths not set</div>
+                    {setup.rootValidation?.error || 'Set the Remote Models Root Path in Settings → Remote Server → Remote ComfyUI Paths, then reconnect the tunnel.'}
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { void setup.chooseComfyFolder() }}
+                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sf-accent-hover"
+                    >
+                      <FolderSearch className="h-4 w-4" />
+                      Choose your ComfyUI folder
+                    </button>
+                    <div className="mt-1.5 text-center text-[10px] text-sf-text-muted">
+                      {setup.rootValidation?.error || 'Point Belrog at your ComfyUI install so it can download the missing files for you.'}
+                    </div>
+                  </>
+                )}
               </>
             )}
 

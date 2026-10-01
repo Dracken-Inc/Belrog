@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.2 (Belrog 0.4.20) — 2026-10-01
+
+### Asset library (the visible part)
+- **New "5. Assets" tab in the Director workspace** — a real, always-visible place to manage reference entries. Manual add form (Type: Character / Prop / Location + Name + Description), full entry list with reference-image thumbnails, **editable descriptions** (the text you type is exactly what the reference generator uses), per-entry **Generate/Regenerate** and **Delete**, plus a "Detected from the current script" strip with one-click "Add all".
+- **Import / Export are always visible** in this tab (not only when the library is non-empty), so the library is a destination you can go to rather than a panel that appears out of nowhere.
+- **Gap detection now only runs on the master plan** (alt passes build with an empty cast by design, so unresolved-artist warnings there are noise, not gaps).
+
+### Remote ComfyUI — workflow-setup install actually works now (was dead in remote mode)
+- **The installer no longer demands a local ComfyUI folder in remote mode.** Previously, both the renderer and the main process validated the *local* `comfyRootPath` before ever reaching the remote branch — so with the tunnel up and the remote roots configured, workflow-setup install still failed with "Choose a valid ComfyUI folder" while the ComfyUI tab worked. Remote mode is now resolved first; the local root gate is bypassed and the remote root is validated over SSH instead.
+- **Misconfigured remote mode fails loudly** (remote on + tunnel active + Models Root empty) with the correct "set the Remote ComfyUI paths in Settings" message, instead of silently falling back to a local install.
+- Clearer "Remote ComfyUI paths not set" UI in the setup panel when that's the actual problem.
+
 ## v0.4.1 (Belrog 0.4.10) — 2026-09-30
 
 ### Bug fix (critical)

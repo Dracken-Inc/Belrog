@@ -107,6 +107,10 @@ export function useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck }) 
   const [phaseError, setPhaseError] = useState('')
   const [progress, setProgress] = useState(createInitialProgress)
   const [rootValidation, setRootValidation] = useState({ checked: false, isValid: false, normalizedPath: '', error: '' })
+  // Remote mode: installs target the SSH-tunnelled server, so the LOCAL
+  // comfyRootPath gate must not block the flow (there is no local folder to
+  // validate). Computed from the same explicit signals main.js uses.
+  const [remoteContext, setRemoteContext] = useState({ remote: false, modelsRoot: '', nodesRoot: '', misconfigured: false, message: '' })
   const [diskSpace, setDiskSpace] = useState({ checked: false, freeBytes: null })
   const [restartCapability, setRestartCapability] = useState('none')
   const phaseRef = useRef('idle')
@@ -116,6 +120,51 @@ export function useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck }) 
     phaseRef.current = nextPhase
     setPhase(nextPhase)
     setPhaseError(error)
+  }, [])
+
+  // ── Remote-mode detection (mirror of main.js resolveRemoteComfyContext) ─
+  // Remote installs target the SSH-tunnelled server: there is no local
+  // ComfyUI folder to validate, so the local comfyRootPath gate must be
+  // bypassed. Signals: settings enabled + tunnel active + models root set.
+  const remoteContextRef = useRef(remoteContext)
+  remoteContextRef.current = remoteContext
+  useEffect(() => {
+    let cancelled = false
+    const refresh = async () => {
+      const api = typeof window !== 'undefined' ? window.electronAPI : null
+      if (!api?.getRemoteServerSettings || !api?.getTunnelStatus) {
+        if (!cancelled) setRemoteContext({ remote: false, modelsRoot: '', nodesRoot: '', misconfigured: false, message: '' })
+        return
+      }
+      try {
+        const [settings, status] = await Promise.all([api.getRemoteServerSettings(), api.getTunnelStatus()])
+        if (cancelled) return
+        const enabled = Boolean(settings?.enabled)
+        const tunnelActive = Boolean(status?.active)
+        const modelsRoot = String(settings?.comfyModelRoot || '').trim()
+        const nodesRoot = String(settings?.comfyNodesRoot || '').trim()
+        if (!enabled || !tunnelActive) {
+          setRemoteContext({ remote: false, modelsRoot: '', nodesRoot: '', misconfigured: false, message: '' })
+          return
+        }
+        if (!modelsRoot) {
+          setRemoteContext({
+            remote: true,
+            modelsRoot: '',
+            nodesRoot,
+            misconfigured: true,
+            message: 'Remote mode is on but the Remote Models Root Path is empty (Settings → Remote Server → Remote ComfyUI Paths).',
+          })
+          return
+        }
+        setRemoteContext({ remote: true, modelsRoot, nodesRoot, misconfigured: false, message: '' })
+      } catch {
+        if (!cancelled) setRemoteContext({ remote: false, modelsRoot: '', nodesRoot: '', misconfigured: false, message: '' })
+      }
+    }
+    void refresh()
+    const timer = setInterval(() => { void refresh() }, 4000)
+    return () => { cancelled = true; clearInterval(timer) }
   }, [])
 
   const enriched = useMemo(() => {
@@ -202,6 +251,31 @@ export function useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck }) 
   const needsAuthOnly = Boolean(needsAuth && !hasActionableTasks && !manualOnlyBlocked)
 
   const validateRoot = useCallback(async () => {
+    // Remote mode: installs target the SSH-tunnelled server. There is no
+    // local ComfyUI folder to validate, so mark the root valid against the
+    // remote models root instead of failing on the local setting.
+    if (remoteContextRef.current.remote) {
+      if (remoteContextRef.current.misconfigured) {
+        const next = {
+          checked: true,
+          isValid: false,
+          normalizedPath: '',
+          error: remoteContextRef.current.message || 'Remote ComfyUI paths are not configured.',
+          remote: true,
+        }
+        setRootValidation(next)
+        return next
+      }
+      const next = {
+        checked: true,
+        isValid: true,
+        normalizedPath: remoteContextRef.current.modelsRoot || '',
+        error: '',
+        remote: true,
+      }
+      setRootValidation(next)
+      return next
+    }
     const api = typeof window !== 'undefined' ? window.electronAPI : null
     if (!api?.getSetting || !api?.validateWorkflowSetupRoot) {
       setRootValidation({ checked: true, isValid: false, normalizedPath: '', error: 'Desktop build required.' })
@@ -236,7 +310,9 @@ export function useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck }) 
   useEffect(() => {
     if (!hasActionableTasks && !manualOnlyBlocked) return
     void validateRoot()
-  }, [hasActionableTasks, manualOnlyBlocked, validateRoot])
+    // Re-run when the remote context flips (tunnel connects / settings saved)
+    // so a flow that validated the local path gets re-validated for remote.
+  }, [hasActionableTasks, manualOnlyBlocked, validateRoot, remoteContext.remote, remoteContext.misconfigured])
 
   useEffect(() => {
     if (!hasActionableTasks) return
@@ -452,6 +528,7 @@ export function useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck }) 
     diskSpace,
     insufficientDiskSpace,
     rootValidation,
+    remoteContext,
     progress,
     startSetup,
     restartNow,
