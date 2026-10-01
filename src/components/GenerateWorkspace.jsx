@@ -65,6 +65,19 @@ import {
 import { extractVisualStyleNotes } from '../utils/musicVisualStyle'
 import { checkWorkflowDependencies, buildMissingDependencyClipboardText } from '../services/workflowDependencies'
 import { openApiWorkflowInComfyUi, openBundledWorkflowInComfyUi } from '../services/workflowSetupManager'
+import {
+  loadAssetLibrary,
+  saveAssetLibrary,
+  upsertLibraryEntry,
+  setEntryAssetId,
+  importLibraryJson,
+  serializeLibraryForExport,
+} from '../services/assetLibraryStore'
+import {
+  detectScriptGaps,
+  buildStubUpserts,
+  buildRegenerateAllPreview,
+} from '../services/scriptGapDetection'
 import { useWorkflowSetupFlow } from '../hooks/useWorkflowSetupFlow'
 import { useI18n } from '../i18n/I18nContext'
 import {
@@ -3777,6 +3790,17 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // [Name] tags, too-many-artists overflow, etc. Advisory — does not block.
   const [yoloMusicPlanWarnings, setYoloMusicPlanWarnings] = useState([])
 
+  // ── Asset library (C4): global character/prop/location references ──────
+  // Persisted in localStorage; survives across projects and sessions.
+  const [assetLibrary, setAssetLibrary] = useState(() => {
+    try { return loadAssetLibrary() } catch { return { characters: [], props: [], locations: [] } }
+  })
+  const commitAssetLibrary = useCallback((next) => {
+    setAssetLibrary(next)
+    saveAssetLibrary(next)
+  }, [])
+  const [assetLibraryNotice, setAssetLibraryNotice] = useState(null) // { tone, text }
+
   // Generation queue state
   const [generationQueue, setGenerationQueue] = useState(() => loadPersistedGenerationQueue())
   const [generationCompletionSoundSettings, setGenerationCompletionSoundSettingsState] = useState(() => (
@@ -6521,6 +6545,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const slot = yoloMusicAltScripts.find((entry) => entry.id === yoloMusicActiveScriptId)
     return Array.isArray(slot?.planWarnings) ? slot.planWarnings : []
   }, [yoloMusicActiveScriptId, yoloMusicAltScripts, yoloMusicPlanWarnings])
+
+  // Asset-library gap detection for the ACTIVE target's plan (C4). Recomputes
+  // only when the plan, its warnings, the cast, or the library change — the
+  // detection itself is a cheap pure function over shot text.
+  const assetLibraryGapDetection = useMemo(() => {
+    try {
+      if (!isYoloMusicMode) return null
+      const plan = yoloMusicActiveTargetPlan
+      if (!Array.isArray(plan) || plan.length === 0) return null
+      // Alt targets build with cast:[] by design — unresolved-artist warnings
+      // are noise there, so character gap detection only runs on master.
+      const cast = yoloMusicActiveScriptId ? [] : yoloMusicResolvedCast
+      return detectScriptGaps({
+        scenes: plan,
+        warnings: yoloMusicActiveTargetPlanWarnings,
+        cast,
+        library: assetLibrary,
+      })
+    } catch {
+      return null
+    }
+  }, [isYoloMusicMode, yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicActiveScriptId, yoloMusicResolvedCast, assetLibrary])
   /**
    * Render the pass-switcher tab strip — Master + one chip per alt script,
    * each with badge, label, and a parse-status dot.
@@ -7746,6 +7792,112 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     imageResolution,
     seed,
   ])
+
+  // ── Asset library handlers (C4) ─────────────────────────────────────────
+  // One-click "add detected gaps to the library": every detected gap becomes
+  // a stub entry (verbatim description, shot provenance). Idempotent —
+  // re-running after a rebuild only adds what's genuinely new.
+  const handleAddGapsToLibrary = useCallback(() => {
+    if (!assetLibraryGapDetection) return
+    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary })
+    if (stubs.length === 0) {
+      setAssetLibraryNotice({ tone: 'info', text: 'Everything detected is already in the asset library.' })
+      return
+    }
+    let working = assetLibrary
+    for (const stub of stubs) {
+      const { library: next } = upsertLibraryEntry(working, {
+        ...stub,
+        provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+      })
+      working = next
+    }
+    commitAssetLibrary(working)
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: `Added ${stubs.length} reference${stubs.length === 1 ? '' : 's'} to the asset library. Regenerate to create the reference images.`,
+    })
+  }, [assetLibrary, assetLibraryGapDetection, commitAssetLibrary, yoloMusicPlanSignature])
+
+  // Regenerate-All: queue a z-image-turbo reference-sheet job for every
+  // library entry that has a description but no reference image yet.
+  // Needs-description entries are skipped with a reason (A.5.5).
+  const handleRegenerateLibraryReferences = useCallback(() => {
+    const preview = buildRegenerateAllPreview({ library: assetLibrary, cap: 50 })
+    if (preview.items.length === 0) {
+      const why = preview.skipped.length > 0
+        ? ` ${preview.skipped.length} skipped (needs a description first).`
+        : ' Every entry already has a reference.'
+      setAssetLibraryNotice({ tone: 'info', text: `Nothing to regenerate.${why}` })
+      return
+    }
+    for (const item of preview.items) {
+      queuePeopleWizardJob({
+        workflowId: 'z-image-turbo',
+        prompt: item.prompt,
+        negativePrompt: item.negative,
+        assetPrefix: item.id,
+        peopleWizard: {
+          assetPrefix: item.id,
+          kind: 'asset-library-reference',
+          assetKind: item.kind,
+          assetLibraryEntryId: item.id,
+          assetName: item.name,
+        },
+      })
+    }
+    const skippedNote = preview.skipped.length > 0
+      ? ` ${preview.skipped.length} skipped (no description yet).`
+      : ''
+    const capNote = preview.remaining > 0
+      ? ` ${preview.remaining} more will wait for the next run.`
+      : ''
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: `Queued ${preview.items.length} reference image${preview.items.length === 1 ? '' : 's'} (~${Math.ceil(preview.totalEstimatedSeconds / 60)} min).${skippedNote}${capNote}`,
+    })
+  }, [assetLibrary, queuePeopleWizardJob])
+
+  const handleExportAssetLibrary = useCallback(() => {
+    const text = serializeLibraryForExport(assetLibrary)
+    const total = assetLibrary.characters.length + assetLibrary.props.length + assetLibrary.locations.length
+    if (total === 0) {
+      setAssetLibraryNotice({ tone: 'info', text: 'The asset library is empty — nothing to export.' })
+      return
+    }
+    const blob = new Blob([text], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `belrog-asset-library-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+  }, [assetLibrary])
+
+  const handleImportAssetLibrary = useCallback((file) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const result = importLibraryJson(String(reader.result || ''), assetLibrary)
+        if (!result.ok) {
+          setAssetLibraryNotice({ tone: 'error', text: result.error || 'Could not import that file.' })
+          return
+        }
+        commitAssetLibrary(result.library)
+        setAssetLibraryNotice({
+          tone: 'success',
+          text: `Imported ${result.imported} new entr${result.imported === 1 ? 'y' : 'ies'}${result.skipped ? `, ${result.skipped} skipped (already known)` : ''}.`,
+        })
+      } catch (err) {
+        setAssetLibraryNotice({ tone: 'error', text: `Import failed: ${err?.message || err}` })
+      }
+    }
+    reader.onerror = () => setAssetLibraryNotice({ tone: 'error', text: 'Could not read that file.' })
+    reader.readAsText(file)
+  }, [assetLibrary, commitAssetLibrary])
 
   const buildPeopleWizardAssetName = useCallback((prefix, suffix, fallbackName) => {
     const base = slugifyNameToken(prefix || '', { fallback: '', maxLength: 48 })
@@ -15581,6 +15733,16 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           }, generatedImageFolderPath)
           if (newAsset) importedAssets.push(newAsset)
           didImportAny = true
+          // Asset-library reference job (C4): bind the generated image back
+          // to its library entry so the next Regenerate-All skips it.
+          if (newAsset?.id && imageIndex === 0 && job?.peopleWizard?.assetLibraryEntryId) {
+            const entryId = job.peopleWizard.assetLibraryEntryId
+            setAssetLibrary((prev) => {
+              const { library: wired } = setEntryAssetId(prev || { characters: [], props: [], locations: [] }, entryId, newAsset.id)
+              saveAssetLibrary(wired)
+              return wired
+            })
+          }
         } catch (err) {
           console.warn('Failed to save image:', err)
           if (!importsIntoActiveProject) throw err
@@ -18572,6 +18734,121 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                             <div className="mt-1 text-[10px] text-yellow-200/60">
                               These are advisory — the plan still built, but those shots fell back to the default cast member (or no reference at all).
                             </div>
+                          </div>
+                        )}
+
+                        {/* Asset library (C4): detected reference gaps + Regenerate-All */}
+                        {assetLibraryGapDetection && assetLibraryGapDetection.gaps.length > 0 && (
+                          <div className="rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[10px] uppercase tracking-wider text-sf-text-secondary">
+                                Missing references ({assetLibraryGapDetection.gaps.length})
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={handleAddGapsToLibrary}
+                                  className="px-2 py-1 rounded bg-sf-accent text-white text-[10px] hover:opacity-90 transition-opacity"
+                                  title="Create library entries for every detected character, prop, and location (idempotent — re-runs only add what's new)"
+                                >
+                                  Add {assetLibraryGapDetection.gaps.length} to library
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleRegenerateLibraryReferences}
+                                  className="px-2 py-1 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                                  title="Queue a reference image for every library entry that doesn't have one yet"
+                                >
+                                  Regenerate-All
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {assetLibraryGapDetection.gaps.slice(0, 10).map((gap) => (
+                                <span
+                                  key={`asset-gap-${gap.kind}-${gap.slug}`}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] leading-none ${
+                                    gap.kind === 'character'
+                                      ? 'bg-sf-accent/20 text-sf-accent'
+                                      : gap.kind === 'prop'
+                                        ? 'bg-sf-dark-600 text-sf-text-secondary'
+                                        : 'bg-sf-dark-600 text-sf-text-muted'
+                                  }`}
+                                  title={`${gap.kind} — seen in shot${(gap.shots || []).length === 1 ? '' : 's'} ${(gap.shots || []).join(', ') || '?'}`}
+                                >
+                                  {gap.name}
+                                </span>
+                              ))}
+                              {assetLibraryGapDetection.gaps.length > 10 && (
+                                <span className="text-[10px] text-sf-text-muted self-center">
+                                  +{assetLibraryGapDetection.gaps.length - 10} more
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[10px] text-sf-text-muted">
+                              Characters from unresolved cast names, props and locations from shot descriptions. Add them to the library, describe them once, and every future script reuses the same reference.
+                            </div>
+                          </div>
+                        )}
+
+                        {(assetLibrary.characters.length > 0 || assetLibrary.props.length > 0 || assetLibrary.locations.length > 0) && (
+                          <div className="flex items-center justify-between gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/40 px-3 py-1.5">
+                            <div className="text-[10px] text-sf-text-secondary">
+                              Asset library:{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.characters.length}</span> characters ·{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.props.length}</span> props ·{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.locations.length}</span> locations
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleRegenerateLibraryReferences}
+                                className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                              >
+                                Regenerate-All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleExportAssetLibrary}
+                                className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                              >
+                                Export
+                              </button>
+                              <label className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors cursor-pointer">
+                                Import
+                                <input
+                                  type="file"
+                                  accept="application/json,.json"
+                                  className="hidden"
+                                  onChange={(event) => {
+                                    handleImportAssetLibrary(event.target.files?.[0] || null)
+                                    event.target.value = ''
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        {assetLibraryNotice && (
+                          <div
+                            className={`rounded-lg px-3 py-1.5 text-[11px] leading-snug ${
+                              assetLibraryNotice.tone === 'error'
+                                ? 'border border-red-500/40 bg-red-500/10 text-red-200/90'
+                                : assetLibraryNotice.tone === 'success'
+                                  ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-200/90'
+                                  : 'border border-sf-dark-600 bg-sf-dark-800/60 text-sf-text-secondary'
+                            }`}
+                          >
+                            {assetLibraryNotice.text}
+                            <button
+                              type="button"
+                              onClick={() => setAssetLibraryNotice(null)}
+                              className="ml-2 opacity-60 hover:opacity-100"
+                              aria-label="Dismiss"
+                            >
+                              ×
+                            </button>
                           </div>
                         )}
                       </>
