@@ -784,6 +784,7 @@ export const MODEL_INSTALL_RECIPES = Object.freeze({
     sourceUrl: hfBlob('fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA', 'qwen-image-edit-2511-multiple-angles-lora.safetensors'),
     licenseUrl: 'https://huggingface.co/fal/Qwen-Image-Edit-2511-Multiple-Angles-LoRA',
     sizeBytes: 295140688,
+    sha256: '42426ded4e25fd22879d9e198b857556445ef4ca56e8da3246d0345155bb6765',
     notes: 'Multi-angle LoRA matching the 2511 keyframe stack used by the bundled multiple-angles workflows.',
   }),
   [modelKey('loras', 'Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors')]: createModelRecipe({
