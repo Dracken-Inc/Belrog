@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.4.4 (Belrog 0.4.40) — 2026-10-01
+
+### Auto-stub: parsing a director script fills Cast by itself
+- **Characters, props, and locations detected in your parsed director script are now added to the Cast library automatically** (idempotent — re-parsing the same script adds nothing). No manual "add to cast" needed.
+- **Detected stubs get a real description seeded from the shot's keyframe text**, so Regenerate-All (Generate all) can immediately create their reference images instead of skipping them as "needs-description".
+- **Fixed the silent reason props/locations were never detected on music-video plans:** the music plan dropped the raw keyframe/motion prompt fields that detection scans, so it was scanning empty text. Raw prompts now pass through.
+- **Fixed shot indexing:** detection previously trusted `shot.index`, which the music plan hardcodes to 1 on every shot (and the parser restarts at 1 per scene) — collapsing the multi-shot frequency filter. Now uses a running 1-based flat index that matches the warnings' `shotIndex`.
+- **People tab (music workflow): "Import from Cast" dropdown** — pulls a Cast character into the video's cast with name, slug, and reference image carried over. Already-in-cast entries are disabled. Replaces the dead-end "Add to Cast" strip.
+- **"Manage Cast" button** in the music workflow opens the full Cast panel in a modal (the left sidebar with the Cast tab only exists in the main editor — the music workflow has no sidebar).
+- **Cast panel upgrades:** single-entry selection, right-click context menu (Generate/Regenerate reference, Edit description, Export entry as importable single-entry JSON, Delete).
+- Pipeline verified end-to-end against the real parser: script → parse → detect (character + location) → auto-stub with seeded descriptions → re-parse adds 0 → Generate-all queues all entries.
+
 ## v0.4.3 (Belrog 0.4.30) — 2026-10-01
 
 ### Cast — the official character/prop/location management window (left panel)

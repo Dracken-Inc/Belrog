@@ -1805,6 +1805,12 @@ function buildMusicVideoPlanFromScript(options = {}) {
         shots: [{
           id: shotIdStr,
           index: 1,
+          // Raw script prompts carried through so gap-detection (shotTexts)
+          // reads the director's actual words, not the composed reference
+          // prompt. Music plans previously dropped these, which left
+          // location/prop detection with empty text to scan.
+          keyframePromptRaw: String(scriptShot.keyframePromptRaw || scriptShot.imageBeat || '').trim(),
+          motionPromptRaw: String(scriptShot.motionPromptRaw || scriptShot.videoBeat || '').trim(),
           // Legacy pipeline fields so flattenYoloPlanVariants + the shared
           // queue code consume this without branching on music vs ad.
           beat: videoPrompt,
@@ -6579,6 +6585,35 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return null
     }
   }, [isYoloMusicMode, yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicActiveScriptId, yoloMusicResolvedCast, assetLibrary])
+
+  // ── Auto-stub detected gaps into the Cast library (0.4.4) ─────────────
+  // When a director-script plan is (re)built, every detected character/prop/
+  // location that is still reference-less becomes a Cast stub automatically.
+  // Idempotent: buildStubUpserts skips known entries, so re-parsing the same
+  // script adds nothing and re-renders never double-run (deduped by slug).
+  // The user then uses Regenerate-All (Generate all) to create the reference
+  // images, and Import-from-Cast to pull them into a music-video project.
+  const lastAutoStubSignatureRef = useRef(null)
+  useEffect(() => {
+    if (!assetLibraryGapDetection) return
+    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
+    if (stubs.length === 0) return
+    if (lastAutoStubSignatureRef.current === yoloMusicPlanSignature) return
+    lastAutoStubSignatureRef.current = yoloMusicPlanSignature
+    let working = assetLibrary
+    for (const stub of stubs) {
+      const { library: next } = upsertLibraryEntry(working, {
+        ...stub,
+        provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+      })
+      working = next
+    }
+    commitAssetLibrary(working)
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: `Script parsed — added ${stubs.length} new reference${stubs.length === 1 ? '' : 's'} to Cast automatically. Use Regenerate-All (Generate all) to create the reference images, then Import from Cast in your music video.`,
+    })
+  }, [assetLibrary, assetLibraryGapDetection, commitAssetLibrary, setAssetLibraryNotice, yoloMusicPlanSignature])
   /**
    * Render the pass-switcher tab strip — Master + one chip per alt script,
    * each with badge, label, and a parse-status dot.
@@ -7811,7 +7846,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // re-running after a rebuild only adds what's genuinely new.
   const handleAddGapsToLibrary = useCallback(() => {
     if (!assetLibraryGapDetection) return
-    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary })
+    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
     if (stubs.length === 0) {
       setAssetLibraryNotice({ tone: 'info', text: 'Everything detected is already in the asset library.' })
       return

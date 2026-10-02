@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CheckCircle2,
+  ChevronDown,
   Clipboard,
   Edit3,
   FileText,
@@ -12,6 +13,7 @@ import {
   Play,
   Upload,
   UserPlus,
+  Users,
   Wand2,
   X,
 } from 'lucide-react'
@@ -33,6 +35,8 @@ import {
 } from '../../config/generateWorkspaceConfig'
 import { BUILTIN_WORKFLOW_PATHS } from '../../config/workflowRegistry'
 import CustomWorkflowSlotCard from './CustomWorkflowSlotCard'
+import { useAssetLibraryStore, allLibraryEntries } from '../../stores/assetLibraryStore'
+import CastPanel from '../panels/CastPanel'
 
 const DRAFT_STORAGE_KEY = 'comfystudio-music-video-easy-mode-draft-v1'
 const DRAFT_PROJECT_STORAGE_PREFIX = `${DRAFT_STORAGE_KEY}:project:`
@@ -713,6 +717,67 @@ export default function MusicVideoEasyMode({
     () => assets.filter((asset) => asset?.type === 'image'),
     [assets]
   )
+
+  // ── Cast Library → music cast bridge (0.4.4) ──────────────────────────
+  // The music workflow has NO left sidebar (that's the main editor's), so
+  // Cast is reachable here two ways:
+  //   1. "Manage Cast" — the full CastPanel in a modal (add/edit/gen/delete).
+  //   2. "Import from Cast" — a dropdown that pulls a Cast character into
+  //      this video's cast, name + slug + reference image carried over.
+  const [castModalOpen, setCastModalOpen] = useState(false)
+  const [castImportOpen, setCastImportOpen] = useState(false)
+  const castLibrary = useAssetLibraryStore((s) => s.library)
+  const castLibraryCounts = useMemo(() => {
+    const c = { character: 0, prop: 0, location: 0 }
+    for (const e of allLibraryEntries(castLibrary)) c[e._kind] = (c[e._kind] || 0) + 1
+    return c
+  }, [castLibrary])
+  const castLibraryCharacters = useMemo(
+    () => allLibraryEntries(castLibrary).filter((e) => e._kind === 'character'),
+    [castLibrary]
+  )
+  const isCastCharacterInMusicCast = useCallback(
+    (entry) => (yoloMusicCast || []).some(
+      (e) => (e?.slug || '') === entry.slug || (e?.label || '').toLowerCase() === String(entry?.name || '').toLowerCase()
+    ),
+    [yoloMusicCast]
+  )
+  const handleAddCastCharacter = useCallback((entry) => {
+    const name = String(entry?.name || '').trim()
+    if (!name) return
+    if (isCastCharacterInMusicCast(entry)) {
+      setPeopleStatus(`"${name}" is already in this video's cast.`)
+      return
+    }
+    const nextEntry = {
+      id: `cast-lib-${Date.now()}-${entry.slug || name.toLowerCase().replace(/\s+/g, '-')}`,
+      label: name,
+      slug: normalizeCastSlug(String(entry?.slug || name)) || 'person',
+      assetId: entry.assetId || '',
+      role: 'support',
+      notes: String(entry.description || '').slice(0, 160),
+    }
+    setYoloMusicCast((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : []
+      list.push(nextEntry)
+      return list
+    })
+    setCastImportOpen(false)
+    setPeopleStatus(`Added Cast character "${name}" to this video's cast${entry.assetId ? ' — its reference image carries over' : ''}.`)
+  }, [isCastCharacterInMusicCast, setPeopleStatus, setYoloMusicCast])
+
+  // Close the "Import from Cast" dropdown on outside click / Escape.
+  useEffect(() => {
+    if (!castImportOpen) return
+    const onDown = (e) => {
+      const el = e.target instanceof Element ? e.target : null
+      if (el && !el.closest('[data-cast-import-menu]')) setCastImportOpen(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setCastImportOpen(false) }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [castImportOpen])
   const peopleWizardSelectedAsset = useMemo(() => {
     if (!peopleWizard?.assetId) return null
     return imageAssets.find((asset) => asset?.id === peopleWizard.assetId) || null
@@ -2693,6 +2758,82 @@ export default function MusicVideoEasyMode({
         </div>
       )}
 
+      {/* Cast library access — the music workflow has no left sidebar, so
+          Cast is reachable here: a dropdown to pull a character into this
+          video's cast, plus a "Manage Cast" modal for the full library. */}
+      <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="mr-auto min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-sf-text-secondary">
+              Cast library
+            </div>
+            <div className="mt-0.5 text-[11px] text-sf-text-muted">
+              {castLibraryCounts.character} character{castLibraryCounts.character === 1 ? '' : 's'} · {castLibraryCounts.prop} prop{castLibraryCounts.prop === 1 ? '' : 's'} · {castLibraryCounts.location} location{castLibraryCounts.location === 1 ? '' : 's'}
+            </div>
+          </div>
+
+          {/* Import from Cast dropdown */}
+          <div className="relative" data-cast-import-menu>
+            <button
+              type="button"
+              onClick={() => setCastImportOpen((v) => !v)}
+              disabled={castLibraryCharacters.length === 0}
+              className="inline-flex items-center gap-2 rounded-lg border border-sf-accent/50 bg-sf-accent/10 px-3 py-2 text-xs font-semibold text-sf-accent transition-colors hover:bg-sf-accent/20 disabled:cursor-not-allowed disabled:opacity-40"
+              title={castLibraryCharacters.length === 0 ? 'No Cast characters yet — open Manage Cast to add one' : 'Pick a Cast character to add it to this video'}
+            >
+              <UserPlus className="h-4 w-4" />
+              Import from Cast
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${castImportOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {castImportOpen && castLibraryCharacters.length > 0 && (
+              <div className="absolute right-0 z-40 mt-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-sf-dark-500 bg-sf-dark-800 py-1 shadow-2xl shadow-black/60">
+                {castLibraryCharacters.map((entry) => {
+                  const inCast = isCastCharacterInMusicCast(entry)
+                  const refAsset = entry.assetId ? assets.find((a) => a?.id === entry.assetId) : null
+                  return (
+                    <button
+                      key={`cast-import-${entry.id}`}
+                      type="button"
+                      disabled={inCast}
+                      onClick={() => handleAddCastCharacter(entry)}
+                      className={`flex w-full items-center gap-2 px-2.5 py-2 text-left text-[12px] transition-colors ${
+                        inCast ? 'cursor-default text-emerald-200/80' : 'text-sf-text-secondary hover:bg-sf-dark-700 hover:text-sf-text-primary'
+                      }`}
+                    >
+                      {refAsset?.url ? (
+                        <img src={refAsset.url} alt="" className="h-8 w-8 shrink-0 rounded object-cover border border-sf-dark-600" />
+                      ) : (
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-dashed border-sf-dark-600 text-[11px] text-sf-text-muted">
+                          {(entry.name || '?').slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{entry.name}</span>
+                        <span className="block truncate text-[10px] text-sf-text-muted">
+                          {inCast ? 'Already in this video' : refAsset ? 'Reference image will carry over' : 'No reference image yet'}
+                        </span>
+                      </span>
+                      {inCast && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Full library in a modal */}
+          <button
+            type="button"
+            onClick={() => setCastModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
+            title="Open the full Cast library (add, edit, generate, delete)"
+          >
+            <Users className="h-4 w-4" />
+            Manage Cast
+          </button>
+        </div>
+      </div>
+
       <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -3995,6 +4136,35 @@ export default function MusicVideoEasyMode({
       {renderMediaPreviewModal()}
       {renderReplaceKeyframeModal()}
       {renderReplaceVideoModal()}
+
+      {/* Full Cast library modal — the music workflow has no left sidebar,
+          so this is where Cast management lives inside the workflow. */}
+      {castModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3">
+          <div className="absolute inset-0 bg-black/70" onClick={() => setCastModalOpen(false)} />
+          <div className="relative z-10 flex h-[85vh] w-[520px] max-w-full flex-col overflow-hidden rounded-xl border border-sf-dark-600 bg-sf-dark-900 shadow-2xl">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-sf-dark-700 px-4 py-3">
+              <div>
+                <div className="text-sm font-semibold text-sf-text-primary">Cast library</div>
+                <div className="text-[11px] text-sf-text-muted">
+                  Shared with the main editor's Cast tab — characters, props and locations with their reference images.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCastModalOpen(false)}
+                className="rounded-lg border border-sf-dark-600 p-1.5 text-sf-text-muted transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
+                aria-label="Close Cast library"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <CastPanel isActive />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

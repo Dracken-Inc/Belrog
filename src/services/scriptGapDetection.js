@@ -74,8 +74,13 @@ function flatShotList(scenes) {
   let index = 0
   for (const scene of Array.isArray(scenes) ? scenes : []) {
     for (const shot of Array.isArray(scene?.shots) ? scene.shots : []) {
-      flat.push({ shot, index: shot?.index || index })
       index += 1
+      // Use a running 1-based counter (mirrors flatShotIndex in the plan
+      // builders and the parser's warning shotIndex) instead of shot.index:
+      // music-plan shots ALL carry index:1, and parser shots restart at 1
+      // per scene — both collapse the multi-shot frequency filter and break
+      // prop/location detection.
+      flat.push({ shot, index })
     }
   }
   return flat
@@ -279,7 +284,56 @@ export function detectScriptGaps({ scenes, warnings, cast, library }) {
  * library does NOT already have (matched: 'new' or known-but-unreferenced).
  * Matched-'exact' entries with an assetId are skipped entirely (no gap).
  */
-export function buildStubUpserts({ detection, library }) {
+export function buildStubUpserts({ detection, library, scenes }) {
+  // For character gaps (whose detection description is intentionally empty —
+  // characters are described by their reference image, not script quotes),
+  // seed the stub description from the first keyframe text the character
+  // appears in. Without this, "Generate all" skips every detected character
+  // (needs-description) and the auto-stub flow breaks at exactly the step
+  // the user needs: parse script → stubs → generate references later.
+  const shotKeyframes = []
+  if (Array.isArray(scenes)) {
+    // Running 1-based counter across all shots in flatten order — the same
+    // numbering flatShotList uses for gap.shots, and the same numbering the
+    // plan builders / parser carry in warning.shotIndex (flatShotIndex).
+    // We do NOT trust shot.index: music-plan shots all carry index:1 and
+    // parser shots restart at 1 per scene.
+    let running = 0
+    for (const scene of scenes) {
+      for (const shot of Array.isArray(scene?.shots) ? scene.shots : []) {
+        running += 1
+        shotKeyframes.push({
+          index: running,
+          text: String(shot?.keyframePromptRaw || shot?.imageBeat || shot?.referenceImagePrompt || '').trim(),
+        })
+      }
+    }
+  }
+  const seedDescriptionForCharacter = (gap) => {
+    // Strongest signal first: a keyframe that actually MENTIONS the entity's
+    // name (identity anchor). Then fall back to the first gap shot's keyframe.
+    const key = normalizeKey(gap?.name || '')
+    for (const shotIndex of (Array.isArray(gap?.shots) ? gap.shots : [])) {
+      const kf = shotKeyframes.find((s) => s.index === shotIndex && s.text && key && s.text.toLowerCase().includes(key))
+      if (kf) {
+        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+      }
+    }
+    for (const shotIndex of (Array.isArray(gap?.shots) ? gap.shots : [])) {
+      const kf = shotKeyframes.find((s) => s.index === shotIndex && s.text.length >= 12)
+      if (kf) {
+        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+      }
+    }
+    // No shot-index match — last resort: first keyframe that mentions the name.
+    for (const kf of shotKeyframes) {
+      if (kf.text && key && kf.text.toLowerCase().includes(key)) {
+        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+      }
+    }
+    return ''
+  }
+
   const stubs = []
   for (const gap of detection.gaps) {
     const bucket = gap.kind === 'character' ? library?.characters
@@ -289,11 +343,22 @@ export function buildStubUpserts({ detection, library }) {
       (entry) => normalizeKey(entry?.slug || entry?.name) === gap.slug
     )
     if (existing?.assetId) continue // already has a reference — not a gap
+    // Character detection descriptions are intentionally empty; prop/location
+    // descriptions are the verbatim quoted phrase (often just the name).
+    // Either way the seed is thin, so fill/replace it from the shot keyframe
+    // text — that's what "Generate all" turns into the reference prompt.
+    // A richer verbatim description (longer than the name) is kept as-is,
+    // and existing entries keep their description (upsert merges).
+    const nameLen = (gap.name || '').length
+    const thinDescription = gap.description && gap.description.length <= nameLen + 2
+    const seededDescription = thinDescription
+      ? (seedDescriptionForCharacter(gap) || gap.description)
+      : (gap.description || (gap.kind === 'character' ? seedDescriptionForCharacter(gap) : ''))
     stubs.push({
       kind: gap.kind,
       name: gap.name,
       slug: gap.slug,
-      description: gap.description,
+      description: seededDescription,
       provenance: {
         source: 'director-script',
         scriptVersion: null, // caller stamps from the plan signature

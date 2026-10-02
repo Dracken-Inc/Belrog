@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   User, Box, MapPin, Plus, Trash2, Download, Upload, RefreshCw,
-  Sparkles, Users,
+  Sparkles, Users, Pencil, Save,
 } from 'lucide-react'
 import { useAssetLibraryStore, allLibraryEntries, libraryCounts } from '../../stores/assetLibraryStore'
 import { requestAssetLibraryReference } from '../../services/assetLibraryBridge'
@@ -48,6 +49,20 @@ export default function CastPanel({ isActive = true }) {
   const [form, setForm] = useState({ kind: 'character', name: '', description: '' })
   const [filter, setFilter] = useState('all') // all | character | prop | location
   const [search, setSearch] = useState('')
+  const [selectedId, setSelectedId] = useState(null)
+  const [menu, setMenu] = useState(null) // { entryId, x, y }
+  const menuRef = useRef(null)
+  const listRef = useRef(null)
+
+  // Close the context menu on outside click / Escape
+  useEffect(() => {
+    if (!menu) return
+    const onDown = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setMenu(null) }
+    const onKey = (e) => { if (e.key === 'Escape') setMenu(null) }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [menu])
 
   const counts = useMemo(() => libraryCounts(library), [library])
   const entries = useMemo(() => allLibraryEntries(library), [library])
@@ -169,6 +184,42 @@ export default function CastPanel({ isActive = true }) {
     setNotice({ tone: 'info', text: `Deleted "${entry.name}".` })
   }, [remove, setNotice])
 
+  // ── Per-entry export (a single entry, importable via the same Import) ──
+  const downloadJson = useCallback((text, filename) => {
+    const blob = new Blob([text], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+  }, [])
+
+  const handleExportEntry = useCallback((entry) => {
+    const safe = String(entry?.slug || slug(entry?.name || 'entry')).replace(/[^a-z0-9-]+/g, '-')
+    downloadJson(
+      JSON.stringify({
+        format: 'belrog-asset-library',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        entries: [{
+          id: entry.id,
+          kind: entry._kind,
+          name: entry.name,
+          slug: entry.slug,
+          description: entry.description,
+          assetId: entry.assetId || null,
+          provenance: entry.provenance || null,
+        }],
+      }, null, 2),
+      `belrog-cast-${safe}.json`
+    )
+    setMenu(null)
+    setNotice({ tone: 'success', text: `Exported "${entry?.name}". Import it anywhere with the same Import button.` })
+  }, [downloadJson, setNotice])
+
   const filterTabs = [
     { id: 'all', label: 'All', count: entries.length },
     { id: 'character', label: 'Characters', count: counts.characters },
@@ -273,7 +324,7 @@ export default function CastPanel({ isActive = true }) {
       )}
 
       {/* Entry list */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+      <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
         {visible.length === 0 ? (
           <div className="mt-6 rounded-lg border border-dashed border-sf-dark-600 px-3 py-6 text-center text-[11px] text-sf-text-muted leading-relaxed">
             {search || filter !== 'all'
@@ -284,8 +335,24 @@ export default function CastPanel({ isActive = true }) {
           visible.map((entry) => {
             const Icon = KIND_ICON[entry._kind] || Box
             const refAsset = entry.assetId ? assets.find((a) => a?.id === entry.assetId) : null
+            const selected = selectedId === entry.id
             return (
-              <div key={entry.id} className="flex items-start gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 p-2">
+              <div
+                key={entry.id}
+                data-cast-entry={entry.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedId(selected ? null : entry.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(selected ? null : entry.id) } }}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  const r = listRef.current?.getBoundingClientRect()
+                  setMenu({ entryId: entry.id, x: e.clientX, y: e.clientY, panelLeft: r?.left ?? 0, panelWidth: r?.width ?? 0 })
+                }}
+                className={`flex items-start gap-2 rounded-lg border p-2 transition-colors ${
+                  selected ? 'border-sf-accent bg-sf-accent/10' : 'border-sf-dark-700 bg-sf-dark-800/40 hover:border-sf-dark-500'
+                }`}
+              >
                 {refAsset?.url ? (
                   <img src={refAsset.url} alt="" className="h-12 w-12 shrink-0 rounded object-cover border border-sf-dark-600" />
                 ) : (
@@ -299,19 +366,21 @@ export default function CastPanel({ isActive = true }) {
                       {KIND_LABEL[entry._kind]}
                     </span>
                     <span className="truncate text-[12px] font-medium text-sf-text-primary">{entry.name}</span>
+                    {selected && <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-sf-accent">selected</span>}
                   </div>
                   <input
                     type="text"
                     value={entry.description || ''}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => updateDescription(entry.id, e.target.value)}
-                    placeholder="Write a description — it becomes the prompt…"
+                    placeholder="Write a description — it becomes the prompt… (right-click for more)"
                     className="mt-1 w-full rounded border border-sf-dark-600 bg-sf-dark-900/70 px-1.5 py-0.5 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
                   />
                 </div>
                 <div className="flex shrink-0 flex-col gap-1">
                   <button
                     type="button"
-                    onClick={() => handleGenerate(entry)}
+                    onClick={(e) => { e.stopPropagation(); handleGenerate(entry) }}
                     className="flex items-center gap-1 rounded border border-sf-dark-500 px-1.5 py-1 text-[10px] text-sf-text-secondary hover:text-sf-accent hover:border-sf-accent/50"
                     title={refAsset ? 'Regenerate the reference image' : 'Generate the reference image'}
                   >
@@ -320,7 +389,7 @@ export default function CastPanel({ isActive = true }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDelete(entry)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(entry) }}
                     className="flex items-center justify-center gap-1 rounded border border-sf-dark-500 px-1.5 py-1 text-[10px] text-sf-text-muted hover:text-red-300 hover:border-red-500/40"
                     title="Delete this entry"
                   >
@@ -332,6 +401,69 @@ export default function CastPanel({ isActive = true }) {
           })
         )}
       </div>
+    {/* Right-click context menu (portal — escapes panel clipping) */}
+      {menu && (() => {
+        const entry = entries.find((e) => e.id === menu.entryId)
+        if (!entry) return null
+        const refAsset = entry.assetId ? assets.find((a) => a?.id === entry.assetId) : null
+        // Keep the menu inside the viewport
+        const mw = 184
+        const x = Math.min(menu.x, window.innerWidth - mw - 8)
+        const y = Math.min(menu.y, window.innerHeight - 190 - 8)
+        const items = [
+          {
+            icon: Sparkles,
+            label: refAsset ? 'Regenerate reference' : 'Generate reference',
+            onClick: () => { handleGenerate(entry); setMenu(null) },
+          },
+          {
+            icon: Pencil,
+            label: 'Edit description',
+            onClick: () => {
+              setMenu(null)
+              const el = listRef.current?.querySelector(`[data-cast-entry="${CSS.escape(entry.id)}"] input`)
+              el?.focus()
+            },
+          },
+          {
+            icon: Download,
+            label: 'Export entry',
+            onClick: () => handleExportEntry(entry),
+          },
+          {
+            icon: Trash2,
+            label: 'Delete',
+            danger: true,
+            onClick: () => { setMenu(null); handleDelete(entry) },
+          },
+        ]
+        return createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: 'fixed', left: x, top: y, width: mw, zIndex: 10000 }}
+            className="rounded-lg border border-sf-dark-500 bg-sf-dark-800 py-1 shadow-2xl shadow-black/60"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-2.5 py-1 text-[10px] font-medium text-sf-text-muted border-b border-sf-dark-700">
+              {KIND_LABEL[entry._kind]} — {entry.name}
+            </div>
+            {items.map((it) => (
+              <button
+                key={it.label}
+                type="button"
+                onClick={it.onClick}
+                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] transition-colors ${
+                  it.danger ? 'text-red-300 hover:bg-red-500/15' : 'text-sf-text-secondary hover:bg-sf-dark-700 hover:text-sf-text-primary'
+                }`}
+              >
+                <it.icon className="w-3 h-3" />
+                {it.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )
+      })()}
     </div>
   )
 }
