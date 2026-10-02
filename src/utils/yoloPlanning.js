@@ -913,6 +913,13 @@ export function flattenYoloPlanVariants(plan = []) {
             resolvedArtistAssetIds: Array.isArray(shot?.resolvedArtistAssetIds)
               ? shot.resolvedArtistAssetIds.filter(Boolean).slice(0, 2)
               : [],
+            // 0.4.8: location reference threading. The plan-level slug match
+            // (resolved at parse time) plus the raw directive text, so the
+            // queue can re-resolve against the CURRENT library when the plan
+            // predates a generated location image.
+            resolvedLocationAssetId: String(shot?.resolvedLocationAssetId || '').trim() || null,
+            keyframePromptRaw: String(shot?.keyframePromptRaw || '').trim(),
+            motionPromptRaw: String(shot?.motionPromptRaw || '').trim(),
             nanoBananaReferenceOverride: shot?.nanoBananaReferenceOverrideEnabled
               ? {
                   enabled: true,

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.8 (Belrog 0.4.80) — 2026-10-02
+
+### Locations join the cast: a Locations card in People, location reference images in generation, honest Add buttons
+- **New: Locations section in music Step 2 (People)** — every Cast-library location now gets a row directly under Cast References: name, script slug, reference image, one-click reference-sheet generation, and jump-to-Manage-Cast editing. No more hunting through the manager to see what the video actually uses.
+- **New: "in script" badges** — each location row is checked against every `LOCATION: slug:` directive in the master script AND all alt-pass scripts. Green = this location is really used by shots; gray = it exists but nothing references it. Slug drift (the #1 silent failure) is now visible at a glance.
+- **New: location reference images reach generation.** Previously locations only entered keyframes as text. Now, when a location has a reference image, the keyframe queue resolves each shot's `LOCATION:` slug against the Cast library at queue time (re-scanned per queue, so images generated after the plan was built still apply) and attaches the image: environmental/detail b-roll gets the location image as the primary anchor; performance shots keep the performer's face primary and get the location as the second reference — a location image can never replace a face as identity source.
+- **Fixed: Cast manager "+ Add" looked like a no-op** — the added row now highlights for ~2.5s, and if your active filter or search would hide it, they're auto-reset so the row appears. The click finally shows its result.
+- **Internal:** `flattenYoloPlanVariants` now carries `keyframePromptRaw`, `motionPromptRaw`, and `resolvedLocationAssetId` onto every variant (regression-pinned in C4, test 22); `MusicVideoEasyMode` receives `yoloMusicAltScripts`; C4 suite 22/22.
+
 ## v0.4.7 (Belrog 0.4.70) — 2026-10-02
 
 ### Inline asset directives: the Perchance director-list format is now first-class

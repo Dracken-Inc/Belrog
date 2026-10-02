@@ -8,6 +8,7 @@ import {
   Film,
   Image as ImageIcon,
   Loader2,
+  MapPin,
   Maximize2,
   Music,
   Play,
@@ -36,6 +37,7 @@ import {
 import { BUILTIN_WORKFLOW_PATHS } from '../../config/workflowRegistry'
 import CustomWorkflowSlotCard from './CustomWorkflowSlotCard'
 import { useAssetLibraryStore, allLibraryEntries } from '../../stores/assetLibraryStore'
+import { buildReferencePrompt, referenceNegative } from '../../services/scriptGapDetection'
 import CastPanel from '../panels/CastPanel'
 
 const DRAFT_STORAGE_KEY = 'comfystudio-music-video-easy-mode-draft-v1'
@@ -518,6 +520,9 @@ export default function MusicVideoEasyMode({
   yoloMusicParsedLyrics,
   yoloMusicScript,
   setYoloMusicScript,
+  // 0.4.8: alt passes' scripts feed the used-location scan (a slug declared
+  // only in an alt pass is still "used" — its shots will really generate).
+  yoloMusicAltScripts = [],
   yoloMusicCast,
   yoloMusicResolvedCast,
   assetLibraryGapDetection = null,
@@ -736,12 +741,63 @@ export default function MusicVideoEasyMode({
     () => allLibraryEntries(castLibrary).filter((e) => e._kind === 'character'),
     [castLibrary]
   )
+  // 0.4.8: Cast locations surfaced right in the People step. Locations enter
+  // generation as TEXT (slug-matched description injection); once a location
+  // has a reference image, the keyframe queue also feeds that image to shots
+  // whose LOCATION: directive matches the slug. This card is where both the
+  // slug match and the image are controlled without leaving the step.
+  const castLibraryLocations = useMemo(
+    () => allLibraryEntries(castLibrary)
+      .filter((e) => e._kind === 'location')
+      .sort((a, b) => String(a.slug || a.name || '').localeCompare(String(b.slug || b.name || ''))),
+    [castLibrary]
+  )
+  const locationSlugsInScript = useMemo(() => {
+    const found = new Set()
+    const scripts = [
+      yoloMusicScript,
+      ...(Array.isArray(yoloMusicAltScripts) ? yoloMusicAltScripts.map((a) => a?.script) : []),
+    ]
+    for (const raw of scripts) {
+      const text = String(raw || '')
+      if (!text) continue
+      for (const match of text.matchAll(/\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:/gi)) {
+        found.add(match[1].toLowerCase())
+      }
+    }
+    return found
+  }, [yoloMusicScript, yoloMusicAltScripts])
   const isCastCharacterInMusicCast = useCallback(
     (entry) => (yoloMusicCast || []).some(
       (e) => (e?.slug || '') === entry.slug || (e?.label || '').toLowerCase() === String(entry?.name || '').toLowerCase()
     ),
     [yoloMusicCast]
   )
+  // 0.4.8: queue a location reference sheet (same z-image-turbo job shape the
+  // CastPanel "Gen" button uses — completion binding in GenerateWorkspace
+  // attaches the produced image back to the library entry automatically).
+  const handleGenerateLocationReference = useCallback((entry) => {
+    if (!entry?.id || !queuePeopleWizardJob) return
+    const prompt = buildReferencePrompt({ ...entry, kind: 'location' })
+    if (!prompt) {
+      setPeopleStatus(`"${entry?.name || 'This location'}" has no description yet — add one in Manage Cast, then generate.`)
+      return
+    }
+    queuePeopleWizardJob({
+      workflowId: 'z-image-turbo',
+      prompt,
+      negativePrompt: referenceNegative('location'),
+      assetPrefix: entry.id,
+      peopleWizard: {
+        assetPrefix: entry.id,
+        kind: 'asset-library-reference',
+        assetKind: 'location',
+        assetLibraryEntryId: entry.id,
+        assetName: entry.name,
+      },
+    })
+    setPeopleStatus(`Queued a reference image for "${entry.name || entry.slug}". It lands in this row when it finishes.`)
+  }, [queuePeopleWizardJob])
   const handleAddCastCharacter = useCallback((entry) => {
     const name = String(entry?.name || '').trim()
     if (!name) return
@@ -2942,6 +2998,93 @@ export default function MusicVideoEasyMode({
                     placeholder="Optional: female voice, harsh vocal, guitarist, never sings"
                     className="mt-1 w-full rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs text-sf-text-primary outline-none focus:border-sf-accent"
                   />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 0.4.8: Locations — the missing half of the cast. A location enters
+          generation two ways: its description rides along with every shot
+          whose LOCATION: slug matches (always), and once it has a reference
+          image below, that image anchors those shots' keyframes too. The
+          slug must equal the script's LOCATION: token exactly. */}
+      <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <FieldLabel>Locations</FieldLabel>
+            <div className="mt-1 text-sm font-semibold text-sf-text-primary">
+              {castLibraryLocations.length === 0
+                ? 'No locations in the Cast yet'
+                : `${plural(castLibraryLocations.filter((e) => e.assetId).length, 'location')} with a reference image · ${plural(castLibraryLocations.filter((e) => locationSlugsInScript.has(String(e.slug || '').toLowerCase())).length, 'location')} used by this script`}
+            </div>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-sf-text-muted">
+              Shots declare their location inline (<span className="font-mono">LOCATION: slug: …</span>). When the slug matches a row here, the description rides along with the prompt — and the image below anchors the frame.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCastModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
+            title="Open the Cast manager to add or edit locations"
+          >
+            <Users className="h-4 w-4" />
+            Manage Cast
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {castLibraryLocations.length === 0 && (
+            <div className="rounded-lg border border-dashed border-sf-dark-600 px-3 py-6 text-center text-xs text-sf-text-muted">
+              Locations detected from your director script land here automatically. Add more with Manage Cast (kind: Location).
+            </div>
+          )}
+          {castLibraryLocations.map((entry) => {
+            const entryAsset = imageAssets.find((asset) => asset?.id === entry?.assetId) || null
+            const used = locationSlugsInScript.has(String(entry.slug || '').toLowerCase())
+            return (
+              <div key={entry.id} className="grid gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-950/50 p-3 lg:grid-cols-[1fr_1fr_2fr_auto]">
+                <div className="min-w-0">
+                  <FieldLabel>Name</FieldLabel>
+                  <div className="mt-1 flex items-center gap-2 truncate rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs text-sf-text-primary">
+                    <MapPin className="h-3.5 w-3.5 shrink-0 text-sf-accent" />
+                    <span className="truncate">{entry.name}</span>
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <FieldLabel>Script Slug</FieldLabel>
+                  <div className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 font-mono text-xs text-sf-text-primary" title={used ? 'Used by this script' : 'Not referenced by any LOCATION: line in the script'}>
+                    <span className="truncate">{entry.slug}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${used ? 'bg-emerald-500/15 text-emerald-300' : 'bg-sf-dark-700 text-sf-text-muted'}`}>
+                      {used ? 'in script' : 'unused'}
+                    </span>
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <FieldLabel>Reference</FieldLabel>
+                  <div className="mt-1 truncate rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 text-xs text-sf-text-primary">
+                    {entryAsset?.name || (entry.description ? 'No image yet — description only (text injection)' : 'No image and no description')}
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateLocationReference(entry)}
+                    disabled={!queuePeopleWizardJob}
+                    className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-muted transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    title={entry.description ? 'Generate a location reference image' : 'Add a description first'}
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCastModalOpen(true)}
+                    className="rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-muted transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
+                    title="Edit in Manage Cast"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             )

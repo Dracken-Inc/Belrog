@@ -50,6 +50,11 @@ export default function CastPanel({ isActive = true }) {
   const [form, setForm] = useState({ kind: 'character', name: '', description: '' })
   const [filter, setFilter] = useState('all') // all | character | prop | location
   const [search, setSearch] = useState('')
+  // 0.4.8: "+ Add" feedback — the row the user just added (or merged into)
+  // glows briefly, so the click always has a visible result.
+  const [highlightId, setHighlightId] = useState(null)
+  const highlightTimerRef = useRef(null)
+  useEffect(() => () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current) }, [])
   const [selectedId, setSelectedId] = useState(null)
   const [menu, setMenu] = useState(null) // { entryId, x, y }
   const menuRef = useRef(null)
@@ -84,7 +89,7 @@ export default function CastPanel({ isActive = true }) {
       setNotice({ tone: 'error', text: 'Give the entry a name first (e.g. "Rose", "the rusty gate", "Midnight Pier").' })
       return
     }
-    const { created } = upsert({
+    const { entry, created } = upsert({
       kind: form.kind,
       name,
       slug: slug(name),
@@ -92,9 +97,20 @@ export default function CastPanel({ isActive = true }) {
       provenance: { source: 'manual', scriptVersion: null, shots: [] },
     })
     setForm((p) => ({ ...p, name: '', description: '' }))
+    // The click must be VISIBLE: if the current filter/search would hide the
+    // row the user just added, reset them — otherwise "+ Add" looks broken
+    // (added to the library, invisible in the list). Highlight the row so it
+    // is obvious where it landed.
+    setFilter((prev) => (prev !== 'all' && prev !== form.kind ? 'all' : prev))
+    setSearch((prev) => (prev && !name.toLowerCase().includes(prev.toLowerCase()) ? '' : prev))
+    setHighlightId(entry.id)
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current)
+    highlightTimerRef.current = setTimeout(() => setHighlightId(null), 2600)
     setNotice({
       tone: 'success',
-      text: created ? `Added "${name}" to Cast.` : `"${name}" already existed — its description was kept/merged.`,
+      text: created
+        ? `Added "${name}" to Cast — highlighted below.`
+        : `"${name}" already existed — its description was kept/merged. Its row is highlighted below.`,
     })
   }, [form, upsert, setNotice])
 
@@ -351,7 +367,9 @@ export default function CastPanel({ isActive = true }) {
                   setMenu({ entryId: entry.id, x: e.clientX, y: e.clientY, panelLeft: r?.left ?? 0, panelWidth: r?.width ?? 0 })
                 }}
                 className={`flex items-start gap-2 rounded-lg border p-2 transition-colors ${
-                  selected ? 'border-sf-accent bg-sf-accent/10' : 'border-sf-dark-700 bg-sf-dark-800/40 hover:border-sf-dark-500'
+                  highlightId === entry.id
+                    ? 'border-sf-accent bg-sf-accent/15 ring-1 ring-sf-accent/50'
+                    : selected ? 'border-sf-accent bg-sf-accent/10' : 'border-sf-dark-700 bg-sf-dark-800/40 hover:border-sf-dark-500'
                 }`}
               >
                 {refAsset?.url ? (

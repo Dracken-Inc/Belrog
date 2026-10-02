@@ -22,6 +22,7 @@ import {
   parseStructuredDirectorScript,
   parseAssetLegendLines,
   parseInlineAssetDirectives,
+  flattenYoloPlanVariants,
 } from '../utils/yoloPlanning.js'
 
 const EMPTY_LIB = { characters: [], props: [], locations: [] }
@@ -506,4 +507,28 @@ test('detection: inline directives become authoritative gaps and kill structural
   const slugs = detection.gaps.map((g) => g.slug)
   assert.ok(slugs.includes('neon-phone-booth'), 'inline asset is a gap')
   assert.ok(!slugs.some((s) => /shot|type|continuity|steer|timeline|rules/i.test(s)), `no structural fakes, got ${JSON.stringify(slugs)}`)
+})
+// ── 0.4.8: flatten pass-through for location reference resolution ─────────
+test('flatten: variants carry location/reference fields the queue resolver needs', () => {
+  const plan = [scene([{
+    id: 'S1_SH1',
+    index: 1,
+    imageBeat: 'LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow',
+    videoBeat: 'ONE action: slow zoom on the neon booth',
+    durationSeconds: 4,
+    angles: ['Medium shot'],
+    takesPerAngle: 1,
+    // Plan-level fields the queue reads (0.4.8 location threading).
+    keyframePromptRaw: 'LOCATION: neon-phone-booth: rain-slick street',
+    motionPromptRaw: 'ONE camera move: 35mm, slow zoom',
+    resolvedArtistAssetIds: ['img_a', 'img_b', 'img_c'],
+    resolvedLocationAssetId: 'loc_wide_1',
+  }])]
+  const variants = flattenYoloPlanVariants(plan)
+  assert.equal(variants.length, 1)
+  const v = variants[0]
+  assert.equal(v.resolvedLocationAssetId, 'loc_wide_1', 'planned location id survives flatten')
+  assert.match(v.keyframePromptRaw, /LOCATION: neon-phone-booth/, 'raw keyframe text survives flatten')
+  assert.match(v.motionPromptRaw, /35mm/, 'raw motion text survives flatten')
+  assert.deepEqual(v.resolvedArtistAssetIds, ['img_a', 'img_b'], 'artist ids still capped at 2')
 })

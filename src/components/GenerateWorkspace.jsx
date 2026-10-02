@@ -37,7 +37,7 @@ import useProjectStore from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
 import useGenerationMonitorStore from '../stores/generationMonitorStore'
 import { useFrameForAIStore } from '../stores/frameForAIStore'
-import { useAssetLibraryStore } from '../stores/assetLibraryStore'
+import { useAssetLibraryStore, allLibraryEntries } from '../stores/assetLibraryStore'
 import {
   drainAssetLibraryReferences,
   ASSET_LIBRARY_QUEUE_EVENT,
@@ -1574,6 +1574,14 @@ function buildMusicVideoPlanFromScript(options = {}) {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     return { scenes: [], warnings }
   }
+
+  // 0.4.8: location reference resolution lives in the queue layer
+  // (resolveLocationAssetIdForVariant), which re-scans each variant's raw
+  // LOCATION: directive text against the CURRENT Cast library — images are
+  // usually generated after the plan was built, so queue time is the right
+  // time to resolve. The parser already attaches directive text to
+  // keyframePromptRaw/motionPromptRaw, and flattenYoloPlanVariants carries
+  // those fields onto every variant.
 
   // Detect format on the single lyrics blob. 'srt' / 'lrc' route into the
   // timed path; 'unknown' / 'empty' route into the plain-lyrics path.
@@ -10712,17 +10720,50 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const shouldUseDefaultMusicPerformerReference = (variant) => (
       Boolean(getMusicVariantShotTypeOption(variant)?.needsVocalAlignment)
     )
+    // 0.4.8: location reference resolution at queue time. Prefer the plan's
+    // parse-time match; otherwise re-scan the shot's LOCATION: directive text
+    // against library locations that now have images (image generated AFTER
+    // the plan was built is the common case).
+    const musicLocationRefIndex = new Map()
+    for (const entry of allLibraryEntries(assetLibrary)) {
+      if (entry?._kind === 'location' && entry.assetId
+        && musicImageAssetById.has(String(entry.assetId))) {
+        musicLocationRefIndex.set(String(entry.slug || '').toLowerCase(), String(entry.assetId))
+      }
+    }
+    const LOCATION_QUEUE_TOKEN_SRC = String.raw`\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:`
+    const resolveLocationAssetIdForVariant = (variant) => {
+      if (musicLocationRefIndex.size === 0) return null
+      const planned = String(variant?.resolvedLocationAssetId || '').trim()
+      if (planned && musicImageAssetById.has(planned)) return planned
+      const text = `${variant?.keyframePromptRaw || ''} ${variant?.motionPromptRaw || ''}`
+      if (!text.trim()) return null
+      for (const match of text.matchAll(new RegExp(LOCATION_QUEUE_TOKEN_SRC, 'gi'))) {
+        const assetId = musicLocationRefIndex.get(match[1].toLowerCase())
+        if (assetId) return assetId
+      }
+      return null
+    }
     const resolveQwenMusicStoryboardReferences = (variant) => {
       const resolvedArtistAssetIds = Array.isArray(variant?.resolvedArtistAssetIds)
         ? variant.resolvedArtistAssetIds.filter(Boolean)
         : []
-      const primaryAssetId = findExistingMusicImageAssetId([
+      // 0.4.8: location reference policy. A performer (face) is always the
+      // primary edit base when present — a location image must never replace
+      // a face as the identity source. Location becomes: primary only for
+      // shots with no performer (b_roll/establishing — the shot the image
+      // actually describes), or the second reference alongside a performer.
+      const locationAssetId = resolveLocationAssetIdForVariant(variant)
+      const performerPrimary = findExistingMusicImageAssetId([
         ...resolvedArtistAssetIds,
         ...(shouldUseDefaultMusicPerformerReference(variant) ? [defaultMusicReferenceAssetId] : []),
       ])
-      const secondaryAssetId = findExistingMusicImageAssetId(
+      const primaryAssetId = performerPrimary || locationAssetId
+      const secondaryPerformer = findExistingMusicImageAssetId(
         resolvedArtistAssetIds.filter((assetId) => assetId !== primaryAssetId)
       )
+      const secondaryAssetId = secondaryPerformer
+        || (performerPrimary && locationAssetId ? locationAssetId : null)
       return { primaryAssetId, secondaryAssetId }
     }
     let variantsForJobs = variantsToQueue
@@ -17952,6 +17993,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     setYoloMusicLyrics={setYoloMusicLyrics}
                     yoloMusicParsedLyrics={yoloMusicParsedLyrics}
                     yoloMusicScript={yoloMusicScript}
+                    yoloMusicAltScripts={yoloMusicAltScripts}
                     setYoloMusicScript={setYoloMusicScript}
                     yoloMusicCast={yoloMusicCast}
                     yoloMusicResolvedCast={yoloMusicResolvedCast}
