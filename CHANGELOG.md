@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.4.6 (Belrog 0.4.60) — 2026-10-02
+
+### Hotfix: structural labels can never be detected as assets again
+- **Fixed: `Shot type: b_roll`, `CONTINUITY RULES`, and `DIRECTOR STEER` surfacing as three fake locations with nonsense slugs.** They leaked through the heuristic when echoed INSIDE keyframe/motion text (the 0.4.5 fix only blocked them as standalone lines and inside the legend path). All LTX structural labels (`shot type`, `continuity rules`, `director steer`, `camera`, `keyframe`, `motion`, `b roll/b-roll/b_roll`) are now in the structural-marker blocklist at every detection layer.
+- Regression test added (structural labels in shot text → zero entities). Suite: 19/19.
+
 ## v0.4.5 (Belrog 0.4.50) — 2026-10-02
 
 ### Asset Legend: your script now names the Cast, not the guesser

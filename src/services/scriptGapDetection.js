@@ -35,6 +35,11 @@ const SECTION_MARKERS = new Set([
   'verse', 'verse 1', 'verse 2', 'verse 3', 'chorus', 'pre-chorus', 'bridge',
   'intro', 'outro', 'hook', 'drop', 'breakdown', 'interlude', 'solo', 'reprise',
   'final chorus', 'build', 'fade out', 'spoken word', 'rap',
+  // LTX director-script structural labels — never entities, even when they
+  // echo inside keyframe/motion text (0.4.5 hotfix: these leaked as fake
+  // locations with nonsense slugs).
+  'shot type', 'continuity rules', 'director steer', 'camera', 'keyframe',
+  'motion', 'b roll', 'b-roll', 'b_roll',
 ])
 
 /** Words that look like entities but describe generic things. */

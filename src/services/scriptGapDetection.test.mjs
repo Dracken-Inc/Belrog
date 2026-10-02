@@ -294,6 +294,34 @@ test('library: import rejects non-library JSON gracefully', () => {
   assert.match(notJson.error, /JSON/i)
 })
 
+test('detection: LTX structural labels in shot text never become locations', () => {
+  const script = [
+    'Scene 1: The Cell',
+    'Shot 1: Wide',
+    'Camera: 35mm slow push',
+    'Artist: n/a',
+    'Keyframe: A candle flickers in the damp cell',
+    'Motion: slow breath',
+    'Shot 2: Close',
+    'Camera: 50mm static',
+    'Artist: n/a',
+    'Keyframe: Hands clasped, DIRECTOR STEER framing under CONTINUITY RULES light',
+    'Motion: flicker',
+    'Shot 3: Detail',
+    'Camera: 85mm static',
+    'Artist: n/a',
+    'Keyframe: Shot type: b_roll insert, CONTINUITY RULES slate, DIRECTOR STEER margin note',
+    'Motion: dust motes',
+  ].join('\n')
+  const parsed = parseStructuredDirectorScript(script)
+  const detection = detectScriptGaps({ scenes: parsed, warnings: [], cast: [], library: EMPTY_LIB })
+  const names = [...detection.locations, ...detection.props].map((e) => e.name.toLowerCase()).join('|')
+  for (const marker of ['shot type', 'continuity rules', 'director steer', 'b roll', 'b_roll']) {
+    assert.ok(!names.includes(marker), `structural label "${marker}" must never be detected as an entity`)
+  }
+  assert.equal(detection.locations.length + detection.props.length, 0, 'zero entities from a script that only contains structural labels')
+})
+
 // ---------------------------------------------------------------------------
 // 0.4.5 — asset legend (authoritative asset declarations at the top of the
 // LTX director script: "TYPE: slug — description" and "slug : desc , TYPE").
