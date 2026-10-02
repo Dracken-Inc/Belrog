@@ -163,6 +163,11 @@ function collectPropLocationGaps({ scenes, library, kind, isLocationHint }) {
         const key = normalizeKey(cleaned)
         if (!key) return
         if (SECTION_MARKERS.has(key) || SECTION_MARKERS.has(cleaned.toLowerCase())) return
+        // Structural label with a value glued on: `Shot type: b_roll` normalizes
+        // to "shot-type-b-roll", which misses the "shot type" blocklist entry.
+        // Check the phrase head before the first colon too.
+        const headPhrase = cleaned.toLowerCase().split(':')[0].trim()
+        if (headPhrase && SECTION_MARKERS.has(headPhrase)) return
         const words = cleaned.toLowerCase().split(/\s+/)
         const stopwordHead = STOPWORD_HEADS.has(words[0])
         if (stopwordHead && source === 'quote') {

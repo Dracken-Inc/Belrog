@@ -66,6 +66,8 @@ import {
   buildYoloPlanFromScript,
   flattenYoloPlanVariants,
   parseStructuredDirectorScript,
+  parseAssetLegendLines,
+  parseInlineAssetDirectives,
 } from '../utils/yoloPlanning'
 import { extractVisualStyleNotes } from '../utils/musicVisualStyle'
 import { checkWorkflowDependencies, buildMissingDependencyClipboardText } from '../services/workflowDependencies'
@@ -2344,7 +2346,12 @@ function buildMusicVideoLLMPrompt(options = {}) {
   } else if (lyrics.trim()) {
     sections.push(`Lyrics (plain text — no timings provided, estimate evenly across the song):\n${lyrics.trim()}`)
   } else {
-    sections.push('Lyrics: (none provided — feel free to write an instrumental-style script; use "Shot type: b_roll" for every shot).')
+    // NOTE: this used to be one string that swallowed the timeline-rules
+    // bullet ("The script timeline MUST cover...") straight into the paren —
+    // the LLM then echoed the mangled fragment into every shot's
+    // Keyframe/Motion prompt, which is how brief text polluted reference
+    // prompts (v0.4.61). Keep this line self-contained.
+    sections.push('Lyrics: (none provided — write an instrumental-style video with "Shot type: b_roll" for every shot; pace the beats evenly across the full song duration and use the timeline rules below for total coverage.)')
   }
 
   // Universal format rules — these apply regardless of pass.
@@ -2379,6 +2386,8 @@ function buildMusicVideoLLMPrompt(options = {}) {
     '  8. "Motion prompt:" describes what moves in the clip: lip-sync/performance action, character movement, camera movement, atmosphere, and any story action. Include camera motion and character blocking/emotion, not just a static description.',
     '  9. Keep wardrobe, location, and lighting consistent across adjacent shots unless the script deliberately calls for a hard cut.',
     '  10. Do NOT invent lyrics. If the song is instrumental at a given moment, omit Lyric moment for that shot.',
+    '  11. Before the first shot, output an "ASSET LEGEND:" block: one line per character, location, and prop in the video, formatted "slug : one-sentence visual description , TYPE" (TYPE = CHARACTER | LOCATION | PROP). Use the EXACT same slug in "Artist:" lines. One slug = one asset. Never put instructions, rules, or structural labels ("Shot type:", "CONTINUITY RULES", "DIRECTOR STEER") in the legend.',
+    '  12. Never echo any brief instructions, rules, or bullet text inside "Keyframe prompt:" or "Motion prompt:". Write only visible scene content. A shot description containing the words "script", "brief", "rule", or "must" is a failure.',
   ]
   sections.push(rules.join('\n'))
 
@@ -6579,13 +6588,26 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // The authoritative asset legend is re-derived from the active target's raw
   // script text (persisted for master + alt) so it survives reloads and is
   // present even on a freshly-built plan that hasn't been re-parsed yet.
+  // Asset declarations for the active target's raw script text. Two sources,
+  // merged legend-first:
+  //   1. ASSET LEGEND block (0.4.5): explicit TYPE: slug — desc lines before
+  //      the first shot.
+  //   2. Inline directives (0.4.7): LOCATION:/PROP:/CHARACTER: slug: desc
+  //      declarations inside keyframe prompts — the format the Perchance
+  //      LTX director list has always emitted.
+  // The 0.4.5 legend call was silently broken (missing import, swallowed by
+  // the catch); verified fixed here.
   const yoloMusicActiveLegend = useMemo(() => {
     if (!isYoloMusicMode) return []
     const raw = yoloMusicActiveScriptId
       ? String(yoloMusicAltScripts.find((e) => e.id === yoloMusicActiveScriptId)?.script || '')
       : String(yoloMusicScript || '')
     try {
-      return parseAssetLegendLines(raw)
+      const legend = parseAssetLegendLines(raw)
+      const inline = parseInlineAssetDirectives(raw)
+      if (inline.length === 0) return legend
+      const seen = new Set(legend.map((e) => `${e.kind}:${e.slug}`))
+      return [...legend, ...inline.filter((e) => !seen.has(`${e.kind}:${e.slug}`))]
     } catch {
       return []
     }

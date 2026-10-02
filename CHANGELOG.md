@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.7 (Belrog 0.4.70) — 2026-10-02
+
+### Inline asset directives: the Perchance director-list format is now first-class
+- **Fixed: scripts in the LTX director-list format (inline `LOCATION: slug: description` directives inside keyframe prompts, no legend block) detected nothing or garbage.** Parsing 0.3.32 and 0.4.2 against the same script produced byte-identical contaminated keyframes — the format was never supported. `parseInlineAssetDirectives()` now extracts LOCATION/PROP/CHARACTER declarations from anywhere in the script, dedupes by kind+slug, strips director-list boilerplate ("establish architecture, spatial relationships…"), and skips negative directives ("CHARACTER: no person visible"). Detection treats them as authoritative, same as the 0.4.5 legend.
+- **Fixed: the 0.4.5 legend path was silently dead** — `parseAssetLegendLines` was called in `GenerateWorkspace.jsx` without being imported, and the surrounding `try/catch` swallowed the ReferenceError, so legend detection never ran. Import added and verified.
+- **Fixed: brief-echo contamination in every keyframe/motion prompt.** The no-lyrics branch of the LLM brief closed its parenthesis early, letting the next instruction ("The script timeline MUST cover…") bleed into shot text — the LLM faithfully echoed it into all 50 shots. Bug present since v0.1.11 (April 2026); the first instrumental brief exposed it. Brief line made self-contained, format rules 11+12 added (ASSET LEGEND required, brief-echo forbidden), and `stripBriefEcho()` scrubs echoed blocks at parse time with brief-only vocabulary anchors (scene prose like "must show on screen" untouched). Verified: your 50-shot test script, 200 contaminations → 0.
+- **Fixed: `"Shot type: b_roll"` quoted inside shot text normalized to `shot-type-b-roll` and escaped the structural-label blocklist** (the 0.4.6 check compared the whole candidate, not the label before the colon). Candidate-head check added.
+- Tests: 21/21 (2 new: inline directive extraction + structural-fake suppression end-to-end). RIFE 43/45 unchanged (pre-existing host-ffmpeg sha256 gate). Build green.
+
 ## v0.4.6 (Belrog 0.4.60) — 2026-10-02
 
 ### Hotfix: structural labels can never be detected as assets again

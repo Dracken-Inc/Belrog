@@ -105,6 +105,39 @@ function parseShotHeadingLine(line = '') {
   return { isHeading: true, label }
 }
 
+// LLMs sometimes ECHO fragments of the instruction brief back inside shot
+// fields: "LIGHTING: script; use "Shot type: ..." for every shot). - The
+// script timeline MUST cover ... - Lyrics/SRT lines are timing anch" blocks
+// spliced into the middle of the scene prose. That meta text has never
+// belonged in a reference-image prompt. Anchor on brief-only vocabulary
+// ("for every shot", "script timeline", "timing anch", "STYLE/TAGS") —
+// never on scene words like "must" — so real scene copy survives untouched.
+const BRIEF_ECHO_RULES = [
+  // trailing echo block from "script;" to the end of the line
+  [/\bscript;\s*use\s+["“]Shot type:[\s\S]*$/i, ''],
+  // mid-line echo sentence "script; use "Shot type: ..." for every shot)."
+  [/script;\s*use\s+["“]Shot type:[^"”]*["”]\s+for every shot\s*\)?\.?\s*[-]?\s*/gi, ''],
+  // ". - The script timeline MUST cover ... (239.1s)." — embedded bullet
+  [/\s*\.?\s*-\s*The\s+script\s+timeline\s+MUST\s+cover[^)]*\)\s*\.?\s*/gi, ''],
+  // " - Lyrics/SRT lines are timing anch(ors...)" truncated echo runs
+  [/\s*-?\s*Lyrics\/SRT\s+lines\s+are\s+timing\s+\w{1,10}\s*(?:[;,]\s*[^\n]{0,80})?/gi, ''],
+  // "Look per STYLE/TAGS:" / "brief's STYLE/TAGS" lead-ins (drop to line end)
+  [/\s*(?:Look per|matching the)\s*(?:brief's\s+)?STYLE\/TAGS\s*[:：]?[^\n]*/gi, ''],
+  [/\bbrief's\s+STYLE\/TAGS\b/gi, 'the style notes'],
+  [/\bbrief names them together\b/gi, 'the scene calls for them'],
+  // crumbs left behind
+  [/\(\s*\)/g, ' '],
+  [/\s\.\s*\./g, ' .'],
+  [/-\s*-\s*/g, '-'],
+]
+
+function stripBriefEcho(text = '') {
+  let value = String(text || '')
+  if (!/script;|script\s+timeline\s+MUST|timing\s+anch|STYLE\/TAGS|brief names/i.test(value)) return value
+  for (const [pattern, replacement] of BRIEF_ECHO_RULES) value = value.replace(pattern, replacement)
+  return value.replace(/\(\s*\)/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.;])/g, '$1').trim()
+}
+
 function matchStructuredFieldLine(line = '') {
   const text = String(line || '').trim()
   for (const entry of STRUCTURED_FIELD_PATTERNS) {
@@ -169,6 +202,56 @@ function parseLegendLine(line) {
     if (kind) return { kind, body: `${b[1]} — ${b[2]}` }
   }
   return null
+}
+
+// ── Inline asset directives (0.4.7) ────────────────────────────────────────
+// The Perchance LTX director list declares assets INLINE inside keyframe
+// prompts instead of a legend block:
+//   LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow, ...
+//   PROP: old-cassette: worn cassette tape with green-glowing label
+//   CHARACTER: rose: the lead singer, silver braid
+// Each occurrence is an authoritative declaration. Scan the WHOLE script (not
+// just pre-scene lines), dedupe by kind+slug, and keep the first description.
+// "CHARACTER: no person visible; ..." is a negative directive — skip it.
+const INLINE_ASSET_BOUNDARY = String.raw`\s+(?:CHARACTERS?|LOCATIONS?|PROPS?|LIGHTING|STYLE|EMOTION|ACTION-FROZEN|CAMERA|SHOT|CONTINUITY|DIRECTOR)\s*:|\.\s|$`
+const INLINE_LOCATION_RE = new RegExp(String.raw`\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
+const INLINE_PROP_RE = new RegExp(String.raw`\bPROPS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
+const INLINE_CHARACTER_RE = new RegExp(String.raw`\bCHARACTERS?\s*:\s*([a-zA-Z][a-zA-Z0-9 _-]{0,40}?)\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
+// Boilerplate the director list appends to every location description.
+const INLINE_BOILERPLATE_RE = /\b(?:establish architecture[, ]+spatial relationships[, ]+surfaces[, ]+atmosphere and environmental depth before any subject|no bodies, faces, silhouettes or human-shaped forms)[\s\S]*/gi
+
+function cleanInlineDescription(text = '') {
+  return String(text || '')
+    .replace(INLINE_BOILERPLATE_RE, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[,;:\s]+$/g, '')
+    .trim()
+    .slice(0, 300)
+}
+
+function slugifyAssetToken(token = '') {
+  return String(token || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+export function parseInlineAssetDirectives(script = '') {
+  const text = String(script || '')
+  if (!/\b(?:LOCATIONS?|PROPS?|CHARACTERS?)\s*:/i.test(text)) return []
+  const found = []
+  const seen = new Set()
+  const push = (kind, slugRaw, descRaw) => {
+    const slug = slugifyAssetToken(slugRaw)
+    if (!slug || slug.length > 60) return
+    const key = `${kind}:${slug}`
+    if (seen.has(key)) return
+    const description = cleanInlineDescription(descRaw)
+    if (!description || /^(?:no|not|none|nothing)\b/i.test(description)) return
+    seen.add(key)
+    found.push({ kind, slug, name: slug, description, source: 'inline-directive' })
+  }
+  for (const match of text.matchAll(INLINE_LOCATION_RE)) push('location', match[1], match[2])
+  for (const match of text.matchAll(INLINE_PROP_RE)) push('prop', match[1], match[2])
+  for (const match of text.matchAll(INLINE_CHARACTER_RE)) push('character', match[1], match[2])
+  return found
 }
 
 export function parseAssetLegendLines(script = '') {
@@ -451,8 +534,8 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       startAtRaw: sanitizeSnippet(currentShot.startAt || '', 32),
       // Keyframe + motion prompts stay full-length for editing and generation.
       // Cards and compact labels should truncate visually in the UI only.
-      keyframePromptRaw: compactPromptText(currentShot.keyframePrompt || ''),
-      motionPromptRaw: compactPromptText(currentShot.motionPrompt || ''),
+      keyframePromptRaw: stripBriefEcho(compactPromptText(currentShot.keyframePrompt || '')),
+      motionPromptRaw: stripBriefEcho(compactPromptText(currentShot.motionPrompt || '')),
       locked: false,
     })
 

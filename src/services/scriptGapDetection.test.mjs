@@ -21,6 +21,7 @@ import {
 import {
   parseStructuredDirectorScript,
   parseAssetLegendLines,
+  parseInlineAssetDirectives,
 } from '../utils/yoloPlanning.js'
 
 const EMPTY_LIB = { characters: [], props: [], locations: [] }
@@ -459,4 +460,50 @@ test('library: updateIdentity renames name + slug, collision-safe', () => {
   // Not-found and empty-slug guards.
   assert.equal(updateEntryIdentity(lib, 'chr_doesnotexist', { name: 'x' }).ok, false)
   assert.equal(updateEntryIdentity(lib, lib.locations[0].id, { slug: '   ' }).ok, false)
+})
+
+// ── 0.4.7: inline asset directives (Perchance LTX director-list format) ──
+
+test('parser: inline LOCATION/PROP/CHARACTER directives inside keyframes are extracted', () => {
+  const script = [
+    'Shot 1: A',
+    'Start at: 0:00',
+    'Keyframe prompt: LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow, wet asphalt, establish architecture, spatial relationships, surfaces, atmosphere and environmental depth before any subject. CHARACTER: no person visible; empty environment only.',
+    'Length: 3',
+    '',
+    'Shot 2: B',
+    'Start at: 0:03',
+    'Keyframe prompt: PROP: old-cassette: worn cassette tape with green-glowing label. CHARACTER: rose: the lead singer, silver braid, kind eyes.',
+    'Length: 3',
+  ].join('\n')
+  const assets = parseInlineAssetDirectives(script)
+  const bySlug = new Map(assets.map((a) => [`${a.kind}:${a.slug}`, a]))
+  assert.ok(bySlug.has('location:neon-phone-booth'), 'inline location found')
+  assert.equal(bySlug.get('location:neon-phone-booth').description, 'rain-slick street, sodium-lamp glow, wet asphalt', 'boilerplate stripped')
+  assert.ok(bySlug.has('prop:old-cassette'), 'inline prop found')
+  assert.ok(bySlug.has('character:rose'), 'inline character found')
+  assert.ok(!assets.some((a) => a.kind === 'character' && /no person/i.test(a.description)), 'negative CHARACTER directive skipped')
+})
+
+test('detection: inline directives become authoritative gaps and kill structural fakes', () => {
+  const script = [
+    'Shot 1: A',
+    'Start at: 0:00',
+    'Shot type: b_roll',
+    'Keyframe prompt: LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow, wet asphalt. LIGHTING: script; use "Shot type: b_roll" for every shot). - The script timeline MUST cover the full audio duration.',
+    'Length: 3',
+    '',
+    'Shot 2: B',
+    'Start at: 0:03',
+    'Shot type: b_roll',
+    'Keyframe prompt: LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow, wet asphalt. STYLE: cinematic photoreal keyframe matching the brief\'s STYLE/TAGS.',
+    'Length: 3',
+  ].join('\n')
+  const scenes = parseStructuredDirectorScript(script)
+  const assets = parseInlineAssetDirectives(script)
+  assert.equal(assets.length, 1, 'deduped to one asset across two shots')
+  const detection = detectScriptGaps({ scenes, warnings: [], cast: [], library: { characters: [], props: [], locations: [] }, assets })
+  const slugs = detection.gaps.map((g) => g.slug)
+  assert.ok(slugs.includes('neon-phone-booth'), 'inline asset is a gap')
+  assert.ok(!slugs.some((s) => /shot|type|continuity|steer|timeline|rules/i.test(s)), `no structural fakes, got ${JSON.stringify(slugs)}`)
 })
