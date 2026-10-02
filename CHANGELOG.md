@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.5 (Belrog 0.4.50) — 2026-10-02
+
+### Asset Legend: your script now names the Cast, not the guesser
+- **Asset legend at the top of the director script is now authoritative.** Declare `slug : description , TYPE` (or `TYPE: slug — description`) lines before the first scene; parsing creates Cast entries with those EXACT names + descriptions. Heuristic guessing remains only as a fallback for undeclared assets, and any guess whose slug matches a declared asset is dropped.
+- **Fixed: section headers (`Shot type: b_roll`, `CONTINUITY RULES`, `DIRECTOR STEER`) could appear as detected locations.** Legend lines are excluded from scene/shot text at parse, structural markers are filtered at detection, and a declared PROP/LOCATION can no longer survive as a wrong-kind heuristic entry.
+- **Editable Name + Slug on every Cast entry** — display name free-form, slug collision-safe ("slug already taken" surfaces a clear notice). Description editing carried over from 0.4.4.
+- **LTX director prompt template** now instructs the AI to emit the asset legend before the first scene, with slug-must-match-`Artist:`-token rules. `docs/RELEASE_NOTES_0.4.5.md` carries the paste-ready Perchance fragment for the director list.
+- Tests: 18/18 (4 new: both legend forms, authoritative naming + zero header leakage, legend-suppresses-heuristic both directions, collision-safe rename). RIFE 43/44 unchanged (1 pre-existing host-ffmpeg).
+
 ## v0.4.4 (Belrog 0.4.40) — 2026-10-01
 
 ### Auto-stub: parsing a director script fills Cast by itself

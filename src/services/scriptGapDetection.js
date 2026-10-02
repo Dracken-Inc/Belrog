@@ -248,35 +248,162 @@ function descriptionFromQuotes(quotes = []) {
  * @returns {{ gaps: Array, characters: Array, props: Array, locations: Array,
  *            stats: {scenes, shots, characterGaps, propLocationGaps} }}
  */
-export function detectScriptGaps({ scenes, warnings, cast, library }) {
+export function detectScriptGaps({ scenes, warnings, cast, library, assets }) {
   const flat = flatShotList(scenes)
   const characterGaps = collectCharacterGaps({ warnings, cast, library })
   const propGaps = collectPropLocationGaps({ scenes, library, kind: 'prop' })
   const locationGaps = collectPropLocationGaps({ scenes, library, kind: 'location' })
+  // Authoritative asset legend (0.4.5): the script may declare its cast/props/
+  // locations explicitly at the top (CHARACTER:/LOCATION:/PROP: lines). These
+  // override heuristic guesses — verbatim slug + description, and their slugs
+  // suppress same-named heuristic candidates.
+  const legend = Array.isArray(assets) ? assets
+    : (scenes && Array.isArray(scenes.assets) ? scenes.assets : [])
+  const legendByKind = { character: [], prop: [], location: [] }
+  for (const entry of legend) {
+    if (entry?.kind && legendByKind[entry.kind]) legendByKind[entry.kind].push(entry)
+  }
+  const characterGapsWithLegend = applyLegendToCharacterGaps({ characterGaps, legend: legendByKind.character, cast, library })
+  const legendPropGaps = collectLegendGaps({ legend: legendByKind.prop, library, kind: 'prop' })
+  const legendLocationGaps = collectLegendGaps({ legend: legendByKind.location, library, kind: 'location' })
+  const legendKeys = new Set(legend.flatMap((e) => [e?.slug ? normalizeKey(e.slug) : ''] + (e?.name ? [normalizeKey(e.name)] : [])).filter(Boolean))
+  // Slug -> declared kind, for cross-kind promotion in the merge below.
+  // Note: slug keys only — an asset's display NAME may collide with a
+  // different asset's slug (e.g. a location "greenhouse" and a prop named
+  // "Greenhouse Gases"), and only real slug identity counts as declared.
+  const legendKindMap = new Map()
+  for (const entry of legend) {
+    const k = entry?.slug ? normalizeKey(entry.slug) : ''
+    if (k && entry?.kind) legendKindMap.set(k, entry.kind)
+  }
+  function legendKindFor(slug) { return legendKindMap.get(slug) }
+  function legendDescriptionFor(slug) {
+    const entry = legend.find((e) => normalizeKey(e?.slug || e?.name || '') === slug)
+    return String(entry?.description || '').trim()
+  }
+  function legendDeclaredKind(slug) { return legendKindMap.get(slug) }
 
   // De-dup across prop/location: the same phrase can't be both — prefer the
   // location reading when coverage text mentions place words, else prop.
   const seenKeys = new Map()
   const merged = []
   for (const gap of [...locationGaps, ...propGaps]) {
+    if (legendKeys.has(gap.slug)) continue // author declared it — legend wins
+    if (seenKeys.has(gap.slug)) {
+      // A heuristic phrase can surface as BOTH a prop and a location
+      // ("lantern" in 3+ shots) while the author declared it as exactly one
+      // kind. When that declared kind is the one we skipped first, promote
+      // the surviving entry — otherwise the legend entry is lost and the
+      // wrong kind remains.
+      const kindFix = legendKindFor(gap.slug, legendByKind)
+      if (kindFix && seenKeys.get(gap.slug) !== kindFix) {
+        seenKeys.set(gap.slug, kindFix)
+        merged.push({ ...gap, kind: kindFix, description: legendDescriptionFor(gap.slug, legendByKind) || gap.description, legend: true })
+      }
+      continue
+    }
+    seenKeys.set(gap.slug, gap.kind)
+    merged.push(gap)
+  }
+  // Add legend entries for this kind, but only if they don't already have
+  // an asset reference in the library (same rule as heuristic gaps).
+  for (const gap of [...legendLocationGaps, ...legendPropGaps]) {
     if (seenKeys.has(gap.slug)) continue
+    // Legend entries are authoritative — they always win over heuristic,
+    // even if the library already knows about the entity.
     seenKeys.set(gap.slug, gap.kind)
     merged.push(gap)
   }
 
-  const all = [...characterGaps, ...merged]
+  const all = [...characterGapsWithLegend, ...merged]
   return {
     gaps: all,
-    characters: characterGaps,
+    characters: characterGapsWithLegend,
     props: merged.filter((gap) => gap.kind === 'prop'),
     locations: merged.filter((gap) => gap.kind === 'location'),
+    legend: legend,
     stats: {
       scenes: (Array.isArray(scenes) ? scenes : []).length,
       shots: flat.length,
-      characterGaps: characterGaps.length,
+      characterGaps: characterGapsWithLegend.length,
       propLocationGaps: merged.length,
+      legend: legend.length,
     },
   }
+}
+
+/**
+ * Legend gaps are authoritative: the author declared slug + description, so
+ * matched is 'exact' (known) or 'new' (unknown) — never 'fuzzy'. An entry
+ * that already has a reference in the library is not a gap (same rule as
+ * the heuristic path). Character legend entries also upgrade same-slug
+ * heuristic character gaps (unresolved Artist:) with the legend's verbatim
+ * description and exact match status.
+ */
+function collectLegendGaps({ legend, library, kind }) {
+  const gaps = []
+  for (const entry of Array.isArray(legend) ? legend : []) {
+    if (entry?.kind !== kind) continue
+    const key = normalizeKey(entry?.slug || entry?.name || '')
+    if (!key) continue
+    const bucket = kind === 'prop' ? library?.props : library?.locations
+    const existing = (Array.isArray(bucket) ? bucket : []).find(
+      (e) => normalizeKey(e?.slug || e?.name) === key
+    )
+    if (existing?.assetId) continue // already has a reference — not a gap
+    gaps.push({
+      kind,
+      name: String(entry?.name || entry?.slug || '').trim(),
+      slug: key,
+      description: String(entry?.description || '').trim(),
+      shots: [],
+      evidence: [{ shot: null, quote: `Declared in asset legend (${kind})` }],
+      matched: existing ? 'exact' : 'new',
+      legend: true,
+    })
+  }
+  return gaps
+}
+
+function applyLegendToCharacterGaps({ characterGaps, legend, cast, library }) {
+  const upgraded = characterGaps.map((gap) => {
+    const match = (Array.isArray(legend) ? legend : []).find(
+      (e) => normalizeKey(e?.slug || e?.name || '') === gap.slug
+    )
+    if (!match) return gap
+    return {
+      ...gap,
+      description: String(match?.description || '').trim() || gap.description,
+      matched: 'exact', // author declared this cast member explicitly
+      legend: true,
+    }
+  })
+  // Legend cast members NOT surfaced by any unresolved-artist warning (already
+  // resolved, or never mentioned in a shot): still gaps if reference-less.
+  const seen = new Set(upgraded.map((g) => g.slug))
+  for (const entry of Array.isArray(legend) ? legend : []) {
+    const key = normalizeKey(entry?.slug || entry?.name || '')
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    const inCast = (Array.isArray(cast) ? cast : []).some(
+      (c) => normalizeKey(c?.slug || c?.label) === key
+    )
+    if (inCast) continue // resolved cast member — the script routes shots to it
+    const existing = (Array.isArray(library?.characters) ? library.characters : [])
+      .find((e) => normalizeKey(e?.slug || e?.name) === key)
+    if (existing?.assetId) continue // already has a reference — not a gap
+    upgraded.push({
+      kind: 'character',
+      name: String(entry?.name || entry?.slug || '').trim(),
+      slug: key,
+      description: String(entry?.description || '').trim(),
+      shots: [],
+      evidence: [{ shot: null, quote: 'Declared in asset legend (character)' }],
+      matched: existing ? 'exact' : 'new',
+      legend: true,
+    })
+  }
+  return upgraded
 }
 
 /**

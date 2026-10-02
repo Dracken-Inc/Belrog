@@ -39,6 +39,7 @@ export default function CastPanel({ isActive = true }) {
     setNotice,
     upsert,
     updateDescription,
+    updateIdentity,
     remove,
     addMany,
     export: doExport,
@@ -365,8 +366,36 @@ export default function CastPanel({ isActive = true }) {
                     <span className={`rounded px-1 py-0.5 text-[9px] leading-none ${KIND_TONE[entry._kind]}`}>
                       {KIND_LABEL[entry._kind]}
                     </span>
-                    <span className="truncate text-[12px] font-medium text-sf-text-primary">{entry.name}</span>
-                    {selected && <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-sf-accent">selected</span>}
+                    {selected && <span className="shrink-0 text-[9px] uppercase tracking-wide text-sf-accent">selected</span>}
+                  </div>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={entry.name || ''}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        const result = updateIdentity(entry.id, { name: e.target.value })
+                        if (!result?.ok) setNotice({ tone: 'error', text: `Could not rename: ${result?.reason || 'unknown error'}.` })
+                      }}
+                      placeholder="Name (display)"
+                      title="Display name — free-form, what shows in lists"
+                      className="w-0 flex-1 rounded border border-sf-dark-600 bg-sf-dark-900/70 px-1.5 py-0.5 text-[11px] font-medium text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                    />
+                    <span className="shrink-0 text-[9px] text-sf-text-muted">slug</span>
+                    <input
+                      type="text"
+                      value={entry.slug || ''}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        const result = updateIdentity(entry.id, { slug: e.target.value })
+                        if (!result?.ok) setNotice({ tone: 'error', text: result?.reason === 'slug-taken'
+                          ? `"${String(e.target.value).trim()}" is already used by another ${KIND_LABEL[entry._kind]?.toLowerCase() || 'entry'} — pick a different slug.`
+                          : `Could not set slug: ${result?.reason || 'unknown error'}.` })
+                      }}
+                      placeholder="slug"
+                      title="Script slug — the script's Artist: / legend uses this to route shots. Must be unique per type."
+                      className="w-0 flex-1 rounded border border-sf-dark-600 bg-sf-dark-900/70 px-1.5 py-0.5 font-mono text-[10px] text-sf-text-secondary focus:outline-none focus:border-sf-accent"
+                    />
                   </div>
                   <input
                     type="text"

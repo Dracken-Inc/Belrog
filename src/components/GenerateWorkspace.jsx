@@ -2904,6 +2904,15 @@ function buildMusicVideoPassFormatSpec(pass, coveragePlan = null) {
   return [
     'Required output format (verbatim — one block per shot):',
     '',
+    'First, list an ASSET LEGEND — every character, location, and prop the',
+    'video uses, one line each, BEFORE the first scene. Belrog parses these',
+    'into the Cast library automatically (exact name + description):',
+    '  CHARACTER: rose — the lead singer, silver braid, kind eyes',
+    '  LOCATION: neon-phone-booth — rain-slick street, warm sodium-lamp glow',
+    '  PROP: old-cassette — a worn cassette tape, green-glowing label',
+    'Use short lowercase slugs (the exact word used in "Artist:" lines).',
+    'Cast aliases work too: CAST: rose — ...',
+    '',
     ...coverageHeader,
     'Scene 1: Opening',
     '',
@@ -6567,6 +6576,21 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // Asset-library gap detection for the ACTIVE target's plan (C4). Recomputes
   // only when the plan, its warnings, the cast, or the library change — the
   // detection itself is a cheap pure function over shot text.
+  // The authoritative asset legend is re-derived from the active target's raw
+  // script text (persisted for master + alt) so it survives reloads and is
+  // present even on a freshly-built plan that hasn't been re-parsed yet.
+  const yoloMusicActiveLegend = useMemo(() => {
+    if (!isYoloMusicMode) return []
+    const raw = yoloMusicActiveScriptId
+      ? String(yoloMusicAltScripts.find((e) => e.id === yoloMusicActiveScriptId)?.script || '')
+      : String(yoloMusicScript || '')
+    try {
+      return parseAssetLegendLines(raw)
+    } catch {
+      return []
+    }
+  }, [isYoloMusicMode, yoloMusicActiveScriptId, yoloMusicAltScripts, yoloMusicScript])
+
   const assetLibraryGapDetection = useMemo(() => {
     try {
       if (!isYoloMusicMode) return null
@@ -6580,11 +6604,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         warnings: yoloMusicActiveTargetPlanWarnings,
         cast,
         library: assetLibrary,
+        assets: yoloMusicActiveLegend,
       })
     } catch {
       return null
     }
-  }, [isYoloMusicMode, yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicActiveScriptId, yoloMusicResolvedCast, assetLibrary])
+  }, [isYoloMusicMode, yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicActiveScriptId, yoloMusicResolvedCast, assetLibrary, yoloMusicActiveLegend])
 
   // ── Auto-stub detected gaps into the Cast library (0.4.4) ─────────────
   // When a director-script plan is (re)built, every detected character/prop/

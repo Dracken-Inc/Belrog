@@ -247,6 +247,39 @@ export function setEntryAssetId(library, id, assetId) {
   return { library: next, changed: true }
 }
 
+/**
+ * Rename an entry (display name and/or slug). Collision-safe: if the new slug
+ * is already taken by a DIFFERENT entry in the same kind bucket, the rename is
+ * rejected with { ok:false, reason } so the UI can tell the user. The entry's
+ * own current slug always passes (a no-op). Display name is free-form.
+ */
+export function updateEntryIdentity(library, id, { name, slug } = {}) {
+  const found = findLibraryEntry(library, id)
+  if (!found) return { ok: false, reason: 'not-found' }
+  const kindKey = found.kind === 'character' ? 'characters' : found.kind === 'prop' ? 'props' : 'locations'
+  const bucket = library[kindKey] || []
+  const normalized = String(slug ?? found.slug ?? '').trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  if (slug != null && !normalized) return { ok: false, reason: 'empty-slug' }
+  const collides = slug != null && normalized !== String(found.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    ? bucket.some((entry) => entry?.id !== id
+        && String(entry?.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === normalized)
+    : false
+  if (collides) return { ok: false, reason: 'slug-taken' }
+  const next = {
+    ...library,
+    [kindKey]: bucket.map((entry) => (entry?.id === id
+      ? {
+          ...entry,
+          ...(name != null ? { name: String(name).trim() || entry.name, label: String(name).trim() || entry.label } : {}),
+          ...(slug != null && normalized ? { slug: normalized } : {}),
+          updatedAt: new Date().toISOString(),
+        }
+      : entry)),
+  }
+  return { ok: true, library: next }
+}
+
 /** Remove an entry by id. Manual-only — gap detection never deletes. */
 export function removeLibraryEntry(library, id) {
   const kindKey = 'characters'

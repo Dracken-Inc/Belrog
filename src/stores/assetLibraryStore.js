@@ -6,6 +6,7 @@ import {
   setEntryAssetId,
   removeLibraryEntry,
   findLibraryEntry,
+  updateEntryIdentity,
   importLibraryJson,
   serializeLibraryForExport,
   makeEntityId,
@@ -86,6 +87,18 @@ export const useAssetLibraryStore = create((set, get) => ({
     }
     get().commit(next)
     return true
+  },
+
+  /**
+   * Rename an entry (display name and/or slug). Collision-safe — a slug
+   * already owned by another entry of the same kind is rejected.
+   * Returns { ok, reason? } so the UI can surface "slug already taken".
+   */
+  updateIdentity(id, { name, slug } = {}) {
+    const result = updateEntryIdentity(get().library, id, { name, slug })
+    if (!result.ok) return result
+    get().commit(result.library)
+    return { ok: true }
   },
 
   /** Wire (or clear) a generated reference image to an entry. */

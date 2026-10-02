@@ -118,6 +118,90 @@ function matchStructuredFieldLine(line = '') {
   return null
 }
 
+// ── Asset legend (explicit declarations, 0.4.5) ────────────────────────────
+// The director script may open with an asset legend BEFORE the first scene:
+//   CHARACTER: rose — the lead singer, silver braid, kind eyes
+//   LOCATION:  monastery-cell — cavernous damp cell, charcoal-grey walls
+//   PROP:      old-cassette — a worn cassette tape, green-glowing label
+// `CAST:` is an alias for `CHARACTER:`. Format: `TYPE: slug — description`
+// (an em/en dash, or a colon, separates slug from description; a missing
+// description is fine — the entry still declares slug + type). The legend is
+// the AUTHORITATIVE asset list: the gap detector prefers these over its
+// heuristic guesses, and the plan builder passes them through so auto-stub
+// creates correctly-named, correctly-described Cast entries.
+const LEGEND_TYPE_ALIASES = Object.freeze({
+  character: 'character',
+  cast: 'character',
+  person: 'character',
+  people: 'character',
+  prop: 'prop',
+  props: 'prop',
+  object: 'prop',
+  location: 'location',
+  locations: 'location',
+  place: 'location',
+  scene: 'location',
+})
+
+const LEGEND_LINE_RE = /^(character|cast|person|people|prop|props|object|location|locations|place)\s*:\s*(.+)$/i
+// Trailing-type form (the Perchance LTX director list uses this):
+//   slug : description , TYPE
+// e.g. `monastery-cell : cavernous damp cell with charcoal-grey walls , LOCATION`
+const LEGEND_LINE_TRAILING_RE = /^([a-zA-Z0-9][a-zA-Z0-9 _-]{0,40})\s*:\s*(.+?)\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i
+
+function legendTypeFor(typeWord) {
+  return LEGEND_TYPE_ALIASES[String(typeWord || '').toLowerCase()]
+}
+
+function parseLegendLine(line) {
+  const text = String(line || '').trim()
+  if (!text) return null
+  // Form A: TYPE: slug — description
+  const a = text.match(LEGEND_LINE_RE)
+  if (a) {
+    const kind = legendTypeFor(a[1])
+    if (kind) return { kind, body: a[2] }
+  }
+  // Form B: slug : description , TYPE
+  const b = text.match(LEGEND_LINE_TRAILING_RE)
+  if (b) {
+    const kind = legendTypeFor(b[3])
+    if (kind) return { kind, body: `${b[1]} — ${b[2]}` }
+  }
+  return null
+}
+
+export function parseAssetLegendLines(script = '') {
+  // Only lines BEFORE the first scene heading belong to the legend; anything
+  // after the first Scene/Shot block is normal script text (and stays so).
+  const assets = []
+  const seenSlugs = new Set()
+  for (const rawLine of String(script || '').replace(/\r\n/g, '\n').split('\n')) {
+    const line = String(rawLine || '').trim()
+    if (!line) continue
+    if (parseSceneHeadingLine(line).isHeading || /^shot\s*\d+/i.test(line)) break
+    const parsedLine = parseLegendLine(line)
+    if (!parsedLine) continue
+    const kind = parsedLine.kind
+    const body = String(parsedLine.body || '').trim()
+    // slug — description  (dash forms)   |   slug: description  (colon form)
+    const parts = body.split(/\s+(?:—|–|---|-)\s+|\s*:\s+/).map((p) => p.trim()).filter(Boolean)
+    const slug = String(parts[0] || '').trim().replace(/["']/g, '')
+    if (!slug || slug.length > 60) continue
+    // Strip a redundant trailing ", TYPE" when the line carried the type
+    // twice (both prefix and suffix forms) so it never lands in the
+    // description.
+    const description = parts.slice(1).join(' ').trim()
+      .replace(/\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i, '')
+      .trim().slice(0, 300)
+    const slugKey = slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    if (!slugKey || seenSlugs.has(slugKey)) continue
+    seenSlugs.add(slugKey)
+    assets.push({ kind, slug: slugKey, name: slug, description, source: 'asset-legend' })
+  }
+  return assets
+}
+
 function splitScriptIntoScenes(script = '') {
   const normalized = String(script || '').replace(/\r\n/g, '\n').trim()
   if (!normalized) return []
@@ -443,7 +527,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       currentScene = {
         label: sceneHeading.label,
         coverageType: coverageContext?.coverageType || '',
-        coverageLabel: coverageContext?.coverageLabel || coverageContext?.label || '',
+        coverageLabel: coverageContext?.coverageLabel || '',
         coverageSectionIndex: coverageContext?.index || null,
         coverageSectionLabel: coverageContext?.label || '',
         rawLines: [line],
@@ -452,6 +536,13 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       }
       continue
     }
+
+        // Asset-legend lines (both forms: "TYPE: slug — description" and
+    // "slug : description , TYPE") BEFORE the first scene/shot are
+    // declarations, not scene content. Skip them here so they don't pollute
+    // scene context / shot text (the legend itself is read separately by
+    // parseAssetLegendLines).
+    if (!currentScene && !currentShot && parseLegendLine(line)) continue
 
     const structuredField = matchStructuredFieldLine(line)
     if (
@@ -542,6 +633,10 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
   flushScene()
 
   if (!sawStructuredField || scenes.length === 0) return null
+  // The asset legend is an array property on the scenes array (the parser's
+  // return shape is pinned by tests as a bare Array of scenes). Empty scripts
+  // still get an empty legend so downstream code can rely on `parsed.assets`.
+  scenes.assets = parseAssetLegendLines(normalized)
   return scenes
 }
 

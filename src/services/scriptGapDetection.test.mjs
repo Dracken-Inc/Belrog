@@ -16,8 +16,12 @@ import {
   setEntryAssetId,
   importLibraryJson,
   findLibraryEntry,
+  updateEntryIdentity,
 } from './assetLibraryStore.js'
-import { parseStructuredDirectorScript } from '../utils/yoloPlanning.js'
+import {
+  parseStructuredDirectorScript,
+  parseAssetLegendLines,
+} from '../utils/yoloPlanning.js'
 
 const EMPTY_LIB = { characters: [], props: [], locations: [] }
 
@@ -288,4 +292,143 @@ test('library: import rejects non-library JSON gracefully', () => {
   const notJson = importLibraryJson('definitely not json', EMPTY_LIB)
   assert.equal(notJson.ok, false)
   assert.match(notJson.error, /JSON/i)
+})
+
+// ---------------------------------------------------------------------------
+// 0.4.5 — asset legend (authoritative asset declarations at the top of the
+// LTX director script: "TYPE: slug — description" and "slug : desc , TYPE").
+// ---------------------------------------------------------------------------
+
+test('legend: parser reads both line forms before the first scene only', () => {
+  const script = [
+    'CHARACTER: rose — the lead singer, silver braid, kind eyes',
+    'LOCATION: pier : midnight pier with fog and sodium lamps , LOCATION',
+    'PROP: old-cassette : worn cassette, green label , PROP',
+    'CAST: bruno — the abbot, woolen robe',
+    'Shot type: b_roll',
+    '',
+    'Scene 1: Test',
+    'Shot 1: Wide',
+    'Artist: rose',
+    'Keyframe: Rose stands on the pier',
+    'Motion: wind',
+    'Shot 2: Close',
+    'Artist: bruno',
+    'Keyframe: Bruno holds the old-cassette on the pier',
+    'Motion: still',
+  ].join('\n')
+
+  const assets = parseAssetLegendLines(script)
+  assert.equal(assets.length, 4, 'all four legend lines parsed (two forms, CAST alias)')
+  const rose = assets.find((a) => a.slug === 'rose')
+  assert.equal(rose.kind, 'character')
+  assert.match(rose.description, /silver braid/, 'description verbatim from legend')
+  const pier = assets.find((a) => a.slug === 'pier')
+  assert.equal(pier.kind, 'location')
+  assert.ok(!/LOCATION/.test(pier.description), 'trailing ", LOCATION" stripped from description')
+  assert.match(pier.description, /sodium lamps/)
+  // Legend lines after the first scene are NOT legend (normal script text).
+  const script2 = 'Scene 1: T\nShot 1: Wide\nArtist: rose\nKeyframe: x\nMotion: y\nCHARACTER: late — not a legend line'
+  assert.equal(parseAssetLegendLines(script2).length, 0, 'post-scene CHARACTER: lines are not legend')
+  // Parser return shape stays a bare scenes Array with .assets attached.
+  const parsed = parseStructuredDirectorScript(script)
+  assert.ok(Array.isArray(parsed), 'parser still returns a scenes array')
+  assert.equal(parsed.assets.length, 4, 'parsed.assets carries the legend')
+  assert.equal(parsed.length, 1, 'legend lines are not parsed as a scene')
+})
+
+test('detection: legend is authoritative — no section-header leakage, verbatim names', () => {
+  const script = [
+    'CHARACTER: rose — lead singer, silver braid',
+    'LOCATION: pier : midnight pier with fog , LOCATION',
+    'Shot type: b_roll',
+    'CONTINUITY RULES',
+    'DIRECTOR STEER',
+    '',
+    'Scene 1: Test',
+    'Shot 1: Wide',
+    'Artist: rose',
+    'Keyframe: Rose stands on the midnight pier under CONTINUITY RULES lighting',
+    'Motion: wind',
+    'Shot 2: Close',
+    'Artist: rose',
+    'Keyframe: Rose\u2019s hands on the midnight pier, DIRECTOR STEER framing',
+    'Motion: still',
+  ].join('\n')
+  const parsed = parseStructuredDirectorScript(script)
+  const detection = detectScriptGaps({ scenes: parsed, warnings: [], cast: [], library: EMPTY_LIB, assets: parsed.assets })
+
+  // The three fake "locations" from the earlier bug must not appear.
+  const locNames = detection.locations.map((l) => l.name).join('|').toLowerCase()
+  assert.ok(!locNames.includes('shot type'), 'no "shot type" leak')
+  assert.ok(!locNames.includes('continuity rules'), 'no CONTINUITY RULES leak')
+  assert.ok(!locNames.includes('director steer'), 'no DIRECTOR STEER leak')
+  const pier = detection.locations.find((l) => l.slug === 'pier')
+  assert.ok(pier, 'pier detected via legend')
+  assert.equal(pier.legend, true, 'pier flagged as legend-sourced')
+  assert.match(pier.description, /fog/, 'legend description is verbatim, name relates to description')
+  const stubs = buildStubUpserts({ detection, library: EMPTY_LIB, scenes: parsed })
+  const pierStub = stubs.find((s) => s.slug === 'pier')
+  assert.match(pierStub.description, /midnight pier/, 'stub seeded from legend description')
+  const roseStub = stubs.find((s) => s.slug === 'rose')
+  assert.match(roseStub.description, /silver braid/, 'character stub seeded from legend (Generate-all can queue)')
+})
+
+test('detection: legend entry suppresses the same-slug heuristic guess', () => {
+  // Quoted "lantern" in shot text is a heuristic candidate (quoted-phrase
+  // path); the legend declares the same slug — the legend entry must win
+  // and the heuristic must not produce a duplicate.
+  const script = [
+    'PROP: lantern : iron lantern with cracked glass , PROP',
+    '',
+    'Scene 1: Test',
+    'Shot 1: Wide',
+    'Artist: n/a',
+    'Keyframe: A "lantern" glows on the table while the other "lantern" flickers',
+    'Motion: flame',
+    'Shot 2: Close',
+    'Artist: n/a',
+    'Keyframe: The "lantern" cracked glass rattles on the table',
+    'Motion: wind',
+    'Shot 3: Detail',
+    'Artist: n/a',
+    'Keyframe: Close-up of the "lantern" glass, green label',
+    'Motion: flame flicker',
+  ].join('\n')
+  const parsed = parseStructuredDirectorScript(script)
+  const detection = detectScriptGaps({ scenes: parsed, warnings: [], cast: [], library: EMPTY_LIB, assets: parsed.assets })
+  const lanterns = detection.props.filter((p) => p.slug === 'lantern')
+  assert.equal(lanterns.length, 1, 'legend + heuristic for same slug collapse to one entry')
+  assert.equal(lanterns[0].legend, true, 'the surviving entry is the legend one')
+  assert.match(lanterns[0].description, /iron lantern/, 'legend description wins, not the shot-text quote')
+  // Without the legend, the heuristic still finds it (fallback retained).
+  // The cross-kind de-dup prefers the location reading, so accept either.
+  const detectionNoLegend = detectScriptGaps({ scenes: parsed, warnings: [], cast: [], library: EMPTY_LIB, assets: [] })
+  assert.ok([...detectionNoLegend.props, ...detectionNoLegend.locations].some((p) => p.slug === 'lantern'), 'heuristic fallback still finds the quoted phrase without a legend')
+})
+
+test('library: updateIdentity renames name + slug, collision-safe', () => {
+  const lib0 = EMPTY_LIB
+  let lib = upsertLibraryEntry(lib0, { kind: 'location', slug: 'pier', name: 'pier', description: 'fog' }).library
+  lib = upsertLibraryEntry(lib, { kind: 'location', slug: 'docks', name: 'docks', description: 'salt' }).library
+
+  // Display-name rename is free-form.
+  let r = updateEntryIdentity(lib, lib.locations[0].id, { name: 'The Midnight Pier' })
+  assert.equal(r.ok, true, 'name rename accepted')
+  lib = r.library
+  assert.equal(lib.locations.find((e) => e.slug === 'pier').name, 'The Midnight Pier')
+
+  // Free slug rename works.
+  r = updateEntryIdentity(lib, lib.locations[1].id, { slug: 'harbor' })
+  assert.equal(r.ok, true, 'free slug rename accepted')
+  lib = r.library
+  assert.ok(lib.locations.some((e) => e.slug === 'harbor'))
+
+  // Collision: docks\u2192pier (taken by the first entry).
+  r = updateEntryIdentity(lib, lib.locations.find((e) => e.slug === 'harbor').id, { slug: 'pier' })
+  assert.equal(r.ok, false, 'colliding slug rejected')
+  assert.equal(r.reason, 'slug-taken')
+  // Not-found and empty-slug guards.
+  assert.equal(updateEntryIdentity(lib, 'chr_doesnotexist', { name: 'x' }).ok, false)
+  assert.equal(updateEntryIdentity(lib, lib.locations[0].id, { slug: '   ' }).ok, false)
 })
