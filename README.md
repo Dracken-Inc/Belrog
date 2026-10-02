@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 <div align="center">
 
 # Belrog
@@ -318,4 +318,4 @@ Versions released before this license change remain available under the license 
 =======
 # Belrog
 Fork of Velorn
->>>>>>> 0d81e1aed1711fe7fd14211633dc2f93e445a402
+
