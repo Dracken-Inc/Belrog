@@ -4,6 +4,8 @@
 #  Run after shutting the agent down:
 #     /home/henlafon/belrog-src/scripts/oneshot/smoke-all.sh
 #
+#  IMPORTANT: run THIS script alone. Do not paste 'docker start qwen38-flash'
+#  in the same block — it wakes vLLM while the chain is rendering.
 #  Steps: stage audio -> check vLLM stopped (Henry stops it) -> launch -> watch
 #         bar until done/fail -> complete report saved to REPORT.txt
 # ═══════════════════════════════════════════════════════════════════════
@@ -108,6 +110,9 @@ while :; do
     DONE2=$(ls "$OUTV"/${CHAIN}_clip_*.mp4 2>/dev/null | wc -l); DONE2=${DONE2:-0}
     [ $DONE2 -ge 3 ] && break
     FAIL="runner exited with only $DONE2/3 clips"; break; fi
+  if [ -z "$FAIL" ] && [ -z "${VLLM_WARNED:-}" ] && docker ps --format "{{.Names}}" 2>/dev/null | grep -qx qwen38-flash; then
+    VLLM_WARNED=1; say "  ⚠ vLLM (qwen38-flash) came back up mid-run — H3 memory pressure returns"
+  fi
   sleep 20
 done
 echo
@@ -116,7 +121,7 @@ echo
 {
   echo "════════ ONE-SHOT H3 SMOKE — COMPLETE REPORT $(date -Is) ════════"
   echo "chain: $CHAIN   run dir: $RUNDIR"
-  echo "outcome: ${FAIL:+FAIL — $FAIL}${FAIL:-complete (or clips present)}"
+  echo "outcome: $(if [ -n "$FAIL" ]; then echo "FAIL — $FAIL"; else echo 'COMPLETE — 3 clips on disk'; fi)"
   echo
   echo "--- clips on disk ---"
   if ls "$OUTV"/${CHAIN}_clip_*.mp4 >/dev/null 2>&1; then ls -lh "$OUTV"/${CHAIN}_clip_*.mp4; else echo "  (none)"; fi
