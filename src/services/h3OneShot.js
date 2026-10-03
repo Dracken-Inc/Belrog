@@ -23,7 +23,7 @@ export const H3_ONESHOT_WORKFLOW_ID = 'h3-oneshot'
 export const H3_CHAIN_ADDON_REPO =
   'https://github.com/Ltamann/ComfyUI-H3-Motion-Context-Auto-Chain-addon'
 
-// H3 latent grid: every model call must be 17g+5 pixel frames @ 24 fps.
+// H3 latent grid: each model call must be 17g+8 pixel frames @ 24 fps (ceil((req+5)/17) blocks — README example: 20s chains at 512f).
 export const H3_FRAME_BLOCK = 17
 export const H3_LENGTH_OFFSET = 5
 export const H3_FPS = 24
@@ -37,10 +37,10 @@ export const H3_VIDEO_VAE = 'minimax_h3_video_vae_fp16.safetensors'
 export const H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
 export const H3_TEXT_ENCODER = 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors'
 
-/** Snap seconds to the next-longest legal H3 clip length (17g+5 frames @ fps). */
+/** Snap seconds to the next-longest legal H3 clip length (17g+8 frames @ fps). */
 export function h3ClipFrames(seconds, fps = H3_FPS) {
   const requested = Math.max(1, Math.round(Number(seconds) * fps))
-  const g = Math.max(1, Math.ceil((requested - H3_LENGTH_OFFSET) / H3_FRAME_BLOCK))
+  const g = Math.max(1, Math.ceil((requested + H3_LENGTH_OFFSET) / H3_FRAME_BLOCK))
   return g * H3_FRAME_BLOCK + H3_LENGTH_OFFSET
 }
 
@@ -57,6 +57,16 @@ export function h3ClipCount(totalSeconds, chunkSeconds, fps = H3_FPS) {
   return 1 + Math.ceil((total - first) / chunk)
 }
 
+/** Parse "0:20" / "20" / "1:05.5" into seconds (null when absent/unparseable). */
+export function parseStartAtSeconds(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return null
+  const m = /^(\d+):([0-5]?\d)(?:\.(\d+))?$/.exec(s)
+  if (m) return Number(m[1]) * 60 + Number(m[2]) + Number('0.' + (m[3] || '0'))
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
 /**
  * Compile a director script into chain prompts.
  * Accepts the parseStructuredDirectorScript scenes array (shots with
@@ -68,7 +78,10 @@ export function compileScriptToClips(scriptInput, options = {}) {
   const scenes = Array.isArray(scriptInput)
     ? scriptInput
     : parseStructuredDirectorScript(String(scriptInput || ''), {
-        maxShotDurationSeconds: options.maxShotDurationSeconds ?? 15,
+        // ONE-SHOT override: H3 clips run to the chain chunk size, so shot
+        // Length is not clamped to the music path's 15s ceiling — the grid
+        // snap in h3ClipFrames owns the final length.
+        maxShotDurationSeconds: options.maxShotDurationSeconds ?? 600,
       })
   const shots = []
   for (const scene of Array.isArray(scenes) ? scenes : []) {
@@ -81,7 +94,9 @@ export function compileScriptToClips(scriptInput, options = {}) {
   const clips = []
   let clipIndex = 0
   for (const shot of shots) {
-    const startSec = Number.isFinite(shot.audioStart) ? shot.audioStart : null
+    // Parser carries Start-at as raw text (startAtRaw); audioStart only exists
+    // after the music planner runs, which this standalone path skips.
+    const startSec = parseStartAtSeconds(shot.startAtRaw) ?? (Number.isFinite(shot.audioStart) ? shot.audioStart : null)
     const lenSec = Number(shot.durationSeconds) || 0
     if (startSec == null) warnings.push(`shot ${shot.index}: no Start at — sequencing by order`)
     if (lenSec < 3.5) warnings.push(`shot ${shot.index}: ${lenSec}s below 3.5s minimum`)

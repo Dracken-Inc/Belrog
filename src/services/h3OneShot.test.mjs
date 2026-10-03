@@ -30,9 +30,9 @@ test('clip lengths land on the 17g+5 grid', () => {
 })
 
 test('clip count: 1 clip fits clip1 delivery, longer splits', () => {
-  // Legal clip = 17g+5 frames; clip 1 delivers chunk+5 frames of the timeline.
+  // Legal clip = 17g+5 frames; clip 1 delivers that many timeline frames.
   assert.equal(h3ClipCount(10, 20), 1)
-  assert.equal(h3ClipCount(20.2, 20), 1)
+  assert.equal(h3ClipCount(20.04, 20), 1)
   assert.equal(h3ClipCount(40, 20), 2)
   assert.equal(h3ClipCount(60, 20), 3)
   assert.equal(h3ClipCount(80, 20), 4)
@@ -66,6 +66,21 @@ test('compile: clips are grid-aligned, numbered, [N]-block text emitted', () => 
   assert.match(clipPrompts, /^\[1\]/m)
   assert.match(clipPrompts, /^\[2\]/m)
   assert.ok(warnings.every((w) => typeof w === 'string'))
+})
+
+test('compile: Start-at honored, Length not clamped to music-path 15s', () => {
+  const script = [
+    'Shot 1: A', 'Start at: 0:20', 'Length: 20',
+    'Keyframe prompt: a thing happens.', 'Motion prompt: slow pan',
+  ].join('\n')
+  const { clips } = compileScriptToClips(script)
+  assert.equal(clips[0].startSec, 20, 'start-at parsed from raw text')
+  // 20s -> ceil((480+5)/17)=29 blocks -> 17*29+8 = 498 frames.
+  // (Legal lengths are 17g+8 — matches README's 512-frame/20s-chain example.)
+  assert.equal(clips[0].frames, 498, '20s -> grid (no 15s clamp)')
+  const noStart = compileScriptToClips('Shot 1: A\nLength: 6\nKeyframe prompt: x')
+  assert.equal(noStart.clips[0].startSec, null)
+  assert.ok(noStart.warnings.some((w) => /Start at/.test(w)))
 })
 
 test('compile: empty script warns instead of throwing', () => {
