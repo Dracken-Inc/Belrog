@@ -27,6 +27,7 @@
  *   { kind, name, slug, description (verbatim mentions, deduped), shots: number[],
  *     matched: 'exact' | 'fuzzy' | 'new', evidence: [{ shot, quote }] }
  */
+import { auditAssetLegend } from '../utils/yoloPlanning.js'
 
 export const GAP_KINDS = Object.freeze({ character: 'character', prop: 'prop', location: 'location' })
 
@@ -276,9 +277,21 @@ export function detectScriptGaps({ scenes, warnings, cast, library, assets }) {
   // suppress same-named heuristic candidates.
   const legend = Array.isArray(assets) ? assets
     : (scenes && Array.isArray(scenes.assets) ? scenes.assets : [])
+  // Contract audit (0.4.8.3): duplicates / wrong-type slugs / missing prefixes
+  // are surfaced as issues — loud in the UI, NEVER auto-repaired.
+  const legendIssues = auditAssetLegend(legend)
   const legendByKind = { character: [], prop: [], location: [] }
+  // Dedup by slug per kind (first declaration wins) for generation; the
+  // duplicate itself stays visible via legendIssues above.
+  const legendDedupKeys = new Set()
   for (const entry of legend) {
-    if (entry?.kind && legendByKind[entry.kind]) legendByKind[entry.kind].push(entry)
+    if (!entry?.kind || !legendByKind[entry.kind]) continue
+    const key = entry?.slug ? normalizeKey(entry.slug) : ''
+    if (key) {
+      if (legendDedupKeys.has(`${entry.kind}:${key}`)) continue
+      legendDedupKeys.add(`${entry.kind}:${key}`)
+    }
+    legendByKind[entry.kind].push(entry)
   }
   const characterGapsWithLegend = applyLegendToCharacterGaps({ characterGaps, legend: legendByKind.character, cast, library })
   const legendPropGaps = collectLegendGaps({ legend: legendByKind.prop, library, kind: 'prop' })
@@ -339,12 +352,16 @@ export function detectScriptGaps({ scenes, warnings, cast, library, assets }) {
     props: merged.filter((gap) => gap.kind === 'prop'),
     locations: merged.filter((gap) => gap.kind === 'location'),
     legend: legend,
+    // Contract violations in the declared legend (duplicates, wrong cast
+    // type for a prefixed slug, missing prefixes). Empty when clean.
+    legendIssues,
     stats: {
       scenes: (Array.isArray(scenes) ? scenes : []).length,
       shots: flat.length,
       characterGaps: characterGapsWithLegend.length,
       propLocationGaps: merged.length,
       legend: legend.length,
+      legendIssues: legendIssues.filter((i) => i.severity === 'error').length,
     },
   }
 }

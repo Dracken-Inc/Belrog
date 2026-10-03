@@ -19233,6 +19233,22 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                           </div>
                         )}
 
+                        {/* Legend contract violations — never auto-repaired, always shown (0.4.8.3) */}
+                        {assetLibraryGapDetection && (assetLibraryGapDetection.legendIssues?.length || 0) > 0 && (
+                          <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+                            <div className="text-[11px] font-semibold text-amber-300">
+                              Script legend problems ({assetLibraryGapDetection.legendIssues.length}) — fix in the script, Cast keeps both versions until you do
+                            </div>
+                            <ul className="mt-1 space-y-0.5">
+                              {assetLibraryGapDetection.legendIssues.slice(0, 6).map((issue, idx) => (
+                                <li key={idx} className={`text-[11px] ${issue.severity === 'error' ? 'text-amber-200' : 'text-sf-text-secondary'}`}>
+                                  {issue.severity === 'error' ? '⛔' : '⚠'} {issue.message}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
                         {(() => {
                           const allEntries = [
                             ...assetLibrary.characters.map((e) => ({ ...e, _kind: 'character' })),

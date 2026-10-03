@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.83 (Belrog 0.4.83 — hotfix 0.4.8.3) — 2026-10-03
+
+### Adversarial testing: the suite now proves it catches BAD scripts, not just good ones
+- **New: legend contract auditor.** A declared legend is now validated instead of silently cleaned — duplicate slugs, the same slug declared under two cast types, missing `location_`/`prop_` prefixes, and duplicate human names all produce visible problems with severity + message. Nothing is auto-repaired; the script (Director Suite) is the place to fix it.
+- **New: legend problems banner in Cast Manager.** Any contract violation from the current script shows as an amber banner in the detection panel (⛔ error / ⚠ warning), so bad scripts are loud instead of quietly guessing a winner.
+- **Changed: duplicate legend lines are kept in the parse and deduped at detection.** Previously the parser silently dropped the second `location_dpf` — the effect looked correct but nothing ever caught it. Now generation stays single-entry while the duplicate is reported.
+- **New: mutation battery (`legendMutation.test.mjs`, 11 tests).** The golden fixture gets poisoned with 7 violation classes at randomized legend positions across 200 seeded runs; every poisoning must be caught — 100% catch rate, no tolerance. Includes a red-team meta-test: with the auditor stubbed to always-pass, the battery fails 10/11 (proven by running it), so the suite cannot pass vacuously.
+- **Internal:** C4 24/24 + mutation battery 11/11.
+
 ## v0.4.82 (Belrog 0.4.82 — hotfix 0.4.8.2) — 2026-10-03
 
 ### The Director Suite golden fixture is now law — and it caught one last leak on our side

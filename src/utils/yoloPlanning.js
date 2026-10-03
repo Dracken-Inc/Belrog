@@ -255,11 +255,89 @@ export function parseInlineAssetDirectives(script = '') {
   return found
 }
 
+/**
+ * Legend contract audit (0.4.8.3 hardening): validates a parsed legend
+ * against the format-directive contract instead of silently picking winners.
+ * Returns an issues list — each { severity, kind, slug?, name?, message } —
+ * covering exactly the failure classes Henry called out:
+ *   - duplicate slug (same slug declared twice, same or different kind)
+ *   - duplicate name (two assets with the same human name)
+ *   - name/slug kind mismatch (slug says location_ but type says PROP, etc.)
+ *   - prefix violations on location_/prop_ slugs
+ * A clean legend returns []. Callers (detection + UI) surface these loudly;
+ * they must NEVER be auto-resolved by renaming or re-typing.
+ */
+export function auditAssetLegend(assets = []) {
+  const issues = []
+  const bySlug = new Map()
+  const byName = new Map()
+  for (const entry of Array.isArray(assets) ? assets : []) {
+    if (!entry?.kind) continue
+    const slug = String(entry.slug || '').toLowerCase()
+    const name = String(entry.name || '').trim().toLowerCase()
+    if (slug) {
+      const prev = bySlug.get(slug)
+      if (prev) {
+        issues.push({
+          severity: 'error',
+          kind: 'duplicate-slug',
+          slug,
+          message: prev.kind === entry.kind
+            ? `Slug "${slug}" declared twice as ${prev.kind.toUpperCase()} (names "${prev.name}" and "${entry.name}") — one slug must mean one asset.`
+            : `Slug "${slug}" declared as BOTH ${prev.kind.toUpperCase()} and ${entry.kind.toUpperCase()} — a slug may only be one kind.`,
+        })
+      } else {
+        bySlug.set(slug, { kind: entry.kind, name: entry.name })
+      }
+      // Prefix discipline: prefixed slugs belong to their declared kind.
+      const prefixed = slug.startsWith('location_') ? 'location' : slug.startsWith('prop_') ? 'prop' : null
+      if (prefixed && prefixed !== entry.kind) {
+        issues.push({
+          severity: 'error',
+          kind: 'slug-kind-mismatch',
+          slug,
+          message: `Slug "${slug}" carries a "${prefixed}_" prefix but is declared as ${entry.kind.toUpperCase()} — wrong cast type.`,
+        })
+      }
+      if (entry.kind === 'location' && !slug.startsWith('location_')) {
+        issues.push({
+          severity: 'warning',
+          kind: 'missing-prefix',
+          slug,
+          message: `Location "${slug}" is missing the required location_ prefix.`,
+        })
+      }
+      if (entry.kind === 'prop' && !slug.startsWith('prop_')) {
+        issues.push({
+          severity: 'warning',
+          kind: 'missing-prefix',
+          slug,
+          message: `Prop "${slug}" is missing the required prop_ prefix.`,
+        })
+      }
+    }
+    if (name) {
+      const prev = byName.get(name)
+      if (prev && prev.slug !== slug) {
+        issues.push({
+          severity: prev.kind !== entry.kind ? 'error' : 'warning',
+          kind: 'duplicate-name',
+          name: entry.name,
+          slug,
+          message: `Name "${entry.name}" used by two ${prev.kind === entry.kind ? 'same-kind' : 'DIFFERENT-kind'} assets (slugs "${prev.slug}" and "${slug}") — Cast will show two identical titles.`,
+        })
+      } else {
+        byName.set(name, { kind: entry.kind, slug })
+      }
+    }
+  }
+  return issues
+}
+
 export function parseAssetLegendLines(script = '') {
   // Only lines BEFORE the first scene heading belong to the legend; anything
   // after the first Scene/Shot block is normal script text (and stays so).
   const assets = []
-  const seenSlugs = new Set()
   for (const rawLine of String(script || '').replace(/\r\n/g, '\n').split('\n')) {
     const line = String(rawLine || '').trim()
     if (!line) continue
@@ -304,8 +382,10 @@ export function parseAssetLegendLines(script = '') {
     // different byte-string than location-dpf and must byte-match shot tokens
     // and plate filenames). Spaces/punctuation still fold to hyphens.
     const slugKey = slug.toLowerCase().replace(/\s+/g, '-').replace(/^[-.]+|[-.]+$/g, '')
-    if (!slugKey || seenSlugs.has(slugKey)) continue
-    seenSlugs.add(slugKey)
+    if (!slugKey) continue
+    // Duplicates are KEPT in the parsed output (0.4.8.3): silently dropping
+    // them here hid contract violations from every consumer. auditAssetLegend
+    // surfaces them; detectScriptGaps dedups (first wins) for generation.
     assets.push({ kind, slug: slugKey, name: name || slugKey, description, source: 'asset-legend' })
   }
   return assets
