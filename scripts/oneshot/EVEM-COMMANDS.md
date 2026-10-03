@@ -88,4 +88,4 @@ expected runtime, then bails honestly.
 
 - clip-1 1-second-short join behavior at real joins (their docs' warning)
 - lip-sync quality on singing vs speech (Phase 3 visual check — YOU eyeball the clips)
-- H3 memory coexistence (runner stops vLLM automatically before queueing; KEEP_VLLM=1 to test coexistence deliberately — not recommended)
+- H3 memory coexistence (runner tries to free vLLM before queueing; vLLM is a HOST process so it may need the manual 'sudo kill' the script prints — with vLLM up it holds ~88GB of the 121GB unified pool, leaving H3 only ~33GB: not recommended. KEEP_VLLM=1 skips freeing entirely.)

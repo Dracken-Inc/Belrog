@@ -43,7 +43,7 @@ if [ "${KEEP_VLLM:-0}" != "1" ]; then
   if [ -n "${BIGV:-}" ]; then
     RSS=$(awk '/VmRSS/{print int($2/1048576)"G"}' /proc/"$BIGV"/status 2>/dev/null || echo "?G")
     if [ "${RSS%G}" != "0G" ]; then
-      echo "WARN: vLLM engine still running (pid $BIGV, ${RSS} RSS). Run 'sudo kill $BIGV' for full GPU/memory headroom, or set KEEP_VLLM=1 to accept coexistence."
+      echo "WARN: vLLM engine still running (pid $BIGV, ${RSS} RSS). Run 'sudo kill $BIGV' to free its ~88GB (H3 then has the full 121GB pool), or set KEEP_VLLM=1 to coexist (H3 squeezed to ~33GB)."
     fi
   fi
 fi
