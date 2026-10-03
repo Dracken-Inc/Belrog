@@ -132,10 +132,11 @@ test('workflow: API format, chain wiring present, no dangling links', () => {
   assert.equal(wf['23'].inputs.audio_source, 'original audio input')
 })
 
-test('workflow: no refImage drops the LoadImage node cleanly', () => {
+test('workflow: no refImage swaps LoadImage for blank, required slot stays wired', () => {
   const wf = buildH3OneShotWorkflow({ chainId: 'c', audioFile: 'a.mp3', clipPrompts: '[1] x', totalSeconds: 8 })
   assert.equal(wf['12'], undefined)
-  assert.equal(wf['11'].inputs.initial_image, undefined)
+  assert.equal(wf['11'].inputs.initial_image[0], '25') // registry-required -> blank EmptyImage
+  assert.equal(wf['25'].class_type, 'EmptyImage')
 })
 
 // ── state / progress ───────────────────────────────────────────────────────

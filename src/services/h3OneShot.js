@@ -36,6 +36,7 @@ export const H3_MODEL_FL2VA = 'minimax_h3_fl2va_pruned_int8_convrot.safetensors'
 export const H3_VIDEO_VAE = 'minimax_h3_video_vae_fp16.safetensors'
 export const H3_AUDIO_VAE = 'minimax_h3_audio_vae_fp32.safetensors'
 export const H3_TEXT_ENCODER = 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors'
+export const H3_MAX_CALL_FRAMES = 362 // trained range ceiling per model call (tooltip max)
 
 /** Snap seconds to the next-longest legal H3 clip length (17g+8 frames @ fps). */
 export function h3ClipFrames(seconds, fps = H3_FPS) {
@@ -177,6 +178,7 @@ export function buildH3OneShotWorkflow({
   reset = true,
 }) {
   const model = lipSync ? H3_MODEL_REF2VA : H3_MODEL_FL2VA
+  const modelFrom = lipSync ? '3' : '7' // ref2va runs bare; turbo LoRA only on fl2va path
   const wf = {
     '1': { class_type: 'LoadAudio', inputs: { audio: audioFile }, _meta: { title: 'Song / audio' } },
     '2': { class_type: 'MiniMaxH3AutoChainAudio', inputs: {
@@ -188,6 +190,7 @@ export function buildH3OneShotWorkflow({
       final_tail_mode: 'exact audio duration',
       final_tail_frames: 24,
       reset,
+      endless_continuation: false, // latent context via MotionContext; HR-style tail append is a different mechanism
       style_prompt: stylePrompt,
       clip_prompts: clipPrompts,
       start_clip: startClip,
@@ -197,11 +200,21 @@ export function buildH3OneShotWorkflow({
     '4': { class_type: 'CLIPLoader', inputs: { clip_name: H3_TEXT_ENCODER, type: 'minimax', device: 'default' } },
     '5': { class_type: 'VAELoader', inputs: { vae_name: H3_VIDEO_VAE } },
     '6': { class_type: 'VAELoader', inputs: { vae_name: H3_AUDIO_VAE } },
-    '7': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['3', 0], lora_name: 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors', strength_model: 1.0 } },
+    // Turbo 4-step LoRA applies to the fl2va turbo engine only; ref2va chain
+    // runs its own sampler schedule and must NOT inherit the turbo adapter.
+    ...(lipSync
+      ? {}
+      : { '7': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['3', 0], lora_name: 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors', strength_model: 1.0 } } }),
     '8': { class_type: 'MiniMaxH3ReferenceToVideo', inputs: {
       clip: ['4', 0], vae: ['5', 0], audio_vae: ['6', 0],
       prompt: ['2', 1], // current clip prompt (style+clip combined by chain node)
-      width, height, length: 124, ref_image_size: 'match',
+      width, height,
+      // Trained range is 124-362 frames/call; longer clips run as internal
+      // segments, last_frame reference keeps the subject, latent context keeps
+      // the motion. Smoke test verifies multi-segment behavior inside a clip.
+      length: Math.min(H3_MAX_CALL_FRAMES, h3ClipFrames(totalSeconds / Math.max(1, h3ClipCount(totalSeconds, chunkSeconds)), H3_FPS) || 124),
+      ref_image_size: 'match',
+      ...(refImage ? { 'ref_images.0': { ref_image: ['11', 0] } } : {}),
     }, _meta: { title: 'H3 Reference/Text → AV latent' } },
     '9': { class_type: 'MiniMaxH3AutoChainLoadLatent', inputs: { chain_config: ['2', 3] } },
     '10': { class_type: 'MiniMaxH3AutoChainMotionContext', inputs: {
@@ -209,13 +222,18 @@ export function buildH3OneShotWorkflow({
       chain_config: ['2', 3], context_latent: ['9', 0], audio_vae: ['6', 0],
     }, _meta: { title: 'Motion Context (latent carry-forward)' } },
     '11': { class_type: 'MiniMaxH3AutoChainFrameReference', inputs: {
-      chain_config: ['2', 3],
-      ...(refImage ? { initial_image: ['12', 0] } : {}),
+      chain_config: ['2', 3], reference_mode: 'last_frame',
+      // initial_image is a REQUIRED slot (registry-verified) but only consulted
+      // on clip 1; last_frame supplies clips 2+. In no-ref mode it points at a
+      // transparent blank so clip 1 has no identity reference (clip 1 also
+      // reports trim_frames=0 with no prior context).
+      initial_image: refImage ? ['12', 0] : ['25', 0],
     }, _meta: { title: 'Frame Reference (last_frame)' } },
-    ...(refImage ? { '12': { class_type: 'LoadImage', inputs: { image: refImage } } } : {}),
-    '13': { class_type: 'CFGGuider', inputs: { model: ['7', 0], positive: ['10', 0], negative: ['8', 2], cfg: 1.0 } },
+    ...(refImage ? { '12': { class_type: 'LoadImage', inputs: { image: refImage } } }
+      : { '25': { class_type: 'EmptyImage', inputs: { width, height, batch_size: 1, color: '00000000' } } }),
+    '13': { class_type: 'CFGGuider', inputs: { model: [modelFrom, 0], positive: ['10', 0], negative: ['8', 2], cfg: 1.0 } },
     '14': { class_type: 'KSamplerSelect', inputs: { sampler_name: 'euler' } },
-    '15': { class_type: 'BasicScheduler', inputs: { model: ['7', 0], scheduler: 'simple', steps: 8, denoise: 1.0 } },
+    '15': { class_type: 'BasicScheduler', inputs: { model: [modelFrom, 0], scheduler: 'simple', steps: lipSync ? 30 : 4, denoise: 1.0 } },
     '16': { class_type: 'RandomNoise', inputs: { noise_seed: seed } },
     '17': { class_type: 'SamplerCustomAdvanced', inputs: {
       noise: ['16', 0], guider: ['13', 0], sampler: ['14', 0], sigmas: ['15', 0], latent_image: ['8', 1],
@@ -232,11 +250,11 @@ export function buildH3OneShotWorkflow({
       chain_config: ['2', 3],
       audio_source: 'original audio input',
       audio: ['1', 0],
+      save_mode: 'save each clip separately + composite final video',
       delete_completed_latents: false,
     }, _meta: { title: 'Save clip + auto-requeue + stitch' } },
     '24': { class_type: 'SaveVideo', inputs: { video: ['23', 0], filename_prefix: `video/${chainId}_final`, format: 'auto' } },
   }
-  if (!lipSync) delete wf['11'].inputs // fl2va path: no ref input wired  (v1 keeps lipSync=true default)
   return wf
 }
 
