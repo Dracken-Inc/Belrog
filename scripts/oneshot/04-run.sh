@@ -30,9 +30,22 @@ curl -s --max-time 5 http://127.0.0.1:8188/system_stats >/dev/null || { echo "FA
 Q=$(curl -s http://127.0.0.1:8188/queue | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('queue_running',[]))+len(d.get('queue_pending',[])))")
 [ "$Q" = "0" ] || { echo "FAIL: ComfyUI queue is not empty ($Q jobs). Let it drain first."; exit 1; }
 
-# stop vLLM so H3 owns the unified memory (skip with KEEP_VLLM=1 for smoke tests)
+# Free unified memory for H3. Live check (2026-10-03): the 87GB vLLM engine is
+# NOT a sparkrun workload (sparkrun status: idle) and not a systemd unit —
+# it's a host process; earlyoom protects it. Try sparkrun first (in case it's
+# ever launched that way), then say honestly what we failed to stop.
 if [ "${KEEP_VLLM:-0}" != "1" ]; then
-  command -v sparkrun >/dev/null && sparkrun stop fe6334717bce 2>/dev/null || echo "note: sparkrun not found — leaving services as-is"
+  if command -v sparkrun >/dev/null; then
+    sparkrun stop fe6334717bce 2>/dev/null || true
+  fi
+  # non-destructive report: if a big vLLM engine is still resident, warn loudly
+  BIGV=$(pgrep -f "VLLM::EngineCore" | head -1)
+  if [ -n "${BIGV:-}" ]; then
+    RSS=$(awk '/VmRSS/{print int($2/1048576)"G"}' /proc/"$BIGV"/status 2>/dev/null || echo "?G")
+    if [ "${RSS%G}" != "0G" ]; then
+      echo "WARN: vLLM engine still running (pid $BIGV, ${RSS} RSS). Run 'sudo kill $BIGV' for full GPU/memory headroom, or set KEEP_VLLM=1 to accept coexistence."
+    fi
+  fi
 fi
 
 cd "$BELROG_REPO"
