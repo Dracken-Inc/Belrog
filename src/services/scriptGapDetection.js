@@ -345,12 +345,25 @@ export function detectScriptGaps({ scenes, warnings, cast, library, assets }) {
     merged.push(gap)
   }
 
-  const all = [...characterGapsWithLegend, ...merged]
+  const legendDeclared = (Array.isArray(legend) ? legend : []).length > 0
+  // Legend-only authority (contract v2): when the author declared a legend,
+  // heuristic prose guesses are NEVER auto-stub gaps — they become
+  // suggestions only. Prevents lyric phrases ("still I don't move") and
+  // one-off nouns from entering Cast next to declared assets.
+  const heuristicSuggestions = legendDeclared
+    ? merged.filter((gap) => !gap.legend)
+    : []
+  const authoritativeMerged = legendDeclared
+    ? merged.filter((gap) => gap.legend)
+    : merged
+
+  const all = [...characterGapsWithLegend, ...authoritativeMerged]
   return {
     gaps: all,
+    suggestions: heuristicSuggestions,
     characters: characterGapsWithLegend,
-    props: merged.filter((gap) => gap.kind === 'prop'),
-    locations: merged.filter((gap) => gap.kind === 'location'),
+    props: authoritativeMerged.filter((gap) => gap.kind === 'prop'),
+    locations: authoritativeMerged.filter((gap) => gap.kind === 'location'),
     legend: legend,
     // Contract violations in the declared legend (duplicates, wrong cast
     // type for a prefixed slug, missing prefixes). Empty when clean.

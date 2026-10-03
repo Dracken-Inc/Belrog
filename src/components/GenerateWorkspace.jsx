@@ -1690,8 +1690,13 @@ function buildMusicVideoPlanFromScript(options = {}) {
       }
 
       // Tier 2 — fuzzy-match the Lyric moment against parsed SRT/LRC.
+      // 0.4.8.4: repeated lines (chorus!) match MULTIPLE SRT lines. Pick the
+      // occurrence closest to the script's Start at (or the running cursor
+      // when no Start at pinned it) instead of always the first — otherwise
+      // every chorus shot teleports to the chorus's first pass and the
+      // timeline plays the song out of order.
       const timedMatch = effectiveLyricMomentHint && hasTimedLyrics
-        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines)
+        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines, { preferNearSec: explicitStart ?? runningAudioStart })
         : null
 
       // Tier 3 — legacy linear estimate based on plain lyric line index.
@@ -1768,6 +1773,35 @@ function buildMusicVideoPlanFromScript(options = {}) {
             raw: name,
             message: `Shot ${flatShotIndex}${scriptShot.label ? ` (${scriptShot.label})` : ''}: "Artist: ${name}" did not match any cast member.`,
           })
+        }
+      }
+      // Two-person safety net (0.4.8.4): when the keyframe prose names a
+      // cast member the Artist line missed (e.g. "g1 and h1 both in frame"
+      // but "Artist: g1"), add the missing member so BOTH reference slots
+      // fill. Without this the image-edit gets ONE face and a "two people"
+      // prompt — it clones the single face instead of rendering both.
+      if (!isEnvironmentOrDetailCoverage && resolvedMembers.length >= 1 && resolvedMembers.length < 2) {
+        const keyText = String(scriptShot.keyframePromptRaw || scriptShot.imageBeat || '').toLowerCase()
+        for (const entry of safeCast) {
+          if (resolvedMembers.some((m) => m?.id === entry?.id)) continue
+          const entrySlug = String(entry?.slug || '').toLowerCase()
+          const entryLabel = String(entry?.label || '').toLowerCase()
+          if (!entrySlug && !entryLabel) continue
+          const namedInProse = (entrySlug && new RegExp(`\\b${entrySlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(keyText))
+            || (entryLabel && keyText.includes(entryLabel))
+          if (namedInProse) {
+            resolvedMembers = [...resolvedMembers, entry]
+            resolvedSource = `${resolvedSource}+keyframe-prose`
+            warnings.push({
+              shotIndex: flatShotIndex,
+              shotLabel: scriptShot.label || `Shot ${flatShotIndex}`,
+              kind: 'artist-added-from-keyframe',
+              raw: entrySlug || entryLabel,
+              message: `Shot ${flatShotIndex}: keyframe names "${entrySlug || entryLabel}" but Artist line missed them — added so both reference faces are supplied.`,
+              severity: 'info',
+            })
+            if (resolvedMembers.length >= 2) break
+          }
         }
       }
       if (resolvedMembers.length === 0 && !isEnvironmentOrDetailCoverage && lineIdx >= 0) {

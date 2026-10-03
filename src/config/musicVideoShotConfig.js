@@ -644,33 +644,45 @@ export function parseLyricsWithTags(rawLyrics = '') {
  * The first strategy to yield a hit wins.
  */
 export function findLyricLineIndex(hint = '', lyricLines = []) {
+  const idxs = findLyricLineIndexes(hint, lyricLines)
+  return idxs.length > 0 ? idxs[0] : -1
+}
+
+/**
+ * All matching line indexes, not just the first (0.4.8.4). Repeated chorus
+ * lines ("What you say to me?" at both 0:39 and 3:30) previously always
+ * snapped to the FIRST occurrence, teleporting later shots to the chorus's
+ * first repetition. Callers with a time anchor use this to pick the
+ * nearest occurrence instead.
+ */
+export function findLyricLineIndexes(hint = '', lyricLines = []) {
   const normalize = (value) => String(value || '')
-    .replace(/["'""'']/g, '')
+    .replace(/["'“”‘’]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase()
   const needle = normalize(hint)
-  if (!needle || !Array.isArray(lyricLines) || lyricLines.length === 0) return -1
+  if (!needle || !Array.isArray(lyricLines) || lyricLines.length === 0) return []
   const haystack = lyricLines.map((line) => normalize(line))
 
-  const exactIdx = haystack.findIndex((line) => line === needle)
-  if (exactIdx !== -1) return exactIdx
+  const exactIdxs = haystack.reduce((acc, line, i) => (line === needle ? [...acc, i] : acc), [])
+  if (exactIdxs.length > 0) return exactIdxs
 
-  const substringIdx = haystack.findIndex((line) => line.includes(needle) || needle.includes(line))
-  if (substringIdx !== -1) return substringIdx
+  const substringIdxs = haystack.reduce((acc, line, i) => (line.includes(needle) || needle.includes(line) ? [...acc, i] : acc), [])
+  if (substringIdxs.length > 0) return substringIdxs
 
   const needleWords = needle.split(' ').filter(Boolean)
   if (needleWords.length >= 4) {
     for (let windowSize = Math.min(6, needleWords.length); windowSize >= 4; windowSize -= 1) {
       for (let start = 0; start + windowSize <= needleWords.length; start += 1) {
         const window = needleWords.slice(start, start + windowSize).join(' ')
-        const idx = haystack.findIndex((line) => line.includes(window))
-        if (idx !== -1) return idx
+        const windowIdxs = haystack.reduce((acc, line, i) => (line.includes(window) ? [...acc, i] : acc), [])
+        if (windowIdxs.length > 0) return windowIdxs
       }
     }
   }
-  return -1
+  return []
 }
 
 /**
@@ -955,12 +967,27 @@ export function parseTimedLyrics(rawText = '') {
  * 4+ consecutive words) but returns the whole timed entry so the planner
  * gets startSec directly. Returns null when no confident match.
  */
-export function findTimedLyricLineByText(hint = '', timedLines = []) {
+export function findTimedLyricLineByText(hint = '', timedLines = [], { preferNearSec = null } = {}) {
   if (!Array.isArray(timedLines) || timedLines.length === 0) return null
   const texts = timedLines.map((l) => l?.text || '')
-  const idx = findLyricLineIndex(hint, texts)
-  if (idx < 0 || idx >= timedLines.length) return null
-  return timedLines[idx]
+  const idxs = findLyricLineIndexes(hint, texts)
+  if (idxs.length === 0) return null
+  if (idxs.length === 1 || preferNearSec === null || !Number.isFinite(preferNearSec)) return timedLines[idxs[0]]
+  // Repeated lyric (chorus at 0:39 and 3:30): choose the occurrence whose
+  // start time is closest to the anchor, so the shot stays where the
+  // script/timeline expects instead of snapping to the first repetition.
+  let best = idxs[0]
+  let bestDist = Infinity
+  for (const idx of idxs) {
+    const startSec = Number(timedLines[idx]?.startSec)
+    if (!Number.isFinite(startSec)) continue
+    const dist = Math.abs(startSec - preferNearSec)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = idx
+    }
+  }
+  return timedLines[best]
 }
 
 /**

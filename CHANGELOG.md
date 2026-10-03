@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.84 (Belrog 0.4.84 — hotfix 0.4.8.4) — 2026-10-03
+
+### Two-face cloning and chorus teleporting — found by testing the real "What You Say to Me" project
+- **Fixed: multi-character shots rendered two copies of the SAME person.** When a keyframe named both cast members ("g1 and h1 both in frame") but the `Artist:` line listed only one, the shot received a single reference image — and Qwen image-edit cloned that one face to fill both people. The planner now scans the keyframe prose for cast members the Artist line missed and fills both reference slots (warning `artist-added-from-keyframe` names the addition).
+- **Fixed: repeated lyrics (chorus) teleported shots to the FIRST occurrence.** `Lyric moment: "What you say to me?"` matches the SRT at both 0:39 and 3:59 — the fuzzy matcher always returned the first hit, so 39 of 53 shots got displaced and the timeline played the song out of order (47 tiling breaks in the shipped project). Matching now collects ALL occurrences and picks the one closest to the script's `Start at:` (or the running cursor), so shots stay in song order.
+- **Internal:** `findLyricLineIndexes` (all matches) added; `findTimedLyricLineByText` accepts a `preferNearSec` anchor; C4 24/24, mutation battery 11/11.
+
 ## v0.4.83 (Belrog 0.4.83 — hotfix 0.4.8.3) — 2026-10-03
 
 ### Adversarial testing: the suite now proves it catches BAD scripts, not just good ones
