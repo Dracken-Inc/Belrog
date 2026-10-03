@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.4.8.1 (Belrog 0.4.81) — 2026-10-03
+## v0.4.81 (Belrog 0.4.81 — hotfix 0.4.8.1) — 2026-10-03
 
 ### The Cast-detection trust fix: legend-only stubs, real slug grammar, underscore-safe slugs
 - **Fixed: junk stubs from prose are gone.** When a director script declares an ASSET LEGEND, only legend entries are auto-created in Cast Manager. Heuristic prose guesses are now suggestion-only (visible in the gaps panel, one click to add, never silent). This kills the "character listed as location" and "shot-type-b-roll became a place" class of bugs at the root.

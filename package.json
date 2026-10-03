@@ -1,6 +1,6 @@
 {
   "name": "belrog",
-  "version": "0.4.8",
+  "version": "0.4.81",
   "description": "AI-native video editing built around real creative timelines, generative workflows, and local agent control.",
   "main": "electron/main.js",
   "scripts": {
