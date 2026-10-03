@@ -230,7 +230,7 @@ export function buildH3OneShotWorkflow({
       initial_image: refImage ? ['12', 0] : ['25', 0],
     }, _meta: { title: 'Frame Reference (last_frame)' } },
     ...(refImage ? { '12': { class_type: 'LoadImage', inputs: { image: refImage } } }
-      : { '25': { class_type: 'EmptyImage', inputs: { width, height, batch_size: 1, color: '00000000' } } }),
+      : { '25': { class_type: 'EmptyImage', inputs: { width, height, batch_size: 1, color: 0 } } }),
     '13': { class_type: 'CFGGuider', inputs: { model: [modelFrom, 0], positive: ['10', 0], negative: ['8', 2], cfg: 1.0 } },
     '14': { class_type: 'KSamplerSelect', inputs: { sampler_name: 'euler' } },
     '15': { class_type: 'BasicScheduler', inputs: { model: [modelFrom, 0], scheduler: 'simple', steps: lipSync ? 30 : 4, denoise: 1.0 } },
