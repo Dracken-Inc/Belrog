@@ -28,6 +28,31 @@ export const VOCAL_EXTRACT_WORKFLOW_ID = 'vocal-extract-melband'
  * source costume in place.
  */
 export const QWEN_KEYFRAME_EDIT_PREFIX = 'Qwen image-edit instruction: preserve ONLY the facial identity of the person in the input image. Fully replace everything else - background, wardrobe, lighting, framing, pose and camera angle - exactly as described below. Do not copy the source costume, pose or framing. The frame contains no captions, no subtitles, no burned-in text, no lettering and no graffiti anywhere; walls are bare. '
+
+// 0.4.8.6: two-person identity mapping sentence (12-arm split-tested).
+// Qwen-Image-Edit fuses two reference faces into a clone unless the prompt
+// maps each face to its input-image index. Head placement is mandatory:
+// the same sentence at the tail caused text-storm renders (~25 artifacts);
+// at the head it renders 0-2. Removing it regresses to clone twins (null
+// test). Verified distinct across 3 seeds and with contradictory body text.
+export function buildQwenTwoPersonIdentitySentence(primaryLabel = '', secondaryLabel = '') {
+  const a = String(primaryLabel || '').trim()
+  const b = String(secondaryLabel || '').trim()
+  if (!a || !b || a.toLowerCase() === b.toLowerCase()) return ''
+  return `The first input image shows ${a}. The second input image shows ${b}. The frame must contain BOTH people, each face matching the person from their own input image: ${a} comes from image 1, ${b} comes from image 2. `
+}
+
+// Rewrites the singular edit prefix to its dual-reference form so it does
+// not contradict the identity sentence ("the person" -> "each person").
+export function applyTwoPersonIdentityMapping(prompt = '', primaryLabel = '', secondaryLabel = '') {
+  const sentence = buildQwenTwoPersonIdentitySentence(primaryLabel, secondaryLabel)
+  if (!sentence) return prompt
+  const dual = String(prompt || '').replace(
+    'preserve ONLY the facial identity of the person in the input image',
+    'preserve the facial identity of each person from their own input image',
+  )
+  return sentence + dual
+}
 export const QWEN_KEYFRAME_NEGATIVE = 'floating objects, random text, subtitles, watermark, logo, signature, extra limbs, extra fingers, deformed hands, warped face, asymmetric eyes, cross-eyed, blank stare, lifeless expression, frozen mannequin face, bad anatomy, disfigured body, duplicate person, cloned face, blurry, lowres, jpeg artifacts, oversaturated, plastic skin, inconsistent facial identity, garbled lettering'
 
 

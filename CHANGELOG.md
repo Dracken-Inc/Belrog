@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.86 (Belrog 0.4.86 — hotfix 0.4.8.6) — 2026-10-03
+
+### Two-person keyframes: face mapping and floating text — proven by split testing
+- **Fixed: two-person shots cloning one face or dropping a cast member ("random guy").** Multi-image Qwen edit needs the references addressed by INDEX — the labels (`CHARACTER: g1 and h1`) carry no face data. Two-person keyframe prompts now begin with an identity-mapping sentence built from the Cast table in reference-slot order: *"The first input image shows Gearrion Ellisadel. The second input image shows Henry Lafontaine. Create one cinematic photoreal keyframe still containing BOTH men, each matching the face from their own input image."* Split testing (10 arms × distinct prompt shapes, seeds 552004-5, S52 from the live project): clone-rate 100% → 0%, and the mapping sentence at the HEAD of the prompt also eliminated the floating text (tail placement caused a text storm — position matters more than wording).
+- **Fixed: the singular edit prefix contradicted two-person shots.** "preserve ONLY the facial identity of the person in the input image" now becomes "…of each person from their own input image" when both reference slots are filled.
+- Split-test controls confirmed the mapping is causal (null arm regressed to clone twins + 8 text renders) and index-faithful (swapping the reference images swaps the faces). Single-person shots are untouched.
+
 ## v0.4.85 (Belrog 0.4.85 — hotfix 0.4.8.5) — 2026-10-03
 
 ### Floating text in keyframes

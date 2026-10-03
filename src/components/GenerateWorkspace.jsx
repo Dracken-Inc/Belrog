@@ -171,6 +171,7 @@ import {
   parseTimeSpecToSeconds,
   QWEN_KEYFRAME_EDIT_PREFIX,
   QWEN_KEYFRAME_NEGATIVE,
+  applyTwoPersonIdentityMapping,
   resolveCastMembersFromNameList,
   resolveMusicVideoShotTypeFromText,
   splitCastNameList,
@@ -10997,9 +10998,29 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const rawStoryboardPrompt = usesPromptOnlyFallback
         ? buildPromptOnlyBrollFallbackPrompt(variant)
         : expandAssetSlugTokensInPrompt(variant.storyboardPrompt || variant.prompt)
-      const storyboardPrompt = (!usesPromptOnlyFallback && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit') && rawStoryboardPrompt && !rawStoryboardPrompt.includes('preserve ONLY the facial identity'))
+      const storyboardPromptBase = (!usesPromptOnlyFallback && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit') && rawStoryboardPrompt && !rawStoryboardPrompt.includes('preserve ONLY the facial identity'))
         ? QWEN_EDIT_PREFIX + rawStoryboardPrompt
         : rawStoryboardPrompt
+      // 0.4.8.6 two-person identity mapping: when BOTH reference slots hold
+      // DIFFERENT cast members, prepend the index-mapping sentence (head
+      // position — split-tested; tail position caused text storms). Labels
+      // come from the cast entries that actually produced these image ids,
+      // so sentence order always matches image1/image2 send order.
+      const castLabelForAsset = (assetId) => {
+        if (!assetId) return ''
+        // Cast members ONLY: a location/prop image in the second slot must
+        // not be announced as a person ("the second image shows hallway").
+        const entry = (yoloMusicResolvedCast || []).find((e) => e?.assetId && String(e.assetId) === String(assetId))
+        return entry?.label ? String(entry.label) : ''
+      }
+      const storyboardPrompt = (() => {
+        const primaryId = storyboardInputAsset?.id
+        const secondaryId = isYoloMusicMode ? storyboardReferenceAssetId1 : null
+        if (usesPromptOnlyFallback || !primaryId || !secondaryId) return storyboardPromptBase
+        const usesTwoPersonMapping = variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit'
+        if (!usesTwoPersonMapping) return storyboardPromptBase
+        return applyTwoPersonIdentityMapping(storyboardPromptBase, castLabelForAsset(primaryId), castLabelForAsset(secondaryId))
+      })()
       return createQueuedJob({
         category: 'image',
         workflowId: jobWorkflowId,
