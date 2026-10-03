@@ -4,7 +4,7 @@
 #  Run after shutting the agent down:
 #     /home/henlafon/belrog-src/scripts/oneshot/smoke-all.sh
 #
-#  Steps: stage audio -> free vLLM -> launch chain -> watch with progress
+#  Steps: stage audio -> check vLLM stopped (Henry stops it) -> launch -> watch
 #         bar until done/fail -> complete report saved to REPORT.txt
 # ═══════════════════════════════════════════════════════════════════════
 set -u
@@ -63,14 +63,12 @@ if [ -f "$AUDIO_SRC" ]; then
 elif [ -f "$INPUT/smoke60.mp3" ]; then ok "smoke60.mp3 already staged"
 else bad "no audio found ($AUDIO_SRC or input/smoke60.mp3)"; exit 1; fi
 
-echo "════════ STEP 2/4  free vLLM (~88GB) ════════"
-VPID=$(pgrep -f "VLLM::EngineCore" | head -1)
-if [ -n "${VPID:-}" ]; then
-  say "  vLLM engine running (pid $VPID) — stopping it (needs sudo)"
-  sudo kill "$VPID" 2>/dev/null || { bad "could not kill vLLM (sudo failed). Continuing anyway — H3 will have only ~33GB."; }
-  for i in $(seq 1 15); do pgrep -f VLLM::EngineCore >/dev/null || break; sleep 2; done
-  pgrep -f VLLM::EngineCore >/dev/null && bad "vLLM still resident" || ok "vLLM down — full 121GB pool free"
-else ok "vLLM already stopped"; fi
+echo "════════ STEP 2/4  check vLLM (Henry stops it, not us) ════════"
+if pgrep -f "VLLM::EngineCore" >/dev/null; then
+  bad "vLLM still running — STOP IT YOURSELF (sudo kill \$(pgrep -f VLLM::EngineCore | head -1)), then re-run this script."
+  bad "scripts will never kill vLLM. With it up, H3 gets only ~33GB."
+  exit 1
+else ok "vLLM down — full 121GB pool for H3"; fi
 
 echo "════════ STEP 3/4  launch chain ════════"
 cd "$SON"

@@ -30,21 +30,12 @@ curl -s --max-time 5 http://127.0.0.1:8188/system_stats >/dev/null || { echo "FA
 Q=$(curl -s http://127.0.0.1:8188/queue | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d.get('queue_running',[]))+len(d.get('queue_pending',[])))")
 [ "$Q" = "0" ] || { echo "FAIL: ComfyUI queue is not empty ($Q jobs). Let it drain first."; exit 1; }
 
-# Free unified memory for H3. Live check (2026-10-03): the 87GB vLLM engine is
-# NOT a sparkrun workload (sparkrun status: idle) and not a systemd unit —
-# it's a host process; earlyoom protects it. Try sparkrun first (in case it's
-# ever launched that way), then say honestly what we failed to stop.
+# vLLM policy: Henry stops vLLM — scripts NEVER kill it. We only check and warn.
 if [ "${KEEP_VLLM:-0}" != "1" ]; then
-  if command -v sparkrun >/dev/null; then
-    sparkrun stop fe6334717bce 2>/dev/null || true
-  fi
-  # non-destructive report: if a big vLLM engine is still resident, warn loudly
   BIGV=$(pgrep -f "VLLM::EngineCore" | head -1)
   if [ -n "${BIGV:-}" ]; then
     RSS=$(awk '/VmRSS/{print int($2/1048576)"G"}' /proc/"$BIGV"/status 2>/dev/null || echo "?G")
-    if [ "${RSS%G}" != "0G" ]; then
-      echo "WARN: vLLM engine still running (pid $BIGV, ${RSS} RSS). Run 'sudo kill $BIGV' to free its ~88GB (H3 then has the full 121GB pool), or set KEEP_VLLM=1 to coexist (H3 squeezed to ~33GB)."
-    fi
+    echo "WARN: vLLM engine still running (pid $BIGV, ${RSS} RSS). Henry: stop it for full 121GB pool; H3 coexists with only ~33GB otherwise. (Scripts will not kill it.)"
   fi
 fi
 
