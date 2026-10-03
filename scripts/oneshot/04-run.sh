@@ -45,7 +45,7 @@ fi
 cd "$BELROG_REPO"
 H3_LOG="$RUNDIR/oneshot-run.log" H3_STATE="$RUNDIR/state.json" H3_CHAIN="${H3_CHAIN:-}" \
   nohup node scripts/oneshot/run-oneshot-chain.mjs \
-    --audio "$BASE" --script "$SCRIPT" --style "$STYLE" --chunk "$CHUNK" \
+    --audio "$SRC" --script "$SCRIPT" --style "$STYLE" --chunk "$CHUNK" \
     > "$RUNDIR/runner.out" 2>&1 &
 PID=$!
 echo $PID > "$RUNDIR/runner.pid"
