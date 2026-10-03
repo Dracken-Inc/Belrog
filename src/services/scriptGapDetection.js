@@ -40,6 +40,10 @@ const SECTION_MARKERS = new Set([
   // locations with nonsense slugs).
   'shot type', 'continuity rules', 'director steer', 'camera', 'keyframe',
   'motion', 'b roll', 'b-roll', 'b_roll',
+  // More LTX structural labels (0.4.8.2: "Purpose:" leaked as the fake
+  // location "main-purpose" in the Director Suite golden fixture).
+  'purpose', 'coverage', 'coverage type', 'coverage label', 'lyric moment',
+  'start at', 'length', 'seed base', 'chain',
 ])
 
 /** Words that look like entities but describe generic things. */

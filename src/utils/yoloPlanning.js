@@ -673,7 +673,15 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       && coverageContext
       && (activeField === 'coverageType' || activeField === 'coverageLabel')
     ) {
-      appendToActiveField(coverageContext, activeField, line)
+      // A LABELED line inside the coverage block (`Purpose: ...`, `Notes: ...`)
+      // is its own field, not a continuation of the coverage label. Appending
+      // it produced coverageLabel = "Main Purpose: Per-brief take lane..." —
+      // which then leaked "Main Purpose" into asset detection as a fake
+      // location (0.4.8.2, Director Suite golden fixture). Swallow labeled
+      // lines; keep appending unlabeled prose as before.
+      if (!/^[A-Za-z][A-Za-z ]{1,24}\s*:/.test(line)) {
+        appendToActiveField(coverageContext, activeField, line)
+      }
       continue
     }
 

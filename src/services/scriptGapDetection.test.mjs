@@ -564,3 +564,67 @@ test('legend v2: "TYPE: Name | slug | description" with location_/prop_ prefixes
   const detection = detectScriptGaps({ scenes, warnings: [], cast: [], library: { characters: [], props: [], locations: [] }, assets })
   assert.ok(!detection.gaps.some((g) => /coverage|chain|seed|shot[-_ ]type/i.test(g.slug || '')), 'no structural fakes from legend zone')
 })
+
+// ── Director Suite golden fixture (format-directive-v2, bound 2026-10-03) ─
+// Verbatim output of the Perchance LTX-Director generator after the v2
+// binding. This is THE contract: if a generator update or parser change
+// breaks any assertion here, a real script would mis-detect in the field.
+const DIRECTOR_GOLDEN_V2 = [
+  'BELROG DIRECTOR SCRIPT',
+  'Chain: Qwen image edit (singer_reference.png + Keyframe Prompt, 28 steps, cfg 3.5) > LTX video (576x384, 65 frames @25fps).',
+  'Seed base: 7. Per-shot seed = base + index*13. New brief = new seed = new script.',
+  'CHARACTER: rose — the lead singer, silver braid, kind eyes, worn flannel shirt',
+  'LOCATION: Pine Forest | location_dpf | dense pine forest at blue hour, fog between trunks, cold ambient light',
+  'LOCATION: Phone Booth | location_phone_booth | rain-slick street corner, glass-and-steel booth, warm sodium-lamp glow',
+  'PROP: Cassette Tape | prop_cassette | a worn cassette tape, green-glowing label, cracked corner',
+  '',
+  'Coverage 1: Main',
+  'Coverage type: main_sequence',
+  'Coverage label: Main',
+  'Purpose: Per-brief take lane, tiled full duration.',
+  '',
+  'Shot 1: T-01',
+  'Start at: 00:00.0',
+  'Lyric moment: "You paint your eyelids with correction fluid moons"',
+  'Shot type: performance',
+  'Artist: rose',
+  'Keyframe prompt: LOCATION: (location_dpf), fog thicker than the previous shot, dawn light warming the trunks. CHARACTER: rose only; exact supplied appearance, wardrobe and body state: silver braid, worn flannel; continuity state: wet hem; do not invent identity details. PROP: (prop_cassette), held high in her right hand. LIGHTING: cold blue ambient with warm dawn rim. STYLE: cinematic photoreal keyframe. EMOTION: longing. ACTION-FROZEN: verse arrival, chest rising, eyeline to lens.',
+  'Motion prompt: ONE action: holds cassette high while singing toward lens. ONE camera move: slow push-in, 35mm. Use the supplied audio as the clock.',
+  'Camera: slow push-in, 35mm',
+  'Length: 4.0s',
+  '',
+  'Shot 2: T-02',
+  'Start at: 00:04.0',
+  'Shot type: performance',
+  'Artist: rose',
+  'Keyframe prompt: LOCATION: (location_phone_booth), establishing wide. CHARACTER: rose only; exact supplied appearance; continuity state: dry jacket. LIGHTING: sodium-lamp glow against teal night.',
+  'Motion prompt: ONE action: leans into the booth glass while singing. ONE camera move: slow lateral track, 35mm.',
+  'Camera: slow lateral track, 35mm',
+  'Length: 4.0s',
+].join('\n')
+
+test('golden fixture v2: full parse → legend → detection → stubs is exactly the declared assets', () => {
+  const assets = parseAssetLegendLines(DIRECTOR_GOLDEN_V2)
+  const parsed = parseStructuredDirectorScript(DIRECTOR_GOLDEN_V2)
+  const scenes = Array.isArray(parsed) ? parsed : parsed.scenes
+  const shots = scenes.flatMap((s) => s.shots || [])
+  assert.equal(shots.length, 2, 'two shots parse')
+  assert.equal(assets.length, 4, 'four declared assets')
+  assert.deepEqual(
+    assets.map((a) => `${a.kind}:${a.slug}`).sort(),
+    ['character:rose', 'location:location_dpf', 'location:location_phone_booth', 'prop:prop_cassette'],
+    'legend slugs byte-exact (underscore-safe)',
+  )
+  const forest = assets.find((a) => a.slug === 'location_dpf')
+  assert.equal(forest.name, 'Pine Forest', 'pipe-format display name survives to detection')
+  // "Purpose:" line must not glue into coverageLabel (0.4.8.2 leak).
+  assert.ok(!String(scenes[0].coverageLabel || '').includes('Purpose'), 'coverageLabel stays clean of Purpose line')
+  const detection = detectScriptGaps({ scenes, warnings: [], cast: [], library: EMPTY_LIB, assets })
+  const stubs = buildStubUpserts({ detection, library: EMPTY_LIB, scenes })
+  const auto = detection.legend.length > 0 ? stubs.filter((s) => s.legendDeclared) : stubs
+  const suggest = stubs.filter((s) => !s.legendDeclared)
+  assert.deepEqual(auto.map((s) => `${s.kind}:${s.slug}`).sort(), [
+    'character:rose', 'location:location_dpf', 'location:location_phone_booth', 'prop:prop_cassette',
+  ], 'auto-stub set is EXACTLY the legend')
+  assert.equal(suggest.length, 0, 'zero heuristic suggestions from a v2 script')
+})

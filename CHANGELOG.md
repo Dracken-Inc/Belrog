@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.82 (Belrog 0.4.82 — hotfix 0.4.8.2) — 2026-10-03
+
+### The Director Suite golden fixture is now law — and it caught one last leak on our side
+- **Fixed: coverage `Purpose:` lines leaked into asset detection.** The parser glued the `Purpose: …` line onto the coverage label ("Main" + "Purpose: …"), and the heuristic then offered "Main Purpose" as a fake location suggestion. Labeled lines inside coverage blocks are no longer appended to the label, and `Purpose:`, `Coverage`, `Lyric moment:`, `Start at:`, `Length:`, `Seed base:`, `Chain:` are hard-blocked as structural labels.
+- **New: the Director Suite's v2 script format is pinned as a golden regression fixture** in the test suite (verbatim generator output: pipe legend with `location_`/`prop_` slugs, token+delta shot modules). Parsing that script now provably produces exactly the four declared Cast entries, correct names/slugs/types, and ZERO heuristic suggestions. If a future generator or parser change breaks the contract, this test fails before Henry ever sees a bad script.
+- **Internal:** C4 suite 24/24.
+
 ## v0.4.81 (Belrog 0.4.81 — hotfix 0.4.8.1) — 2026-10-03
 
 ### The Cast-detection trust fix: legend-only stubs, real slug grammar, underscore-safe slugs
