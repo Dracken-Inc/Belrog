@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.85 (Belrog 0.4.85 — hotfix 0.4.8.5) — 2026-10-03
+
+### Floating text in keyframes
+- **Fixed: garbled captions/subtitles/graffiti appearing in generated keyframes.** Qwen-Image-Edit ignores negative prompts, so the "no text/subtitles" terms there did nothing. The edit instruction now states positively that the frame contains no captions, subtitles, burned-in text, lettering or graffiti and that walls are bare.
+
 ## v0.4.84 (Belrog 0.4.84 — hotfix 0.4.8.4) — 2026-10-03
 
 ### Two-face cloning and chorus teleporting — found by testing the real "What You Say to Me" project

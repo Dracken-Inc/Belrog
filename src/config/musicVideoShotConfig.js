@@ -27,7 +27,7 @@ export const VOCAL_EXTRACT_WORKFLOW_ID = 'vocal-extract-melband'
  * identity" - those two phrases punish wardrobe changes and freeze the
  * source costume in place.
  */
-export const QWEN_KEYFRAME_EDIT_PREFIX = 'Qwen image-edit instruction: preserve ONLY the facial identity of the person in the input image. Fully replace everything else - background, wardrobe, lighting, framing, pose and camera angle - exactly as described below. Do not copy the source costume, pose or framing. '
+export const QWEN_KEYFRAME_EDIT_PREFIX = 'Qwen image-edit instruction: preserve ONLY the facial identity of the person in the input image. Fully replace everything else - background, wardrobe, lighting, framing, pose and camera angle - exactly as described below. Do not copy the source costume, pose or framing. The frame contains no captions, no subtitles, no burned-in text, no lettering and no graffiti anywhere; walls are bare. '
 export const QWEN_KEYFRAME_NEGATIVE = 'floating objects, random text, subtitles, watermark, logo, signature, extra limbs, extra fingers, deformed hands, warped face, asymmetric eyes, cross-eyed, blank stare, lifeless expression, frozen mannequin face, bad anatomy, disfigured body, duplicate person, cloned face, blurry, lowres, jpeg artifacts, oversaturated, plastic skin, inconsistent facial identity, garbled lettering'
 
 
