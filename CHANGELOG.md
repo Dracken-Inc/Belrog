@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.4.8.1 (Belrog 0.4.81) — 2026-10-03
+
+### The Cast-detection trust fix: legend-only stubs, real slug grammar, underscore-safe slugs
+- **Fixed: junk stubs from prose are gone.** When a director script declares an ASSET LEGEND, only legend entries are auto-created in Cast Manager. Heuristic prose guesses are now suggestion-only (visible in the gaps panel, one click to add, never silent). This kills the "character listed as location" and "shot-type-b-roll became a place" class of bugs at the root.
+- **New: canonical legend grammar** — `TYPE: Name | slug | description` (Henry's format). Location and prop lines carry a human Name (Pine Forest), a short slug (`location_dpf`, `prop_cassette`), and the description in exactly one place. Legacy `slug — description` lines still parse.
+- **Fixed: underscores are now meaningful in slugs.** `location_dpf` stays `location_dpf` end-to-end (parser → library → collision checks → queue matching). Previously every layer slugified underscores to hyphens, silently breaking slug ↔ `(token)` ↔ `<slug>.png` byte-matching.
+- **New: shots reference locations/props by token.** `LOCATION: (location_dpf), fog thicker…` resolves the library entry's image AND injects its legend description at generation time — the description is never re-pasted per shot, so a fixed description fixes every shot.
+- **Internal:** legend parse, underscore-safety, and pipe grammar pinned by C4 regression tests (23/23); queue token matcher accepts `(slug)` and legacy `slug:` forms.
+
 ## v0.4.8 (Belrog 0.4.80) — 2026-10-02
 
 ### Locations join the cast: a Locations card in People, location reference images in generation, honest Add buttons

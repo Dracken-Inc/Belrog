@@ -230,7 +230,8 @@ function cleanInlineDescription(text = '') {
 }
 
 function slugifyAssetToken(token = '') {
-  return String(token || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  // Keep underscores — Henry's slugs (location_dpf, prop_lantern) use them.
+  return String(token || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 export function parseInlineAssetDirectives(script = '') {
@@ -267,20 +268,45 @@ export function parseAssetLegendLines(script = '') {
     if (!parsedLine) continue
     const kind = parsedLine.kind
     const body = String(parsedLine.body || '').trim()
-    // slug — description  (dash forms)   |   slug: description  (colon form)
-    const parts = body.split(/\s+(?:—|–|---|-)\s+|\s*:\s+/).map((p) => p.trim()).filter(Boolean)
-    const slug = String(parts[0] || '').trim().replace(/["']/g, '')
+    // Canonical Henry format (format-directive-v2): NAME | slug | description
+    //   LOCATION: Pine Forest | location_dpf | dense pine forest at blue hour
+    // Names may contain " | " never (pipe is reserved). Slug keeps underscores.
+    let slug = ''
+    let name = ''
+    let description = ''
+    if (body.includes('|')) {
+      const segs = body.split('|').map((p) => p.trim())
+      if (segs.length >= 3) {
+        // name | slug | description — extra pipes fold into the description.
+        name = segs[0].replace(/["']/g, '')
+        slug = segs[1].replace(/["']/g, '')
+        description = segs.slice(2).join(' | ')
+      } else if (segs.length === 2) {
+        // Tolerated short form: slug | description (name falls back to slug).
+        slug = segs[0].replace(/["']/g, '')
+        description = segs[1]
+        name = slug
+      } else {
+        continue
+      }
+    } else {
+      // Legacy: slug — description  |  slug: description
+      const parts = body.split(/\s+(?:—|–|---|-)\s+|\s*:\s+/).map((p) => p.trim()).filter(Boolean)
+      slug = String(parts[0] || '').trim().replace(/["']/g, '')
+      name = slug
+      description = parts.slice(1).join(' ').trim()
+        .replace(/\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i, '')
+        .trim()
+    }
     if (!slug || slug.length > 60) continue
-    // Strip a redundant trailing ", TYPE" when the line carried the type
-    // twice (both prefix and suffix forms) so it never lands in the
-    // description.
-    const description = parts.slice(1).join(' ').trim()
-      .replace(/\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i, '')
-      .trim().slice(0, 300)
-    const slugKey = slug.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    description = description.slice(0, 300)
+    // Slug key: lowercase, trim; underscores are MEANINGFUL (location_dpf is a
+    // different byte-string than location-dpf and must byte-match shot tokens
+    // and plate filenames). Spaces/punctuation still fold to hyphens.
+    const slugKey = slug.toLowerCase().replace(/\s+/g, '-').replace(/^[-.]+|[-.]+$/g, '')
     if (!slugKey || seenSlugs.has(slugKey)) continue
     seenSlugs.add(slugKey)
-    assets.push({ kind, slug: slugKey, name: slug, description, source: 'asset-legend' })
+    assets.push({ kind, slug: slugKey, name: name || slugKey, description, source: 'asset-legend' })
   }
   return assets
 }

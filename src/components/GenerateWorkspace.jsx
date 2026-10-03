@@ -1442,6 +1442,33 @@ function buildMusicVideoNegativePrompt(baseNegativePrompt = '', shotType = '') {
 }
 
 /**
+ * Format-directive-v2 token expansion. Director-script shots reference
+ * locations/props as "(slug)" tokens and never re-paste the description —
+ * it lives once in the script legend / Cast Manager entry. At queue time
+ * each token expands to the entry's CURRENT description, so editing a
+ * description in Cast fixes every shot that uses it. Unknown slugs pass
+ * through untouched (visible, debuggable). The library is read from the
+ * live store so both queue callbacks see the same fresh state.
+ */
+function expandAssetSlugTokensInPrompt(text = '') {
+  const value = String(text || '')
+  if (!value || !/\b(?:LOCATIONS?|PROPS?)\s*:\s*\(/i.test(value)) return value
+  const descriptions = new Map()
+  for (const entry of allLibraryEntries(useAssetLibraryStore.getState().library)) {
+    if ((entry?._kind === 'location' || entry?._kind === 'prop') && entry.slug
+      && String(entry.description || '').trim()) {
+      descriptions.set(String(entry.slug).toLowerCase(), String(entry.description).trim())
+    }
+  }
+  if (descriptions.size === 0) return value
+  return value.replace(/\b(LOCATIONS?|PROPS?)\s*:\s*\(\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)/gi,
+    (whole, label, slug) => {
+      const description = descriptions.get(slug.toLowerCase())
+      return description ? `${label}: ${description}` : whole
+    })
+}
+
+/**
  * Compose the reference-image prompt used by the storyboard pass to generate
  * the per-shot keyframe still. Built from the script's Keyframe prompt plus
  * shot-type-specific framing cues (close / wide / b-roll).
@@ -2394,7 +2421,7 @@ function buildMusicVideoLLMPrompt(options = {}) {
     '  8. "Motion prompt:" describes what moves in the clip: lip-sync/performance action, character movement, camera movement, atmosphere, and any story action. Include camera motion and character blocking/emotion, not just a static description.',
     '  9. Keep wardrobe, location, and lighting consistent across adjacent shots unless the script deliberately calls for a hard cut.',
     '  10. Do NOT invent lyrics. If the song is instrumental at a given moment, omit Lyric moment for that shot.',
-    '  11. Before the first shot, output an "ASSET LEGEND:" block: one line per character, location, and prop in the video, formatted "slug : one-sentence visual description , TYPE" (TYPE = CHARACTER | LOCATION | PROP). Use the EXACT same slug in "Artist:" lines. One slug = one asset. Never put instructions, rules, or structural labels ("Shot type:", "CONTINUITY RULES", "DIRECTOR STEER") in the legend.',
+    '  11. Before the first shot, output an "ASSET LEGEND:" block, one line per asset in the EXACT form "TYPE: Name | slug | one-sentence visual description" (TYPE = CHARACTER | LOCATION | PROP). Location slugs start with location_ and prop slugs with prop_ (short, human-chosen: location_dpf, not location_dense-pine-forest-at). Character lines use the cast token verbatim as the slug and repeat it exactly in "Artist:" lines. Inside shots, reference a location/prop as "(slug)" right after the LOCATION:/PROP: module label — never re-paste the description. One slug = one asset. Never put instructions or structural labels ("Shot type:", "CONTINUITY RULES", "DIRECTOR STEER") in the legend.',
     '  12. Never echo any brief instructions, rules, or bullet text inside "Keyframe prompt:" or "Motion prompt:". Write only visible scene content. A shot description containing the words "script", "brief", "rule", or "must" is a failure.',
   ]
   sections.push(rules.join('\n'))
@@ -6651,7 +6678,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const lastAutoStubSignatureRef = useRef(null)
   useEffect(() => {
     if (!assetLibraryGapDetection) return
-    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
+    let stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
+    // Format-directive contract: when the script declares an asset legend,
+    // ONLY legend entries auto-stub. Heuristic prose guesses become
+    // suggestion-only (visible in the gaps panel, never silently in Cast).
+    if ((assetLibraryGapDetection?.legend?.length || 0) > 0) {
+      stubs = stubs.filter((stub) => stub.legendDeclared)
+    }
     if (stubs.length === 0) return
     if (lastAutoStubSignatureRef.current === yoloMusicPlanSignature) return
     lastAutoStubSignatureRef.current = yoloMusicPlanSignature
@@ -10731,7 +10764,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         musicLocationRefIndex.set(String(entry.slug || '').toLowerCase(), String(entry.assetId))
       }
     }
-    const LOCATION_QUEUE_TOKEN_SRC = String.raw`\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:`
+    // Format-directive-v2: shots carry "(slug)" tokens: LOCATION: (location_dpf),
+    // prose... Legacy forms still supported: LOCATION: slug: prose.
+    const LOCATION_QUEUE_TOKEN_SRC = String.raw`\bLOCATIONS?\s*:\s*\(?\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)?\s*(?::|,|\s|$)`
     const resolveLocationAssetIdForVariant = (variant) => {
       if (musicLocationRefIndex.size === 0) return null
       const planned = String(variant?.resolvedLocationAssetId || '').trim()
@@ -10744,6 +10779,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       }
       return null
     }
+    // Format-directive-v2: shots reference locations/props as "(slug)" tokens
+    // and never carry the description (it lives once, in the script legend /
+    // Cast entry). Queue-time expansion is done by the module-level
+    // expandAssetSlugTokensInPrompt, fed with the live store state.
     const resolveQwenMusicStoryboardReferences = (variant) => {
       const resolvedArtistAssetIds = Array.isArray(variant?.resolvedArtistAssetIds)
         ? variant.resolvedArtistAssetIds.filter(Boolean)
@@ -10923,7 +10962,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const QWEN_EDIT_PREFIX = QWEN_KEYFRAME_EDIT_PREFIX
       const rawStoryboardPrompt = usesPromptOnlyFallback
         ? buildPromptOnlyBrollFallbackPrompt(variant)
-        : (variant.storyboardPrompt || variant.prompt)
+        : expandAssetSlugTokensInPrompt(variant.storyboardPrompt || variant.prompt)
       const storyboardPrompt = (!usesPromptOnlyFallback && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit') && rawStoryboardPrompt && !rawStoryboardPrompt.includes('preserve ONLY the facial identity'))
         ? QWEN_EDIT_PREFIX + rawStoryboardPrompt
         : rawStoryboardPrompt
@@ -11353,7 +11392,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceAssetId: primaryReferenceAssetId,
         prompt: usesPromptOnlyFallback
           ? buildPromptOnlyBrollFallbackPrompt(variant)
-          : String(variant.storyboardPrompt || variant.prompt || ''),
+          : expandAssetSlugTokensInPrompt(String(variant.storyboardPrompt || variant.prompt || '')),
         blockedReason,
         activeJob: activeJobs[0] ? {
           id: activeJobs[0].id,

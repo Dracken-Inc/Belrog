@@ -184,7 +184,7 @@ export function findLibraryEntry(library, id) {
 export function upsertLibraryEntry(library, { kind, name, slug, description = '', provenance = null, gap = null, forceDescription = false }) {
   const bucketKey = kind === 'character' ? 'characters' : kind === 'prop' ? 'props' : 'locations'
   const bucket = (Array.isArray(library?.[bucketKey]) ? library[bucketKey] : []).map((entry) => ({ ...entry }))
-  const normalizedSlug = String(slug || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const normalizedSlug = String(slug || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
   const existingIndex = normalizedSlug
     ? bucket.findIndex((entry) => String(entry?.slug || '').trim().toLowerCase() === normalizedSlug)
     : -1
@@ -253,17 +253,22 @@ export function setEntryAssetId(library, id, assetId) {
  * rejected with { ok:false, reason } so the UI can tell the user. The entry's
  * own current slug always passes (a no-op). Display name is free-form.
  */
+export function normalizeAssetSlug(value = '') {
+  // Underscores are MEANINGFUL (location_dpf, prop_lantern): legend slugs,
+  // shot tokens, and library entries must byte-match after lowercasing.
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
 export function updateEntryIdentity(library, id, { name, slug } = {}) {
   const found = findLibraryEntry(library, id)
   if (!found) return { ok: false, reason: 'not-found' }
   const kindKey = found.kind === 'character' ? 'characters' : found.kind === 'prop' ? 'props' : 'locations'
   const bucket = library[kindKey] || []
-  const normalized = String(slug ?? found.slug ?? '').trim().toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  const normalized = normalizeAssetSlug(slug ?? found.slug ?? '')
   if (slug != null && !normalized) return { ok: false, reason: 'empty-slug' }
-  const collides = slug != null && normalized !== String(found.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  const collides = slug != null && normalized !== normalizeAssetSlug(found.slug || '')
     ? bucket.some((entry) => entry?.id !== id
-        && String(entry?.slug || '').toLowerCase().replace(/[^a-z0-9]+/g, '-') === normalized)
+        && normalizeAssetSlug(entry?.slug || '') === normalized)
     : false
   if (collides) return { ok: false, reason: 'slug-taken' }
   const next = {

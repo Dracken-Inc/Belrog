@@ -58,7 +58,10 @@ const QUOTED_RE = /"([^"]{3,80})"|“([^”]{3,80})”|'([^']{4,80})'/g
 const PROP_NOUN_RE = /\b((?:[A-Z][a-zA-Z0-9'’.-]*\s){1,4}[A-Z][a-zA-Z0-9'’.-]*)\b/g
 
 function normalizeKey(name = '') {
-  return String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  // Underscores are MEANINGFUL in Henry's slug scheme (location_dpf, prop_lantern)
+  // and must survive normalization so legend slugs, shot tokens, and library
+  // entries byte-match after lowercasing. Only whitespace/other punctuation folds.
+  return String(name || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 function shotTexts(shot) {
@@ -496,8 +499,12 @@ export function buildStubUpserts({ detection, library, scenes }) {
       name: gap.name,
       slug: gap.slug,
       description: seededDescription,
+      // Legend-declared = the script's own asset block named it. Heuristic
+      // guesses are suggestion-only once a legend exists (format-directive
+      // contract: never auto-stub from prose).
+      legendDeclared: gap.legend === true,
       provenance: {
-        source: 'director-script',
+        source: gap.legend === true ? 'asset-legend' : 'director-script',
         scriptVersion: null, // caller stamps from the plan signature
         shots: gap.shots,
       },

@@ -532,3 +532,35 @@ test('flatten: variants carry location/reference fields the queue resolver needs
   assert.match(v.motionPromptRaw, /35mm/, 'raw motion text survives flatten')
   assert.deepEqual(v.resolvedArtistAssetIds, ['img_a', 'img_b'], 'artist ids still capped at 2')
 })
+
+// ── format-directive-v2: Henry's pipe legend format + underscore slugs ───
+test('legend v2: "TYPE: Name | slug | description" with location_/prop_ prefixes', () => {
+  const script = [
+    'BELROG DIRECTOR SCRIPT',
+    'Chain: Qwen image edit > LTX video.',
+    'Seed base: 7.',
+    'CHARACTER: rose — the lead singer, silver braid, kind eyes, worn flannel shirt',
+    'LOCATION: Pine Forest | location_dpf | dense pine forest at blue hour, fog between trunks, cold ambient light',
+    'LOCATION: Phone Booth | location_phone-booth | rain-slick street corner, glass-and-steel booth, warm sodium-lamp glow',
+    'PROP: Cassette Tape | prop_cassette | a worn cassette tape, green-glowing label, cracked corner',
+    '',
+    'Coverage 1: Main',
+    'Shot 1: T-01',
+    'Artist: rose',
+    'Keyframe prompt: LOCATION: (location_dpf), cold ambient light, establish architecture. CHARACTER: rose only; exact supplied appearance. PROP: (prop_cassette), central handheld object in this shot.',
+  ].join('\n')
+  const assets = parseAssetLegendLines(script)
+  assert.equal(assets.length, 4, 'four declared assets')
+  const forest = assets.find((a) => a.kind === 'location' && a.slug === 'location_dpf')
+  assert.ok(forest, 'underscore slug preserved byte-exact (location_dpf, not location-dpf)')
+  assert.equal(forest.name, 'Pine Forest', 'display name from pipe segment 1')
+  assert.match(forest.description, /dense pine forest at blue hour/, 'description from pipe segment 3')
+  const cassette = assets.find((a) => a.kind === 'prop' && a.slug === 'prop_cassette')
+  assert.ok(cassette, 'prop with prefix parsed')
+  const rose = assets.find((a) => a.kind === 'character')
+  assert.equal(rose.slug, 'rose', 'character slug stays cast token verbatim')
+  // Detection: legend-only, no structural fakes.
+  const scenes = [{ shots: [{ id: 'S1', index: 1, keyframePromptRaw: 'LOCATION: (location_dpf), cold ambient light', durationSeconds: 4 }] }]
+  const detection = detectScriptGaps({ scenes, warnings: [], cast: [], library: { characters: [], props: [], locations: [] }, assets })
+  assert.ok(!detection.gaps.some((g) => /coverage|chain|seed|shot[-_ ]type/i.test(g.slug || '')), 'no structural fakes from legend zone')
+})
