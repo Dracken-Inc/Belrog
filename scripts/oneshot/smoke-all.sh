@@ -64,11 +64,11 @@ elif [ -f "$INPUT/smoke60.mp3" ]; then ok "smoke60.mp3 already staged"
 else bad "no audio found ($AUDIO_SRC or input/smoke60.mp3)"; exit 1; fi
 
 echo "════════ STEP 2/4  check vLLM (Henry stops it, not us) ════════"
-if pgrep -f "VLLM::EngineCore" >/dev/null; then
-  bad "vLLM still running — STOP IT YOURSELF (sudo kill \$(pgrep -f VLLM::EngineCore | head -1)), then re-run this script."
-  bad "scripts will never kill vLLM. With it up, H3 gets only ~33GB."
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx qwen38-flash || pgrep -f "VLLM::EngineCore" >/dev/null; then
+  bad "vLLM container qwen38-flash is up. Henry: docker stop qwen38-flash (your call), then re-run."
+  bad "Scripts never stop vLLM. Keeping it up: H3 coexists (vllm holds ~12-20GB by its own caps)."
   exit 1
-else ok "vLLM down — full 121GB pool for H3"; fi
+else ok "vLLM down — full unified pool for H3"; fi
 
 echo "════════ STEP 3/4  launch chain ════════"
 cd "$SON"
