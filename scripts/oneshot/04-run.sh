@@ -19,7 +19,10 @@ INPUT_DIR="/home/henlafon/spark-comfyui/data/input"
 OUTPUT_V="/home/henlafon/shared/image-generation/video"
 
 mkdir -p "$RUNDIR" "$OUTPUT_V"
-cp -n "$AUDIO" "$INPUT_DIR/" || true
+SRC="$AUDIO"
+[ -f "$SRC" ] || SRC="$INPUT_DIR/$(basename "$AUDIO")"   # bare name = already staged in ComfyUI input
+[ -f "$SRC" ] || { echo "FAIL: audio not found: $AUDIO (give a path or stage it in $INPUT_DIR)"; exit 1; }
+cp -n "$SRC" "$INPUT_DIR/" || true
 BASE=$(basename "$AUDIO")
 
 echo "=== ONE-SHOT run starting $(date -Is) ==="
