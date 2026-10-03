@@ -183,7 +183,10 @@ function outputDirs() {
   try {
     resp = await httpJson('POST', '/prompt', { prompt: graph, client_id: 'oneshot-runner' })
   } catch (e) {
-    state.stage = 'failed'; return saveState(log('fatal', `queue rejected: ${e.message}`))
+    // httpJson throws on HTTP 400 VALIDATION FAILURE — the rejection detail
+    // rides in e.body (node_errors map), not in e.message.
+    const detail = (e.body && (e.body.node_errors || e.body.error)) ? JSON.stringify(e.body.node_errors || e.body.error) : e.message
+    state.stage = 'failed'; return saveState(log('fatal', `queue rejected: ${String(detail).slice(0, 900)}`))
   }
   if (resp.node_errors || resp.error) {
     state.stage = 'failed'

@@ -207,7 +207,7 @@ export function buildH3OneShotWorkflow({
       : { '7': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['3', 0], lora_name: 'minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors', strength_model: 1.0 } } }),
     '8': { class_type: 'MiniMaxH3ReferenceToVideo', inputs: {
       clip: ['4', 0], vae: ['5', 0], audio_vae: ['6', 0],
-      prompt: ['2', 1], // current clip prompt (style+clip combined by chain node)
+      prompt: ['2', 4], // RETURN_NAMES: audio0 chunk_secs1 clip_idx2 chain_id3 PROMPT4 chain_config5
       width, height,
       // Trained range is 124-362 frames/call; longer clips run as internal
       // segments, last_frame reference keeps the subject, latent context keeps
@@ -216,13 +216,13 @@ export function buildH3OneShotWorkflow({
       ref_image_size: 'match',
       ...(refImage ? { 'ref_images.0': { ref_image: ['11', 0] } } : {}),
     }, _meta: { title: 'H3 Reference/Text → AV latent' } },
-    '9': { class_type: 'MiniMaxH3AutoChainLoadLatent', inputs: { chain_config: ['2', 3] } },
+    '9': { class_type: 'MiniMaxH3AutoChainLoadLatent', inputs: { chain_config: ['2', 5] } },
     '10': { class_type: 'MiniMaxH3AutoChainMotionContext', inputs: {
       conditioning: ['8', 0], vae: ['5', 0], latent: ['8', 1],
-      chain_config: ['2', 3], context_latent: ['9', 0], audio_vae: ['6', 0],
+      chain_config: ['2', 5], context_latent: ['9', 0], audio_vae: ['6', 0],
     }, _meta: { title: 'Motion Context (latent carry-forward)' } },
     '11': { class_type: 'MiniMaxH3AutoChainFrameReference', inputs: {
-      chain_config: ['2', 3], reference_mode: 'last_frame',
+      chain_config: ['2', 5], reference_mode: 'last_frame',
       // initial_image is a REQUIRED slot (registry-verified) but only consulted
       // on clip 1; last_frame supplies clips 2+. In no-ref mode it points at a
       // transparent blank so clip 1 has no identity reference (clip 1 also
@@ -238,16 +238,16 @@ export function buildH3OneShotWorkflow({
     '17': { class_type: 'SamplerCustomAdvanced', inputs: {
       noise: ['16', 0], guider: ['13', 0], sampler: ['14', 0], sigmas: ['15', 0], latent_image: ['8', 1],
     } },
-    '18': { class_type: 'MiniMaxH3AutoChainSaveLatent', inputs: { latent: ['17', 0], chain_config: ['2', 3] }, _meta: { title: 'Save clip latent (context for next clip)' } },
+    '18': { class_type: 'MiniMaxH3AutoChainSaveLatent', inputs: { latent: ['17', 0], chain_config: ['2', 5] }, _meta: { title: 'Save clip latent (context for next clip)' } },
     '19': { class_type: 'VAEDecode', inputs: { samples: ['17', 0], vae: ['5', 0] } },
     '20': { class_type: 'VAEDecodeAudio', inputs: { samples: ['17', 0], vae: ['6', 0] } },
     '21': { class_type: 'MiniMaxH3AutoChainMotionContextTrim', inputs: {
-      images: ['19', 0], trim_frames: ['10', 1], chain_config: ['2', 3], audio: ['20', 0],
+      images: ['19', 0], trim_frames: ['10', 1], chain_config: ['2', 5], audio: ['20', 0],
     }, _meta: { title: 'Trim context head' } },
     '22': { class_type: 'CreateVideo', inputs: { images: ['21', 0], fps: H3_FPS } },
     '23': { class_type: 'MiniMaxH3AutoChain', inputs: {
       video: ['22', 0],
-      chain_config: ['2', 3],
+      chain_config: ['2', 5],
       audio_source: 'original audio input',
       audio: ['1', 0],
       save_mode: 'save each clip separately + composite final video',
