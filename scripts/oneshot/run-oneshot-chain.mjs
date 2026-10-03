@@ -126,11 +126,20 @@ function outputDirs() {
   const scriptText = fs.readFileSync(ARGS.script, 'utf8')
   let duration = ARGS.duration
   if (!duration && ARGS.audio) {
-    // crude duration: ask the audio file via ffprobe if available
-    try {
-      const { execSync } = await import('node:child_process')
-      duration = Number(execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${ARGS.audio}"`).toString().trim())
-    } catch { /* fall through */ }
+    // ffprobe resolution order matters for detached/background runs:
+    // explicit env, PATH, then the known Hermes-local binary.
+    const { execSync } = await import('node:child_process')
+    const candidates = [
+      process.env.FFPROBE,
+      'ffprobe',
+      '/home/henlafon/.hermes/tools/ffmpeg-9.0.1-linux-arm64/bin/ffprobe',
+    ].filter(Boolean)
+    for (const probe of candidates) {
+      try {
+        duration = Number(execSync(`"${probe}" -v error -show_entries format=duration -of csv=p=0 "${ARGS.audio}"`).toString().trim())
+        if (duration > 0) break
+      } catch { /* next candidate */ }
+    }
   }
   if (!duration) { state.stage = 'failed'; return saveState(log('fatal', 'no --duration and ffprobe failed — cannot size the chain')) }
   log('info', `audio=${ARGS.audio} duration=${duration.toFixed(2)}s script=${ARGS.script}`)
