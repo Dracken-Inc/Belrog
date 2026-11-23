@@ -45,7 +45,7 @@ import { startMcpSnapshotPublisher } from './services/mcpSnapshot'
 import { MCP_ACTION_BRIDGE_VERSION, startMcpActionBridge } from './services/mcpActions'
 import { startGenerationRuns } from './services/generationRuns'
 import { attachProjectDirtyWatchers, isProjectDirty } from './services/projectDirtyTracker'
-import { VELORN_OPEN_STOCK_EVENT } from './services/pexelsStock'
+import { Belrog_OPEN_STOCK_EVENT } from './services/pexelsStock'
 import {
   DISCOVER_TAB_VISIBILITY_CHANGED_EVENT,
   getShowDiscoverTab,
@@ -456,8 +456,8 @@ function AppWorkspace({ accountAgentRequested = false }) {
 
   useEffect(() => {
     const handler = () => setMainTab('stock')
-    window.addEventListener(VELORN_OPEN_STOCK_EVENT, handler)
-    return () => window.removeEventListener(VELORN_OPEN_STOCK_EVENT, handler)
+    window.addEventListener(Belrog_OPEN_STOCK_EVENT, handler)
+    return () => window.removeEventListener(Belrog_OPEN_STOCK_EVENT, handler)
   }, [])
 
   // Reveal-in-assets (timeline clip menu / Shift+F): make sure the Assets

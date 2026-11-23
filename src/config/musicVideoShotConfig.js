@@ -12,6 +12,51 @@ export const MUSIC_VIDEO_SHOT_WORKFLOW_ID = 'music-video-shot-ltx23'
 export const VOCAL_EXTRACT_WORKFLOW_ID = 'vocal-extract-melband'
 
 /**
+ * Qwen-Image-Edit-2509 keyframe dialect.
+ *
+ * Qwen-Edit is an EDIT model, not T2I: the cast photo rides along as pixels
+ * (LoadImage -> image1 conditioning + VAEEncode latent) and the 4-step
+ * Lightning LoRA at cfg 1 strongly preserves source composition. A plain
+ * scene description ("Royal Court, grey stone pillars") is read as "keep
+ * this photo, change the backdrop slightly" -> the purple-robe clone.
+ *
+ * Every keyframe prompt sent to the 'image-edit' workflow MUST carry
+ * QWEN_KEYFRAME_EDIT_PREFIX (face-only preservation + explicit re-dress /
+ * re-stage order). QWEN_KEYFRAME_NEGATIVE deliberately says "inconsistent
+ * FACIAL identity" and never "wrong clothing" / "inconsistent character
+ * identity" - those two phrases punish wardrobe changes and freeze the
+ * source costume in place.
+ */
+export const QWEN_KEYFRAME_EDIT_PREFIX = 'Qwen image-edit instruction: preserve ONLY the facial identity of the person in the input image. Fully replace everything else - background, wardrobe, lighting, framing, pose and camera angle - exactly as described below. Do not copy the source costume, pose or framing. The frame contains no captions, no subtitles, no burned-in text, no lettering and no graffiti anywhere; walls are bare. '
+
+// 0.4.8.6: two-person identity mapping sentence (12-arm split-tested).
+// Qwen-Image-Edit fuses two reference faces into a clone unless the prompt
+// maps each face to its input-image index. Head placement is mandatory:
+// the same sentence at the tail caused text-storm renders (~25 artifacts);
+// at the head it renders 0-2. Removing it regresses to clone twins (null
+// test). Verified distinct across 3 seeds and with contradictory body text.
+export function buildQwenTwoPersonIdentitySentence(primaryLabel = '', secondaryLabel = '') {
+  const a = String(primaryLabel || '').trim()
+  const b = String(secondaryLabel || '').trim()
+  if (!a || !b || a.toLowerCase() === b.toLowerCase()) return ''
+  return `The first input image shows ${a}. The second input image shows ${b}. The frame must contain BOTH people, each face matching the person from their own input image: ${a} comes from image 1, ${b} comes from image 2. `
+}
+
+// Rewrites the singular edit prefix to its dual-reference form so it does
+// not contradict the identity sentence ("the person" -> "each person").
+export function applyTwoPersonIdentityMapping(prompt = '', primaryLabel = '', secondaryLabel = '') {
+  const sentence = buildQwenTwoPersonIdentitySentence(primaryLabel, secondaryLabel)
+  if (!sentence) return prompt
+  const dual = String(prompt || '').replace(
+    'preserve ONLY the facial identity of the person in the input image',
+    'preserve the facial identity of each person from their own input image',
+  )
+  return sentence + dual
+}
+export const QWEN_KEYFRAME_NEGATIVE = 'floating objects, random text, subtitles, watermark, logo, signature, extra limbs, extra fingers, deformed hands, warped face, asymmetric eyes, cross-eyed, blank stare, lifeless expression, frozen mannequin face, bad anatomy, disfigured body, duplicate person, cloned face, blurry, lowres, jpeg artifacts, oversaturated, plastic skin, inconsistent facial identity, garbled lettering'
+
+
+/**
  * Shot-type taxonomy.
  *
  * Director Mode's planner tags every shot with exactly one shot_type.
@@ -241,7 +286,6 @@ Length: 3
 Shot 2: First verse close-up
 Start at: 0:03
 Artist: rose
-Place: car
 Lyric moment: "You paint your eyelids with correction fluid moons"
 Shot type: performance
 Keyframe prompt: Close-up of the singer in the driver's seat, interior dim, a single warm key light across the face, eyes fixed forward on the road.
@@ -252,7 +296,6 @@ Length: 4
 Shot 3: Pre-chorus build
 Start at: 0:07
 Artist: jake
-Place: car
 Lyric moment: "Swollen sound inside my head"
 Shot type: performance_wide
 Keyframe prompt: Three-quarter wide of the singer framed by the car interior, blurred neon signs streaming past through the rear window.
@@ -278,12 +321,11 @@ Motion prompt: Camera holds steady, taillights extend and fade as the car pulls 
 Camera: Locked overhead, static
 Length: 2
 
-# Tip: "Start at:" decides when a shot begins. Use the times from your lyrics.
-# "Artist:" is the name of someone in your cast ("rose", "jake"), or
-# "both" / "all" / "band" for everyone.
-# "Place:" is the name of one of your places ("car"). Leave the line out
-# for a shot filmed anywhere else.
-# Put the story, setting, clothes, lighting and colours directly in each
+# Tip: "Start at:" is authoritative — if you paste an SRT, use the real
+# timing from it. "Artist:" matches your Cast roster by slug ("rose",
+# "jake") or by "both" / "all" / "band" to feature every cast member.
+# The script is the creative source of truth: put story, setting, wardrobe,
+# lighting, color palette, continuity, and camera style directly in each
 # Keyframe prompt and Motion prompt.
 # You can also drop [Rose] / [Jake] / [Rose, Jake] tag lines above verses
 # in the lyrics and shots pick up the nearest tag automatically.`
@@ -627,33 +669,45 @@ export function parseLyricsWithTags(rawLyrics = '') {
  * The first strategy to yield a hit wins.
  */
 export function findLyricLineIndex(hint = '', lyricLines = []) {
+  const idxs = findLyricLineIndexes(hint, lyricLines)
+  return idxs.length > 0 ? idxs[0] : -1
+}
+
+/**
+ * All matching line indexes, not just the first (0.4.8.4). Repeated chorus
+ * lines ("What you say to me?" at both 0:39 and 3:30) previously always
+ * snapped to the FIRST occurrence, teleporting later shots to the chorus's
+ * first repetition. Callers with a time anchor use this to pick the
+ * nearest occurrence instead.
+ */
+export function findLyricLineIndexes(hint = '', lyricLines = []) {
   const normalize = (value) => String(value || '')
-    .replace(/["'""'']/g, '')
+    .replace(/["'“”‘’]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase()
   const needle = normalize(hint)
-  if (!needle || !Array.isArray(lyricLines) || lyricLines.length === 0) return -1
+  if (!needle || !Array.isArray(lyricLines) || lyricLines.length === 0) return []
   const haystack = lyricLines.map((line) => normalize(line))
 
-  const exactIdx = haystack.findIndex((line) => line === needle)
-  if (exactIdx !== -1) return exactIdx
+  const exactIdxs = haystack.reduce((acc, line, i) => (line === needle ? [...acc, i] : acc), [])
+  if (exactIdxs.length > 0) return exactIdxs
 
-  const substringIdx = haystack.findIndex((line) => line.includes(needle) || needle.includes(line))
-  if (substringIdx !== -1) return substringIdx
+  const substringIdxs = haystack.reduce((acc, line, i) => (line.includes(needle) || needle.includes(line) ? [...acc, i] : acc), [])
+  if (substringIdxs.length > 0) return substringIdxs
 
   const needleWords = needle.split(' ').filter(Boolean)
   if (needleWords.length >= 4) {
     for (let windowSize = Math.min(6, needleWords.length); windowSize >= 4; windowSize -= 1) {
       for (let start = 0; start + windowSize <= needleWords.length; start += 1) {
         const window = needleWords.slice(start, start + windowSize).join(' ')
-        const idx = haystack.findIndex((line) => line.includes(window))
-        if (idx !== -1) return idx
+        const windowIdxs = haystack.reduce((acc, line, i) => (line.includes(window) ? [...acc, i] : acc), [])
+        if (windowIdxs.length > 0) return windowIdxs
       }
     }
   }
-  return -1
+  return []
 }
 
 /**
@@ -938,26 +992,27 @@ export function parseTimedLyrics(rawText = '') {
  * 4+ consecutive words) but returns the whole timed entry so the planner
  * gets startSec directly. Returns null when no confident match.
  */
-export function findTimedLyricLineByText(hint = '', timedLines = [], { nearSeconds = null } = {}) {
+export function findTimedLyricLineByText(hint = '', timedLines = [], { preferNearSec = null } = {}) {
   if (!Array.isArray(timedLines) || timedLines.length === 0) return null
   const texts = timedLines.map((l) => l?.text || '')
-  const idx = findLyricLineIndex(hint, texts)
-  if (idx < 0 || idx >= timedLines.length) return null
-  // A line that is sung more than once (a chorus, a repeated phrase) matches
-  // in several places, and the search above stops at the first. When the
-  // caller knows roughly when the shot belongs (`nearSeconds`, the script's
-  // "Start at"), take the repeat nearest to that moment. Without it, two shots
-  // on a repeated line both landed on its first appearance (found 2026-11-12).
-  const wanted = Number(nearSeconds)
-  if (nearSeconds === null || nearSeconds === undefined || !Number.isFinite(wanted)) return timedLines[idx]
-  const plain = (text) => String(text || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
-  const same = plain(texts[idx])
-  let best = timedLines[idx]
-  for (const line of timedLines) {
-    if (plain(line?.text) !== same || typeof line?.startSec !== 'number') continue
-    if (typeof best?.startSec !== 'number' || Math.abs(line.startSec - wanted) < Math.abs(best.startSec - wanted)) best = line
+  const idxs = findLyricLineIndexes(hint, texts)
+  if (idxs.length === 0) return null
+  if (idxs.length === 1 || preferNearSec === null || !Number.isFinite(preferNearSec)) return timedLines[idxs[0]]
+  // Repeated lyric (chorus at 0:39 and 3:30): choose the occurrence whose
+  // start time is closest to the anchor, so the shot stays where the
+  // script/timeline expects instead of snapping to the first repetition.
+  let best = idxs[0]
+  let bestDist = Infinity
+  for (const idx of idxs) {
+    const startSec = Number(timedLines[idx]?.startSec)
+    if (!Number.isFinite(startSec)) continue
+    const dist = Math.abs(startSec - preferNearSec)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = idx
+    }
   }
-  return best
+  return timedLines[best]
 }
 
 /**
