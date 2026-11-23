@@ -1,6 +1,6 @@
 {
-  "name": "velorn",
-  "version": "0.4.1",
+  "name": "belrog",
+  "version": "0.4.9",
   "description": "AI-native video editing built around real creative timelines, generative workflows, and local agent control.",
   "main": "electron/main.js",
   "scripts": {
@@ -149,14 +149,14 @@
     "video-editing",
     "electron"
   ],
-  "author": "Velorn contributors",
+  "author": "belrog contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/VelornLabs/velorn.git"
+    "url": "git+https://github.com/belrogLabs/belrog.git"
   },
-  "homepage": "https://velorn.ai",
+  "homepage": "https://belrog.ai",
   "bugs": {
-    "url": "https://github.com/VelornLabs/velorn/issues"
+    "url": "https://github.com/belrogLabs/belrog/issues"
   },
   "license": "GPL-3.0-only",
   "dependencies": {
@@ -176,7 +176,8 @@
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "ws": "8.22.0",
-    "zustand": "^4.4.7"
+    "zustand": "^4.4.7",
+    "ssh2": "^1.17.0"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
@@ -197,7 +198,7 @@
   },
   "build": {
     "appId": "com.comfystudio.app",
-    "productName": "Velorn",
+    "productName": "belrog",
     "copyright": "Copyright \u00a9 2024-2026",
     "beforePack": "scripts/electron-builder-before-pack.cjs",
     "afterPack": "scripts/electron-builder-after-pack.cjs",
