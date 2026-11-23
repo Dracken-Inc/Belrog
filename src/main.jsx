@@ -11,8 +11,8 @@ const isExportWorker = typeof window !== 'undefined' && window.location.search.i
 // Owner-metered engine test mode: the main process publishes one fixed,
 // read-only banner string (never a live control surface) while the candidate
 // engine consumes the existing allowance.
-const candidateBanner = typeof window !== 'undefined'
-  ? window.electronAPI?.engineCandidateInfo?.banner
+const candidateBanner = typeof window !== 'undefined' && window.electronAPI?.engineCandidateInfo
+  ? (window.electronAPI?.engineCandidateInfo?.banner || 'Provider status unavailable')
   : null
 
 applyTheme(getStoredThemeId())
