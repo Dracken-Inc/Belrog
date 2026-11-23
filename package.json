@@ -198,7 +198,7 @@
   "build": {
     "appId": "com.comfystudio.app",
     "productName": "Velorn",
-    "copyright": "Copyright © 2024-2026",
+    "copyright": "Copyright \u00a9 2024-2026",
     "beforePack": "scripts/electron-builder-before-pack.cjs",
     "afterPack": "scripts/electron-builder-after-pack.cjs",
     "artifactBuildCompleted": "scripts/electron-builder-artifact-completed.cjs",
