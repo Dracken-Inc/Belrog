@@ -72,27 +72,36 @@ From `git log aa280f7..main`, grouped; every item here must be verifiable on the
 4. Remaining index conflicts: `public/hero-v1.webp`, `public/splash.png` (take ours).
 5. Nothing committed, no push, `main` clean.
 
-## 6. Retrofit work packages (each: do → check → log)
+## 6. Retrofit work packages — FINAL STATUS (2026-11-23)
 
-- **WP-A binaries**: checkout ours splash/hero, `git add`. Check: `git ls-files -u` = 0.
-- **WP-B package identity**: package.json = our name/version 0.4.9 + keep upstream's
-  new deps (upstream code imports them). Check: `npm install` succeeds with OUR name.
-- **WP-C mcpServer + mcpActions**: replay our registered actions onto upstream's
-  server file (318 conflict regions — do it as "add our action blocks to their
-  registry", not line merge). Check: `node --check`, then MCP unit tests in tests/.
-- **WP-D GenerateWorkspace + InspectorPanel + yoloPlanning**: re-wire Cast panel,
-  legend pipeline, lyric grid into upstream's newer workspace layout. Hardest
-  package; check = build + F4/F5 unit tests.
-- **WP-E electron main.js + preload**: port value, our IPC handlers, F7 caption
-  engine IPC, without importing their account/spending chain where avoidable.
-  Check: `node --check` + app boots to window (headless check script).
-- **WP-F comfyui.js + workflow registry + MusicVideoEasyMode + audioAnalysis**:
-  F5/F6 replays. Check: registry validate script + unit tests.
-- **WP-G CI workflow + .mcp.json + scripts/**: ours, then graft upstream runner
-  fixes if any. Check: actionlint-style review by reading diff.
-- **WP-H branding sweep**: apply scrub map over UI strings + i18n files.
-  Check: `grep -ri "velorn\|comfystudio" src electron public | grep -v license` empty.
-- **WP-I green cycle**: `npm install && npm run build && npm test` → fix → repeat.
+- **WP-A binaries**: DONE (ours, in merge commit).
+- **WP-B package.json**: DONE (27015c0, 418727a) = upstream base + Belrog
+  identity keys + version 0.4.9 + union deps (+5 upstream-new) + their
+  scripts block. NOTE: the first take-ours pass had silently made it pure
+  upstream — caught by version probe, not by a test.
+- **WP-C mcpServer**: DONE as NO-OP. Action-name sets proved subset-equal
+  (ours 128 ⊂ theirs 134); no action graft needed. The "318-conflict monster"
+  was context conflict, not feature divergence.
+- **WP-D semantic graft**: DONE via recipe below — LeftPanel CastPanel mount
+  (962b1f5) + 9-file graft incl. MusicVideoEasyMode, yoloPlanning, mcpActions,
+  comfyui.js, InspectorPanel, GenerateWorkspace, main.js, preload, audioAnalysis
+  (67c9c9c), zero conflict markers.
+- **WP-E main.js/preload**: DONE via graft. NOTE: "port 8052" never existed in
+  the repo (memory artifact) — VOID item.
+- **WP-F branding residue**: PARTIAL — build-loop fixed VELORN_OPEN_STOCK_EVENT
+  globally + musicVideoShotConfig graft (fix round). Remaining velorn tokens
+  in UI strings pending a pass; does not break build.
+- **WP-G CI/.mcp.json/scripts**: DONE (ours kept).
+- **WP-H verify**: build GREEN (✓ 15s). Full 422-file sweep = the live gate.
+
+### Graft recipe that worked
+
+Per file: `git checkout --theirs -- <p>` (pure upstream base), then
+`git diff upstream/main main -- <p> | git apply --3way -`. Direct branch-to-
+branch diff on a clean base applied clean 9/9. The earlier silent failure came
+from replaying `aa280f7..main` (stale base) onto conflicted files — wrong base,
+wrong starting state. Branding renames must be GLOBAL (exporter + importers);
+renaming only the exporter fails the build loop.
 - **WP-J commit merge** on branch, list deviations in commit message.
 - **WP-K (needs Henry)**: GPU smoke — 60s clip on generated script, within his cap,
   vLLM policy respected. Full *Forsaken, Falling* render only after smoke green.
