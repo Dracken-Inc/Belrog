@@ -5,6 +5,7 @@ import {
   h3ClipCount,
   compileScriptToClips,
   auditH3Environment,
+  auditFinalArtifact,
   buildH3OneShotWorkflow,
   createH3OneShotState,
   reduceH3OneShotProgress,
@@ -211,4 +212,28 @@ test('control: complete final chain yields action=none', () => {
   const fs = fakeFs({ 'c.mp4': { mtime: 1 }, 'c_clip_001.mp4': { mtime: 1 } })
   const p = chainProgress({ fsAdapter: fs, videoDir: 'v', chainId: 'c', clipsTotal: 1, now: 10 })
   assert.equal(resumeDecision(p).action, 'none')
+})
+
+test('integrity gate: healthy final passes', () => {
+  assert.deepEqual(auditFinalArtifact({ hasAudio: true, durationSec: 283.56, expectedDurationSec: 283.56 }), [])
+})
+
+test('integrity gate: duration drift over 0.5s fails', () => {
+  const issues = auditFinalArtifact({ hasAudio: true, durationSec: 280, expectedDurationSec: 283.56 })
+  assert.deepEqual(issues.map((i) => i.kind), ['duration'])
+})
+
+test('integrity gate: silent video fails', () => {
+  const issues = auditFinalArtifact({ hasAudio: false, durationSec: 283.5, expectedDurationSec: 283.56 })
+  assert.deepEqual(issues.map((i) => i.kind), ['audio'])
+})
+
+test('integrity gate: unprobeable artifact fails loudly', () => {
+  const issues = auditFinalArtifact({ hasAudio: false, durationSec: NaN, expectedDurationSec: 283.56 })
+  assert.deepEqual(issues.map((i) => i.kind).sort(), ['audio', 'probe'])
+})
+
+test('integrity gate: unknown song length is itself a failure, not a pass', () => {
+  const issues = auditFinalArtifact({ hasAudio: true, durationSec: 100, expectedDurationSec: null })
+  assert.deepEqual(issues.map((i) => i.kind), ['expected'])
 })
