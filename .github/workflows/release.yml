@@ -22,12 +22,38 @@ env:
   NODE_VERSION: "20"
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
   # onnxruntime-node's install step downloads optional CUDA files on Linux x64.
-  # Velorn runs it on the CPU, and the archive the older nested copy asks for
+  # Belrog runs it on the CPU, and the archive the older nested copy asks for
   # (onnxruntime v1.21.0) no longer exists, which fails `npm ci`.
   ONNXRUNTIME_NODE_INSTALL: skip
   ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
+  secrets-probe:
+    name: Probe Signing Secrets
+    runs-on: ubuntu-latest
+    outputs:
+      apple: ${{ steps.apple.outputs.apple }}
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - name: Apple signing secrets present?
+        id: apple
+        run: |
+          ok=true
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then ok=false; break; fi
+          done
+          echo "apple=$ok" >> "$GITHUB_OUTPUT"
+          if [ "$ok" = "true" ]; then
+            echo "Apple signing secrets present - macOS build eligible."
+          else
+            echo "Apple signing secrets absent - macOS build will be skipped (unsigned mac apps cannot run)."
+          fi
+
   preflight:
     name: Release Preflight
     runs-on: ubuntu-latest
@@ -86,7 +112,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --draft \
               --verify-tag \
-              --title "Velorn $RELEASE_TAG" \
+              --title "Belrog $RELEASE_TAG" \
               --notes-file docs/RELEASE_DRAFT_TEMPLATE.md
           fi
 
@@ -111,7 +137,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Assert Windows signing secrets
+      - name: Resolve Windows signing mode
+        id: signing_mode
         shell: pwsh
         run: |
           $missing = @()
@@ -121,11 +148,14 @@ jobs:
             }
           }
           if ($missing.Count -gt 0) {
-            Write-Error "Missing required GitHub secrets: $($missing -join ', ')"
-            exit 1
+            Write-Warning "Azure signing secrets ($($missing -join ', ')) missing - producing UNSIGNED artifacts (Belrog fork policy)."
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           }
 
       - name: Install Azure signing PowerShell module
+        if: steps.signing_mode.outputs.signed == 'true'
         shell: pwsh
         run: |
           Install-PSResource -Name TrustedSigning -Scope CurrentUser -TrustRepository
@@ -189,23 +219,26 @@ jobs:
         shell: pwsh
         run: |
           $resources = Join-Path $PWD 'release\win-unpacked\resources'
-          foreach ($executable in @(
-            (Join-Path $PWD 'release\win-unpacked\Velorn.exe'),
-            (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
-            (Join-Path $resources 'bin\ffmpeg.exe'),
-            (Join-Path $resources 'bin\ffprobe.exe')
-          )) {
-            $signature = Get-AuthenticodeSignature $executable
-            if ($signature.Status -ne 'Valid') {
-              throw "Invalid Authenticode signature for $executable`: $($signature.Status)"
+          $signed = '${{ steps.signing_mode.outputs.signed }}' -eq 'true'
+          if ($signed) {
+            foreach ($executable in @(
+              (Join-Path $PWD 'release\win-unpacked\Belrog.exe'),
+              (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
+              (Join-Path $resources 'bin\ffmpeg.exe'),
+              (Join-Path $resources 'bin\ffprobe.exe')
+            )) {
+              $signature = Get-AuthenticodeSignature $executable
+              if ($signature.Status -ne 'Valid') {
+                throw "Invalid Authenticode signature for $executable`: $($signature.Status)"
+              }
             }
+          } else {
+            Write-Warning "Unsigned build - skipping Authenticode verification."
           }
-          node scripts/runtime-package-gate.cjs packaged `
-            --resources $resources `
-            --platform win32 `
-            --arch x64 `
-            --signed-package `
-            --host-executable (Join-Path $PWD 'release\win-unpacked\Velorn.exe')
+          $gateArgs = @('scripts/runtime-package-gate.cjs','packaged','--resources',$resources,'--platform','win32','--arch','x64')
+          if ($signed) { $gateArgs += '--signed-package' }
+          $gateArgs += @('--host-executable',(Join-Path $PWD 'release\win-unpacked\Belrog.exe'))
+          node $gateArgs
 
       - name: Upload Windows release assets
         shell: pwsh
@@ -214,8 +247,8 @@ jobs:
         run: |
           $version = "${{ steps.app_version.outputs.app_version }}"
           gh release upload $env:RELEASE_TAG `
-            "release/Velorn-$version-windows-installer-x64.exe#Windows Installer" `
-            "release/Velorn-$version-windows-portable-x64.exe#Windows Portable" `
+            "release/belrog-$version-windows-installer-x64.exe#Windows Installer" `
+            "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
   build-linux:
@@ -318,13 +351,16 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Velorn-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
-            "release/Velorn-${VERSION}-linux-amd64.deb#Linux deb" \
+            "release/belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
+            "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    needs: [ensure-release, preflight]
+    # Fork divergence: unsigned mac apps cannot run, so skip the job when Apple
+    # secrets are absent instead of failing the run (upstream hard-asserts).
+    if: needs.secrets-probe.outputs.apple == 'true'
+    needs: [ensure-release, preflight, secrets-probe]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -421,9 +457,9 @@ jobs:
 
       - name: Verify packaged macOS runtime and signatures
         run: |
-          APP_PATH=$(find release -type d -name 'Velorn.app' -print -quit)
+          APP_PATH=$(find release -type d -name 'Belrog.app' -print -quit)
           if [ -z "$APP_PATH" ]; then
-            echo "Packaged Velorn.app was not found" >&2
+            echo "Packaged Belrog.app was not found" >&2
             exit 1
           fi
           RESOURCES="$APP_PATH/Contents/Resources"
@@ -439,7 +475,7 @@ jobs:
             --platform darwin \
             --arch "${{ matrix.arch }}" \
             --signed-package \
-            --host-executable "$APP_PATH/Contents/MacOS/Velorn"
+            --host-executable "$APP_PATH/Contents/MacOS/Belrog"
 
       - name: Upload macOS release assets
         env:
@@ -447,5 +483,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/Velorn-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
+            "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
             --clobber

@@ -285,8 +285,8 @@
       "azureSignOptions": {
         "publisherName": "Jaime Aguirre",
         "endpoint": "https://eus.codesigning.azure.net",
-        "codeSigningAccountName": "velorn-signing",
-        "certificateProfileName": "velorn-public"
+        "codeSigningAccountName": "belrog-signing",
+        "certificateProfileName": "belrog-public"
       }
     },
     "mac": {
