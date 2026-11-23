@@ -1085,7 +1085,13 @@
           "addTextClip": "再生ヘッド位置にテキストクリップを追加",
           "addTransition": "選択したクリップ間にトランジションを追加",
           "linkSelection": "選択したクリップをリンク",
-          "unlinkSelection": "選択したクリップのリンクを解除"
+          "unlinkSelection": "選択したクリップのリンクを解除",
+          "trimStartToPlayhead": "Trim Start to Playhead",
+          "trimEndToPlayhead": "Trim End to Playhead",
+          "nudgeLeft": "Nudge Left",
+          "nudgeRight": "Nudge Right",
+          "nudgeLeftBig": "Nudge Left (Large)",
+          "nudgeRightBig": "Nudge Right (Large)"
         }
       },
       "categories": {

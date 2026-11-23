@@ -1085,7 +1085,13 @@
           "addTextClip": "Add text clip at playhead",
           "addTransition": "Add transition between selected clips",
           "linkSelection": "Link selected clips",
-          "unlinkSelection": "Unlink selected clips"
+          "unlinkSelection": "Unlink selected clips",
+          "trimStartToPlayhead": "Trim Start to Playhead",
+          "trimEndToPlayhead": "Trim End to Playhead",
+          "nudgeLeft": "Nudge Left",
+          "nudgeRight": "Nudge Right",
+          "nudgeLeftBig": "Nudge Left (Large)",
+          "nudgeRightBig": "Nudge Right (Large)"
         }
       },
       "categories": {
