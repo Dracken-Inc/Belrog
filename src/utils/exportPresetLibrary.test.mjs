@@ -228,7 +228,7 @@ test('saved names are rendered as escaped text, never HTML/JSX or translation ke
   const module = { exports: {} }
   Function('require', 'module', 'exports', 'React', code)(id => {
     if (id === 'react') return React
-    if (id === 'lucide-react') return { Check: () => null, Film: () => null, Play: () => null, Send: () => null }
+    if (id === 'lucide-react') return { Check: () => null, Film: () => null, Play: () => null, Send: () => null, Smartphone: () => null, Youtube: () => null }
     if (id === '../i18n/I18nContext') return { useI18n: () => ({ t: (key, vars, fallback) => fallback || key }) }
     if (id === '../hooks/useExportPresetLibrary') return () => ({ presets: [entry], error: '', update() {}, reload() {} })
     if (id === '../utils/exportPresetLibrary.mjs') return { matchCustomExportPreset, readExportPresetLibrary, validateCustomExportPresetSettings, MAX_CUSTOM_EXPORT_PRESETS }
