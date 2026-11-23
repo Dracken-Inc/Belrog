@@ -123,3 +123,26 @@ renaming only the exporter fails the build loop.
 - Scripts never kill vLLM.
 - Every replay verified by reading the result, never by "command exited 0"
   (this merge already produced two false-greens from silent rollbacks).
+
+## 9. Final sweep classification (422 files / 5234 tests: 5195 pass, 12 fail)
+
+RED-ON-UPSTREAM (each proven against upstream's own files; do not chase here):
+- comfyRouterPackaged.test.cjs x5 - wiring-region asserts contradict upstream main.js.
+- exportPresetLibrary.test.mjs production* x3 - stale electron stubs (no setNavigationHandler).
+- localAgentDesktopChatHarness.test.cjs x3 - harness asserts a media-instruction
+  sentence ('To SHOW a preview to the user in chat') that exists in NO app file of
+  either branch; upstream rc1 shipped harness and prompt out of sync. ACTION (WP-I):
+  when Belrog next edits connectedAgent TOOL_INSTRUCTIONS, add that media line -
+  harness then goes green as a side effect. Do not fake it.
+- runtimePackageGate 'installed native FFmpeg' x1 - upstream ships native-media pins
+  for linux-x64/darwin only; this box is linux-arm64. ACTION (WP-P): choose trusted
+  arm64 FFmpeg build + pin sha256 before any Spark-shipped build. Host ffmpeg has
+  minterpolate; runtime path unaffected - packaging gate only.
+
+FIXED BY US DURING MERGE (Belrog features the merge had eaten):
+- repeatedLyricMatch: findTimedLyricLineByText param nearSeconds (was preferNearSec)
+  - nearest-chorus-repeat beat-sync law.
+- veloOwnerTestGateway: owner-metered candidate banner + 'Provider status
+  unavailable' fallback now rendered in src/main.jsx (was contract-without-UI upstream).
+- F11 settings tab (SettingsModal/useWorkflowSetupFlow) + preload invoke/flat aliases.
+- compoundAudioNative/export-cancel/connectedAgentEditing clusters.
