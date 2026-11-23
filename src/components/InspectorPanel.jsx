@@ -1,5 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, useContext } from 'react'
-import { createClipSpeedGesture } from '../utils/clipSpeedGesture.mjs'
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { 
   Move, RotateCw, Maximize2, Clock, Layers,
   ChevronDown, ChevronRight, ChevronLeft, Sparkles,
@@ -15,7 +14,6 @@ import {
 import useTimelineStore, { buildClipSyncLock, isMusicVideoSyncCapableClip, isSyncLockedClip } from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
-import { isComposingKeyEvent } from '../utils/transportKeyboardGuards.mjs'
 import renderCacheService from '../services/renderCache'
 import { commitAdjustmentRender } from '../services/commitRender'
 import { LUTS_CHANGED_EVENT, importCubeLutFile, listLoadedLuts, loadLutLibrary } from '../services/lutLibrary'
@@ -39,21 +37,12 @@ import {
   TONAL_ADJUSTMENT_GROUP_KEYS,
 } from '../utils/adjustments'
 import { clearDiskCacheUrl } from './VideoLayerRenderer'
-import { useTimelineFields } from '../hooks/useTimelineFields'
-import { useDisplayPlayhead } from '../hooks/useDisplayPlayhead'
 import EffectsStack from './effects/EffectsStack'
 import ColorWheels from './ColorWheels'
-import { AudioVolumeEnvelopeInspector, getSingleAudioEnvelopeTarget } from './AudioVolumeEnvelope'
-import { createClipSourceRequest, isClipSourceRequestCurrent } from '../utils/clipCacheReadGuard.mjs'
-import AudioEqInspector from './AudioEqInspector'
-import AudioDuckingInspector from './AudioDuckingInspector'
-import { CompoundClipInspector } from './CompoundClipDialog'
 import { isManagedEffectType } from '../utils/effects'
 import { FRAME_RATE, TRANSITION_TYPES, TRANSITION_DEFAULT_SETTINGS } from '../constants/transitions'
 import { useI18n } from '../i18n/I18nContext'
 import FontFamilyPicker from './FontFamilyPicker'
-import { InspectorSelectionContext, InspectorInput, InspectorSelect, InspectorValue, useInspectorField } from './InspectorSelectionControls'
-import { MULTI_CLIP_FIELDS, MULTI_CLIP_COLOR_FIELDS, getMultiClipSelection, getMultiClipFieldState } from '../utils/multiClipInspector'
 import {
   buildOpticalFlowCache,
   cancelOpticalFlowCache,
@@ -105,9 +94,6 @@ const INSPECTOR_EXPANDED_SECTIONS_KEY = 'comfystudio-inspector-expanded-sections
 const INSPECTOR_ACTIVE_TAB_KEY = 'comfystudio-inspector-active-tab-v1'
 const INSPECTOR_EXPANDED_ADJUSTMENT_GROUPS_KEY = 'comfystudio-inspector-expanded-adjustment-groups-v1'
 const DEFAULT_INSPECTOR_EXPANDED_SECTIONS = ['clipInfo', 'transform', 'compositing', 'crop', 'mask', 'timing', 'effects', 'text', 'style', 'shape', 'animation', 'adjustments', 'commit']
-const batchColorResetFields = (groupKey = 'all') => MULTI_CLIP_COLOR_FIELDS.filter(field => (
-  groupKey === 'all' || (groupKey === 'global' ? !field.path.includes('.') : field.path.startsWith(`${groupKey}.`))
-))
 
 // Per-tab identity hues; inactive labels tint 42% toward the hue (see
 // .inspector-tab-tinted in index.css), the active tab goes full, dots inherit.
@@ -311,39 +297,13 @@ const formatAssetFormatLabel = (asset) => {
 }
 
 // Draggable number input component - click and drag to change value
-function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, min, max, step = 1, sensitivity = 0.5, suffix = '', className = '', resetValue, onReset }) {
-  const field = useInspectorField(inspectorProperty)
-  const mixed = Boolean(field?.mixed)
-  const disabled = Boolean(field?.blockedReason)
-  if (field?.values?.length) value = field.values[0]
-  value = Number.isFinite(value) ? value : 0
-  const lastDragValue = useRef(null)
-  const editedRef = useRef(false)
-  const cancelledRef = useRef(false)
-  const dragActiveRef = useRef(false)
-  const editingActiveRef = useRef(false)
-  const gestureContextRef = useRef(null)
-  const gestureContext = () => {
-    const state = useTimelineStore.getState()
-    return `${state.timelineSessionId}:${state.selectedClipIds.join(',')}`
-  }
+function DraggableNumberInput({ value, onChange, onCommit, min, max, step = 1, sensitivity = 0.5, suffix = '', className = '', resetValue, onReset }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(value.toString())
   const startX = useRef(0)
   const startValue = useRef(0)
   const inputRef = useRef(null)
-  const selectionContextKey = gestureContext()
-
-  // Re-enabling a field must never revive a held gesture from before a
-  // selection/session change or an animation/locking eligibility change.
-  useEffect(() => {
-    if (!disabled && (gestureContextRef.current === null || gestureContextRef.current === selectionContextKey)) return
-    dragActiveRef.current = false
-    editingActiveRef.current = false
-    setIsDragging(false)
-    setIsEditing(false)
-  }, [disabled, selectionContextKey])
   
   // Update edit value when value changes externally
   useEffect(() => {
@@ -354,19 +314,9 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
   
   // Handle drag
   useEffect(() => {
-    if (!isDragging || disabled) return
-    const previousCursor = document.body.style.cursor
-    const previousUserSelect = document.body.style.userSelect
-    const finish = () => {
-      if (!dragActiveRef.current) return
-      dragActiveRef.current = false
-      setIsDragging(false)
-      if (gestureContextRef.current === gestureContext() && lastDragValue.current !== null) onCommit?.(lastDragValue.current)
-    }
+    if (!isDragging) return
     
     const handleMouseMove = (e) => {
-      if (!dragActiveRef.current) return
-      if (e.buttons === 0 || gestureContextRef.current !== gestureContext()) { finish(); return }
       const deltaX = e.clientX - startX.current
       let newValue = startValue.current + (deltaX * sensitivity * step)
       
@@ -377,34 +327,29 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
       // Round to step
       newValue = Math.round(newValue / step) * step
       
-      if (e.clientX === startX.current && lastDragValue.current === null) return
-      lastDragValue.current = newValue
       onChange(newValue)
     }
     
-    const handleVisibility = () => { if (document.hidden) finish() }
+    const handleMouseUp = () => {
+      setIsDragging(false)
+      onCommit && onCommit(value)
+    }
     
     window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', finish)
-    window.addEventListener('blur', finish)
-    window.addEventListener('pointercancel', finish)
-    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('mouseup', handleMouseUp)
     document.body.style.cursor = 'ew-resize'
     document.body.style.userSelect = 'none'
     
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', finish)
-      window.removeEventListener('blur', finish)
-      window.removeEventListener('pointercancel', finish)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      document.body.style.cursor = previousCursor
-      document.body.style.userSelect = previousUserSelect
+      window.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
     }
-  }, [isDragging, disabled, onChange, onCommit, value, min, max, step, sensitivity, field])
+  }, [isDragging, onChange, onCommit, value, min, max, step, sensitivity])
   
   const handleMouseDown = (e) => {
-    if (e.button !== 0 || isEditing || disabled) return
+    if (isEditing) return
     if ((e.altKey || e.shiftKey) && resetToDefault()) {
       e.preventDefault()
       e.stopPropagation()
@@ -413,14 +358,10 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
     e.preventDefault()
     startX.current = e.clientX
     startValue.current = value
-    lastDragValue.current = null
-    gestureContextRef.current = gestureContext()
-    dragActiveRef.current = true
     setIsDragging(true)
   }
   
   const resetToDefault = () => {
-    if (disabled) return false
     if (resetValue === undefined) return false
     let newValue = resetValue
     if (min !== undefined) newValue = Math.max(min, newValue)
@@ -435,27 +376,18 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
   }
 
   const handleDoubleClick = (e) => {
-    if (e.button !== 0 || disabled) return
     if ((e.altKey || e.shiftKey) && resetToDefault()) {
       e.preventDefault()
       e.stopPropagation()
       return
     }
     setIsEditing(true)
-    gestureContextRef.current = gestureContext()
-    editingActiveRef.current = true
-    setEditValue(mixed ? '' : value.toString())
-    editedRef.current = false
-    cancelledRef.current = false
+    setEditValue(value.toString())
     setTimeout(() => inputRef.current?.select(), 0)
   }
   
   const handleInputBlur = () => {
-    if (!editingActiveRef.current) return
-    editingActiveRef.current = false
     setIsEditing(false)
-    if (disabled || gestureContextRef.current !== gestureContext() || cancelledRef.current
-      || !editedRef.current || editValue.trim() === '' || !Number.isFinite(Number(editValue))) return
     let newValue = parseFloat(editValue) || 0
     if (min !== undefined) newValue = Math.max(min, newValue)
     if (max !== undefined) newValue = Math.min(max, newValue)
@@ -464,16 +396,11 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
   }
   
   const handleInputKeyDown = (e) => {
-    if (isComposingKeyEvent(e)) return
     if (e.key === 'Enter') {
       e.preventDefault()
       e.stopPropagation()
       handleInputBlur()
     } else if (e.key === 'Escape') {
-      e.preventDefault()
-      e.stopPropagation()
-      cancelledRef.current = true
-      editingActiveRef.current = false
       setIsEditing(false)
       setEditValue(value.toString())
     }
@@ -484,11 +411,8 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
       <input
         ref={inputRef}
         type="number"
-        aria-label={field?.field?.label || inspectorProperty}
-        data-inspector-property={inspectorProperty}
-        placeholder={mixed ? 'Mixed' : undefined}
         value={editValue}
-        onChange={(e) => { editedRef.current = true; setEditValue(e.target.value) }}
+        onChange={(e) => setEditValue(e.target.value)}
         onBlur={handleInputBlur}
         onKeyDown={handleInputKeyDown}
         autoFocus
@@ -499,16 +423,12 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
   
   return (
     <div
-      data-inspector-property={inspectorProperty}
-      aria-label={field?.field?.label || inspectorProperty}
-      aria-disabled={disabled || undefined}
       onMouseDown={handleMouseDown}
       onDoubleClick={handleDoubleClick}
       className={`w-full bg-sf-dark-700 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary cursor-ew-resize select-none hover:border-sf-dark-500 transition-colors ${className}`}
-      style={disabled ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
-      title={field?.blockedReason || (mixed ? `Mixed values. Drag from ${value}${suffix} to set selected clips together, or double-click to type.` : resetValue === undefined ? 'Drag to adjust, double-click to edit' : 'Drag to adjust, double-click to edit, Alt/Shift-click to reset')}
+      title={resetValue === undefined ? 'Drag to adjust, double-click to edit' : 'Drag to adjust, double-click to edit, Alt/Shift-click to reset'}
     >
-      {mixed ? 'Mixed' : `${Math.round(value * 100) / 100}${suffix}`}
+      {Math.round(value * 100) / 100}{suffix}
     </div>
   )
 }
@@ -517,16 +437,13 @@ function DraggableNumberInput({ inspectorProperty, value, onChange, onCommit, mi
  * Keyframe button component - shows diamond icon that can be clicked to toggle keyframes
  * Yellow = keyframe at current time, Gray = no keyframe, Blue outline = property has keyframes
  */
-const KEYFRAME_BUTTON_TIMELINE_FIELDS = ['toggleKeyframe', 'goToNextKeyframe', 'goToPrevKeyframe', 'timelineFps']
-
 function KeyframeButton({ clipId, property, clip, playheadPosition }) {
-  const multiSelection = useContext(InspectorSelectionContext)
   const {
     toggleKeyframe,
     goToNextKeyframe,
     goToPrevKeyframe,
     timelineFps,
-  } = useTimelineFields(KEYFRAME_BUTTON_TIMELINE_FIELDS)
+  } = useTimelineStore()
 
   // Calculate clip-relative time
   const clipTime = playheadPosition - (clip?.startTime || 0)
@@ -539,25 +456,22 @@ function KeyframeButton({ clipId, property, clip, playheadPosition }) {
   // Handle click - toggle keyframe at current position
   const handleClick = (e) => {
     e.stopPropagation()
-    if (multiSelection) return
     toggleKeyframe(clipId, property)
   }
   
   // Handle navigation to prev/next keyframe
   const handlePrev = (e) => {
     e.stopPropagation()
-    if (multiSelection) return
     goToPrevKeyframe(clipId, property)
   }
   
   const handleNext = (e) => {
     e.stopPropagation()
-    if (multiSelection) return
     goToNextKeyframe(clipId, property)
   }
   
   return (
-    <fieldset disabled={Boolean(multiSelection)} className="flex items-center gap-0.5 ml-1 disabled:opacity-40" title={multiSelection ? 'Select one clip to edit keyframes' : undefined}>
+    <div className="flex items-center gap-0.5 ml-1">
       {/* Previous keyframe button */}
       {hasKeyframesForProperty && (
         <button
@@ -602,25 +516,11 @@ function KeyframeButton({ clipId, property, clip, playheadPosition }) {
           <ChevronLast className="w-3 h-3 text-sf-text-muted" />
         </button>
       )}
-    </fieldset>
+    </div>
   )
 }
 
-const INSPECTOR_TIMELINE_FIELDS = [
-  'selectedClipIds', 'selectedTransitionId', 'clips', 'tracks', 'transitions', 'updateClipTransform',
-  'updateClipCompositeMode', 'updateClipTrackMatte', 'updateClipAdjustments', 'updateClipShapeMask',
-  'maskDrawActive', 'setMaskDrawActive', 'setClipBypass', 'resetClipTransform', 'updateTextProperties',
-  'updateShapeProperties', 'applyTextAnimationPreset', 'clearTextAnimationPreset', 'removeClip',
-  'resizeClip', 'updateClipSpeed', 'updateClipReverse', 'updateClipFrameSampling',
-  'updateAudioClipProperties', 'toggleKeyframe', 'setKeyframe', 'removeKeyframe', 'goToNextKeyframe',
-  'goToPrevKeyframe', 'saveToHistory', 'addEffect', 'removeEffect', 'updateEffect', 'toggleEffect',
-  'reorderEffect', 'addMaskEffect', 'getClipEffects', 'updateTransition', 'setTransitionAlignment',
-  'removeTransition', 'getMaxTransitionDurationForAlignment', 'getMaxEdgeTransitionDuration',
-  'lockSyncClips', 'unlockSyncLockedClips', 'setCacheStatus', 'setCacheUrl', 'clearClipCache',
-  'maskPickerRequest', 'clearMaskPickerRequest', 'textEditRequest', 'clearTextEditRequest',
-]
-
-function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, onToggleFullHeight, fullHeightDisabled = false, embedded = false }) {
+function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, onToggleFullHeight, fullHeightDisabled = false }) {
   const { t } = useI18n()
   const [clipInfoMenuOpen, setClipInfoMenuOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState(() => {
@@ -671,14 +571,14 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   })
   const textContentInputRef = useRef(null)
   
-  // Get selected clip from timeline store. The playhead is not in this slice:
-  // it is written every animation frame during playback (see useDisplayPlayhead).
+  // Get selected clip from timeline store
   const { 
     selectedClipIds, 
     selectedTransitionId,
     clips, 
     tracks,
     transitions,
+    playheadPosition,
     updateClipTransform,
     updateClipCompositeMode,
     updateClipTrackMatte,
@@ -727,8 +627,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     clearMaskPickerRequest,
     textEditRequest,
     clearTextEditRequest,
-  } = useTimelineFields(INSPECTOR_TIMELINE_FIELDS)
-  const playheadPosition = useDisplayPlayhead()
+  } = useTimelineStore()
   
   // Get assets store functions (needed for render cache)
   const { assets, getAssetById, getAllMasks, updateAsset } = useAssetsStore()
@@ -778,71 +677,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     () => orderedSelectedClips.map((clip) => clip.id).join('|'),
     [orderedSelectedClips]
   )
-  const isMultiSelection = orderedSelectedClips.length > 1 && !linkedInspectorPair
-  const multiSelection = useMemo(() => getMultiClipSelection(clips, tracks, selectedClipIds), [clips, tracks, selectedClipIds])
-  const batchSessionRef = useRef(null)
-  const speedGesture = useMemo(() => createClipSpeedGesture(useTimelineStore), [])
-  const speedTimelineSession = useTimelineStore(state => state.timelineSessionId)
-  useEffect(() => {
-    speedGesture.end()
-    const end = () => speedGesture.end()
-    window.addEventListener('pointerup', end)
-    window.addEventListener('pointercancel', end)
-    window.addEventListener('blur', end)
-    return () => {
-      end()
-      window.removeEventListener('pointerup', end)
-      window.removeEventListener('pointercancel', end)
-      window.removeEventListener('blur', end)
-    }
-  }, [speedGesture, selectionSignature, speedTimelineSession])
-  const [batchError, setBatchError] = useState('')
-  const endBatchGesture = useCallback(() => { batchSessionRef.current = null }, [])
-  const applyBatchRequest = useCallback((request, keepSessionOpen = false, effects = false) => {
-    const store = useTimelineStore.getState()
-    const previous = batchSessionRef.current
-    const continuing = previous?.signature === selectionSignature && previous.clips === store.clips
-      && previous.tracks === store.tracks && previous.history === store.history
-    const result = (effects ? store.applyMultiClipEffectsEdit : store.applyMultiClipInspectorEdit)({ ...request, clipIds: selectedClipIds }, !continuing)
-    setBatchError(result.ok ? '' : result.error)
-    const next = useTimelineStore.getState()
-    batchSessionRef.current = result.ok && keepSessionOpen && (continuing || result.changedCount > 0)
-      ? { signature: selectionSignature, clips: next.clips, tracks: next.tracks, history: next.history }
-      : null
-    return result.ok
-  }, [selectionSignature, selectedClipIds])
-  const applyBatchUpdates = useCallback((updates, keepSessionOpen = false) => applyBatchRequest({ updates }, keepSessionOpen), [applyBatchRequest])
-  const applyBatchEffects = useCallback((request, keepSessionOpen = false) => applyBatchRequest(request, keepSessionOpen, true), [applyBatchRequest])
-  const batchEffects = useMemo(() => isMultiSelection ? {
-    selection: multiSelection, apply: applyBatchEffects, endGesture: endBatchGesture,
-  } : null, [isMultiSelection, multiSelection, applyBatchEffects, endBatchGesture])
-  const batchContext = useMemo(() => isMultiSelection ? {
-    getField: property => getMultiClipFieldState(multiSelection, property),
-    endGesture: endBatchGesture,
-  } : null, [isMultiSelection, multiSelection, endBatchGesture])
-  const batchFieldProps = property => {
-    if (!isMultiSelection) return {}
-    const field = getMultiClipFieldState(multiSelection, property)
-    return {
-      disabled: Boolean(field.blockedReason),
-      ...(field.blockedReason || field.mixed ? { title: field.blockedReason || 'Mixed values' } : {}),
-      'data-mixed': field.mixed || undefined,
-    }
-  }
-  useEffect(() => {
-    endBatchGesture()
-    setBatchError('')
-  }, [selectionSignature, endBatchGesture])
-  useEffect(() => {
-    if (!isMultiSelection) return
-    window.addEventListener('mouseup', endBatchGesture)
-    window.addEventListener('blur', endBatchGesture)
-    return () => {
-      window.removeEventListener('mouseup', endBatchGesture)
-      window.removeEventListener('blur', endBatchGesture)
-      endBatchGesture()
-    }
-  }, [isMultiSelection, endBatchGesture])
   const isSyncCapableClip = useCallback((clip) => {
     const asset = clip?.assetId ? getAssetById(clip.assetId) : null
     return isMusicVideoSyncCapableClip(clip, asset)
@@ -871,16 +705,12 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }, [selectionSignature])
   const selectedClip = useMemo(() => {
     if (orderedSelectedClips.length === 0) return null
-    if (isMultiSelection) {
-      const editable = [...multiSelection.visual, ...multiSelection.audio]
-      return editable.find(clip => clip.id === inspectorClipId) || editable[0] || orderedSelectedClips[0]
-    }
     if (inspectorClipId) {
       const focusedClip = orderedSelectedClips.find((clip) => clip.id === inspectorClipId)
       if (focusedClip) return focusedClip
     }
     return orderedSelectedClips[0] || null
-  }, [orderedSelectedClips, inspectorClipId, isMultiSelection, multiSelection])
+  }, [orderedSelectedClips, inspectorClipId])
 
   useEffect(() => {
     setOpticalFlowUiError(null)
@@ -988,19 +818,12 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   const isTextClip = selectedClip?.type === 'text'
   const isShapeClip = selectedClip?.type === 'shape'
   const isAdjustmentClip = selectedClip?.type === 'adjustment'
-  const isCompoundClip = selectedClip?.type === 'compound'
-  const isVideoClip = selectedTrack?.type === 'video' && !isTextClip && !isAdjustmentClip && !isCompoundClip
+  const isVideoClip = selectedTrack?.type === 'video' && !isTextClip && !isAdjustmentClip
   const isAudioClip = selectedTrack?.type === 'audio'
   
   // Get transform with defaults for legacy clips
   const getTransform = useCallback(() => {
     if (!selectedClip) return null
-    if (isMultiSelection) return {
-      ...Object.fromEntries(MULTI_CLIP_FIELDS.filter(field => field.group === 'transform').map(field => [field.id, field.initial])),
-      ...selectedClip.transform,
-      // Different link settings need both existing axis controls visible.
-      scaleLinked: multiSelection.visual.every(clip => clip.transform?.scaleLinked !== false),
-    }
     return selectedClip.transform || {
       positionX: 0, positionY: 0, positionZ: 0,
       scaleX: 100, scaleY: 100, scaleLinked: true,
@@ -1011,7 +834,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       blendMode: 'normal',
       blur: 0,
     }
-  }, [selectedClip, isMultiSelection, multiSelection])
+  }, [selectedClip])
 
   // Blend mode options (CSS mix-blend-mode values)
   const BLEND_MODES = [
@@ -1046,10 +869,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   
   // Get animated transform values (with keyframes applied)
   const animatedTransform = useMemo(() => {
-    if (isMultiSelection) return transform
     if (!selectedClip) return transform
     return getAnimatedTransform(selectedClip, clipTime) || transform
-  }, [selectedClip, clipTime, transform, isMultiSelection])
+  }, [selectedClip, clipTime, transform])
 
   const compositeMode = normalizeClipCompositeMode(selectedClip?.compositeLowerLayers)
   const compositeStatus = useMemo(() => (
@@ -1246,12 +1068,11 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }, [buildGlobalTimingSettings, buildScopedTimingSettings, getTextProps, selectedClip, selectedTrack, transform])
 
   const canCopyInspectorSettings = useMemo(
-    () => Boolean(selectedClip) && !selectedTransition && !isMultiSelection,
-    [selectedClip, selectedTransition, isMultiSelection]
+    () => Boolean(selectedClip) && !selectedTransition,
+    [selectedClip, selectedTransition]
   )
 
   const canPasteInspectorSettings = useCallback((scope = INSPECTOR_SETTINGS_SCOPE.ALL) => {
-    if (isMultiSelection) return false
     if (!selectedClip || selectedTransition || !inspectorSettingsClipboard) return false
     if (inspectorSettingsClipboard.scope !== scope) return false
 
@@ -1280,7 +1101,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
           || (supportsAudioSettings && inspectorSettingsClipboard.audio)
         )
     }
-  }, [getCompatibleTimingSettings, inspectorSettingsClipboard, selectedClip, selectedTrack?.type, selectedTransition, isMultiSelection])
+  }, [getCompatibleTimingSettings, inspectorSettingsClipboard, selectedClip, selectedTrack?.type, selectedTransition])
 
   const hasAdjustmentChanges = useCallback((updates) => {
     if (!updates || typeof updates !== 'object') return false
@@ -1289,7 +1110,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }, [baseAdjustments])
 
   const applyTransformUpdatesWithHistory = useCallback((updates, keepSessionOpen = false) => {
-    if (isMultiSelection) return applyBatchUpdates(updates, keepSessionOpen)
     if (!selectedClip || !updates || typeof updates !== 'object') return false
 
     const hasPendingSession = transformHistorySessionClipRef.current === selectedClip.id
@@ -1305,12 +1125,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
     transformHistorySessionClipRef.current = keepSessionOpen ? selectedClip.id : null
     return true
-  }, [selectedClip, hasTransformChanges, saveToHistory, updateClipTransform, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, hasTransformChanges, saveToHistory, updateClipTransform])
 
   const applyAdjustmentUpdatesWithHistory = useCallback((updates, keepSessionOpen = false) => {
-    // Batch color handlers below send sparse paths through applyBatchUpdates.
-    // Never fan out a normalized primary-clip payload (it contains its LUT).
-    if (isMultiSelection) return false
     if (!selectedClip || !updates || typeof updates !== 'object') return false
 
     const hasPendingSession = adjustmentHistorySessionClipRef.current === selectedClip.id
@@ -1326,7 +1143,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
     adjustmentHistorySessionClipRef.current = keepSessionOpen ? selectedClip.id : null
     return true
-  }, [selectedClip, hasAdjustmentChanges, saveToHistory, updateClipAdjustments, isMultiSelection])
+  }, [selectedClip, hasAdjustmentChanges, saveToHistory, updateClipAdjustments])
 
   // Shape mask (Step 1 of vector masking): rect/ellipse/rounded on the clip,
   // feather + invert baked into the matte raster. Slider drags share one
@@ -1337,7 +1154,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   const maskSectionOpen = expandedSections.includes('mask')
   const maskEditEligible = Boolean(
     maskSectionOpen
-    && !isMultiSelection
     && selectedClip
     && (selectedClip.type === 'video' || selectedClip.type === 'image')
     && normalizeShapeMask(selectedClip.shapeMask)
@@ -1388,22 +1204,20 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     if (!file) return
     try {
       const imported = await importCubeLutFile(file)
-      const currentIds = useTimelineStore.getState().selectedClipIds
-      if (currentIds.length !== selectedClipIds.length || currentIds.some(id => !selectedClipIds.includes(id))) return
       // Importing from the clip's Look row is intent to use it — apply now.
       applyLutUpdate({ lutId: imported.id, amount: 100 })
     } catch (err) {
       console.warn('[lut-import] failed:', err?.message || err)
       setLutImportError(err?.message || 'Could not import that .cube file.')
     }
-  }, [applyLutUpdate, selectedClipIds])
+  }, [applyLutUpdate])
   
   // Update transform handler (doesn't save to history for realtime sliders)
   // Also adds/updates keyframe if property is keyframed
   const handleTransformChange = useCallback((key, value) => {
     if (!selectedClip) return
     const applied = applyTransformUpdatesWithHistory({ [key]: value }, true)
-    if (!applied || isMultiSelection) return
+    if (!applied) return
     
     // If this property has keyframes, also update the keyframe at current time
     if (propertyHasKeyframes(key)) {
@@ -1419,7 +1233,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         setKeyframe(selectedClip.id, otherKey, clipTime, value, 'easeInOut', { saveHistory: false })
       }
     }
-  }, [selectedClip, applyTransformUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime, transform, isMultiSelection])
+  }, [selectedClip, applyTransformUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime, transform])
   
   // Save to history when user finishes editing (on blur or mouse up)
   const handleTransformCommit = useCallback((key, value) => {
@@ -1430,10 +1244,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   // Reset individual slider to default on double-click
   const handleSliderReset = useCallback((property, defaultValue) => {
     if (!selectedClip) return
-    if (isMultiSelection) {
-      applyBatchUpdates({ [property]: defaultValue })
-      return
-    }
     const isScale = property === 'scaleX' || property === 'scaleY'
     const isLinked = transform?.scaleLinked && isScale
     const updates = isScale && isLinked
@@ -1446,17 +1256,13 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         setKeyframe(selectedClip.id, key, clipTime, updates[key], 'easeInOut', { saveHistory: false })
       }
     }
-  }, [selectedClip, transform?.scaleLinked, applyTransformUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, transform?.scaleLinked, applyTransformUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime])
   
   // Reset all transform
   const handleResetTransform = useCallback(() => {
     if (!selectedClip) return
-    if (isMultiSelection) {
-      applyBatchUpdates(Object.fromEntries(MULTI_CLIP_FIELDS.filter(field => field.group === 'transform').map(field => [field.id, field.initial])))
-      return
-    }
     resetClipTransform(selectedClip.id)
-  }, [selectedClip, resetClipTransform, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, resetClipTransform])
 
   const handleCompositeModeCommit = useCallback((mode) => {
     if (!selectedClip) return
@@ -1470,28 +1276,23 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
   const handleClipAdjustmentChange = useCallback((key, value) => {
     if (!selectedClip) return
-    if (isMultiSelection) return applyBatchUpdates({ [key === 'blur' ? 'effects.blur' : `color.${key}`]: value }, true)
     const applied = applyAdjustmentUpdatesWithHistory(buildAdjustmentUpdatePayload(key, value), true)
     if (!applied) return
     if (propertyHasKeyframes(key)) {
       setKeyframe(selectedClip.id, key, clipTime, value, 'easeInOut', { saveHistory: false })
     }
-  }, [selectedClip, applyAdjustmentUpdatesWithHistory, buildAdjustmentUpdatePayload, propertyHasKeyframes, setKeyframe, clipTime, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, applyAdjustmentUpdatesWithHistory, buildAdjustmentUpdatePayload, propertyHasKeyframes, setKeyframe, clipTime])
 
   const handleClipAdjustmentCommit = useCallback((key, value) => {
     if (!selectedClip) return
-    if (isMultiSelection) return applyBatchUpdates({ [key === 'blur' ? 'effects.blur' : `color.${key}`]: value })
     applyAdjustmentUpdatesWithHistory(buildAdjustmentUpdatePayload(key, value), false)
-  }, [selectedClip, applyAdjustmentUpdatesWithHistory, buildAdjustmentUpdatePayload, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, applyAdjustmentUpdatesWithHistory, buildAdjustmentUpdatePayload])
 
   // Multi-path variant for the color wheels: one wheel gesture writes hue and
   // saturation together, which must land as a single payload — two sequential
   // single-path applies would each rebuild from the same base and drop one.
   const handleClipAdjustmentPathsApply = useCallback((updates, commit = false) => {
     if (!selectedClip || !updates || typeof updates !== 'object') return
-    if (isMultiSelection) return applyBatchUpdates(Object.fromEntries(
-      Object.entries(updates).map(([path, value]) => [`color.${path}`, value])
-    ), !commit)
     let payload = baseAdjustments
     for (const [propertyPath, value] of Object.entries(updates)) {
       payload = setAdjustmentValue(payload, propertyPath, value)
@@ -1505,19 +1306,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         }
       }
     }
-  }, [selectedClip, baseAdjustments, applyAdjustmentUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime, isMultiSelection, applyBatchUpdates])
-
-  const batchColorResetProps = (groupKey = 'all') => {
-    if (!isMultiSelection) return {}
-    const blockedReason = batchColorResetFields(groupKey).map(field => getMultiClipFieldState(multiSelection, field.id).blockedReason).find(Boolean)
-    return { disabled: Boolean(blockedReason), title: blockedReason || 'Reset these color controls on selected visual clips; LUTs and Effects are preserved' }
-  }
+  }, [selectedClip, baseAdjustments, applyAdjustmentUpdatesWithHistory, propertyHasKeyframes, setKeyframe, clipTime])
 
   const handleClipAdjustmentGroupReset = useCallback((groupKey = 'all') => {
     if (!selectedClip) return false
-    if (isMultiSelection) return applyBatchUpdates(Object.fromEntries(
-      batchColorResetFields(groupKey).map(field => [field.id, field.initial])
-    ))
 
     const updates = groupKey === 'all'
       ? DEFAULT_ADJUSTMENT_SETTINGS
@@ -1554,7 +1346,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     }
 
     return true
-  }, [applyAdjustmentUpdatesWithHistory, clipTime, propertyHasKeyframes, selectedClip, setKeyframe, isMultiSelection, applyBatchUpdates])
+  }, [applyAdjustmentUpdatesWithHistory, clipTime, propertyHasKeyframes, selectedClip, setKeyframe])
 
   const handleClipAdjustmentsReset = useCallback(() => {
     handleClipAdjustmentGroupReset('all')
@@ -1564,7 +1356,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     if (!selectedClip) return false
     const applied = applyTransformUpdatesWithHistory(RESET_CROP_SETTINGS, false)
     if (!applied) return false
-    if (isMultiSelection) return true
 
     for (const [property, value] of Object.entries(RESET_CROP_SETTINGS)) {
       if (propertyHasKeyframes(property)) {
@@ -1572,7 +1363,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       }
     }
     return true
-  }, [applyTransformUpdatesWithHistory, clipTime, propertyHasKeyframes, selectedClip, setKeyframe, isMultiSelection])
+  }, [applyTransformUpdatesWithHistory, clipTime, propertyHasKeyframes, selectedClip, setKeyframe])
 
   const canResetTiming = useMemo(
     () => selectedClip?.type === 'video' || selectedClip?.type === 'audio',
@@ -1650,11 +1441,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               clip={selectedClip}
               playheadPosition={playheadPosition}
             />
-            <span className="text-[10px] text-sf-text-secondary"><InspectorValue property={`color.${propertyPath}`}>{control.formatValue(currentValue)}</InspectorValue></span>
+            <span className="text-[10px] text-sf-text-secondary">{control.formatValue(currentValue)}</span>
           </div>
         </div>
-        <InspectorInput
-          inspectorProperty={`color.${propertyPath}`}
+        <input
           type="range"
           min={control.min}
           max={control.max}
@@ -1722,7 +1512,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             label: resetLabel,
             onClick: () => handleClipAdjustmentGroupReset(groupKey || 'global'),
             title: resetTitle,
-            ...batchColorResetProps(groupKey || 'global'),
           })}
         </div>
         {isExpanded && (
@@ -1741,21 +1530,12 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   // without losing its settings (clip.bypass via utils/clipBypass.js).
   const renderBypassPill = (group, what) => {
     if (!selectedClip) return null
-    const supportsBatch = group === 'color' || group === 'effects'
-    const batchField = isMultiSelection && supportsBatch ? getMultiClipFieldState(multiSelection, `${group}Bypass`) : null
-    const bypassed = batchField ? batchField.value === true : isClipBypassed(selectedClip, group)
+    const bypassed = isClipBypassed(selectedClip, group)
     return (
       <button
         type="button"
-        disabled={isMultiSelection && (!supportsBatch || Boolean(batchField?.blockedReason))}
-        aria-label={`Bypass ${group}`}
-        aria-pressed={batchField?.mixed ? 'mixed' : bypassed}
         onClick={(event) => {
           event.stopPropagation()
-          if (isMultiSelection) {
-            if (supportsBatch) applyBatchUpdates({ [`${group}Bypass`]: !bypassed })
-            return
-          }
           setClipBypass(selectedClip.id, group, !bypassed)
         }}
         className={`px-1.5 py-0.5 rounded-full border text-[9px] font-medium transition-colors ${
@@ -1763,9 +1543,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             ? 'border-amber-400/70 bg-amber-400/15 text-amber-300'
             : 'border-sf-dark-600 bg-sf-dark-800 text-sf-text-muted hover:text-sf-text-primary hover:bg-sf-dark-700'
         }`}
-        title={batchField?.blockedReason || (batchField?.mixed ? `Mixed bypass states — click to bypass ${group} on all selected visual clips` : bypassed ? `${what} bypassed in preview and export — click to re-enable` : `Bypass ${what} without losing settings (A/B compare)`)}
+        title={bypassed ? `${what} bypassed in preview and export — click to re-enable` : `Bypass ${what} without losing settings (A/B compare)`}
       >
-        {batchField?.mixed ? 'Mixed' : bypassed ? 'Bypassed' : 'Bypass'}
+        {bypassed ? 'Bypassed' : 'Bypass'}
       </button>
     )
   }
@@ -2041,13 +1821,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   // then apply the look. LUTs come from the app-level library (import a
   // .cube once, use it in every project).
   const renderLutControl = (values) => {
-    if (isMultiSelection) return (
-      <fieldset disabled className="rounded-md border border-sf-dark-700 bg-sf-dark-800/50 p-3 space-y-2">
-        <div className="text-[11px] font-medium text-sf-text-primary">Look (LUT)</div>
-        <p className="text-[10px] text-sf-text-muted">Select one clip to change its LUT. Existing looks are preserved when grading together.</p>
-        <select aria-label="Look (LUT)" className="w-full rounded border border-sf-dark-600 bg-sf-dark-900 px-2 py-1.5 text-[11px] text-sf-text-muted"><option>Individual clip looks</option></select>
-      </fieldset>
-    )
     const currentLut = values?.lut || null
     const currentLutId = currentLut?.lutId || ''
     const currentAmount = Number.isFinite(Number(currentLut?.amount)) ? Number(currentLut.amount) : 100
@@ -2124,7 +1897,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   const renderSharedAdjustmentsContent = (values, description) => (
     <div className="p-3 space-y-3 border-b border-sf-dark-700">
       <p className="text-[10px] text-sf-text-muted">
-        {isMultiSelection ? 'Applies color controls to selected visual clips. Each adjustment layer also grades the clips below it.' : description}
+        {description}
       </p>
       <ColorWheels values={values} onApply={handleClipAdjustmentPathsApply} />
       {renderAdjustmentGroup({
@@ -2147,7 +1920,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       <div className="rounded-md border border-sf-dark-700 bg-sf-dark-800/50 p-3 space-y-3">
         {description && (
           <p className="text-[10px] text-sf-text-muted">
-            {isMultiSelection ? 'Applies blur to selected visual clips. Adjustment layers also blur the clips below them.' : description}
+            {description}
           </p>
         )}
         <div>
@@ -2160,11 +1933,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 clip={selectedClip}
                 playheadPosition={playheadPosition}
               />
-              <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="effects.blur">{ADJUSTMENT_BLUR_CONTROL.formatValue(currentValue)}</InspectorValue></span>
+              <span className="text-[10px] text-sf-text-secondary">{ADJUSTMENT_BLUR_CONTROL.formatValue(currentValue)}</span>
             </div>
           </div>
-          <InspectorInput
-            inspectorProperty="effects.blur"
+          <input
             type="range"
             min={ADJUSTMENT_BLUR_CONTROL.min}
             max={ADJUSTMENT_BLUR_CONTROL.max}
@@ -2355,15 +2127,11 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
   const handleAudioGainChange = useCallback((nextValue) => {
     const value = normalizeAudioClipGainDb(nextValue)
-    if (isMultiSelection) {
-      applyBatchUpdates({ gainDb: value }, true)
-      return
-    }
     setAudioData((prev) => ({ ...prev, gainDb: value }))
     if (selectedClip?.type === 'audio') {
       updateAudioClipProperties(selectedClip.id, { gainDb: value }, true)
     }
-  }, [selectedClip, updateAudioClipProperties, isMultiSelection, applyBatchUpdates])
+  }, [selectedClip, updateAudioClipProperties])
 
   const toggleSection = (section) => {
     setExpandedSections(prev => 
@@ -2589,8 +2357,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       }
     }
 
-    const sourceRequest = createClipSourceRequest(selectedClip, useTimelineStore.getState().timelineSessionId, currentProjectHandle)
-    const stillCurrent = () => isClipSourceRequestCurrent(sourceRequest, useTimelineStore.getState(), useProjectStore.getState().currentProjectHandle)
     setIsRendering(true)
     setCacheStatus(selectedClip.id, 'rendering', 0)
     setRenderProgress({ status: 'starting', progress: 0 })
@@ -2605,7 +2371,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         {
           fps: 30,
           onProgress: (progress) => {
-            if (!stillCurrent()) return
             setRenderProgress(progress)
             if (progress.progress !== undefined) {
               setCacheStatus(selectedClip.id, 'rendering', progress.progress)
@@ -2632,16 +2397,12 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       }
 
       // Store the cached URL in the clip (and path if saved)
-      if (stillCurrent()) {
-        setCacheUrl(selectedClip.id, blobUrl, cachePath)
-        setRenderProgress({ status: 'complete', progress: 100 })
-      }
+      setCacheUrl(selectedClip.id, blobUrl, cachePath)
+      setRenderProgress({ status: 'complete', progress: 100 })
     } catch (err) {
       console.error('Render cache failed:', err)
-      if (stillCurrent()) {
-        setRenderProgress({ status: 'error', error: err.message })
-        setCacheStatus(selectedClip.id, 'none', 0)
-      }
+      setRenderProgress({ status: 'error', error: err.message })
+      setCacheStatus(selectedClip.id, 'none', 0)
     } finally {
       setIsRendering(false)
     }
@@ -2720,7 +2481,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
           ? 'bg-sf-dark-800 text-sf-text-muted/50 cursor-not-allowed'
           : 'bg-sf-dark-700 text-sf-text-secondary hover:bg-sf-dark-600 hover:text-sf-text-primary'
       }`}
-      title={isMultiSelection && onClick === handleResetTransform ? 'Reset shared transform properties (animation protected)' : title}
+      title={title}
     >
       <Icon className="w-3.5 h-3.5" />
     </button>
@@ -2754,7 +2515,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }
 
   const renderInspectorSettingsHeaderActions = () => {
-    if (orderedSelectedClips.some(clip => clip.type === 'compound')) return null
     return renderInspectorClipboardButtons({
       scope: INSPECTOR_SETTINGS_SCOPE.ALL,
       extraActions: selectedSyncEligibleClips.length > 0
@@ -2800,10 +2560,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="opacity">{Math.round(animatedTransform?.opacity ?? transform.opacity)}%</InspectorValue></span>
+                  <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.opacity ?? transform.opacity)}%</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'opacity'}
+              <input
                 type="range"
                 min="0"
                 max="100"
@@ -2822,7 +2582,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 <label className="text-[10px] text-sf-text-muted block mb-1">
                   Blend Mode
                 </label>
-                <InspectorSelect inspectorProperty={'blendMode'}
+                <select
                   value={transform.blendMode ?? 'normal'}
                   onChange={(e) => {
                     handleTransformChange('blendMode', e.target.value)
@@ -2833,7 +2593,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   {BLEND_MODES.map(({ value, label }) => (
                     <option key={value} value={value}>{label}</option>
                   ))}
-                </InspectorSelect>
+                </select>
               </div>
             )}
 
@@ -2845,8 +2605,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 </label>
                 <select
                   value={normalizeTrackMatte(selectedClip?.trackMatte)}
-                  disabled={isMultiSelection}
-                  title={isMultiSelection ? 'Select one clip to set its track matte' : undefined}
                   onChange={(e) => updateClipTrackMatte(selectedClip.id, e.target.value)}
                   className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1.5 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
                 >
@@ -2883,7 +2641,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       key={option.value}
                       type="button"
                       onClick={() => handleCompositeModeCommit(option.value)}
-                      disabled={isMultiSelection}
                       title={option.description}
                       className={`py-1.5 rounded text-[10px] transition-colors ${
                         isActive
@@ -2912,12 +2669,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
   const renderMotionBlurControl = () => {
     if (!selectedClip || !transform || selectedClip.type === 'adjustment') return null
-    if (isMultiSelection) return (
-      <fieldset disabled className="rounded-md border border-sf-dark-700 bg-sf-dark-800/50 p-3 space-y-2" data-testid="batch-motion-blur-unavailable">
-        <div className="text-[10px] text-sf-text-muted">Motion Blur</div>
-        <p className="text-[10px] text-sf-text-secondary">Select one clip to edit its layer motion blur.</p>
-      </fieldset>
-    )
 
     const enabled = transform.motionBlurEnabled === true
     const mode = ['auto', 'velocity', 'sampled'].includes(String(transform.motionBlurMode || '').toLowerCase())
@@ -3014,7 +2765,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <span className="text-[10px] text-sf-text-muted">Samples</span>
               <span className="text-[10px] text-sf-text-secondary">{samples}</span>
             </div>
-            <InspectorInput inspectorProperty={'motionBlurSamples'}
+            <input
               type="range"
               min="2"
               max="48"
@@ -3033,7 +2784,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <span className="text-[10px] text-sf-text-muted">Shutter</span>
               <span className="text-[10px] text-sf-text-secondary">{shutter} deg</span>
             </div>
-            <InspectorInput inspectorProperty={'motionBlurShutter'}
+            <input
               type="range"
               min="1"
               max="360"
@@ -3052,7 +2803,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <span className="text-[10px] text-sf-text-muted">Sharpness</span>
               <span className="text-[10px] text-sf-text-secondary">{sharpnessPct}%</span>
             </div>
-            <InspectorInput inspectorProperty={'motionBlurSharpness'}
+            <input
               type="range"
               min="0"
               max="100"
@@ -3438,7 +3189,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }, [inspectorTabKind])
   const resolveActiveInspectorTab = (tabs) => {
     const stored = activeInspectorTabByKind[inspectorTabKind]
-    if (isMultiSelection && !['transform', 'mix', 'color', 'effects'].includes(stored)) return 'transform'
     return tabs.some((tab) => tab.id === stored) ? stored : tabs[0]?.id
   }
 
@@ -3447,20 +3197,12 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId
         const hue = INSPECTOR_TAB_HUES[tab.id] ?? 'rgb(var(--sf-accent))'
-        const batchGrading = isMultiSelection && ['color', 'effects'].includes(tab.id)
-        const bypassed = batchGrading
-          ? multiSelection.visual.length > 0 && multiSelection.visual.every(clip => isClipBypassed(clip, tab.id))
-          : tab.bypassed
-        const dot = batchGrading ? multiSelection.visual.some(clip => tab.id === 'color' ? colorHasEdits(clip.adjustments) : effectsHaveEdits(clip, clip.adjustments)) : tab.dot
         return (
           <button
             key={tab.id}
-            data-inspector-tab={tab.id}
-            aria-label={tab.label}
             type="button"
             onClick={() => setActiveInspectorTab(tab.id)}
-            disabled={isMultiSelection && !['transform', 'mix', 'color', 'effects'].includes(tab.id)}
-            title={isMultiSelection && !['transform', 'mix', 'color', 'effects'].includes(tab.id) ? 'Select one clip to edit this section' : tab.title || tab.label}
+            title={tab.title || tab.label}
             style={isActive
               ? {
                 '--tab-hue': hue,
@@ -3470,11 +3212,11 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               }
               : { '--tab-hue': hue }}
             className={`relative flex-1 min-w-0 px-0.5 py-1.5 text-[10px] transition-colors border-r border-sf-dark-700 last:border-r-0 ${
-              isActive ? '' : 'inspector-tab-tinted hover:bg-sf-dark-700/60 disabled:opacity-40 disabled:cursor-not-allowed'
+              isActive ? '' : 'inspector-tab-tinted hover:bg-sf-dark-700/60'
             }`}
           >
-            <span className={bypassed ? 'line-through opacity-50' : undefined}>{tab.label}</span>
-            {dot && (
+            <span className={tab.bypassed ? 'line-through opacity-50' : undefined}>{tab.label}</span>
+            {tab.dot && (
               <span
                 className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full"
                 style={{ backgroundColor: 'var(--tab-hue)' }}
@@ -3629,7 +3371,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionX'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionX ?? transform.positionX}
                       onChange={(val) => handleTransformChange('positionX', val)}
                       onCommit={(val) => handleTransformCommit('positionX', val)}
@@ -3658,7 +3400,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionY'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionY ?? transform.positionY}
                       onChange={(val) => handleTransformChange('positionY', val)}
                       onCommit={(val) => handleTransformCommit('positionY', val)}
@@ -3683,7 +3425,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       return (
                         <button
                           key={value}
-                          disabled={isMultiSelection}
                           onClick={() => {
                             handleTransformChange('motionPathMode', value)
                             handleTransformCommit('motionPathMode', value)
@@ -3721,7 +3462,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   />
                 </div>
                 <div className="flex items-center">
-                  <DraggableNumberInput inspectorProperty={'positionZ'}
+                  <DraggableNumberInput
                     value={animatedTransform?.positionZ ?? transform.positionZ ?? 0}
                     onChange={(val) => handleTransformChange('positionZ', val)}
                     onCommit={(val) => handleTransformCommit('positionZ', val)}
@@ -3752,7 +3493,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     onClick={() => handleTransformCommit('scaleLinked', !transform.scaleLinked)}
                     className={`p-1 rounded transition-colors ${transform.scaleLinked ? 'bg-sf-accent/30 text-sf-accent' : 'hover:bg-sf-dark-700 text-sf-text-muted'}`}
                     title={transform.scaleLinked ? 'Unlink X/Y Scale' : 'Link X/Y Scale'}
-                   {...batchFieldProps('scaleLinked')}>
+                  >
                     {transform.scaleLinked ? <Link className="w-3 h-3" /> : <Unlink className="w-3 h-3" />}
                   </button>
                 </div>
@@ -3763,9 +3504,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 <div>
                   <div className="flex justify-between mb-1">
                     <span className="text-[9px] text-sf-text-muted">Uniform</span>
-                    <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="scaleX">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</InspectorValue></span>
+                    <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</span>
                   </div>
-                  <InspectorInput inspectorProperty={'scaleX'}
+                  <input
                     type="range"
                     min="10"
                     max="400"
@@ -3783,9 +3524,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   <div>
                     <div className="flex justify-between mb-1">
                       <span className="text-[9px] text-sf-text-muted">Width (X)</span>
-                      <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="scaleX">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</InspectorValue></span>
+                      <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</span>
                     </div>
-                    <InspectorInput inspectorProperty={'scaleX'}
+                    <input
                       type="range"
                       min="10"
                       max="400"
@@ -3800,9 +3541,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   <div>
                     <div className="flex justify-between mb-1">
                       <span className="text-[9px] text-sf-text-muted">Height (Y)</span>
-                      <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="scaleY">{transform.scaleY}%</InspectorValue></span>
+                      <span className="text-[10px] text-sf-text-secondary">{transform.scaleY}%</span>
                     </div>
-                    <InspectorInput inspectorProperty={'scaleY'}
+                    <input
                       type="range"
                       min="10"
                       max="400"
@@ -3831,7 +3572,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <InspectorInput inspectorProperty={'rotation'}
+                  <input
                     type="number"
                     value={Math.round(animatedTransform?.rotation ?? transform.rotation)}
                     onChange={(e) => handleTransformChange('rotation', parseFloat(e.target.value) || 0)}
@@ -3843,7 +3584,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   <span className="text-[10px] text-sf-text-secondary">°</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'rotation'}
+              <input
                 type="range"
                 min="-180"
                 max="180"
@@ -3879,7 +3620,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'rotationX'}
+                    <DraggableNumberInput
                       value={animatedTransform?.rotationX ?? transform.rotationX ?? 0}
                       onChange={(val) => handleTransformChange('rotationX', val)}
                       onCommit={(val) => handleTransformCommit('rotationX', val)}
@@ -3910,7 +3651,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'rotationY'}
+                    <DraggableNumberInput
                       value={animatedTransform?.rotationY ?? transform.rotationY ?? 0}
                       onChange={(val) => handleTransformChange('rotationY', val)}
                       onCommit={(val) => handleTransformCommit('rotationY', val)}
@@ -3942,7 +3683,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   />
                 </div>
                 <div className="flex items-center">
-                  <DraggableNumberInput inspectorProperty={'perspective'}
+                  <DraggableNumberInput
                     value={animatedTransform?.perspective ?? transform.perspective ?? 1200}
                     onChange={(val) => handleTransformChange('perspective', val)}
                     onCommit={(val) => handleTransformCommit('perspective', val)}
@@ -3969,7 +3710,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       ? 'bg-sf-accent text-white' 
                       : 'bg-sf-dark-700 text-sf-text-secondary hover:bg-sf-dark-600'
                   }`}
-                 {...batchFieldProps('flipH')}>
+                >
                   <FlipHorizontal className="w-3.5 h-3.5" />
                   Horizontal
                 </button>
@@ -3980,7 +3721,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       ? 'bg-sf-accent text-white' 
                       : 'bg-sf-dark-700 text-sf-text-secondary hover:bg-sf-dark-600'
                   }`}
-                 {...batchFieldProps('flipV')}>
+                >
                   <FlipVertical className="w-3.5 h-3.5" />
                   Vertical
                 </button>
@@ -3992,7 +3733,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div>
                 <label className="text-[10px] text-sf-text-muted mb-1 flex items-center justify-between">
                   <span>Corner Pin</span>
-                  <InspectorInput inspectorProperty={'cornerPinEnabled'}
+                  <input
                     type="checkbox"
                     checked={transform.cornerPinEnabled === true}
                     onChange={(e) => {
@@ -4007,7 +3748,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       <div key={corner.key} className="grid grid-cols-[28px_1fr_1fr] items-center gap-1">
                         <span className="text-[9px] text-sf-text-muted">{corner.key}</span>
                         <div className="flex items-center gap-0.5">
-                          <DraggableNumberInput inspectorProperty={corner.xKey}
+                          <DraggableNumberInput
                             value={animatedTransform?.[corner.xKey] ?? transform[corner.xKey] ?? 0}
                             onChange={(val) => handleTransformChange(corner.xKey, val)}
                             onCommit={(val) => handleTransformCommit(corner.xKey, val)}
@@ -4024,7 +3765,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                           />
                         </div>
                         <div className="flex items-center gap-0.5">
-                          <DraggableNumberInput inspectorProperty={corner.yKey}
+                          <DraggableNumberInput
                             value={animatedTransform?.[corner.yKey] ?? transform[corner.yKey] ?? 0}
                             onChange={(val) => handleTransformChange(corner.yKey, val)}
                             onCommit={(val) => handleTransformCommit(corner.yKey, val)}
@@ -4044,10 +3785,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     ))}
                     <button
                       onClick={() => {
-                        if (isMultiSelection) {
-                          applyBatchUpdates(Object.fromEntries(CORNER_PIN_CORNERS.flatMap(corner => [[corner.xKey, 0], [corner.yKey, 0]])))
-                          return
-                        }
                         CORNER_PIN_CORNERS.forEach((corner) => {
                           handleTransformChange(corner.xKey, 0)
                           handleTransformChange(corner.yKey, 0)
@@ -4055,7 +3792,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                         handleTransformCommit('cornerPinEnabled', true)
                       }}
                       className="px-1.5 py-0.5 rounded text-[9px] border border-sf-dark-600 bg-sf-dark-700 text-sf-text-muted hover:text-sf-text-primary hover:border-sf-dark-500 transition-colors"
-                     {...batchFieldProps('cornerPinEnabled')}>
+                    >
                       Reset Corners
                     </button>
                     <p className="text-[9px] text-sf-text-muted">
@@ -4080,10 +3817,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   <button
                     key={i}
                     onClick={() => {
-                      if (isMultiSelection) {
-                        applyBatchUpdates({ anchorX: x, anchorY: y })
-                        return
-                      }
                       handleTransformChange('anchorX', x)
                       handleTransformCommit('anchorY', y)
                     }}
@@ -4101,7 +3834,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div>
                   <label className="text-[9px] text-sf-text-muted block mb-0.5">X</label>
-                  <DraggableNumberInput inspectorProperty={'anchorX'}
+                  <DraggableNumberInput
                     value={transform.anchorX}
                     onChange={(val) => handleTransformChange('anchorX', val)}
                     onCommit={(val) => handleTransformCommit('anchorX', val)}
@@ -4113,7 +3846,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 </div>
                 <div>
                   <label className="text-[9px] text-sf-text-muted block mb-0.5">Y</label>
-                  <DraggableNumberInput inspectorProperty={'anchorY'}
+                  <DraggableNumberInput
                     value={transform.anchorY}
                     onChange={(val) => handleTransformChange('anchorY', val)}
                     onCommit={(val) => handleTransformCommit('anchorY', val)}
@@ -4151,9 +3884,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-[9px] text-sf-text-muted">Top</label>
-                  <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropTop">{transform.cropTop}%</InspectorValue></span>
+                  <span className="text-[9px] text-sf-text-secondary">{transform.cropTop}%</span>
                 </div>
-                <InspectorInput inspectorProperty={'cropTop'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -4168,9 +3901,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-[9px] text-sf-text-muted">Bottom</label>
-                  <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropBottom">{transform.cropBottom}%</InspectorValue></span>
+                  <span className="text-[9px] text-sf-text-secondary">{transform.cropBottom}%</span>
                 </div>
-                <InspectorInput inspectorProperty={'cropBottom'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -4185,9 +3918,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-[9px] text-sf-text-muted">Left</label>
-                  <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropLeft">{transform.cropLeft}%</InspectorValue></span>
+                  <span className="text-[9px] text-sf-text-secondary">{transform.cropLeft}%</span>
                 </div>
-                <InspectorInput inspectorProperty={'cropLeft'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -4202,9 +3935,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <div>
                 <div className="flex justify-between mb-1">
                   <label className="text-[9px] text-sf-text-muted">Right</label>
-                  <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropRight">{transform.cropRight}%</InspectorValue></span>
+                  <span className="text-[9px] text-sf-text-secondary">{transform.cropRight}%</span>
                 </div>
-                <InspectorInput inspectorProperty={'cropRight'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -4300,10 +4033,8 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       max="1"
                       step="0.001"
                       value={speedToSliderPosition(selectedClip.speed)}
-                      aria-label="Playback speed slider"
-                      onChange={(e) => speedGesture.apply(selectedClip.id, sliderPositionToSpeed(parseFloat(e.target.value)))}
-                      onBlur={() => speedGesture.end()}
-                      onKeyUp={() => speedGesture.end()}
+                      onChange={(e) => updateClipSpeed(selectedClip.id, sliderPositionToSpeed(parseFloat(e.target.value)), false)}
+                      onMouseUp={(e) => updateClipSpeed(selectedClip.id, sliderPositionToSpeed(parseFloat(e.target.value)), true)}
                       className="flex-1"
                     />
                     <input
@@ -4312,9 +4043,8 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       max={CLIP_SPEED_MAX}
                       step="0.01"
                       value={(Number.isFinite(Number(selectedClip.speed)) ? Number(selectedClip.speed) : 1).toFixed(2)}
-                      aria-label="Playback speed"
-                      onChange={(e) => speedGesture.apply(selectedClip.id, parseFloat(e.target.value) || 1)}
-                      onBlur={() => speedGesture.end()}
+                      onChange={(e) => updateClipSpeed(selectedClip.id, parseFloat(e.target.value) || 1, false)}
+                      onBlur={(e) => updateClipSpeed(selectedClip.id, parseFloat(e.target.value) || 1, true)}
                       className="w-16 bg-sf-dark-700 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
                     />
                     <span className="text-[9px] text-sf-text-muted">x</span>
@@ -4326,7 +4056,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       return (
                         <button
                           key={preset}
-                          onClick={() => speedGesture.apply(selectedClip.id, preset, false)}
+                          onClick={() => updateClipSpeed(selectedClip.id, preset, true)}
                           className={`px-1.5 py-0.5 rounded text-[9px] border transition-colors ${
                             isActive
                               ? 'bg-sf-accent/20 border-sf-accent text-sf-accent'
@@ -4511,7 +4241,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
             {/* Stylistic effects (camera shake, chromatic aberration, film grain, vignette) */}
             <EffectsStack
-              batch={batchEffects}
               clip={selectedClip}
               playheadPosition={playheadPosition}
               addEffect={addEffect}
@@ -4527,7 +4256,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
             {/* Non-managed effects inline (managed effects handled by EffectsStack
                 above; mask effects live in the Mask section now) */}
-            {!isMultiSelection && (selectedClip.effects || []).filter((e) => !isManagedEffectType(e?.type) && e?.type !== 'mask').map((effect, index) => (
+            {(selectedClip.effects || []).filter((e) => !isManagedEffectType(e?.type) && e?.type !== 'mask').map((effect, index) => (
               <div key={effect.id} className="bg-sf-dark-800 rounded overflow-hidden">
                 {/* Effect Header */}
                 <div className="flex items-center gap-2 px-2 py-1.5 bg-sf-dark-700">
@@ -4556,7 +4285,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             ))}
             
             {/* Render Cache Section - Only show if clip has non-managed (mask) effects enabled */}
-            {!isMultiSelection && (selectedClip.effects || []).some(e => e.enabled && !isManagedEffectType(e?.type)) && (
+            {(selectedClip.effects || []).some(e => e.enabled && !isManagedEffectType(e?.type)) && (
               <div className="bg-sf-dark-800 rounded p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-sf-text-secondary uppercase tracking-wider">Render Cache</span>
@@ -4658,7 +4387,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }
 
   const handleCommitRender = async () => {
-    if (isMultiSelection || !selectedClip || selectedClip.type !== 'adjustment') return
+    if (!selectedClip || selectedClip.type !== 'adjustment') return
     if (commitRenderState.busy) return
     setCommitRenderState({
       busy: true,
@@ -4699,10 +4428,8 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   const renderAdjustmentClipInspector = () => {
     if (!selectedClip || !transform) return null
     const adjustments = animatedAdjustments
-    const commitDisabledReason = isMultiSelection
-      ? 'Select one adjustment clip to commit its render.'
-      : !isElectron()
-        ? 'Available in the desktop app only.'
+    const commitDisabledReason = !isElectron()
+      ? 'Available in the desktop app only.'
       : !currentProjectHandle
         ? 'Open a project folder first.'
         : !(Number(selectedClip?.duration) > 0)
@@ -4773,7 +4500,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionX'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionX ?? transform.positionX}
                       onChange={(val) => handleTransformChange('positionX', val)}
                       onCommit={(val) => handleTransformCommit('positionX', val)}
@@ -4794,7 +4521,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionY'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionY ?? transform.positionY}
                       onChange={(val) => handleTransformChange('positionY', val)}
                       onCommit={(val) => handleTransformCommit('positionY', val)}
@@ -4819,10 +4546,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="scaleX">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</InspectorValue></span>
+                  <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'scaleX'}
+              <input
                 type="range"
                 min="10"
                 max="400"
@@ -4853,10 +4580,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="rotation">{Math.round(animatedTransform?.rotation ?? transform.rotation)}deg</InspectorValue></span>
+                  <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.rotation ?? transform.rotation)}deg</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'rotation'}
+              <input
                 type="range"
                 min="-180"
                 max="180"
@@ -4879,7 +4606,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       ? 'bg-sf-accent text-white'
                       : 'bg-sf-dark-700 text-sf-text-secondary hover:bg-sf-dark-600'
                   }`}
-                 {...batchFieldProps('flipH')}>
+                >
                   <FlipHorizontal className="w-3.5 h-3.5" />
                   Horizontal
                 </button>
@@ -4890,7 +4617,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       ? 'bg-sf-accent text-white'
                       : 'bg-sf-dark-700 text-sf-text-secondary hover:bg-sf-dark-600'
                   }`}
-                 {...batchFieldProps('flipV')}>
+                >
                   <FlipVertical className="w-3.5 h-3.5" />
                   Vertical
                 </button>
@@ -4911,7 +4638,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     key={i}
                     onClick={() => {
                       const applied = applyTransformUpdatesWithHistory({ anchorX: x, anchorY: y }, false)
-                      if (!applied || isMultiSelection) return
+                      if (!applied) return
                       if (propertyHasKeyframes('anchorX')) {
                         setKeyframe(selectedClip.id, 'anchorX', clipTime, x, 'easeInOut', { saveHistory: false })
                       }
@@ -4942,7 +4669,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       playheadPosition={playheadPosition}
                     />
                   </div>
-                  <DraggableNumberInput inspectorProperty={'anchorX'}
+                  <DraggableNumberInput
                     value={animatedTransform?.anchorX ?? transform.anchorX}
                     onChange={(val) => handleTransformChange('anchorX', val)}
                     onCommit={(val) => handleTransformCommit('anchorX', val)}
@@ -4962,7 +4689,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       playheadPosition={playheadPosition}
                     />
                   </div>
-                  <DraggableNumberInput inspectorProperty={'anchorY'}
+                  <DraggableNumberInput
                     value={animatedTransform?.anchorY ?? transform.anchorY}
                     onChange={(val) => handleTransformChange('anchorY', val)}
                     onCommit={(val) => handleTransformCommit('anchorY', val)}
@@ -4987,10 +4714,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="opacity">{Math.round(animatedTransform?.opacity ?? transform.opacity)}%</InspectorValue></span>
+                  <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.opacity ?? transform.opacity)}%</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'opacity'}
+              <input
                 type="range"
                 min="0"
                 max="100"
@@ -5007,7 +4734,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
               <label className="text-[10px] text-sf-text-muted block mb-1">
                 Blend Mode
               </label>
-              <InspectorSelect inspectorProperty={'blendMode'}
+              <select
                 value={transform.blendMode ?? 'normal'}
                 onChange={(e) => {
                   handleTransformChange('blendMode', e.target.value)
@@ -5018,7 +4745,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 {BLEND_MODES.map(({ value, label }) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
-              </InspectorSelect>
+              </select>
             </div>
           </div>
         )}
@@ -5047,10 +4774,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       clip={selectedClip}
                       playheadPosition={playheadPosition}
                     />
-                    <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropTop">{Math.round(animatedTransform?.cropTop ?? transform.cropTop)}%</InspectorValue></span>
+                    <span className="text-[9px] text-sf-text-secondary">{Math.round(animatedTransform?.cropTop ?? transform.cropTop)}%</span>
                   </div>
                 </div>
-                <InspectorInput inspectorProperty={'cropTop'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -5072,10 +4799,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       clip={selectedClip}
                       playheadPosition={playheadPosition}
                     />
-                    <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropBottom">{Math.round(animatedTransform?.cropBottom ?? transform.cropBottom)}%</InspectorValue></span>
+                    <span className="text-[9px] text-sf-text-secondary">{Math.round(animatedTransform?.cropBottom ?? transform.cropBottom)}%</span>
                   </div>
                 </div>
-                <InspectorInput inspectorProperty={'cropBottom'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -5097,10 +4824,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       clip={selectedClip}
                       playheadPosition={playheadPosition}
                     />
-                    <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropLeft">{Math.round(animatedTransform?.cropLeft ?? transform.cropLeft)}%</InspectorValue></span>
+                    <span className="text-[9px] text-sf-text-secondary">{Math.round(animatedTransform?.cropLeft ?? transform.cropLeft)}%</span>
                   </div>
                 </div>
-                <InspectorInput inspectorProperty={'cropLeft'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -5122,10 +4849,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                       clip={selectedClip}
                       playheadPosition={playheadPosition}
                     />
-                    <span className="text-[9px] text-sf-text-secondary"><InspectorValue property="cropRight">{Math.round(animatedTransform?.cropRight ?? transform.cropRight)}%</InspectorValue></span>
+                    <span className="text-[9px] text-sf-text-secondary">{Math.round(animatedTransform?.cropRight ?? transform.cropRight)}%</span>
                   </div>
                 </div>
-                <InspectorInput inspectorProperty={'cropRight'}
+                <input
                   type="range"
                   min="0"
                   max="100"
@@ -5151,7 +4878,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
 
             {/* Stylistic effects applied to all layers beneath this adjustment */}
             <EffectsStack
-              batch={batchEffects}
               clip={selectedClip}
               playheadPosition={playheadPosition}
               addEffect={addEffect}
@@ -5180,7 +4906,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   label: 'Reset',
                   onClick: handleClipAdjustmentsReset,
                   title: 'Reset color controls',
-                  ...batchColorResetProps(),
                 })}
               </>
             ),
@@ -5314,7 +5039,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                 label: 'Reset',
                 onClick: handleClipAdjustmentsReset,
                 title: 'Reset color controls',
-                ...batchColorResetProps(),
               })}
             </>
           ),
@@ -5745,7 +5469,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             {renderAdjustmentBlurControl('Applies blur as an effect on this text clip.')}
             {renderMotionBlurControl()}
             <EffectsStack
-              batch={batchEffects}
               clip={selectedClip}
               playheadPosition={playheadPosition}
               addEffect={addEffect}
@@ -5794,7 +5517,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionX'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionX ?? transform.positionX}
                       onChange={(val) => handleTransformChange('positionX', val)}
                       onCommit={(val) => handleTransformCommit('positionX', val)}
@@ -5815,7 +5538,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     />
                   </div>
                   <div className="flex items-center">
-                    <DraggableNumberInput inspectorProperty={'positionY'}
+                    <DraggableNumberInput
                       value={animatedTransform?.positionY ?? transform.positionY}
                       onChange={(val) => handleTransformChange('positionY', val)}
                       onCommit={(val) => handleTransformCommit('positionY', val)}
@@ -5841,10 +5564,10 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                     clip={selectedClip}
                     playheadPosition={playheadPosition}
                   />
-                  <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="scaleX">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</InspectorValue></span>
+                  <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.scaleX ?? transform.scaleX)}%</span>
                 </div>
               </div>
-              <InspectorInput inspectorProperty={'scaleX'}
+              <input
                 type="range"
                 min="10"
                 max="400"
@@ -5869,9 +5592,9 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
                   clip={selectedClip}
                   playheadPosition={playheadPosition}
                 />
-                <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="rotation">{Math.round(animatedTransform?.rotation ?? transform.rotation)}°</InspectorValue></span>
+                <span className="text-[10px] text-sf-text-secondary">{Math.round(animatedTransform?.rotation ?? transform.rotation)}°</span>
               </div>
-              <InspectorInput inspectorProperty={'rotation'}
+              <input
                 type="range"
                 min="-180"
                 max="180"
@@ -5973,7 +5696,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             </p>
           </div>
           <div className="w-24">
-            <InspectorInput inspectorProperty={'gainDb'}
+            <input
               type="number"
               min={MIN_AUDIO_CLIP_GAIN_DB}
               max={MAX_AUDIO_CLIP_GAIN_DB}
@@ -5987,11 +5710,11 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         <div>
           <div className="flex justify-between mb-1">
             <span className="text-[10px] text-sf-text-muted">Clip Gain</span>
-            <span className="text-[10px] text-sf-text-secondary"><InspectorValue property="gainDb">
+            <span className="text-[10px] text-sf-text-secondary">
               {audioData.gainDb > 0 ? '+' : ''}{audioData.gainDb.toFixed(1)} dB
-            </InspectorValue></span>
+            </span>
           </div>
-          <InspectorInput inspectorProperty={'gainDb'}
+          <input
             type="range"
             min={MIN_AUDIO_CLIP_GAIN_DB}
             max={MAX_AUDIO_CLIP_GAIN_DB}
@@ -6008,17 +5731,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         </div>
       </div>
 
-      {getSingleAudioEnvelopeTarget(clips, tracks, selectedClipIds)?.id === selectedClip?.id && (
-        <AudioVolumeEnvelopeInspector key={selectedClip.id} clip={selectedClip} track={selectedTrack} fps={timecodeFps} />
-      )}
-
-      {getSingleAudioEnvelopeTarget(clips, tracks, selectedClipIds)?.id === selectedClip?.id && (
-        <AudioEqInspector key={selectedClip.id} clip={selectedClip} track={selectedTrack} />
-      )}
-      {getSingleAudioEnvelopeTarget(clips, tracks, selectedClipIds)?.id === selectedClip?.id && (
-        <AudioDuckingInspector key={selectedClip.id} clip={selectedClip} track={selectedTrack} />
-      )}
-
       {/* Fades */}
       <div className="p-3 space-y-3 border-b border-sf-dark-700">
         <h4 className="text-[10px] text-sf-text-muted uppercase tracking-wider">Fades</h4>
@@ -6026,14 +5738,13 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
           <div>
             <label className="text-[10px] text-sf-text-muted block mb-1">Fade In</label>
             <div className="flex items-center">
-              <InspectorInput inspectorProperty="fadeIn"
+              <input
                 type="number"
                 step="0.1"
                 min="0"
                 value={audioData.fadeIn}
                 onChange={(e) => {
                   const value = Math.max(0, parseFloat(e.target.value) || 0)
-                  if (isMultiSelection) { applyBatchUpdates({ fadeIn: value }, true); return }
                   setAudioData({ ...audioData, fadeIn: value })
                   if (selectedClip) {
                     updateAudioClipProperties(selectedClip.id, { fadeIn: value }, true)
@@ -6047,14 +5758,13 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
           <div>
             <label className="text-[10px] text-sf-text-muted block mb-1">Fade Out</label>
             <div className="flex items-center">
-              <InspectorInput inspectorProperty="fadeOut"
+              <input
                 type="number"
                 step="0.1"
                 min="0"
                 value={audioData.fadeOut}
                 onChange={(e) => {
                   const value = Math.max(0, parseFloat(e.target.value) || 0)
-                  if (isMultiSelection) { applyBatchUpdates({ fadeOut: value }, true); return }
                   setAudioData({ ...audioData, fadeOut: value })
                   if (selectedClip) {
                     updateAudioClipProperties(selectedClip.id, { fadeOut: value }, true)
@@ -6233,12 +5943,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     actions = null,
   }) {
     if (!selectedClip) return null
-    if (isMultiSelection) {
-      title = `${orderedSelectedClips.length} clips selected`
-      const targets = isAudioClip ? multiSelection.audio : multiSelection.visual
-      subtitle = `${targets.length} ${isAudioClip ? 'audio' : 'visual'} editable${multiSelection.lockedCount ? ` · ${multiSelection.lockedCount} locked excluded` : ''}${multiSelection.unsupportedCount ? ` · ${multiSelection.unsupportedCount} unsupported` : ''}`
-      badges = []
-    }
 
     const clipStart = Number(selectedClip.startTime) || 0
     const clipDuration = Math.max(0, Number(selectedClip.duration) || 0)
@@ -6330,7 +6034,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         <button
           type="button"
           onClick={() => setClipInfoMenuOpen((open) => !open)}
-          disabled={isMultiSelection}
           title="Clip details"
           className={`p-1 rounded flex-shrink-0 transition-colors ${
             clipInfoMenuOpen
@@ -6340,7 +6043,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
         >
           <MoreHorizontal className="w-3.5 h-3.5" />
         </button>
-        {clipInfoMenuOpen && !isMultiSelection && (
+        {clipInfoMenuOpen && (
           <>
             <div className="fixed inset-0 z-30" onClick={() => setClipInfoMenuOpen(false)} />
             <div className="absolute left-2 right-2 top-full mt-1 z-40 rounded-md border border-sf-dark-600 bg-sf-dark-800 shadow-xl p-2 space-y-2">
@@ -6926,6 +6629,19 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     )
   }
 
+  // Multi-selection info
+  const renderMultiSelectInfo = () => (
+    <div className="h-full flex flex-col items-center justify-center text-center p-4">
+      <Layers className="w-10 h-10 text-sf-accent mb-3" />
+      <h3 className="text-sm font-medium text-sf-text-primary mb-1">
+        {selectedClipIds.length} Clips Selected
+      </h3>
+      <p className="text-xs text-sf-text-muted">
+        Select a single clip to edit its transform properties
+      </p>
+    </div>
+  )
+
   const renderLinkedPairInspectorSelector = () => {
     if (!linkedInspectorPair) return null
 
@@ -6980,9 +6696,6 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
   }
 
   const renderSelectedClipInspector = () => {
-    if (isCompoundClip) return isMultiSelection
-      ? <p className="p-3 text-xs leading-relaxed text-sf-text-muted">Select one compound to open or rename it. Compound parent settings are not batch-editable.</p>
-      : <CompoundClipInspector key={selectedClip.id} clip={selectedClip} track={selectedTrack} />
     if (isAdjustmentClip) return renderAdjustmentClipInspector()
     if (isTextClip) return renderTextClipInspector()
     if (isVideoClip) return renderVideoClipInspector()
@@ -6998,25 +6711,14 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
     // No selection
     if (selectedClipIds.length === 0) return renderEmptyState()
     
+    // Multi-selection (show info only)
+    if (selectedClipIds.length > 1 && !linkedInspectorPair) return renderMultiSelectInfo()
+
     return (
-      <InspectorSelectionContext.Provider value={batchContext}>
+      <>
         {renderLinkedPairInspectorSelector()}
-        {isMultiSelection && multiSelection.visual.length > 0 && multiSelection.audio.length > 0 && (
-          <div className="flex gap-1 px-3 py-1 border-b border-sf-dark-700" aria-label="Selected clip types">
-            {[[multiSelection.visual, 'Video'], [multiSelection.audio, 'Audio']].map(([targets, label]) => (
-              <button key={label} type="button" aria-pressed={label === 'Audio' ? isAudioClip : !isAudioClip}
-                onClick={() => { endBatchGesture(); setInspectorClipId(targets[0].id) }}
-                className={`px-2 py-1 rounded text-[10px] ${(label === 'Audio' ? isAudioClip : !isAudioClip) ? 'bg-sf-accent text-white' : 'text-sf-text-muted bg-sf-dark-800'}`}>
-                {label} ({targets.length})
-              </button>
-            ))}
-          </div>
-        )}
-        {batchError && isMultiSelection && <p role="alert" className="px-3 py-2 text-[10px] text-amber-300">{batchError}</p>}
-        <div key={`${selectionSignature}:${selectedClip?.id}`} data-testid={isMultiSelection ? 'multi-clip-inspector' : 'single-clip-inspector'}>
-          {renderSelectedClipInspector()}
-        </div>
-      </InspectorSelectionContext.Provider>
+        {renderSelectedClipInspector()}
+      </>
     )
   }
 
@@ -7041,7 +6743,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
       )}
       
       {/* Icon Toolbar - Always Visible (on the right edge) */}
-      {!embedded && <div className="w-12 flex-shrink-0 bg-sf-dark-950 border-l border-sf-dark-700 flex flex-col">
+      <div className="w-12 flex-shrink-0 bg-sf-dark-950 border-l border-sf-dark-700 flex flex-col">
         {/* Inspector Icon */}
         <div className="flex-1 flex flex-col pt-2">
           <button
@@ -7103,7 +6805,7 @@ function InspectorPanel({ isExpanded, onToggleExpanded, isFullHeight = false, on
             )}
           </button>
         </div>
-      </div>}
+      </div>
     </div>
   )
 }
