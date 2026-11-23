@@ -2937,7 +2937,7 @@ async function listComfyStudioWorkflowsInternal(options = {}) {
   }
 
   return {
-    action: 'list_Belrog_workflows',
+    action: 'list_Velorn_workflows',
     success: true,
     workflowsDir: catalog.workflowsDir,
     myWorkflowsDir: catalog.myWorkflowsDir,
@@ -3068,7 +3068,7 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   }
 
   return {
-    action: 'inspect_Belrog_workflow',
+    action: 'inspect_Velorn_workflow',
     success: true,
     workflow: {
       id: resolved.workflow.id,

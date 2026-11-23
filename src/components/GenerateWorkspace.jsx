@@ -5194,7 +5194,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'Belrog_INPUT_IMAGE',
+          title: 'VELORN_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5203,7 +5203,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the shot keyframe prompt here.',
         },
         _meta: {
-          title: 'Belrog_PROMPT',
+          title: 'VELORN_PROMPT',
         },
       },
       '3': {
@@ -5212,7 +5212,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'Belrog_SEED',
+          title: 'VELORN_SEED',
         },
       },
       '4': {
@@ -5221,7 +5221,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'Belrog_WIDTH',
+          title: 'VELORN_WIDTH',
         },
       },
       '5': {
@@ -5230,7 +5230,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'Belrog_HEIGHT',
+          title: 'VELORN_HEIGHT',
         },
       },
       '6': {
@@ -5253,7 +5253,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_keyframe_starter',
         },
         _meta: {
-          title: 'Belrog_OUTPUT_IMAGE',
+          title: 'VELORN_OUTPUT_IMAGE',
         },
       },
     }
@@ -5274,7 +5274,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'Belrog_INPUT_IMAGE',
+          title: 'VELORN_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5283,7 +5283,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the ad shot keyframe prompt here.',
         },
         _meta: {
-          title: 'Belrog_PROMPT',
+          title: 'VELORN_PROMPT',
         },
       },
       '3': {
@@ -5292,7 +5292,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'Belrog_SEED',
+          title: 'VELORN_SEED',
         },
       },
       '4': {
@@ -5301,7 +5301,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'Belrog_WIDTH',
+          title: 'VELORN_WIDTH',
         },
       },
       '5': {
@@ -5310,7 +5310,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'Belrog_HEIGHT',
+          title: 'VELORN_HEIGHT',
         },
       },
       '6': {
@@ -5333,7 +5333,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_ad_keyframe_starter',
         },
         _meta: {
-          title: 'Belrog_OUTPUT_IMAGE',
+          title: 'VELORN_OUTPUT_IMAGE',
         },
       },
     }
@@ -5354,7 +5354,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'Belrog_INPUT_IMAGE',
+          title: 'VELORN_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5363,7 +5363,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the shot video prompt here.',
         },
         _meta: {
-          title: 'Belrog_PROMPT',
+          title: 'VELORN_PROMPT',
         },
       },
       '3': {
@@ -5372,7 +5372,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'Belrog_SEED',
+          title: 'VELORN_SEED',
         },
       },
       '4': {
@@ -5381,7 +5381,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'Belrog_WIDTH',
+          title: 'VELORN_WIDTH',
         },
       },
       '5': {
@@ -5390,7 +5390,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'Belrog_HEIGHT',
+          title: 'VELORN_HEIGHT',
         },
       },
       '6': {
@@ -5399,7 +5399,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 24,
         },
         _meta: {
-          title: 'Belrog_FPS',
+          title: 'VELORN_FPS',
         },
       },
       '7': {
@@ -5408,7 +5408,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 5,
         },
         _meta: {
-          title: 'Belrog_DURATION',
+          title: 'VELORN_DURATION',
         },
       },
       '8': {
@@ -5417,7 +5417,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           audio: '',
         },
         _meta: {
-          title: 'Belrog_AUDIO',
+          title: 'VELORN_AUDIO',
         },
       },
       '9': {
@@ -5440,7 +5440,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'video/custom_video_starter',
         },
         _meta: {
-          title: 'Belrog_OUTPUT_VIDEO',
+          title: 'VELORN_OUTPUT_VIDEO',
         },
       },
     }
@@ -5509,7 +5509,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_generate_starter',
         },
         _meta: {
-          title: 'Belrog_OUTPUT_IMAGE',
+          title: 'VELORN_OUTPUT_IMAGE',
         },
       },
     }
@@ -5534,7 +5534,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'Belrog_INPUT_IMAGE',
+          title: 'VELORN_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5543,7 +5543,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the video prompt here.',
         },
         _meta: {
-          title: 'Belrog_PROMPT',
+          title: 'VELORN_PROMPT',
         },
       },
       '3': {
@@ -5552,7 +5552,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'Belrog_SEED',
+          title: 'VELORN_SEED',
         },
       },
       '4': {
@@ -5561,7 +5561,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'Belrog_WIDTH',
+          title: 'VELORN_WIDTH',
         },
       },
       '5': {
@@ -5570,7 +5570,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'Belrog_HEIGHT',
+          title: 'VELORN_HEIGHT',
         },
       },
       '6': {
@@ -5579,7 +5579,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 24,
         },
         _meta: {
-          title: 'Belrog_FPS',
+          title: 'VELORN_FPS',
         },
       },
       '7': {
@@ -5588,7 +5588,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 5,
         },
         _meta: {
-          title: 'Belrog_DURATION',
+          title: 'VELORN_DURATION',
         },
       },
       '8': {
@@ -5597,7 +5597,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           audio: '',
         },
         _meta: {
-          title: 'Belrog_AUDIO',
+          title: 'VELORN_AUDIO',
         },
       },
       '9': {
@@ -5620,7 +5620,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'video/custom_generate_starter',
         },
         _meta: {
-          title: 'Belrog_OUTPUT_VIDEO',
+          title: 'VELORN_OUTPUT_VIDEO',
         },
       },
     }

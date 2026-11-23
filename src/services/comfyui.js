@@ -28,29 +28,29 @@ const UTF8_DECODER = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8
 // Canonical marker titles are Belrog_*; legacy COMFYSTUDIO_* titles from
 // graphs tagged before the rename still match (see endpointTitleAliases).
 export const CUSTOM_KEYFRAME_ENDPOINTS = Object.freeze({
-  inputImage: 'Belrog_INPUT_IMAGE',
-  prompt: 'Belrog_PROMPT',
-  seed: 'Belrog_SEED',
-  width: 'Belrog_WIDTH',
-  height: 'Belrog_HEIGHT',
-  referenceImage1: 'Belrog_REFERENCE_IMAGE_1',
-  referenceImage2: 'Belrog_REFERENCE_IMAGE_2',
-  outputImage: 'Belrog_OUTPUT_IMAGE',
+  inputImage: 'VELORN_INPUT_IMAGE',
+  prompt: 'VELORN_PROMPT',
+  seed: 'VELORN_SEED',
+  width: 'VELORN_WIDTH',
+  height: 'VELORN_HEIGHT',
+  referenceImage1: 'VELORN_REFERENCE_IMAGE_1',
+  referenceImage2: 'VELORN_REFERENCE_IMAGE_2',
+  outputImage: 'VELORN_OUTPUT_IMAGE',
 })
 export const CUSTOM_VIDEO_ENDPOINTS = Object.freeze({
-  inputImage: 'Belrog_INPUT_IMAGE',
-  prompt: 'Belrog_PROMPT',
-  seed: 'Belrog_SEED',
-  width: 'Belrog_WIDTH',
-  height: 'Belrog_HEIGHT',
-  fps: 'Belrog_FPS',
-  duration: 'Belrog_DURATION',
-  inputAudio: 'Belrog_AUDIO',
-  outputVideo: 'Belrog_OUTPUT_VIDEO',
+  inputImage: 'VELORN_INPUT_IMAGE',
+  prompt: 'VELORN_PROMPT',
+  seed: 'VELORN_SEED',
+  width: 'VELORN_WIDTH',
+  height: 'VELORN_HEIGHT',
+  fps: 'VELORN_FPS',
+  duration: 'VELORN_DURATION',
+  inputAudio: 'VELORN_AUDIO',
+  outputVideo: 'VELORN_OUTPUT_VIDEO',
 })
-const Belrog_OUTPUT_RESIZE_TITLE = 'Belrog Output Resize'
+const VELORN_OUTPUT_RESIZE_TITLE = 'Belrog Output Resize'
 const LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE = 'ComfyStudio Output Resize'
-const OUTPUT_RESIZE_TITLES = [Belrog_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
+const OUTPUT_RESIZE_TITLES = [VELORN_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
 
 // Users commonly organize ComfyUI model folders into subfolders (e.g.
 // models/diffusion_models/WAN/wan2.2_i2v.safetensors); ComfyUI then lists the
@@ -269,7 +269,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
     workflow[resizeNodeId] = {
       class_type: 'ImageScale',
       inputs: {},
-      _meta: { title: Belrog_OUTPUT_RESIZE_TITLE },
+      _meta: { title: VELORN_OUTPUT_RESIZE_TITLE },
     }
   }
 
@@ -285,7 +285,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
   }
   resizeNode._meta = {
     ...(resizeNode._meta || {}),
-    title: Belrog_OUTPUT_RESIZE_TITLE,
+    title: VELORN_OUTPUT_RESIZE_TITLE,
   }
 
   const resizeRef = [resizeNodeId, 0]
@@ -309,7 +309,7 @@ function normalizeComfyStudioOutputResize(workflow) {
     resizeNode.inputs.crop = 'center'
     resizeNode._meta = {
       ...(resizeNode._meta || {}),
-      title: Belrog_OUTPUT_RESIZE_TITLE,
+      title: VELORN_OUTPUT_RESIZE_TITLE,
     }
   }
   return workflow
@@ -1938,10 +1938,10 @@ export function modifyMultipleAnglesWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   Belrog_PROMPT, Belrog_OUTPUT_IMAGE
+ *   VELORN_PROMPT, VELORN_OUTPUT_IMAGE
  * - Optional node titles:
- *   Belrog_INPUT_IMAGE, Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
- *   Belrog_REFERENCE_IMAGE_1, Belrog_REFERENCE_IMAGE_2
+ *   VELORN_INPUT_IMAGE, VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
+ *   VELORN_REFERENCE_IMAGE_1, VELORN_REFERENCE_IMAGE_2
  */
 export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
   const {
@@ -1999,10 +1999,10 @@ export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   Belrog_INPUT_IMAGE, Belrog_PROMPT, Belrog_OUTPUT_VIDEO
+ *   VELORN_INPUT_IMAGE, VELORN_PROMPT, VELORN_OUTPUT_VIDEO
  * - Optional node titles:
- *   Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
- *   Belrog_FPS, Belrog_DURATION, Belrog_AUDIO
+ *   VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
+ *   VELORN_FPS, VELORN_DURATION, VELORN_AUDIO
  */
 export function modifyCustomVideoWorkflow(workflow, options = {}) {
   const {

@@ -12,6 +12,12 @@ let hydrated = false
 let hydrationPromise = null
 let connectionVersion = 0
 let connectionSaveQueue = Promise.resolve()
+// Belrog remote-server mode: the SSH tunnel forwards the remote ComfyUI onto
+// 127.0.0.1:<tunnelLocalPort>, so when remote mode is on and the tunnel is up,
+// the tunnel port wins over any locally saved port.
+let remoteModeEnabled = false
+let tunnelActive = false
+let tunnelLocalPort = null
 
 function normalizePort(value) {
   const parsed = Number(value)
@@ -31,14 +37,28 @@ function isLoopbackHost(hostname) {
     .every((value) => Number.isInteger(value) && value >= 0 && value <= 255)
 }
 
-function buildConnection(port) {
+function buildConnection(port, { mode = 'local', reconnecting = false } = {}) {
   const safePort = normalizePort(port) || DEFAULT_COMFY_PORT
   return {
     host: LOCAL_COMFY_HOST,
     port: safePort,
     httpBase: `http://${LOCAL_COMFY_HOST}:${safePort}`,
     wsBase: `ws://${LOCAL_COMFY_HOST}:${safePort}`,
+    mode,
+    reconnecting,
   }
+}
+
+function resolveEffectivePort() {
+  if (remoteModeEnabled && tunnelActive) {
+    const tunnelPort = normalizePort(tunnelLocalPort)
+    if (tunnelPort) return tunnelPort
+  }
+  return cachedPort
+}
+
+function isReconnecting() {
+  return remoteModeEnabled && !tunnelActive
 }
 
 function readLocalStoragePort() {
@@ -157,7 +177,10 @@ export function isLoopbackHttpUrl(value) {
 }
 
 export function getLocalComfyConnectionSync() {
-  return buildConnection(cachedPort)
+  return buildConnection(resolveEffectivePort(), {
+    mode: remoteModeEnabled ? 'remote' : 'local',
+    reconnecting: isReconnecting(),
+  })
 }
 
 export function getLocalComfyHttpBaseSync() {
@@ -200,6 +223,7 @@ export async function hydrateLocalComfyConnection() {
       }
     }
 
+    await refreshComfyConnectionMode()
     hydrated = true
     const config = getLocalComfyConnectionSync()
     hydrationPromise = null
@@ -336,4 +360,51 @@ export async function checkLocalComfyConnection(options = {}) {
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Belrog remote-server mode: re-resolve remote/tunnel state from the main
+ * process and refresh the effective connection. Called on startup (inside
+ * hydrate) and whenever the tunnel connects/disconnects. Never throws: a
+ * failed poll keeps the last known mode.
+ */
+export async function refreshComfyConnectionMode() {
+  const api = typeof window !== 'undefined' ? window?.electronAPI : null
+  if (!api) return getLocalComfyConnectionSync()
+
+  let changed = false
+  try {
+    const remote = await api.getRemoteServerSettings?.()
+    const enabled = Boolean(remote?.enabled)
+    if (enabled !== remoteModeEnabled) {
+      remoteModeEnabled = enabled
+      changed = true
+    }
+    const status = await api.getTunnelStatus?.()
+    const active = Boolean(status?.active)
+    const port = normalizePort(status?.settings?.tunnelLocalPort ?? remote?.tunnelLocalPort)
+    const stateChanged = active !== tunnelActive || port !== tunnelLocalPort
+    tunnelActive = active
+    if (port) tunnelLocalPort = port
+    if (stateChanged) changed = true
+  } catch {
+    // IPC unavailable (dev/browser context) or transient failure:
+    // keep the last known mode rather than guessing.
+  }
+
+  if (changed) {
+    connectionVersion += 1
+    dispatchConnectionChanged(getLocalComfyConnectionSync())
+  }
+  return getLocalComfyConnectionSync()
+}
+
+export function __resetLocalComfyConnectionForTests() {
+  hydrated = false
+  hydrationPromise = null
+  connectionVersion = 0
+  remoteModeEnabled = false
+  tunnelActive = false
+  tunnelLocalPort = null
+  cachedPort = DEFAULT_COMFY_PORT
 }
