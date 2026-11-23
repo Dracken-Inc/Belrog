@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Platform info
   platform: process.platform,
   isElectron: true,
+  // Belrog F11: raw channel passthrough + flat remote-server aliases used by
+  // localComfyConnection / useWorkflowSetupFlow / SettingsModal.
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  getRemoteServerSettings: () => ipcRenderer.invoke('belrog:getRemoteServerSettings'),
+  getTunnelStatus: () => ipcRenderer.invoke('belrog:getTunnelStatus'),
+  checkRemoteComfyUI: () => ipcRenderer.invoke('belrog:checkRemoteComfyUI'),
   engineCandidateInfo: ipcRenderer.sendSync?.('engine-candidate:info') || null,
   writeClipboardText: text => copyTextGesture('text-clipboard:write', text),
   showTextCopyMenu: text => copyTextGesture('text-clipboard:menu', text),
