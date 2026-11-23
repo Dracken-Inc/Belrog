@@ -27,7 +27,16 @@ test('falls back to English for unavailable languages and missing messages', () 
 })
 
 test('interpolates named values without removing unknown placeholders', () => {
-  assert.equal(interpolate('Hello {{name}} {{missing}}', { name: 'Belrog' }), 'Hello Belrog {{missing}}')
+  assert.equal(interpolate('Hello {{name}} {{missing}}', { name: 'Velorn' }), 'Hello Velorn {{missing}}')
+})
+
+test('new controls can supply readable labels while an older language dictionary is still loaded', () => {
+  const key = 'export.workspace.preview'
+  const stale = { en: { export: {} }, ja: { export: {} } }
+  assert.equal(translate(stale, 'en', key, undefined, 'Timeline preview'), 'Timeline preview')
+  assert.equal(translate(stale, 'ja', key, undefined, 'Timeline preview'), 'Timeline preview')
+  const current = { ...stale, ja: { export: { workspace: { preview: 'タイムラインプレビュー' } } } }
+  assert.equal(translate(current, 'ja', key, undefined, 'Timeline preview'), 'タイムラインプレビュー')
 })
 
 test('registered language dictionaries have the same keys and placeholders as English', () => {

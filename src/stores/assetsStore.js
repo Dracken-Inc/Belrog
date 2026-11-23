@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import useAssetBrowserStore from './assetBrowserStore.mjs'
+import { checkCompoundAssetDeletion } from '../services/compoundAssetProtection'
 import { hasUsablePlaybackCache, PLAYBACK_CACHE_VERSION } from '../services/playbackCache'
 import {
   getProjectRelativeAssetPath,
@@ -291,10 +293,13 @@ export const useAssetsStore = create(
    * Remove an asset
    */
   removeAsset: (id) => {
+    const guard = checkCompoundAssetDeletion([id])
+    if (!guard.ok) return guard
     set((state) => ({
       assets: state.assets.filter(a => a.id !== id),
       currentPreview: state.currentPreview?.id === id ? null : state.currentPreview
     }))
+    return { ok: true }
   },
   
   /**
@@ -451,6 +456,8 @@ export const useAssetsStore = create(
       }
     }
 
+    const guard = checkCompoundAssetDeletion(state.assets.filter((a) => idsToDelete.has(a.folderId || null)).map((a) => a.id))
+    if (!guard.ok) return guard
     const updatedAssets = state.assets.filter((a) => !idsToDelete.has(a.folderId || null))
     const updatedFolders = state.folders.filter((f) => !idsToDelete.has(f.id))
 
@@ -458,6 +465,8 @@ export const useAssetsStore = create(
       assets: updatedAssets,
       folders: updatedFolders
     })
+    useAssetBrowserStore.getState().pruneFolders(updatedFolders)
+    return { ok: true }
   },
 
   /**
@@ -477,6 +486,8 @@ export const useAssetsStore = create(
    * Clear all assets (for "New Project")
    */
   clearProject: () => {
+    // Navigation survives panel remounts, not opening/closing a project.
+    useAssetBrowserStore.getState().resetProject()
     // Revoke any blob URLs before clearing
     const state = get()
     state.assets.forEach(asset => {

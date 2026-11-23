@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
-  X, Server, FolderOpen, Palette, Monitor, Save,
-  HardDrive, Film, Keyboard, Wrench, Power,
+  X, Palette, Monitor, Save, Search,
+  HardDrive, Keyboard,
   KeyRound, CheckCircle2, ExternalLink, Loader2, RefreshCcw,
-  Volume2, Play, Bot, Copy, MessageSquare, Globe2,
-  Wifi, WifiOff, Plug, Unplug,
+  Play, Copy, MessageSquare,
 } from 'lucide-react'
 import useProjectStore, { RESOLUTION_PRESETS, FPS_PRESETS } from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
@@ -14,8 +13,13 @@ import { getPexelsApiKey, setPexelsApiKey } from '../services/pexelsSettings'
 import WorkflowSetupSection from './WorkflowSetupSection'
 import FeedbackSection from './FeedbackSection'
 import ComfyLauncherSettingsSection from './ComfyLauncherSettingsSection'
+import ComfyConnectionSetup from './ComfyConnectionSetup'
+import OptionalSetup from './OptionalSetup'
 import ComfyLauncherLogViewer from './ComfyLauncherLogViewer'
 import ApiKeyDialog from './ApiKeyDialog'
+import ComfyHostedSetup from './ComfyHostedSetup'
+import CreateKeySetting from './CreateKeySetting'
+import SettingsSectionTabs from './SettingsSectionTabs'
 import {
   COMFY_PARTNER_KEY_CHANGED_EVENT,
   COMFY_PARTNER_WORKFLOWS,
@@ -34,14 +38,6 @@ import {
   isReservedEditorHotkeyBinding,
   setEditorHotkeys,
 } from '../services/editorHotkeys'
-import {
-  DEFAULT_COMFY_PORT,
-  checkLocalComfyConnection,
-  getLocalComfyConnectionSync,
-  hydrateLocalComfyConnection,
-  parseLocalComfyPortInput,
-  saveLocalComfyConnectionPort,
-} from '../services/localComfyConnection'
 import {
   generatePlaybackCachesForAllVideos,
   hasUsablePlaybackCache,
@@ -64,12 +60,17 @@ import {
   hydrateShowDiscoverTab,
   setShowDiscoverTab,
 } from '../services/discoverTabVisibilitySettings.mjs'
+import { setShowGenerateTab } from '../services/generateTabVisibilitySettings.mjs'
+import { HIDEABLE_TOP_TABS, setTopTabShown, useHiddenTopTabs } from '../services/topTabVisibilitySettings.mjs'
+import { useGenerateTabVisibility } from '../hooks/useGenerateWorkspace'
 import { useI18n } from '../i18n/I18nContext'
+import { SETTINGS_GROUPS, SETTINGS_PAGES, resolveSettingsTarget, searchSettings } from '../config/settingsNavigation.mjs'
+import { ASSET_REMOVAL_MODE_EVENT, getAssetRemovalMode, setAssetRemovalMode } from '../services/assetRemovalPreferences.mjs'
 
 const AUTO_IMPORT_KEY = 'comfystudio-auto-import-comfy-outputs'
 const OUTPUT_DIRECTORY_SETTING_KEY = 'outputDirectory'
 const WORKFLOWS_DIRECTORY_SETTING_KEY = 'workflowsDirectory'
-const OUTPUT_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\Belrog\\outputs'
+const OUTPUT_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\Velorn\\outputs'
 const WORKFLOWS_DIRECTORY_PLACEHOLDER = 'C:\\Users\\...\\ComfyUI\\workflow_API'
 const HOTKEY_CATEGORY_KEY = {
   'Timeline selection': 'selection',
@@ -80,107 +81,6 @@ const HOTKEY_CATEGORY_KEY = {
   'Timeline text': 'text',
   'Timeline transitions': 'transitions',
   'Timeline linking': 'linking',
-}
-
-const SETTINGS_SECTIONS = [
-  {
-    id: 'storage',
-    title: 'Projects & Storage',
-    icon: HardDrive,
-    description: 'Choose where projects live and control auto-save behavior.',
-  },
-  {
-    id: 'stock',
-    title: 'Stock (Pexels)',
-    icon: Film,
-    description: 'Manage stock-media search credentials.',
-  },
-  {
-    id: 'connection',
-    title: 'ComfyUI Connection',
-    icon: Server,
-    description: 'Configure the local ComfyUI endpoint, partner API key, and advanced tab visibility.',
-  },
-  {
-    id: 'agents',
-    title: 'Agents (MCP)',
-    icon: Bot,
-    description: 'Connect Claude, Codex, Cursor, or other MCP clients to the open project.',
-  },
-  {
-    id: 'launcher',
-    title: 'ComfyUI Launcher',
-    icon: Power,
-    description: 'Let Belrog start, stop, and restart your local ComfyUI process.',
-  },
-  {
-    id: 'remote-server',
-    title: 'Remote Server',
-    icon: Wifi,
-    description: 'Connect to a remote ComfyUI server via SSH tunnel. Requires SSH access to the remote machine.',
-  },
-  {
-    id: 'mcp-exposure',
-    title: 'MCP Exposure',
-    icon: Server,
-    description: 'Expose the MCP server beyond this laptop (LAN / Tailscale) with a bearer token.',
-  },
-  {
-    id: 'paths',
-    title: 'File Paths',
-    icon: FolderOpen,
-    description: 'Review output and workflow path settings.',
-  },
-  {
-    id: 'workflow-setup',
-    title: 'Workflow Setup',
-    icon: Wrench,
-    description: 'Scan workflows, review missing dependencies, and install curated models or node packs.',
-  },
-  {
-    id: 'language',
-    title: 'Language',
-    icon: Globe2,
-    description: 'Choose the language used in the Belrog interface.',
-  },
-  {
-    id: 'appearance',
-    title: 'Appearance',
-    icon: Palette,
-    description: 'Pick the editor theme that best fits your workspace.',
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    icon: Volume2,
-    description: 'Control completion sounds and lightweight app alerts.',
-  },
-  {
-    id: 'hotkeys',
-    title: 'Hotkeys',
-    icon: Keyboard,
-    description: 'Customize editor shortcuts and apply familiar keymap presets.',
-  },
-  {
-    id: 'project',
-    title: 'New Project Defaults',
-    icon: Monitor,
-    description: 'Set default resolution and frame rate for new projects.',
-  },
-  {
-    id: 'feedback',
-    title: 'Send Feedback',
-    icon: MessageSquare,
-    description: 'Report a bug or share an idea — it lands directly with the team.',
-  },
-]
-
-function isValidSection(sectionId) {
-  return SETTINGS_SECTIONS.some((section) => section.id === sectionId)
-}
-
-function resolveInitialSection(sectionId) {
-  return isValidSection(sectionId) ? sectionId : SETTINGS_SECTIONS[0].id
 }
 
 function SettingsRailItem({ section, isActive, onSelect }) {
@@ -211,15 +111,29 @@ function SettingsRailItem({ section, isActive, onSelect }) {
   )
 }
 
-function GeneralTab({ initialSection = null }) {
+const GROUP_ICONS = { general: Palette, editing: Keyboard, media: HardDrive, playback: Play, connections: KeyRound, project: Monitor, feedback: MessageSquare }
+
+function GeneralTab({ initialSection = null, onFinishSetup, onChooseAgentModel }) {
   const { language, languages, setLanguage, t } = useI18n()
-  const initialComfyConnection = getLocalComfyConnectionSync()
-  const [comfyPortInput, setComfyPortInput] = useState(String(initialComfyConnection.port || DEFAULT_COMFY_PORT))
-  const [comfyConnectionState, setComfyConnectionState] = useState({
-    status: 'idle',
-    messageKey: 'settings.connection.status.endpoint',
-    values: { endpoint: initialComfyConnection.httpBase },
-  })
+  const label = (key, fallback) => t(`settings.navigation.${key}`, { defaultValue: fallback }, fallback)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [assetRemovalMode, setAssetRemovalModeState] = useState(getAssetRemovalMode)
+  const [assetRemovalError, setAssetRemovalError] = useState('')
+  const [draftSave, setDraftSave] = useState({ section: '', status: '', message: '' })
+  const [saveBusy, setSaveBusy] = useState(false)
+  const draftSaveLock = useRef(false)
+  const draftValuesRef = useRef(null)
+  const contentRef = useRef(null)
+  useEffect(() => {
+    const sync = () => { setAssetRemovalModeState(getAssetRemovalMode()); setAssetRemovalError('') }
+    window.addEventListener(ASSET_REMOVAL_MODE_EVENT, sync)
+    return () => window.removeEventListener(ASSET_REMOVAL_MODE_EVENT, sync)
+  }, [])
+  const changeRemovalMode = mode => {
+    const result = setAssetRemovalMode(mode)
+    if (result?.success === false) setAssetRemovalError(result.error || label('saveFailed', 'Could not save this preference.'))
+    else { setAssetRemovalModeState(getAssetRemovalMode()); setAssetRemovalError('') }
+  }
   const [outputPath, setOutputPath] = useState('')
   const [workflowPath, setWorkflowPath] = useState('')
   const [hardwareExportFfmpegPath, setHardwareExportFfmpegPathState] = useState('')
@@ -235,11 +149,12 @@ function GeneralTab({ initialSection = null }) {
   ))
   const [showCloudCreditBalance, setShowCloudCreditBalanceState] = useState(() => getShowCloudCreditBalance())
   const [showDiscoverTab, setShowDiscoverTabState] = useState(getShowDiscoverTab)
+  const showGenerateTab = useGenerateTabVisibility()
+  const hiddenTopTabs = useHiddenTopTabs()
   const [pexelsApiKey, setPexelsApiKeyLocal] = useState('')
   const [comfyOrgApiKey, setComfyOrgApiKey] = useState('')
   const [apiKeyDialogOpen, setApiKeyDialogOpen] = useState(false)
-  const [settingsSaved, setSettingsSaved] = useState(false)
-  const [activeSection, setActiveSection] = useState(() => resolveInitialSection(initialSection))
+  const [activeSection, setActiveSection] = useState(() => resolveSettingsTarget(initialSection).pageId)
   const [editorHotkeys, setEditorHotkeysState] = useState(DEFAULT_EDITOR_HOTKEYS)
   const [recordingHotkeyId, setRecordingHotkeyId] = useState(null)
   const [hotkeysError, setHotkeysError] = useState('')
@@ -250,54 +165,7 @@ function GeneralTab({ initialSection = null }) {
   const [playbackCacheMessage, setPlaybackCacheMessage] = useState('')
   const [mcpStatus, setMcpStatus] = useState(null)
   const [mcpCopied, setMcpCopied] = useState('')
-  // MCP Exposure (LAN / Tailscale) state — persisted in settings.json under `mcpExposure`
-  const [mcpExposure, setMcpExposure] = useState({ enabled: false, host: '0.0.0.0', token: '' })
-  const [mcpExposureMsg, setMcpExposureMsg] = useState('')
-
-  useEffect(() => {
-    if (activeSection !== 'mcp-exposure') return undefined
-    window.electronAPI?.invoke('belrog:getMcpExposure').then((v) => {
-      if (v) setMcpExposure((prev) => ({ ...prev, ...v }))
-    }).catch(() => {})
-    return undefined
-  }, [activeSection])
-
-  const handleSaveMcpExposure = async () => {
-    setMcpExposureMsg('')
-    const res = await window.electronAPI?.invoke('belrog:saveMcpExposure', mcpExposure).catch(() => null)
-    setMcpExposureMsg(res?.success ? 'Saved. Restart Belrog to apply.' : (res?.error || 'Save failed.'))
-  }
-
-  const handleGenerateMcpToken = () => {
-    const bytes = new Uint8Array(24)
-    crypto.getRandomValues(bytes)
-    setMcpExposure((prev) => ({
-      ...prev,
-      token: [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(''),
-    }))
-  }
-
-  // Remote Server / SSH Tunnel state
-  const [remoteServerSettings, setRemoteServerSettingsState] = useState({
-    enabled: false,
-    sshHost: '',
-    sshPort: 22,
-    sshUsername: '',
-    sshKeyPath: '',
-    comfyModelRoot: '',
-    comfyNodesRoot: '',
-    tunnelLocalPort: 8188,
-    tunnelRemotePort: 8188,
-  })
-  const [tunnelStatus, setTunnelStatus] = useState({ active: false, connecting: false })
-  const [tunnelConnectError, setTunnelConnectError] = useState('')
-  const [remoteModels, setRemoteModels] = useState([])
-  const [remoteNodes, setRemoteNodes] = useState([])
-  const [remoteModelsLoading, setRemoteModelsLoading] = useState(false)
-  const [remoteNodesLoading, setRemoteNodesLoading] = useState(false)
-  const [installNodeUrl, setInstallNodeUrl] = useState('')
-  const [installNodeBusy, setInstallNodeBusy] = useState(false)
-  const [installNodeResult, setInstallNodeResult] = useState(null)
+  draftValuesRef.current = { stock: pexelsApiKey, hotkeys: editorHotkeys, paths: [outputPath, workflowPath] }
   const currentHotkeyPresetId = useMemo(
     () => getEditorHotkeyPresetMatch(editorHotkeys),
     [editorHotkeys]
@@ -375,33 +243,6 @@ function GeneralTab({ initialSection = null }) {
         setComfyOrgApiKey('')
       }
 
-      try {
-        const connection = await hydrateLocalComfyConnection()
-        setComfyPortInput(String(connection.port || DEFAULT_COMFY_PORT))
-        setComfyConnectionState({
-          status: 'idle',
-          messageKey: 'settings.connection.status.endpoint',
-          values: { endpoint: connection.httpBase },
-        })
-      } catch {
-        setComfyConnectionState({
-          status: 'error',
-          messageKey: 'settings.connection.status.loadFailed',
-          values: { port: DEFAULT_COMFY_PORT },
-        })
-      }
-
-      // Load remote server settings
-      try {
-        if (window.electronAPI) {
-          const settings = await window.electronAPI.invoke('belrog:getRemoteServerSettings')
-          setRemoteServerSettingsState(settings)
-          const status = await window.electronAPI.invoke('belrog:getTunnelStatus')
-          setTunnelStatus(status)
-        }
-      } catch {
-        // Remote server not available
-      }
     })()
   }, [])
 
@@ -446,7 +287,10 @@ function GeneralTab({ initialSection = null }) {
 
   useEffect(() => {
     if (!initialSection) return
-    setActiveSection(resolveInitialSection(initialSection))
+    setActiveSection(resolveSettingsTarget(initialSection).pageId)
+    setSearchQuery('')
+    setRecordingHotkeyId(null)
+    if (contentRef.current) contentRef.current.scrollTop = 0
   }, [initialSection])
 
   useEffect(() => {
@@ -556,205 +400,6 @@ function GeneralTab({ initialSection = null }) {
     }
   }
 
-  const handleSavePexelsKey = () => {
-    setPexelsApiKey(pexelsApiKey.trim()).catch(console.error)
-  }
-
-  const handleSaveComfyConnection = async () => {
-    const result = await saveLocalComfyConnectionPort(comfyPortInput)
-    if (!result.success) {
-      setComfyConnectionState({
-        status: 'error',
-        messageKey: 'settings.connection.status.invalidConfiguration',
-      })
-      return false
-    }
-
-    setComfyPortInput(String(result.config.port))
-    setComfyConnectionState({
-      status: 'idle',
-      messageKey: 'settings.connection.status.savedEndpoint',
-      values: { endpoint: result.config.httpBase },
-    })
-    return true
-  }
-
-  const handleTestComfyConnection = async () => {
-    const parsed = parseLocalComfyPortInput(comfyPortInput)
-    if (!parsed.success) {
-      setComfyConnectionState({
-        status: 'error',
-        messageKey: 'settings.connection.status.invalidPort',
-      })
-      return
-    }
-
-    setComfyConnectionState({
-      status: 'testing',
-      messageKey: 'settings.connection.status.testing',
-      values: { endpoint: `localhost:${parsed.port}` },
-    })
-
-    const testResult = await checkLocalComfyConnection({ port: parsed.port })
-    if (testResult.ok) {
-      setComfyConnectionState({
-        status: 'success',
-        messageKey: 'settings.connection.status.connected',
-        values: { endpoint: testResult.httpBase },
-      })
-      return
-    }
-
-    setComfyConnectionState({
-      status: 'error',
-      messageKey: testResult.status === 403
-        ? 'settings.connection.status.http403'
-        : testResult.status
-          ? 'settings.connection.status.httpError'
-          : 'settings.connection.status.connectFailed',
-      values: {
-        endpoint: testResult.httpBase || `http://127.0.0.1:${parsed.port}`,
-        status: testResult.status,
-      },
-    })
-  }
-
-  const handleResetComfyConnection = async () => {
-    setComfyPortInput(String(DEFAULT_COMFY_PORT))
-    const result = await saveLocalComfyConnectionPort(DEFAULT_COMFY_PORT)
-    if (!result.success) {
-      setComfyConnectionState({
-        status: 'error',
-        messageKey: 'settings.connection.status.resetFailed',
-      })
-      return
-    }
-    setComfyConnectionState({
-      status: 'idle',
-      messageKey: 'settings.connection.status.resetEndpoint',
-      values: { endpoint: result.config.httpBase },
-    })
-  }
-
-  // ===============================
-  // Remote Server / SSH Tunnel Handlers
-  // ===============================
-
-  const handleSaveRemoteServerSettings = async () => {
-    if (!window.electronAPI) return
-    try {
-      await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteServerSettings)
-    } catch (err) {
-      console.error('Failed to save remote server settings:', err)
-    }
-  }
-
-  const handleRemoteServerFieldChange = (field, value) => {
-    setRemoteServerSettingsState((prev) => ({ ...prev, [field]: value }))
-  }
-
-  const handleConnectRemote = async () => {
-    if (!window.electronAPI) return
-    setTunnelConnectError('')
-    setTunnelStatus((prev) => ({ ...prev, connecting: true }))
-    try {
-      // Save settings first
-      await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteServerSettings)
-      const result = await window.electronAPI.invoke('belrog:connect')
-      if (result.success) {
-        setTunnelStatus({ active: true, connecting: false })
-      } else {
-        setTunnelConnectError(result.error || 'Connection failed')
-        setTunnelStatus({ active: false, connecting: false })
-      }
-    } catch (err) {
-      setTunnelConnectError(err?.message || 'Connection failed')
-      setTunnelStatus({ active: false, connecting: false })
-    }
-  }
-
-  const handleDisconnectRemote = async () => {
-    if (!window.electronAPI) return
-    try {
-      await window.electronAPI.invoke('belrog:disconnect')
-      setTunnelStatus({ active: false, connecting: false })
-      setTunnelConnectError('')
-    } catch (err) {
-      console.error('Disconnect failed:', err)
-    }
-  }
-
-  const handleLoadRemoteModels = async () => {
-    if (!window.electronAPI) return
-    setRemoteModelsLoading(true)
-    try {
-      const result = await window.electronAPI.invoke('belrog:listRemoteModels')
-      if (result.success) {
-        setRemoteModels(result.models || [])
-      } else {
-        setRemoteModels([])
-      }
-    } catch {
-      setRemoteModels([])
-    } finally {
-      setRemoteModelsLoading(false)
-    }
-  }
-
-  const handleLoadRemoteNodes = async () => {
-    if (!window.electronAPI) return
-    setRemoteNodesLoading(true)
-    try {
-      const result = await window.electronAPI.invoke('belrog:listRemoteNodes')
-      if (result.success) {
-        setRemoteNodes(result.nodes || [])
-      } else {
-        setRemoteNodes([])
-      }
-    } catch {
-      setRemoteNodes([])
-    } finally {
-      setRemoteNodesLoading(false)
-    }
-  }
-
-  const handleInstallRemoteNode = async () => {
-    if (!window.electronAPI || !installNodeUrl.trim()) return
-    setInstallNodeBusy(true)
-    setInstallNodeResult(null)
-    try {
-      const result = await window.electronAPI.invoke('belrog:installRemoteNode', installNodeUrl.trim())
-      setInstallNodeResult(result)
-      if (result.success) {
-        setInstallNodeUrl('')
-        // Refresh node list
-        await handleLoadRemoteNodes()
-      }
-    } catch (err) {
-      setInstallNodeResult({ success: false, error: err?.message || 'Install failed' })
-    } finally {
-      setInstallNodeBusy(false)
-    }
-  }
-
-  const handleChooseSshKey = async () => {
-    if (!window.electronAPI?.selectFile) {
-      console.warn('File picker is not available')
-      return
-    }
-    try {
-      const selectedPath = await window.electronAPI.selectFile({
-        title: 'Select SSH Private Key',
-        filters: [{ name: 'All Files', extensions: ['*'] }],
-      })
-      if (selectedPath) {
-        handleRemoteServerFieldChange('sshKeyPath', selectedPath)
-      }
-    } catch (error) {
-      console.error('Could not open file picker:', error)
-    }
-  }
-
   const handleChooseDirectory = async ({ title, currentPath, onSelect }) => {
     if (!window.electronAPI?.selectDirectory) {
       console.warn('Directory picker is not available in this environment.')
@@ -820,7 +465,7 @@ function GeneralTab({ initialSection = null }) {
       hardwareExportFfmpegInputDirtyRef.current = false
       setHardwareExportFfmpegMessage(
         result.status?.source === 'environment'
-          ? 'Saved. Belrog_FFMPEG_PATH still takes priority for this app session.'
+          ? 'Saved. VELORN_FFMPEG_PATH still takes priority for this app session.'
           : 'Hardware-export FFmpeg saved and ready to test.'
       )
     } catch (error) {
@@ -846,8 +491,8 @@ function GeneralTab({ initialSection = null }) {
       setHardwareExportFfmpegStatus(result.status || null)
       setHardwareExportFfmpegMessage(
         result.status?.source === 'environment'
-          ? 'Saved path cleared. Belrog_FFMPEG_PATH remains active.'
-          : 'Belrog will use its bundled FFmpeg for hardware checks and software fallback.'
+          ? 'Saved path cleared. VELORN_FFMPEG_PATH remains active.'
+          : 'Velorn will use its bundled FFmpeg for hardware checks and software fallback.'
       )
     } catch (error) {
       setHardwareExportFfmpegMessage(error?.message || 'Could not restore the bundled FFmpeg setting.')
@@ -894,18 +539,29 @@ function GeneralTab({ initialSection = null }) {
     }
   }
 
-  const handleSaveAllSettings = async () => {
-    await setPexelsApiKey(pexelsApiKey.trim())
-    await setEditorHotkeys(editorHotkeys)
-    const [connectionSaved, filePathsSaved] = await Promise.all([
-      handleSaveComfyConnection(),
-      handleSaveFilePathSettings(),
-    ])
-    if (connectionSaved && filePathsSaved) {
-      setSettingsSaved(true)
-      setTimeout(() => setSettingsSaved(false), 2000)
-    } else {
-      setSettingsSaved(false)
+  const saveDraft = async section => {
+    if (draftSaveLock.current || !['stock', 'hotkeys', 'paths'].includes(section)) return
+    draftSaveLock.current = true
+    setSaveBusy(true)
+    const savedValues = JSON.stringify(draftValuesRef.current[section])
+    setDraftSave({ section, status: 'saving', message: '' })
+    try {
+      if (section === 'stock') await setPexelsApiKey(pexelsApiKey.trim())
+      else if (section === 'hotkeys') await setEditorHotkeys(editorHotkeys)
+      else if (section === 'paths') {
+        if (!window.electronAPI?.setSetting || !await handleSaveFilePathSettings()) {
+          throw new Error(label('saveFailed', 'Could not save these settings. Please try again.'))
+        }
+      }
+      const unchanged = JSON.stringify(draftValuesRef.current[section]) === savedValues
+      setDraftSave({ section, status: unchanged ? 'saved' : 'unsaved', message: unchanged
+        ? label('saved', 'Saved.')
+        : label('newerDraft', 'Earlier values saved. Save again to apply your latest changes.') })
+    } catch (error) {
+      setDraftSave({ section, status: 'error', message: error?.message || label('saveFailed', 'Could not save these settings.') })
+    } finally {
+      draftSaveLock.current = false
+      setSaveBusy(false)
     }
   }
 
@@ -979,16 +635,28 @@ function GeneralTab({ initialSection = null }) {
     }
   }
 
-  const localizedSections = useMemo(() => SETTINGS_SECTIONS.map((section) => ({
-    ...section,
-    title: t(`settings.sections.${section.id}.title`, undefined, section.title),
-    description: t(`settings.sections.${section.id}.description`, undefined, section.description),
-  })), [t])
-  const activeSectionMeta = useMemo(
-    () => localizedSections.find((section) => section.id === activeSection) || localizedSections[0],
-    [activeSection, localizedSections]
-  )
-  const isWorkflowSetupActive = activeSection === 'workflow-setup'
+  const localizedGroups = SETTINGS_GROUPS.map(group => ({
+    ...group, icon: GROUP_ICONS[group.id],
+    title: label(`groups.${group.id}.title`, group.title),
+    description: label(`groups.${group.id}.description`, group.description),
+  }))
+  const localizedPages = SETTINGS_PAGES.map(page => ({
+    ...page, title: label(`pages.${page.id}`, page.title),
+  }))
+  const activeGroupId = resolveSettingsTarget(activeSection).groupId
+  const activeGroup = localizedGroups.find(group => group.id === activeGroupId)
+  const activePage = localizedPages.find(page => page.id === activeSection)
+  const activeSectionMeta = activeGroup || {
+    title: t('settings.sections.feedback.title'), description: t('settings.sections.feedback.description'), icon: MessageSquare,
+  }
+  const searchResults = searchSettings(searchQuery, localizedPages, localizedGroups)
+  const navigate = pageId => {
+    setActiveSection(pageId); setSearchQuery(''); setRecordingHotkeyId(null)
+    if (contentRef.current) contentRef.current.scrollTop = 0
+  }
+  useEffect(() => {
+    if (!draftSaveLock.current) setDraftSave({ section: '', status: '', message: '' })
+  }, [outputPath, workflowPath, editorHotkeys, pexelsApiKey])
 
   let activeSectionContent = null
 
@@ -1034,135 +702,6 @@ function GeneralTab({ initialSection = null }) {
             </div>
           )}
 
-          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <label className="text-sm text-sf-text-primary">{t('settings.storage.cache.title')}</label>
-                <p className="mt-1 text-[10px] text-sf-text-muted">
-                  {t('settings.storage.cache.description')}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                  <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-secondary">
-                    {t('settings.storage.cache.ready', {
-                      ready: playbackCacheCoverage.ready,
-                      total: playbackCacheCoverage.total,
-                    })}
-                  </span>
-                  {playbackCacheCoverage.encoding > 0 && (
-                    <span className="rounded bg-blue-900/40 px-2 py-1 text-blue-200">
-                      {t('settings.storage.cache.encoding', { count: playbackCacheCoverage.encoding })}
-                    </span>
-                  )}
-                  {playbackCacheCoverage.failed > 0 && (
-                    <span className="rounded bg-amber-900/40 px-2 py-1 text-amber-200">
-                      {t('settings.storage.cache.failed', { count: playbackCacheCoverage.failed })}
-                    </span>
-                  )}
-                  {playbackCacheCoverage.unavailable > 0 && (
-                    <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-muted">
-                      {t('settings.storage.cache.unavailable', { count: playbackCacheCoverage.unavailable })}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setPlaybackCacheMessage('')
-                  setPlaybackCacheConfirmOpen(true)
-                }}
-                disabled={playbackCacheBusy || !currentProjectHandle || playbackCacheCoverage.rebuildable <= 0}
-                className="inline-flex flex-shrink-0 items-center gap-2 rounded bg-sf-dark-700 px-3 py-2 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {playbackCacheBusy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-3.5 w-3.5" />
-                )}
-                {playbackCacheBusy ? t('settings.storage.cache.rebuilding') : t('settings.storage.cache.rebuild')}
-              </button>
-            </div>
-
-            {playbackCacheConfirmOpen && !playbackCacheBusy && (
-              <div className="mt-3 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-3">
-                <p className="text-xs text-amber-100">
-                  {t(
-                    playbackCacheCoverage.rebuildable === 1
-                      ? 'settings.storage.cache.confirmOne'
-                      : 'settings.storage.cache.confirmMany',
-                    { count: playbackCacheCoverage.rebuildable }
-                  )}
-                </p>
-                <p className="mt-1 text-[10px] text-amber-200/80">
-                  {t('settings.storage.cache.confirmHelp')}
-                </p>
-                <div className="mt-3 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPlaybackCacheConfirmOpen(false)}
-                    className="rounded bg-sf-dark-800 px-3 py-1.5 text-xs text-sf-text-secondary hover:bg-sf-dark-700"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { void handleRebuildVideoPlaybackCache() }}
-                    className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-sf-accent-hover"
-                  >
-                    {t('settings.storage.cache.startRebuild')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {playbackCacheBusy && (
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between gap-3 text-[10px] text-sf-text-muted">
-                  <span className="truncate">
-                    {playbackCacheProgress.currentName || t('settings.storage.cache.preparing')}
-                  </span>
-                  <span className="flex-shrink-0">
-                    {playbackCacheProgress.completed}/{playbackCacheProgress.total || playbackCacheCoverage.rebuildable}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-sf-dark-800">
-                  <div
-                    className="h-full rounded-full bg-sf-accent transition-all"
-                    style={{
-                      width: `${Math.min(100, Math.round((playbackCacheProgress.completed / Math.max(1, playbackCacheProgress.total || playbackCacheCoverage.rebuildable)) * 100))}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            )}
-
-            {playbackCacheMessage && !playbackCacheBusy && (
-              <p className="mt-3 text-[10px] text-sf-text-muted">{playbackCacheMessage}</p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="pr-4">
-              <label className="text-sm text-sf-text-primary">Show cloud credit balance</label>
-              <p className="text-[10px] text-sf-text-muted">
-                Display Comfy.org credits in the app header. Turning this off does not disable cloud workflows.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={showCloudCreditBalance}
-              onClick={handleToggleCloudCreditBalance}
-              className={`relative h-5 w-10 flex-shrink-0 rounded-full transition-colors ${showCloudCreditBalance ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
-              title={showCloudCreditBalance ? 'Hide cloud credit balance' : 'Show cloud credit balance'}
-            >
-              <span
-                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showCloudCreditBalance ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
-                aria-hidden
-              />
-            </button>
-          </div>
-
           <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div>
               <label className="text-sm text-sf-text-primary">{t('settings.storage.autoSave')}</label>
@@ -1189,18 +728,6 @@ function GeneralTab({ initialSection = null }) {
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div>
-              <label className="text-sm text-sf-text-primary">{t('settings.storage.showHero')}</label>
-              <p className="text-[10px] text-sf-text-muted">{t('settings.storage.showHeroHelp')}</p>
-            </div>
-            <button
-              onClick={() => setShowHeroBackground(!showHeroBackground)}
-              className={`w-10 h-5 rounded-full transition-colors ${showHeroBackground ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
-            >
-              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${showHeroBackground ? 'translate-x-5' : 'translate-x-0.5'}`} />
-            </button>
-          </div>
         </div>
       )
       break
@@ -1208,12 +735,12 @@ function GeneralTab({ initialSection = null }) {
       activeSectionContent = (
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-sf-text-muted mb-1">API Key</label>
+            <label htmlFor="pexels-api-key" className="block text-xs text-sf-text-muted mb-1">API Key</label>
             <input
+              id="pexels-api-key"
               type="password"
               value={pexelsApiKey}
               onChange={(e) => setPexelsApiKeyLocal(e.target.value)}
-              onBlur={handleSavePexelsKey}
               placeholder="Your Pexels API key"
               className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary placeholder-sf-text-muted focus:outline-none focus:border-sf-accent"
             />
@@ -1228,479 +755,34 @@ function GeneralTab({ initialSection = null }) {
         </div>
       )
       break
-    case 'connection':
-      activeSectionContent = (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-sf-text-muted mb-1">{t('settings.connection.localPort')}</label>
-            <input
-              type="number"
-              min={1}
-              max={65535}
-              step={1}
-              value={comfyPortInput}
-              onChange={(e) => setComfyPortInput(e.target.value)}
-              onBlur={() => { void handleSaveComfyConnection() }}
-              placeholder={String(DEFAULT_COMFY_PORT)}
-              className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-            />
-            <p className="text-[10px] text-sf-text-muted mt-1">
-              {t('settings.connection.localOnlyHelp')}
-            </p>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className={`w-2.5 h-2.5 rounded-full ${
-                comfyConnectionState.status === 'success'
-                  ? 'bg-sf-success'
-                  : comfyConnectionState.status === 'error'
-                    ? 'bg-red-500'
-                    : comfyConnectionState.status === 'testing'
-                      ? 'bg-yellow-400 animate-pulse'
-                      : 'bg-sf-dark-500'
-              }`} />
-              <span className="text-xs text-sf-text-muted truncate">
-                {t(comfyConnectionState.messageKey, comfyConnectionState.values)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => { void handleResetComfyConnection() }}
-                className="px-3 py-1.5 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
-              >
-                {t('settings.connection.reset')}
-              </button>
-              <button
-                type="button"
-                onClick={() => { void handleTestComfyConnection() }}
-                className="px-3 py-1.5 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
-              >
-                {t('settings.connection.test')}
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2.5">
-                <div className="rounded-md bg-sf-dark-800 p-2 flex-shrink-0">
-                  <KeyRound className="h-4 w-4 text-sf-accent" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-sf-text-primary">{t('settings.connection.cloudKeyTitle')}</div>
-                  <div className="mt-0.5 text-[11px] text-sf-text-muted">
-                    {t('settings.connection.cloudKeyHelp', { count: COMFY_PARTNER_WORKFLOWS.length })}
-                  </div>
-                  <div className="mt-1.5 text-[11px]">
-                    {comfyOrgApiKey ? (
-                      <span className="inline-flex items-center gap-1 text-green-400">
-                        <CheckCircle2 className="h-3 w-3" />
-                        {t('settings.connection.keyReady')}
-                      </span>
-                    ) : (
-                      <span className="text-yellow-300">{t('settings.connection.noKey')}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setApiKeyDialogOpen(true)}
-                  className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sf-accent/90"
-                >
-                  {comfyOrgApiKey ? t('settings.connection.changeKey') : t('settings.connection.addKey')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { void openComfyPartnerDashboard() }}
-                  className="inline-flex items-center gap-1 text-[11px] text-sf-text-muted hover:text-sf-text-primary"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                  {t('settings.connection.getKey')}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="pr-4">
-              <label className="text-sm text-sf-text-primary">{t('settings.connection.autoImport')}</label>
-              <p className="text-[10px] text-sf-text-muted">
-                {t('settings.connection.autoImportHelpBefore')} <span className="text-sf-text-secondary">Imported from ComfyUI/</span> {t('settings.connection.autoImportHelpAfter')}
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={autoImportComfyOutputs}
-              onClick={handleToggleAutoImportComfyOutputs}
-              className={`w-10 h-5 rounded-full transition-colors flex-shrink-0 relative ${autoImportComfyOutputs ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
-              title={autoImportComfyOutputs ? t('settings.connection.disableAutoImport') : t('settings.connection.enableAutoImport')}
-            >
-              <span
-                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${autoImportComfyOutputs ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
-                aria-hidden
-              />
-            </button>
-          </div>
-        </div>
-      )
+    case 'setup':
+      activeSectionContent = <OptionalSetup onCloudSetup={() => navigate('cloud')} onFinish={onFinishSetup} onChooseAgentModel={onChooseAgentModel} />
       break
-    case 'mcp-exposure':
-      activeSectionContent = (
-        <div className="space-y-5">
-          <p className="text-xs text-sf-text-muted">
-            Expose this laptop&apos;s MCP server (port 19790) to your LAN / Tailscale
-            so other machines can drive Belrog. Loopback stays unauthenticated;
-            anything off-loopback requires the token. Applies on restart.
-          </p>
-          <label className="flex items-center gap-2 text-[12px]">
-            <input
-              type="checkbox"
-              checked={!!mcpExposure.enabled}
-              onChange={(e) => setMcpExposure({ ...mcpExposure, enabled: e.target.checked })}
-            />
-            Enable LAN / Tailscale exposure
-          </label>
-          <div className="grid grid-cols-2 gap-2 text-[12px]">
-            <label className="block"> Bind host
-              <input
-                value={mcpExposure.host || ''}
-                onChange={(e) => setMcpExposure({ ...mcpExposure, host: e.target.value })}
-                placeholder="0.0.0.0"
-                className="mt-1 w-full rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
-              />
-            </label>
-            <label className="block"> Bearer token
-              <div className="mt-1 flex gap-1.5">
-                <input
-                  value={mcpExposure.token || ''}
-                  onChange={(e) => setMcpExposure({ ...mcpExposure, token: e.target.value })}
-                  placeholder="required for 0.0.0.0"
-                  className="w-full rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={handleGenerateMcpToken}
-                  className="shrink-0 rounded bg-sf-accent/15 px-2 py-1 text-sf-accent hover:bg-sf-accent/25"
-                >
-                  Generate
-                </button>
-              </div>
-            </label>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveMcpExposure}
-              className="rounded bg-sf-accent/15 px-3 py-1.5 text-[12px] font-semibold text-sf-accent hover:bg-sf-accent/25"
-            >
-              Save
-            </button>
-            {mcpExposureMsg && <span className="text-[11px] text-sf-text-muted">{mcpExposureMsg}</span>}
-          </div>
-        </div>
-      )
-      break
-    case 'remote-server':
-      activeSectionContent = (
-        <div className="space-y-5">
-          <p className="text-xs text-sf-text-muted">
-            Connect to a remote ComfyUI server via SSH tunnel. The tunnel forwards localhost:8188 to the remote ComfyUI instance.
-          </p>
-
-          {/* Enable Remote Server Toggle */}
-          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div>
-              <label className="text-sm font-medium text-sf-text-primary">Enable Remote Server</label>
-              <p className="text-[10px] text-sf-text-muted">Use SSH tunnel to connect to remote ComfyUI</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={remoteServerSettings.enabled}
-              onClick={() => handleRemoteServerFieldChange('enabled', !remoteServerSettings.enabled)}
-              className={`w-10 h-5 rounded-full transition-colors flex-shrink-0 relative ${remoteServerSettings.enabled ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
-            >
-              <span
-                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${remoteServerSettings.enabled ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
-                aria-hidden
-              />
-            </button>
-          </div>
-
-          {/* SSH Connection Settings */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-sf-text-primary flex items-center gap-2">
-              <Plug className="h-4 w-4" />
-              SSH Connection
-            </h3>
-
-            <div>
-              <label className="block text-xs text-sf-text-muted mb-1">SSH Host</label>
-              <input
-                type="text"
-                value={remoteServerSettings.sshHost}
-                onChange={(e) => handleRemoteServerFieldChange('sshHost', e.target.value)}
-                placeholder="100.117.179.45"
-                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-sf-text-muted mb-1">SSH Port</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={65535}
-                  value={remoteServerSettings.sshPort}
-                  onChange={(e) => handleRemoteServerFieldChange('sshPort', parseInt(e.target.value) || 22)}
-                  className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-sf-text-muted mb-1">SSH Username</label>
-                <input
-                  type="text"
-                  value={remoteServerSettings.sshUsername}
-                  onChange={(e) => handleRemoteServerFieldChange('sshUsername', e.target.value)}
-                  placeholder="henlafon"
-                  className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs text-sf-text-muted mb-1">SSH Private Key</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={remoteServerSettings.sshKeyPath}
-                  onChange={(e) => handleRemoteServerFieldChange('sshKeyPath', e.target.value)}
-                  placeholder="C:\Users\...\.ssh\id_ed25519"
-                  className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent truncate"
-                />
-                <button
-                  type="button"
-                  onClick={handleChooseSshKey}
-                  className="px-3 py-2 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors flex-shrink-0"
-                >
-                  Browse
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Remote Paths Settings */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium text-sf-text-primary flex items-center gap-2">
-              <FolderOpen className="h-4 w-4" />
-              Remote ComfyUI Paths
-            </h3>
-
-            <div>
-              <label className="block text-xs text-sf-text-muted mb-1">Remote Models Root Path</label>
-              <input
-                type="text"
-                value={remoteServerSettings.comfyModelRoot}
-                onChange={(e) => handleRemoteServerFieldChange('comfyModelRoot', e.target.value)}
-                placeholder="/home/henlafon/ComfyUI/models"
-                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-              />
-              <p className="text-[10px] text-sf-text-muted mt-1">Full path to the models folder on the remote server</p>
-            </div>
-
-            <div>
-              <label className="block text-xs text-sf-text-muted mb-1">Remote Custom Nodes Root Path</label>
-              <input
-                type="text"
-                value={remoteServerSettings.comfyNodesRoot}
-                onChange={(e) => handleRemoteServerFieldChange('comfyNodesRoot', e.target.value)}
-                placeholder="/home/henlafon/ComfyUI/custom_nodes"
-                className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
-              />
-              <p className="text-[10px] text-sf-text-muted mt-1">Full path to the custom_nodes folder on the remote server</p>
-            </div>
-          </div>
-
-          {/* Connection Status and Actions */}
-          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${
-                  tunnelStatus.active ? 'bg-green-500' :
-                  tunnelStatus.connecting ? 'bg-yellow-400 animate-pulse' :
-                  tunnelConnectError ? 'bg-red-500' :
-                  'bg-sf-dark-500'
-                }`} />
-                <span className="text-xs text-sf-text-muted">
-                  {tunnelStatus.active ? 'Connected via SSH tunnel' :
-                   tunnelStatus.connecting ? 'Connecting...' :
-                   tunnelConnectError ? tunnelConnectError :
-                   'Not connected'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {tunnelStatus.active ? (
-                  <button
-                    type="button"
-                    onClick={handleDisconnectRemote}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 rounded text-xs text-red-400 transition-colors"
-                  >
-                    <Unplug className="h-3 w-3" />
-                    Disconnect
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleConnectRemote}
-                    disabled={tunnelStatus.connecting || !remoteServerSettings.enabled}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sf-accent hover:bg-sf-accent/90 disabled:bg-sf-dark-600 disabled:text-sf-text-muted rounded text-xs text-white transition-colors"
-                  >
-                    {tunnelStatus.connecting ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Plug className="h-3 w-3" />
-                    )}
-                    Connect
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {tunnelStatus.active && (
-              <div className="text-[10px] text-sf-text-muted">
-                Tunnel active: localhost:{remoteServerSettings.tunnelLocalPort || 8188} → {remoteServerSettings.sshHost}:{remoteServerSettings.tunnelRemotePort || 8188}
-              </div>
-            )}
-          </div>
-
-          {/* Remote Models Browser */}
-          {tunnelStatus.active && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-sf-text-primary">Remote Models</h3>
-                <button
-                  type="button"
-                  onClick={handleLoadRemoteModels}
-                  disabled={remoteModelsLoading}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
-                >
-                  <RefreshCcw className={`h-3 w-3 ${remoteModelsLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
-              {remoteModels.length > 0 ? (
-                <div className="max-h-40 overflow-y-auto bg-sf-dark-800 rounded border border-sf-dark-600">
-                  {remoteModels.slice(0, 20).map((model, i) => (
-                    <div key={i} className="px-3 py-1.5 text-xs text-sf-text-secondary border-b border-sf-dark-700 last:border-b-0 truncate">
-                      {model}
-                    </div>
-                  ))}
-                  {remoteModels.length > 20 && (
-                    <div className="px-3 py-1.5 text-xs text-sf-text-muted">
-                      ...and {remoteModels.length - 20} more
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-sf-text-muted bg-sf-dark-800 rounded px-3 py-2">
-                  {remoteModelsLoading ? 'Loading...' : 'No models found or models root not set'}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Remote Custom Nodes Browser */}
-          {tunnelStatus.active && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-sf-text-primary">Remote Custom Nodes</h3>
-                <button
-                  type="button"
-                  onClick={handleLoadRemoteNodes}
-                  disabled={remoteNodesLoading}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
-                >
-                  <RefreshCcw className={`h-3 w-3 ${remoteNodesLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
-              {remoteNodes.length > 0 ? (
-                <div className="max-h-40 overflow-y-auto bg-sf-dark-800 rounded border border-sf-dark-600">
-                  {remoteNodes.map((node, i) => (
-                    <div key={i} className="px-3 py-1.5 text-xs text-sf-text-secondary border-b border-sf-dark-700 last:border-b-0 truncate">
-                      {node}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-sf-text-muted bg-sf-dark-800 rounded px-3 py-2">
-                  {remoteNodesLoading ? 'Loading...' : 'No custom nodes found or nodes root not set'}
-                </p>
-              )}
-
-              {/* Install Custom Node */}
-              <div className="space-y-2">
-                <label className="block text-xs text-sf-text-muted">Install Custom Node (git URL)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={installNodeUrl}
-                    onChange={(e) => setInstallNodeUrl(e.target.value)}
-                    placeholder="https://github.com/user/comfyui-custom-node"
-                    className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleInstallRemoteNode}
-                    disabled={installNodeBusy || !installNodeUrl.trim()}
-                    className="px-3 py-2 bg-sf-accent hover:bg-sf-accent/90 disabled:bg-sf-dark-600 disabled:text-sf-text-muted rounded text-xs text-white transition-colors"
-                  >
-                    {installNodeBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Install'}
-                  </button>
-                </div>
-                {installNodeResult && (
-                  <div className={`text-xs px-3 py-2 rounded ${installNodeResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                    {installNodeResult.success ? (
-                      installNodeResult.warning ? `Installed (warning: ${installNodeResult.warning})` : 'Installed successfully'
-                    ) : (
-                      installNodeResult.error || 'Installation failed'
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Save Button */}
-          <button
-            type="button"
-            onClick={handleSaveRemoteServerSettings}
-            className="w-full px-4 py-2 bg-sf-accent hover:bg-sf-accent/90 rounded text-sm text-white font-medium transition-colors"
-          >
-            Save Remote Server Settings
-          </button>
-        </div>
-      )
+    case 'comfy':
+      activeSectionContent = window.electronAPI?.comfyLauncher
+        ? <ComfyLauncherSettingsSection onOpenLogViewer={() => setLogViewerOpen(true)} />
+        : <ComfyConnectionSetup />
       break
     case 'feedback':
       activeSectionContent = <FeedbackSection />
       break
+    case 'network':
+      activeSectionContent = <div className="max-w-xl flex flex-col gap-3 text-sm text-sf-text-secondary">
+        <p>Sharing your GPU now has its own tab, next to Stock.</p>
+        <button type="button" className="self-start rounded-md border border-sf-dark-600 bg-sf-dark-800 px-3 py-1.5 text-xs text-sf-text-primary hover:bg-sf-dark-700"
+          onClick={() => window.dispatchEvent(new CustomEvent('velorn:open-settings', { detail: 'network' }))}>Open GPU sharing</button>
+      </div>
+      break
     case 'agents': {
       const mcpUrl = mcpStatus?.url || 'http://127.0.0.1:19790/mcp'
-      const codexCommand = `codex mcp add Belrog --url ${mcpUrl}`
-      const claudeCommand = `claude mcp add --transport http Belrog ${mcpUrl}`
+      const codexCommand = `codex mcp add velorn --url ${mcpUrl}`
+      const claudeCommand = `claude mcp add --transport http velorn ${mcpUrl}`
       activeSectionContent = (
         <div className="space-y-4">
           <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-sf-text-primary">Belrog MCP server</div>
+                <div className="text-sm font-medium text-sf-text-primary">Velorn MCP server</div>
                 <p className="mt-1 text-[11px] text-sf-text-muted">
                   {t('settings.agents.serverDescription')}
                 </p>
@@ -1772,14 +854,14 @@ function GeneralTab({ initialSection = null }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="text-xs font-semibold text-sf-text-primary">Available tools</div>
+          <details className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <summary className="cursor-pointer text-xs font-semibold text-sf-text-primary">{label('agentTools', 'Available agent tools')}</summary>
             <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] text-sf-text-secondary">
-              {['get_project', 'create_project', 'duplicate_project', 'get_timeline', 'get_assets', 'get_ai_review_passes', 'get_mcp_recipes', 'find_timeline_items', 'check_media_health', 'inspect_export_file', 'guide_comfyui_setup', 'diagnose_comfyui_connection', 'set_comfyui_connection', 'repair_comfyui_connection', 'control_comfyui_launcher', 'get_comfyui_launcher_logs', 'validate_comfyui_nodes', 'list_Belrog_workflows', 'inspect_Belrog_workflow', 'check_export_readiness', 'inspect_clip', 'inspect_timeline_frame', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_h3_reference_video', 'get_generation_queue_status', 'queue_prompt_generation_batch', 'inspect_timeline_range', 'inspect_visible_shots', 'get_generation_status', 'get_music_video_status', 'get_music_video_plan', 'inspect_music_video_keyframe', 'regenerate_music_video_keyframe', 'inspect_music_video_video', 'regenerate_music_video_video', 'analyze_timeline', 'analyze_music_video_workflow', 'undo', 'redo', 'set_playhead', 'select_clips', 'select_assets', 'create_project_checkpoint', 'restore_project_checkpoint', 'set_in_out_range', 'run_mcp_action_plan', 'import_asset_from_path', 'relink_asset', 'set_clip_style', 'set_clip_label_color', 'set_clips_enabled', 'add_timeline_markers', 'remove_timeline_markers', 'set_timeline_marker_properties', 'create_timeline', 'switch_timeline', 'rename_timeline', 'duplicate_timeline', 'delete_timeline', 'create_asset_folder', 'move_assets_to_folder', 'move_unused_assets_to_folder', 'add_track', 'update_track', 'remove_track', 'add_transition', 'update_transition', 'remove_transitions', 'move_clips', 'trim_clips', 'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset', 'add_solid_color', 'add_adjustment_clip', 'add_text_clip', 'add_shape_clip', 'duplicate_clip', 'update_text_clip', 'update_shape_clip', 'list_glsl_effects', 'add_glsl_effect', 'update_glsl_effect', 'remove_glsl_effect', 'set_clip_keyframes', 'add_dip_to_black', 'export_timeline', 'export_delivery_batch', 'export_fcpxml'].map((tool) => (
+              {['get_project', 'create_project', 'duplicate_project', 'get_timeline', 'get_assets', 'get_ai_review_passes', 'get_mcp_recipes', 'find_timeline_items', 'check_media_health', 'inspect_export_file', 'guide_comfyui_setup', 'diagnose_comfyui_connection', 'set_comfyui_connection', 'repair_comfyui_connection', 'control_comfyui_launcher', 'get_comfyui_launcher_logs', 'validate_comfyui_nodes', 'list_velorn_workflows', 'inspect_velorn_workflow', 'check_export_readiness', 'inspect_clip', 'inspect_timeline_frame', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_h3_reference_video', 'get_generation_queue_status', 'queue_prompt_generation_batch', 'inspect_timeline_range', 'inspect_visible_shots', 'get_generation_status', 'get_music_video_status', 'get_music_video_plan', 'inspect_music_video_keyframe', 'regenerate_music_video_keyframe', 'inspect_music_video_video', 'regenerate_music_video_video', 'analyze_timeline', 'analyze_music_video_workflow', 'undo', 'redo', 'set_playhead', 'select_clips', 'select_assets', 'create_project_checkpoint', 'restore_project_checkpoint', 'set_in_out_range', 'run_mcp_action_plan', 'import_asset_from_path', 'relink_asset', 'set_clip_style', 'set_clip_label_color', 'set_clips_enabled', 'add_timeline_markers', 'remove_timeline_markers', 'set_timeline_marker_properties', 'create_timeline', 'switch_timeline', 'rename_timeline', 'duplicate_timeline', 'delete_timeline', 'create_asset_folder', 'move_assets_to_folder', 'move_unused_assets_to_folder', 'add_track', 'update_track', 'remove_track', 'add_transition', 'update_transition', 'remove_transitions', 'move_clips', 'trim_clips', 'delete_clips', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset', 'add_solid_color', 'add_adjustment_clip', 'add_text_clip', 'add_shape_clip', 'duplicate_clip', 'update_text_clip', 'update_shape_clip', 'list_glsl_effects', 'add_glsl_effect', 'update_glsl_effect', 'remove_glsl_effect', 'set_clip_keyframes', 'add_dip_to_black', 'export_timeline', 'export_delivery_batch', 'export_fcpxml'].map((tool) => (
                 <span key={tool} className="rounded bg-sf-dark-800 px-2 py-1">{tool}</span>
               ))}
             </div>
-          </div>
+          </details>
         </div>
       )
       break
@@ -1788,9 +870,10 @@ function GeneralTab({ initialSection = null }) {
       activeSectionContent = (
         <div className="space-y-5">
           <div>
-            <label className="block text-xs text-sf-text-muted mb-1">{t('settings.paths.outputDirectory')}</label>
+            <label htmlFor="settings-output-directory" className="block text-xs text-sf-text-muted mb-1">{t('settings.paths.outputDirectory')}</label>
             <div className="flex gap-2">
               <input
+                id="settings-output-directory"
                 type="text"
                 value={outputPath}
                 onChange={(e) => setOutputPath(e.target.value)}
@@ -1813,9 +896,10 @@ function GeneralTab({ initialSection = null }) {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-sf-text-muted mb-1">{t('settings.paths.workflowsDirectory')}</label>
+            <label htmlFor="settings-workflows-directory" className="block text-xs text-sf-text-muted mb-1">{t('settings.paths.workflowsDirectory')}</label>
             <div className="flex gap-2">
               <input
+                id="settings-workflows-directory"
                 type="text"
                 value={workflowPath}
                 onChange={(e) => setWorkflowPath(e.target.value)}
@@ -1838,128 +922,22 @@ function GeneralTab({ initialSection = null }) {
             </div>
           </div>
 
-          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="text-sm font-medium text-sf-text-primary">Hardware export FFmpeg</div>
-                <p className="mt-1 text-[10px] text-sf-text-muted">
-                  Advanced: choose an FFmpeg build with NVENC on Linux. It is used only for final H.264/H.265 hardware video encoding; Belrog keeps its bundled FFmpeg for media tools and as the safe CPU fallback.
-                </p>
-              </div>
-              <span className="flex-shrink-0 rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-[10px] text-sf-text-secondary">
-                {hardwareExportFfmpegStatus?.source === 'environment'
-                  ? 'Environment'
-                  : hardwareExportFfmpegStatus?.source === 'setting'
-                    ? 'Custom'
-                    : 'Bundled'}
-              </span>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <input
-                type="text"
-                value={hardwareExportFfmpegPath}
-                onChange={(event) => {
-                  hardwareExportFfmpegInputDirtyRef.current = true
-                  setHardwareExportFfmpegPathState(event.target.value)
-                  setHardwareExportFfmpegTest(null)
-                  setHardwareExportFfmpegMessage('')
-                }}
-                placeholder={window.electronAPI?.platform === 'win32' ? 'C:\\path\\to\\ffmpeg.exe' : '/usr/bin/ffmpeg'}
-                className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent truncate"
-              />
-              <button
-                type="button"
-                onClick={() => { void handleChooseHardwareExportFfmpeg() }}
-                disabled={Boolean(hardwareExportFfmpegBusy)}
-                className="px-3 py-2 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors flex-shrink-0 disabled:cursor-wait disabled:opacity-50"
-              >
-                Browse
-              </button>
-            </div>
-
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => { void handleSaveHardwareExportFfmpeg() }}
-                disabled={Boolean(hardwareExportFfmpegBusy) || !hardwareExportFfmpegPath.trim()}
-                className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {hardwareExportFfmpegBusy === 'saving' ? 'Validating...' : 'Save path'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { void handleTestHardwareExportFfmpeg() }}
-                disabled={Boolean(hardwareExportFfmpegBusy)}
-                className="inline-flex items-center gap-1 rounded bg-sf-dark-700 px-3 py-1.5 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-wait disabled:opacity-50"
-              >
-                <RefreshCcw className={`h-3 w-3 ${hardwareExportFfmpegBusy === 'testing' ? 'animate-spin' : ''}`} />
-                Test active FFmpeg
-              </button>
-              <button
-                type="button"
-                onClick={() => { void handleResetHardwareExportFfmpeg() }}
-                disabled={Boolean(hardwareExportFfmpegBusy) || (!hardwareExportFfmpegPath && hardwareExportFfmpegStatus?.source !== 'setting')}
-                className="rounded bg-sf-dark-700 px-3 py-1.5 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {hardwareExportFfmpegStatus?.source === 'environment' ? 'Clear saved path' : 'Use bundled FFmpeg'}
-              </button>
-            </div>
-
-            {hardwareExportFfmpegStatus?.activePath && (
-              <div className="mt-3 rounded border border-sf-dark-700 bg-black/20 px-2.5 py-2 text-[10px] text-sf-text-muted">
-                <div className="flex gap-1">
-                  <span className="flex-shrink-0 uppercase tracking-wider">Active:</span>
-                  <code className="min-w-0 break-all text-sf-text-secondary">{hardwareExportFfmpegStatus.activePath}</code>
-                </div>
-                {hardwareExportFfmpegStatus.version && (
-                  <div className="mt-1 break-all">{hardwareExportFfmpegStatus.version}</div>
-                )}
-              </div>
-            )}
-
-            {hardwareExportFfmpegStatus?.environmentPath && (
-              <p className="mt-2 text-[10px] text-yellow-300">
-                Belrog_FFMPEG_PATH is active and takes priority over the saved path until Belrog is restarted without it.
-              </p>
-            )}
-            {hardwareExportFfmpegStatus?.warning && (
-              <p className="mt-2 text-[10px] text-yellow-300">{hardwareExportFfmpegStatus.warning}</p>
-            )}
-            {hardwareExportFfmpegMessage && (
-              <p className={`mt-2 text-[10px] ${hardwareExportFfmpegTest?.available ? 'text-green-300' : 'text-sf-text-muted'}`}>
-                {hardwareExportFfmpegMessage}
-              </p>
-            )}
-            {hardwareExportFfmpegTest && (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${hardwareExportFfmpegTest.h264 ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-sf-dark-600 text-sf-text-muted'}`}>
-                  H.264 {hardwareExportFfmpegTest.kind === 'videotoolbox' ? 'VideoToolbox' : 'NVENC'}
-                </span>
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${hardwareExportFfmpegTest.h265 ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-sf-dark-600 text-sf-text-muted'}`}>
-                  H.265 {hardwareExportFfmpegTest.kind === 'videotoolbox' ? 'VideoToolbox' : 'NVENC'}
-                </span>
-              </div>
-            )}
-          </div>
         </div>
       )
       break
     case 'workflow-setup':
       activeSectionContent = <WorkflowSetupSection />
       break
-    case 'launcher':
-      activeSectionContent = <ComfyLauncherSettingsSection onOpenLogViewer={() => setLogViewerOpen(true)} />
-      break
+
     case 'language':
       activeSectionContent = (
         <div className="space-y-5">
           <div>
-            <label htmlFor="Belrog-display-language" className="block text-xs text-sf-text-muted mb-1">
+            <label htmlFor="velorn-display-language" className="block text-xs text-sf-text-muted mb-1">
               {t('settings.languageLabel')}
             </label>
             <select
-              id="Belrog-display-language"
+              id="velorn-display-language"
               value={language}
               onChange={(event) => setLanguage(event.target.value)}
               className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent"
@@ -2021,18 +999,32 @@ function GeneralTab({ initialSection = null }) {
 
           <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div>
-              <label className="text-sm text-sf-text-primary">{t('settings.appearance.timelineThumbnails')}</label>
-              <p className="text-[10px] text-sf-text-muted">{t('settings.appearance.timelineThumbnailsHelp')}</p>
+              <label className="text-sm text-sf-text-primary">{t('settings.storage.showHero')}</label>
+              <p className="text-[10px] text-sf-text-muted">{t('settings.storage.showHeroHelp')}</p>
+            </div>
+            <button
+              onClick={() => setShowHeroBackground(!showHeroBackground)}
+              className={`w-10 h-5 rounded-full transition-colors ${showHeroBackground ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${showHeroBackground ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="pr-4">
+              <label className="text-sm text-sf-text-primary">{t('settings.appearance.generateTab', undefined, 'Show Director tab')}</label>
+              <p className="text-[10px] text-sf-text-muted">{t('settings.appearance.generateTabHelp', undefined, 'Hide the tab for an agent-first layout. ComfyUI, agent tools and the generation queue remain available. You can show it again anytime.')}</p>
             </div>
             <button
               type="button"
-              onClick={() => setShowTimelineClipThumbnails(!showTimelineClipThumbnails)}
-              className={`w-10 h-5 rounded-full transition-colors ${showTimelineClipThumbnails ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+              role="switch"
+              aria-checked={showGenerateTab}
+              aria-label={t('settings.appearance.generateTab', undefined, 'Show Director tab')}
+              onClick={() => { void setShowGenerateTab(!showGenerateTab) }}
+              className={`relative h-5 w-10 flex-shrink-0 rounded-full transition-colors ${showGenerateTab ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
             >
-              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${showTimelineClipThumbnails ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showGenerateTab ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`} aria-hidden />
             </button>
           </div>
-
           <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
             <div className="pr-4">
               <label className="text-sm text-sf-text-primary">{t('settings.appearance.discoverTab')}</label>
@@ -2052,6 +1044,31 @@ function GeneralTab({ initialSection = null }) {
                 aria-hidden
               />
             </button>
+          </div>
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3" data-testid="top-tab-switches">
+            <div className="text-sm text-sf-text-primary">{t('settings.appearance.otherTabs', undefined, 'Other tabs')}</div>
+            <p className="text-[10px] text-sf-text-muted">{t('settings.appearance.otherTabsHelp', undefined, 'Switch off the tabs you do not use. Editor and Export always stay.')}</p>
+            <div className="mt-2 space-y-2">
+              {HIDEABLE_TOP_TABS.map((tab) => {
+                const shown = !hiddenTopTabs.includes(tab.id)
+                const name = tab.id === 'comfyui' ? tab.label : t(`topTabs.${tab.id}`, undefined, tab.label)
+                return (
+                  <div key={tab.id} className="flex items-center justify-between">
+                    <span className="text-xs text-sf-text-secondary">{name}</span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={shown}
+                      aria-label={name}
+                      onClick={() => { void setTopTabShown(tab.id, !shown) }}
+                      className={`relative h-5 w-10 flex-shrink-0 rounded-full transition-colors ${shown ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+                    >
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${shown ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`} aria-hidden />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )
@@ -2300,31 +1317,411 @@ function GeneralTab({ initialSection = null }) {
         </div>
       )
       break
+    case 'assets':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 p-4">
+            <label htmlFor="asset-removal-default" className="block text-sm font-medium text-sf-text-primary">
+              {label('assetRemoval.title', 'Default asset removal')}
+            </label>
+            <select id="asset-removal-default" value={assetRemovalMode} onChange={event => changeRemovalMode(event.target.value)}
+              className="mt-2 w-full rounded border border-sf-dark-600 bg-sf-dark-800 px-3 py-2 text-sm text-sf-text-primary">
+              <option value="project-only">{label('assetRemoval.keep', 'Remove from project — keep files')}</option>
+              <option value="trash">{label('assetRemoval.trash', 'Remove from project and move files to Trash')}</option>
+            </select>
+            <p className="mt-2 text-xs text-sf-text-secondary">
+              {label('assetRemoval.help', 'This changes the default for future removals in the asset browser. Nothing is removed now. You will review the affected files before a Trash action.')}
+            </p>
+            <p className="mt-2 text-xs text-amber-200">
+              {assetRemovalMode === 'trash'
+                ? label('assetRemoval.warning', 'Trash can include a linked original file outside the project and generated cache files. Other projects may use those files. Review the confirmation carefully.')
+                : label('assetRemoval.safe', 'Recommended: keep media files on disk when removing them from a project.')}
+            </p>
+            {assetRemovalError && <p role="alert" className="mt-2 text-xs text-red-300">{assetRemovalError}</p>}
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="pr-4">
+              <label className="text-sm text-sf-text-primary">{t('settings.connection.autoImport')}</label>
+              <p className="text-[10px] text-sf-text-muted">
+                {t('settings.connection.autoImportHelpBefore')} <span className="text-sf-text-secondary">Imported from ComfyUI/</span> {t('settings.connection.autoImportHelpAfter')}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoImportComfyOutputs}
+              onClick={handleToggleAutoImportComfyOutputs}
+              className={`w-10 h-5 rounded-full transition-colors flex-shrink-0 relative ${autoImportComfyOutputs ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+              title={autoImportComfyOutputs ? t('settings.connection.disableAutoImport') : t('settings.connection.enableAutoImport')}
+            >
+              <span
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${autoImportComfyOutputs ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
+                aria-hidden
+              />
+            </button>
+          </div>
+
+        </div>
+      )
+      break
+    case 'editor':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div>
+              <label className="text-sm text-sf-text-primary">{t('settings.appearance.timelineThumbnails')}</label>
+              <p className="text-[10px] text-sf-text-muted">{t('settings.appearance.timelineThumbnailsHelp')}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTimelineClipThumbnails(!showTimelineClipThumbnails)}
+              className={`w-10 h-5 rounded-full transition-colors ${showTimelineClipThumbnails ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ${showTimelineClipThumbnails ? 'translate-x-5' : 'translate-x-0.5'}`} />
+            </button>
+          </div>
+
+
+        </div>
+      )
+      break
+    case 'cache':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <p className="text-xs text-sf-text-secondary">{label('currentProjectMaintenance', 'Current-project maintenance. Rebuilding writes playback cache files; it does not change your original media.')}</p>
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <label className="text-sm text-sf-text-primary">{t('settings.storage.cache.title')}</label>
+                <p className="mt-1 text-[10px] text-sf-text-muted">
+                  {t('settings.storage.cache.description')}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                  <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-secondary">
+                    {t('settings.storage.cache.ready', {
+                      ready: playbackCacheCoverage.ready,
+                      total: playbackCacheCoverage.total,
+                    })}
+                  </span>
+                  {playbackCacheCoverage.encoding > 0 && (
+                    <span className="rounded bg-blue-900/40 px-2 py-1 text-blue-200">
+                      {t('settings.storage.cache.encoding', { count: playbackCacheCoverage.encoding })}
+                    </span>
+                  )}
+                  {playbackCacheCoverage.failed > 0 && (
+                    <span className="rounded bg-amber-900/40 px-2 py-1 text-amber-200">
+                      {t('settings.storage.cache.failed', { count: playbackCacheCoverage.failed })}
+                    </span>
+                  )}
+                  {playbackCacheCoverage.unavailable > 0 && (
+                    <span className="rounded bg-sf-dark-800 px-2 py-1 text-sf-text-muted">
+                      {t('settings.storage.cache.unavailable', { count: playbackCacheCoverage.unavailable })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlaybackCacheMessage('')
+                  setPlaybackCacheConfirmOpen(true)
+                }}
+                disabled={playbackCacheBusy || !currentProjectHandle || playbackCacheCoverage.rebuildable <= 0}
+                className="inline-flex flex-shrink-0 items-center gap-2 rounded bg-sf-dark-700 px-3 py-2 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {playbackCacheBusy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-3.5 w-3.5" />
+                )}
+                {playbackCacheBusy ? t('settings.storage.cache.rebuilding') : t('settings.storage.cache.rebuild')}
+              </button>
+            </div>
+
+            {playbackCacheConfirmOpen && !playbackCacheBusy && (
+              <div className="mt-3 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-3">
+                <p className="text-xs text-amber-100">
+                  {t(
+                    playbackCacheCoverage.rebuildable === 1
+                      ? 'settings.storage.cache.confirmOne'
+                      : 'settings.storage.cache.confirmMany',
+                    { count: playbackCacheCoverage.rebuildable }
+                  )}
+                </p>
+                <p className="mt-1 text-[10px] text-amber-200/80">
+                  {t('settings.storage.cache.confirmHelp')}
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlaybackCacheConfirmOpen(false)}
+                    className="rounded bg-sf-dark-800 px-3 py-1.5 text-xs text-sf-text-secondary hover:bg-sf-dark-700"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void handleRebuildVideoPlaybackCache() }}
+                    className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-sf-accent-hover"
+                  >
+                    {t('settings.storage.cache.startRebuild')}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {playbackCacheBusy && (
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between gap-3 text-[10px] text-sf-text-muted">
+                  <span className="truncate">
+                    {playbackCacheProgress.currentName || t('settings.storage.cache.preparing')}
+                  </span>
+                  <span className="flex-shrink-0">
+                    {playbackCacheProgress.completed}/{playbackCacheProgress.total || playbackCacheCoverage.rebuildable}
+                  </span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-sf-dark-800">
+                  <div
+                    className="h-full rounded-full bg-sf-accent transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.round((playbackCacheProgress.completed / Math.max(1, playbackCacheProgress.total || playbackCacheCoverage.rebuildable)) * 100))}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {playbackCacheMessage && !playbackCacheBusy && (
+              <p className="mt-3 text-[10px] text-sf-text-muted">{playbackCacheMessage}</p>
+            )}
+          </div>
+
+
+        </div>
+      )
+      break
+    case 'ffmpeg':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <p className="text-xs text-sf-text-secondary">{label('exportAdvanced', 'Optional advanced configuration. Most editors can keep the bundled tools. Export quality and delivery choices stay in the Export panel.')}</p>
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-medium text-sf-text-primary">Hardware export FFmpeg</div>
+                <p className="mt-1 text-[10px] text-sf-text-muted">
+                  Advanced: choose an FFmpeg build with NVENC on Linux. It is used only for final H.264/H.265 hardware video encoding; Velorn keeps its bundled FFmpeg for media tools and as the safe CPU fallback.
+                </p>
+              </div>
+              <span className="flex-shrink-0 rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-[10px] text-sf-text-secondary">
+                {hardwareExportFfmpegStatus?.source === 'environment'
+                  ? 'Environment'
+                  : hardwareExportFfmpegStatus?.source === 'setting'
+                    ? 'Custom'
+                    : 'Bundled'}
+              </span>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={hardwareExportFfmpegPath}
+                onChange={(event) => {
+                  hardwareExportFfmpegInputDirtyRef.current = true
+                  setHardwareExportFfmpegPathState(event.target.value)
+                  setHardwareExportFfmpegTest(null)
+                  setHardwareExportFfmpegMessage('')
+                }}
+                placeholder={window.electronAPI?.platform === 'win32' ? 'C:\\path\\to\\ffmpeg.exe' : '/usr/bin/ffmpeg'}
+                className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent truncate"
+              />
+              <button
+                type="button"
+                onClick={() => { void handleChooseHardwareExportFfmpeg() }}
+                disabled={Boolean(hardwareExportFfmpegBusy)}
+                className="px-3 py-2 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors flex-shrink-0 disabled:cursor-wait disabled:opacity-50"
+              >
+                Browse
+              </button>
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { void handleSaveHardwareExportFfmpeg() }}
+                disabled={Boolean(hardwareExportFfmpegBusy) || !hardwareExportFfmpegPath.trim()}
+                className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hardwareExportFfmpegBusy === 'saving' ? 'Validating...' : 'Save path'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleTestHardwareExportFfmpeg() }}
+                disabled={Boolean(hardwareExportFfmpegBusy)}
+                className="inline-flex items-center gap-1 rounded bg-sf-dark-700 px-3 py-1.5 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-wait disabled:opacity-50"
+              >
+                <RefreshCcw className={`h-3 w-3 ${hardwareExportFfmpegBusy === 'testing' ? 'animate-spin' : ''}`} />
+                Test active FFmpeg
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleResetHardwareExportFfmpeg() }}
+                disabled={Boolean(hardwareExportFfmpegBusy) || (!hardwareExportFfmpegPath && hardwareExportFfmpegStatus?.source !== 'setting')}
+                className="rounded bg-sf-dark-700 px-3 py-1.5 text-xs text-sf-text-secondary transition-colors hover:bg-sf-dark-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {hardwareExportFfmpegStatus?.source === 'environment' ? 'Clear saved path' : 'Use bundled FFmpeg'}
+              </button>
+            </div>
+
+            {hardwareExportFfmpegStatus?.activePath && (
+              <div className="mt-3 rounded border border-sf-dark-700 bg-black/20 px-2.5 py-2 text-[10px] text-sf-text-muted">
+                <div className="flex gap-1">
+                  <span className="flex-shrink-0 uppercase tracking-wider">Active:</span>
+                  <code className="min-w-0 break-all text-sf-text-secondary">{hardwareExportFfmpegStatus.activePath}</code>
+                </div>
+                {hardwareExportFfmpegStatus.version && (
+                  <div className="mt-1 break-all">{hardwareExportFfmpegStatus.version}</div>
+                )}
+              </div>
+            )}
+
+            {hardwareExportFfmpegStatus?.environmentPath && (
+              <p className="mt-2 text-[10px] text-yellow-300">
+                VELORN_FFMPEG_PATH is active and takes priority over the saved path until Velorn is restarted without it.
+              </p>
+            )}
+            {hardwareExportFfmpegStatus?.warning && (
+              <p className="mt-2 text-[10px] text-yellow-300">{hardwareExportFfmpegStatus.warning}</p>
+            )}
+            {hardwareExportFfmpegMessage && (
+              <p className={`mt-2 text-[10px] ${hardwareExportFfmpegTest?.available ? 'text-green-300' : 'text-sf-text-muted'}`}>
+                {hardwareExportFfmpegMessage}
+              </p>
+            )}
+            {hardwareExportFfmpegTest && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${hardwareExportFfmpegTest.h264 ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-sf-dark-600 text-sf-text-muted'}`}>
+                  H.264 {hardwareExportFfmpegTest.kind === 'videotoolbox' ? 'VideoToolbox' : 'NVENC'}
+                </span>
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] ${hardwareExportFfmpegTest.h265 ? 'border-green-500/40 bg-green-500/10 text-green-300' : 'border-sf-dark-600 text-sf-text-muted'}`}>
+                  H.265 {hardwareExportFfmpegTest.kind === 'videotoolbox' ? 'VideoToolbox' : 'NVENC'}
+                </span>
+              </div>
+            )}
+          </div>
+
+        </div>
+      )
+      break
+    case 'cloud':
+      activeSectionContent = (
+        <div className="space-y-5">
+          <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className="rounded-md bg-sf-dark-800 p-2 flex-shrink-0">
+                  <KeyRound className="h-4 w-4 text-sf-accent" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-sf-text-primary">{t('settings.connection.cloudKeyTitle')}</div>
+                  <p className="mt-1 text-[11px] text-sf-text-muted">Partner/API nodes through local ComfyUI. This is separate from the hosted account check below.</p>
+                  <div className="mt-0.5 text-[11px] text-sf-text-muted">
+                    {t('settings.connection.cloudKeyHelp', { count: COMFY_PARTNER_WORKFLOWS.length })}
+                  </div>
+                  <div className="mt-1.5 text-[11px]">
+                    {comfyOrgApiKey ? (
+                      <span className="inline-flex items-center gap-1 text-green-400">
+                        <CheckCircle2 className="h-3 w-3" />
+                        {t('settings.connection.keyReady')}
+                      </span>
+                    ) : (
+                      <span className="text-yellow-300">{t('settings.connection.noKey')}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setApiKeyDialogOpen(true)}
+                  className="rounded bg-sf-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sf-accent/90"
+                >
+                  {comfyOrgApiKey ? t('settings.connection.changeKey') : t('settings.connection.addKey')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void openComfyPartnerDashboard() }}
+                  className="inline-flex items-center gap-1 text-[11px] text-sf-text-muted hover:text-sf-text-primary"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {t('settings.connection.getKey')}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <ComfyHostedSetup />
+
+          <CreateKeySetting />
+
+          <div className="flex items-center justify-between rounded-lg border border-sf-dark-700 bg-sf-dark-900/60 px-3 py-3">
+            <div className="pr-4">
+              <label className="text-sm text-sf-text-primary">Show cloud credit balance</label>
+              <p className="text-[10px] text-sf-text-muted">
+                Display Comfy.org credits in the app header. Turning this off does not disable cloud workflows.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showCloudCreditBalance}
+              onClick={handleToggleCloudCreditBalance}
+              className={`relative h-5 w-10 flex-shrink-0 rounded-full transition-colors ${showCloudCreditBalance ? 'bg-sf-accent' : 'bg-sf-dark-600'}`}
+              title={showCloudCreditBalance ? 'Hide cloud credit balance' : 'Show cloud credit balance'}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${showCloudCreditBalance ? 'left-[calc(100%-1.25rem)]' : 'left-0.5'}`}
+                aria-hidden
+              />
+            </button>
+          </div>
+
+
+        </div>
+      )
+      break
     default:
       activeSectionContent = null
   }
 
-  const ActiveSectionIcon = activeSectionMeta.icon
+  const ActiveSectionIcon = searchQuery.trim() ? Search : activeSectionMeta.icon
+  const draftLabels = { paths: label('savePaths', 'Save media folders'), hotkeys: label('saveHotkeys', 'Save shortcuts'), stock: label('saveStock', 'Save API key') }
+  const isDraftPage = Boolean(draftLabels[activeSection]) && !searchQuery.trim()
+  const hasSectionTabs = !searchQuery.trim() && activeGroup?.pages.length > 1
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <aside className="flex w-[250px] min-h-0 flex-shrink-0 flex-col border-r border-sf-dark-700 bg-sf-dark-950/60">
-          <div className="flex-shrink-0 border-b border-sf-dark-700 px-4 py-4">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-sf-text-muted">{t('settings.categories')}</div>
-            <p className="mt-1 text-xs text-sf-text-secondary">{t('settings.pickArea')}</p>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            <div className="space-y-1">
-              {localizedSections.map((section) => (
-                <SettingsRailItem
-                  key={section.id}
-                  section={section}
-                  isActive={section.id === activeSection}
-                  onSelect={setActiveSection}
-                />
-              ))}
+        <aside className="flex w-[230px] min-h-0 flex-shrink-0 flex-col border-r border-sf-dark-700 bg-sf-dark-950/60">
+          <div className="flex-shrink-0 border-b border-sf-dark-700 px-3 py-4">
+            <label htmlFor="settings-search" className="sr-only">{label('search', 'Search settings')}</label>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-sf-text-muted" />
+              <input id="settings-search" type="search" value={searchQuery}
+                onChange={event => { setSearchQuery(event.target.value); setRecordingHotkeyId(null) }}
+                placeholder={label('search', 'Search settings')}
+                className="w-full rounded-lg border border-sf-dark-600 bg-sf-dark-800 py-2 pl-8 pr-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent" />
             </div>
+          </div>
+          <nav aria-label={label('categories', 'Settings categories')} className="min-h-0 flex-1 overflow-y-auto p-2">
+            <div className="space-y-1">
+              {localizedGroups.map(group => <SettingsRailItem key={group.id} section={group}
+                isActive={!searchQuery.trim() && group.id === activeGroupId}
+                onSelect={() => navigate(group.pages[0])} />)}
+            </div>
+          </nav>
+          <div className="border-t border-sf-dark-700 p-2">
+            <SettingsRailItem section={{ id: 'feedback', title: t('settings.sections.feedback.title'), icon: MessageSquare }}
+              isActive={!searchQuery.trim() && activeSection === 'feedback'} onSelect={() => navigate('feedback')} />
           </div>
         </aside>
 
@@ -2335,15 +1732,42 @@ function GeneralTab({ initialSection = null }) {
                 <ActiveSectionIcon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h3 className="text-lg font-medium text-sf-text-primary">{activeSectionMeta.title}</h3>
-                <p className="mt-1 text-sm text-sf-text-secondary">{activeSectionMeta.description}</p>
+                <h3 className="text-lg font-medium text-sf-text-primary">{searchQuery.trim() ? label('results', 'Search results') : activeSectionMeta.title}</h3>
+                <p className="mt-1 text-sm text-sf-text-secondary">{searchQuery.trim() ? label('searchHelp', 'Choose a result to open its settings.') : activeSectionMeta.description}</p>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5">
-            <div className="max-w-4xl">
-              {activeSectionContent}
+          {hasSectionTabs && (
+            <SettingsSectionTabs
+              pages={activeGroup.pages.map(id => localizedPages.find(page => page.id === id))}
+              activeId={activeSection} onSelect={navigate}
+              label={label('sections', 'Settings sections')}
+              hint={label('sectionsHint', 'Choose a section')}
+            />
+          )}
+          <div ref={contentRef}
+            role={hasSectionTabs ? 'tabpanel' : undefined}
+            id={hasSectionTabs ? 'settings-section-panel' : undefined}
+            aria-labelledby={hasSectionTabs ? `settings-section-tab-${activeSection}` : undefined}
+            tabIndex={hasSectionTabs ? 0 : undefined}
+            className="flex-1 min-h-0 overflow-y-auto px-5 py-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sf-accent">
+            <div className="max-w-4xl" data-settings-page={activeSection}>
+              {searchQuery.trim() ? (
+                <div className="space-y-2">
+                  {searchResults.length === 0 && <p role="status" className="text-sm text-sf-text-muted">{label('noResults', 'No matching settings. Try a different word.')}</p>}
+                  {searchResults.map(result => <button key={result.id} type="button" onClick={() => navigate(result.id)}
+                    className="block w-full rounded-lg border border-sf-dark-700 bg-sf-dark-800 px-4 py-3 text-left hover:border-sf-accent/50">
+                    <span className="block text-sm font-medium text-sf-text-primary">{result.title}</span>
+                    <span className="mt-1 block text-xs text-sf-text-muted">{result.groupTitle}</span>
+                  </button>)}
+                </div>
+              ) : (
+                <>
+                  {activePage && activeGroup?.pages.length > 1 && <h4 className="mb-4 text-base font-medium text-sf-text-primary">{activePage.title}</h4>}
+                  {activeSectionContent}
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -2356,29 +1780,25 @@ function GeneralTab({ initialSection = null }) {
         onSaved={(value) => setComfyOrgApiKey(value || '')}
       />
 
-      <div className="flex flex-shrink-0 items-center justify-between gap-4 border-t border-sf-dark-700 px-5 py-4">
-        <p className="text-[11px] text-sf-text-muted">
-          {isWorkflowSetupActive
-            ? t('settings.saveHelpWorkflow')
-            : t('settings.saveHelp')}
-        </p>
-        <button
-          onClick={handleSaveAllSettings}
-          className={`flex flex-shrink-0 items-center justify-center gap-2 rounded px-4 py-2.5 text-sm transition-colors min-w-[180px] ${
-            isWorkflowSetupActive
-              ? 'border border-sf-dark-600 bg-sf-dark-800 text-sf-text-secondary hover:border-sf-dark-500 hover:bg-sf-dark-700 hover:text-sf-text-primary'
-              : 'bg-sf-accent text-white hover:bg-sf-accent-hover'
-          }`}
-        >
-          <Save className="w-4 h-4" />
-          {settingsSaved ? t('common.saved') : t('settings.saveSettings')}
-        </button>
+      <div className="flex flex-shrink-0 items-center justify-between gap-4 border-t border-sf-dark-700 px-5 py-3">
+        <div className="text-[11px] text-sf-text-muted">
+          <p>{isDraftPage
+            ? label('draftHelp', 'Changes on this page are drafts until you select Save. Other preferences save automatically.')
+            : label('autoSaveHelp', 'Preferences save automatically unless a Save button is shown. Actions run only when you choose them.')}</p>
+          {isDraftPage && draftSave.section === activeSection && draftSave.message && (
+            <p role={draftSave.status === 'error' ? 'alert' : 'status'} className={`mt-1 ${draftSave.status === 'error' ? 'text-red-300' : 'text-emerald-400'}`}>{draftSave.message}</p>
+          )}
+        </div>
+        {isDraftPage && <button type="button" onClick={() => { void saveDraft(activeSection) }} disabled={saveBusy}
+          className="flex flex-shrink-0 items-center justify-center gap-2 rounded bg-sf-accent px-4 py-2 text-sm text-white hover:bg-sf-accent-hover disabled:opacity-50">
+          <Save className="h-4 w-4" />{saveBusy ? label('saving', 'Saving…') : draftLabels[activeSection]}
+        </button>}
       </div>
     </div>
   )
 }
 
-export default function SettingsModal({ isOpen, onClose, initialSection = null }) {
+export default function SettingsModal({ isOpen, onClose, initialSection = null, onChooseAgentModel }) {
   const { t } = useI18n()
   if (!isOpen) return null
 
@@ -2403,7 +1823,7 @@ export default function SettingsModal({ isOpen, onClose, initialSection = null }
         </div>
 
         <div className="flex-1 min-h-0">
-          <GeneralTab initialSection={initialSection} />
+          <GeneralTab initialSection={initialSection} onFinishSetup={onClose} onChooseAgentModel={onChooseAgentModel} />
         </div>
       </div>
     </div>

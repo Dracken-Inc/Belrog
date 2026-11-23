@@ -20,7 +20,7 @@ const audioAsset = {
 
 function createSnapshot() {
   return {
-    app: { name: 'Belrog' },
+    app: { name: 'Velorn' },
     project: { id: 'project-1', name: 'H3 MCP test', path: 'C:/test/project' },
     timelines: [],
     currentTimeline: null,

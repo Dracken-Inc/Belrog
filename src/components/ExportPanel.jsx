@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Plus, Trash2, Play, Settings, Film, Clock, RotateCcw, Sparkles, Square } from 'lucide-react'
+import { Download, Plus, Trash2, Play, Film, RotateCcw, Sparkles, Square, PanelRightClose, ListVideo, Folder, Pause } from 'lucide-react'
+import ExportReviewPreview from './ExportReviewPreview'
+import ExportTimelineOverview from './ExportTimelineOverview'
+import ExportWorkspaceLayout from './ExportWorkspaceLayout'
+import ExportPresetPicker from './ExportPresetPicker'
+import ExportReadinessPanel from './ExportReadinessPanel'
+import { DELIVERY_PRESETS, resolveDeliveryPresetSettings, resolveDeliveryResolution } from '../utils/exportDeliveryPresets.mjs'
+import { LEGACY_EXPORT_PRESETS as EXPORT_PRESETS } from '../utils/exportLegacyPresets.mjs'
+import { validateCustomExportPresetSettings } from '../utils/exportPresetLibrary.mjs'
+import { timeToFrameIndex } from '../utils/timelineFrames'
+import { formatExportOverviewTimecode } from '../utils/exportTimelineOverview.mjs'
+import './ExportWorkspace.css'
 import useProjectStore, { RESOLUTION_PRESETS, FPS_PRESETS } from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
+import useExportActivityStore, { beginLocalExportActivity, isExportBusy } from '../stores/exportActivityStore'
 import exportTimeline from '../services/exporter'
 import buildFcpXml from '../services/fcpxmlExporter'
 import buildPremiereXml from '../services/premiereXmlExporter'
@@ -68,6 +80,12 @@ const RANGE_PRESETS = [
   { id: 'full', label: 'Full Timeline', translationKey: 'export.rangeFull' },
   { id: 'inout', label: 'In/Out Range', translationKey: 'export.rangeInOut' },
 ]
+
+// Live code updates can reach a window whose language dictionaries were
+// loaded before these controls existed. Keep every new label readable.
+const EXPORT_QUEUE_STATUS_LABELS = {
+  queued: 'Queued', rendering: 'Rendering', completed: 'Completed', failed: 'Failed', stopped: 'Stopped',
+}
 
 const VIDEO_CODECS = {
   mp4: [
@@ -193,109 +211,6 @@ const createDefaultExportSettings = (filename) => ({
   transparent: false,
 })
 
-const EXPORT_PRESETS = [
-  {
-    id: 'balanced-mp4',
-    label: 'Balanced MP4',
-    summary: 'Clean everyday export, project size, H.264.',
-    settings: {
-      format: 'mp4',
-      videoCodec: 'h264',
-      audioCodec: 'aac',
-      useHardwareEncoder: false,
-      preset: 'medium',
-      qualityMode: 'crf',
-      crf: 18,
-      resolution: 'project',
-      fps: 'project',
-      includeAudio: true,
-      audioBitrateKbps: 192,
-      useProxyMedia: false,
-      useDirectFramePipe: true,
-    },
-  },
-  {
-    id: 'fast-nvenc',
-    label: 'Fast NVENC',
-    summary: 'Fast H.264 delivery for NVIDIA systems.',
-    settings: {
-      format: 'mp4',
-      videoCodec: 'h264',
-      audioCodec: 'aac',
-      useHardwareEncoder: true,
-      nvencPreset: 'p5',
-      preset: 'fast',
-      qualityMode: 'crf',
-      crf: 19,
-      resolution: 'project',
-      fps: 'project',
-      includeAudio: true,
-      audioBitrateKbps: 192,
-      useProxyMedia: false,
-      useDirectFramePipe: true,
-    },
-  },
-  {
-    id: 'proxy-review',
-    label: 'Proxy Review',
-    summary: 'Quick review file using proxies and half-res.',
-    settings: {
-      format: 'mp4',
-      videoCodec: 'h264',
-      audioCodec: 'aac',
-      useHardwareEncoder: true,
-      nvencPreset: 'p3',
-      preset: 'veryfast',
-      qualityMode: 'crf',
-      crf: 23,
-      resolution: 'timeline-half',
-      fps: 'project',
-      includeAudio: true,
-      audioBitrateKbps: 160,
-      useProxyMedia: true,
-      useDirectFramePipe: true,
-    },
-  },
-  {
-    id: 'small-h265',
-    label: 'Small H.265',
-    summary: 'Smaller MP4 for sharing, slower decode.',
-    settings: {
-      format: 'mp4',
-      videoCodec: 'h265',
-      audioCodec: 'aac',
-      useHardwareEncoder: true,
-      nvencPreset: 'p5',
-      preset: 'medium',
-      qualityMode: 'crf',
-      crf: 22,
-      resolution: 'project',
-      fps: 'project',
-      includeAudio: true,
-      audioBitrateKbps: 192,
-      useProxyMedia: false,
-      useDirectFramePipe: true,
-    },
-  },
-  {
-    id: 'prores-hq',
-    label: 'ProRes HQ',
-    summary: 'Large editor-friendly MOV master.',
-    settings: {
-      format: 'prores',
-      videoCodec: 'prores',
-      audioCodec: 'aac',
-      proresProfile: '3',
-      useHardwareEncoder: false,
-      resolution: 'project',
-      fps: 'project',
-      includeAudio: true,
-      audioBitrateKbps: 320,
-      useProxyMedia: false,
-      useDirectFramePipe: true,
-    },
-  },
-]
 
 // FFmpeg prores_ks profile: 0=proxy, 1=lt, 2=standard, 3=hq, 4=4444
 const PRORES_PROFILES = [
@@ -357,16 +272,21 @@ function isAbsoluteFilePath(filePath) {
 }
 
 function sanitizeExportBaseName(value) {
-  return String(value || 'Belrog_Timeline')
+  return String(value || 'Velorn_Timeline')
     .trim()
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
-    || 'Belrog_Timeline'
+    || 'Velorn_Timeline'
 }
 
-function ExportPanel() {
+function ExportField({ id, label, children }) {
+  return <div className="export-field"><label htmlFor={id}>{label}</label>{children}</div>
+}
+
+function ExportPanel({ active = true }) {
+  const globalExportBusy = useExportActivityStore(state => Boolean(state.activeJob || state.localActivity))
   const { t } = useI18n()
   const {
     currentProject,
@@ -399,6 +319,8 @@ function ExportPanel() {
   
   const [settings, setSettings] = useState(() => loadSavedExportSettings(settingsStorageKey, defaultSettings))
   const [queue, setQueue] = useState([])
+  const [queueOpen, setQueueOpen] = useState(true)
+  const queueSequenceRef = useRef(0)
   const [loudnessCheck, setLoudnessCheck] = useState({ status: 'idle', result: null, error: '' })
   const [isExporting, setIsExporting] = useState(false)
   const [exportStatus, setExportStatus] = useState('')
@@ -408,6 +330,17 @@ function ExportPanel() {
   const [externalExportNotice, setExternalExportNotice] = useState(null)
   const [etaSeconds, setEtaSeconds] = useState(null)
   const [renderFps, setRenderFps] = useState(null)
+  const activityLeasesRef = useRef(new Set())
+  const exportStopRequestedRef = useRef(false)
+  useEffect(() => {
+    for (const lease of activityLeasesRef.current) lease.update({
+      status: exportStatus, progress: { status: exportStatus, progress: exportProgress }, etaSeconds,
+    })
+  }, [exportStatus, exportProgress, etaSeconds])
+  useEffect(() => () => {
+    for (const lease of activityLeasesRef.current) lease.end()
+    activityLeasesRef.current.clear()
+  }, [])
   const [rtxReadiness, setRtxReadiness] = useState({
     status: 'idle',
     ready: false,
@@ -679,20 +612,32 @@ function ExportPanel() {
   // worker exports are cancelled through the main process instead.
   const exportAbortRef = useRef(null)
   const handleStopExport = async () => {
+    exportStopRequestedRef.current = true
+    if (queueControllerRef.current.running) {
+      queueControllerRef.current.paused = true
+      setQueuePauseRequested(true)
+    }
     setExportStatus('Stopping export...')
     exportAbortRef.current?.abort()
-    try {
-      await window.electronAPI?.cancelExport?.()
-    } catch { /* worker already finished or gone */ }
+    const result = await window.electronAPI?.cancelExport?.()
+    if (result?.success === false) throw new Error(result.error || 'Could not stop export.')
+    return result
   }
 
-  const timelineRangeLabel = useMemo(() => {
-    if (settings.range === 'inout' && inPoint !== null && outPoint !== null) {
-      return `${Math.max(0, inPoint).toFixed(2)}s → ${Math.max(inPoint, outPoint).toFixed(2)}s`
-    }
-    return `0s → ${duration.toFixed(2)}s`
-  }, [settings.range, inPoint, outPoint, duration])
-  
+  const acquireExportActivity = (status) => {
+    const pauseAfterCurrent = queueControllerRef.current.running ? () => {
+      queueControllerRef.current.paused = true
+      setQueuePauseRequested(true)
+      for (const item of activityLeasesRef.current) item.update({ pauseRequested: true })
+    } : null
+    const lease = beginLocalExportActivity({ status, cancel: handleStopExport, pauseAfterCurrent })
+    activityLeasesRef.current.add(lease)
+    return () => { activityLeasesRef.current.delete(lease); lease.end() }
+  }
+  const checkExportStopped = () => {
+    if (exportStopRequestedRef.current) throw new Error('Export cancelled')
+  }
+
   const handleSettingChange = (key, value) => {
     setSettings((prev) => {
       const next = { ...prev, [key]: value }
@@ -771,12 +716,16 @@ function ExportPanel() {
 
   const handleApplyExportPreset = (exportPreset) => {
     if (!exportPreset) return
+    // Custom library entries are delivery-only and validated again at this
+    // boundary; arbitrary persisted keys must never enter current settings.
+    const custom = exportPreset.custom ? validateCustomExportPresetSettings(exportPreset.settings) : null
+    if (custom && !custom.ok) return
     setSettings((prev) => {
       const next = {
         ...prev,
         postProcessUpscale: 'none',
         transparent: false,
-        ...exportPreset.settings,
+        ...(custom ? custom.settings : exportPreset.settings),
       }
       const requestedCodec = next.videoCodec
       const requestedHardware = Boolean(next.useHardwareEncoder)
@@ -793,14 +742,14 @@ function ExportPanel() {
         next.useHardwareEncoder = false
       }
       const supportedVideo = VIDEO_CODECS[next.format] || []
-      if (!supportedVideo.find(codec => codec.id === next.videoCodec)) {
+      if (supportedVideo.length && !supportedVideo.find(codec => codec.id === next.videoCodec)) {
         next.videoCodec = supportedVideo[0]?.id || prev.videoCodec
       }
       const supportedAudio = AUDIO_CODECS[next.format] || []
-      if (!supportedAudio.find(codec => codec.id === next.audioCodec)) {
+      if (supportedAudio.length && !supportedAudio.find(codec => codec.id === next.audioCodec)) {
         next.audioCodec = supportedAudio[0]?.id || prev.audioCodec
       }
-      return next
+      return normalizeTransparentExportSettings(next)
     })
   }
 
@@ -808,13 +757,18 @@ function ExportPanel() {
     setSettings(createDefaultExportSettings(defaultFilename))
   }
 
+  const presetTimelineSettings = getCurrentTimelineSettings() || { width: 1920, height: 1080, fps: 24 }
+  const allExportPresets = useMemo(() => [
+    ...DELIVERY_PRESETS.map(preset => ({ ...preset, settings: resolveDeliveryPresetSettings(preset, presetTimelineSettings) })),
+    ...EXPORT_PRESETS,
+  ], [presetTimelineSettings.width, presetTimelineSettings.height, presetTimelineSettings.fps])
   const activeExportPresetId = useMemo(() => {
     if (settings.postProcessUpscale === 'rtx-4k' || settings.transparent) return null
     const isEqual = (a, b) => String(a) === String(b)
-    return EXPORT_PRESETS.find((exportPreset) => (
+    return allExportPresets.find((exportPreset) => (
       Object.entries(exportPreset.settings).every(([key, value]) => isEqual(settings[key], value))
     ))?.id || null
-  }, [settings])
+  }, [settings, allExportPresets])
 
   const selectedNvencCodecSupported = settings.videoCodec === 'h265'
     ? nvencStatus.h265
@@ -890,17 +844,18 @@ function ExportPanel() {
   
   const handleAddToQueue = () => {
     const queuedItem = {
-      id: `export-${Date.now()}`,
+      id: `export-${Date.now()}-${++queueSequenceRef.current}`,
       name: settings.filename.trim() || defaultFilename,
       createdAt: new Date().toISOString(),
       status: 'queued',
       settings: { ...settings },
     }
     setQueue((prev) => [queuedItem, ...prev])
+    setQueueOpen(true)
   }
   
   const handleRemoveFromQueue = (id) => {
-    setQueue((prev) => prev.filter((item) => item.id !== id))
+    setQueue((prev) => prev.filter((item) => item.id !== id || item.status === 'rendering'))
   }
   
   const handleClearQueue = () => {
@@ -918,6 +873,7 @@ function ExportPanel() {
     setQueueRunning(true)
     setQueuePaused(false)
     setQueuePauseRequested(false)
+    const releaseActivity = acquireExportActivity('Preparing export queue…')
     
     try {
       while (true) {
@@ -939,6 +895,7 @@ function ExportPanel() {
         }
       }
     } finally {
+      releaseActivity()
       queueControllerRef.current.running = false
       setQueueRunning(false)
       setQueuePaused(queueControllerRef.current.paused)
@@ -947,7 +904,7 @@ function ExportPanel() {
   }
 
   const handleStartQueue = () => {
-    if (queueRunning || queueRef.current.length === 0) return
+    if (isExporting || isXmlExporting || queueRunning || isExportBusy() || !queueRef.current.some(item => item.status === 'queued')) return
     runQueue()
   }
 
@@ -958,7 +915,7 @@ function ExportPanel() {
   }
 
   const handleResumeQueue = () => {
-    if (queueRunning) return
+    if (isExporting || isXmlExporting || queueRunning || isExportBusy() || !queueRef.current.some(item => item.status === 'queued')) return
     queueControllerRef.current.paused = false
     setQueuePaused(false)
     setQueuePauseRequested(false)
@@ -967,6 +924,8 @@ function ExportPanel() {
 
   const resolveResolution = (exportSettings = settings) => {
     const timelineSettings = getCurrentTimelineSettings() || { width: 1920, height: 1080, fps: 24 }
+    const deliveryResolution = resolveDeliveryResolution(exportSettings.resolution, timelineSettings)
+    if (deliveryResolution) return deliveryResolution
     const makeEvenDimension = (value) => Math.max(2, Math.round((Number(value) || 2) / 2) * 2)
     const makePngDimension = (value) => Math.max(1, Math.round(Number(value) || 1))
     const normalizeDimension = exportSettings.format === 'png-seq' || exportSettings.format === 'gif'
@@ -999,6 +958,8 @@ function ExportPanel() {
 
   const getResolutionLabel = (exportSettings = settings) => {
     const timelineSettings = getCurrentTimelineSettings() || { width: 1920, height: 1080, fps: 24 }
+    const deliveryResolution = resolveDeliveryResolution(exportSettings.resolution, timelineSettings)
+    if (deliveryResolution) return `${exportSettings.resolution === 'youtube-hd' ? 'YouTube HD limit' : 'YouTube 4K limit'} (${deliveryResolution.width}×${deliveryResolution.height})`
     const makeEvenDimension = (value) => Math.max(2, Math.round((Number(value) || 2) / 2) * 2)
     const makePngDimension = (value) => Math.max(1, Math.round(Number(value) || 1))
     const normalizeDimension = exportSettings.format === 'png-seq' || exportSettings.format === 'gif'
@@ -1029,7 +990,7 @@ function ExportPanel() {
   const rtxSourceResolution = resolveResolution()
   const rtxTargetResolution = resolveRtx4kDimensions(rtxSourceResolution.width, rtxSourceResolution.height)
   const rtxToggleDisabledReason = !window.electronAPI?.checkRtxVideoUpscaleRuntime
-    ? 'RTX upscale is available only in the Belrog desktop app.'
+    ? 'RTX upscale is available only in the Velorn desktop app.'
     : settings.transparent
       ? 'RTX upscale does not preserve transparent backgrounds.'
       : window.electronAPI.platform !== 'win32'
@@ -1153,6 +1114,18 @@ function ExportPanel() {
   }, [clips, transitions, tracks, settings, getCurrentTimelineSettings, nvencStatus, proxyCoverage, t])
 
   const runExportJob = async (jobSettings, labelOverride = null) => {
+    exportStopRequestedRef.current = false
+    const releaseActivity = acquireExportActivity('Preparing export…')
+    try {
+      return await runExportJobInternal(jobSettings, labelOverride)
+    } finally {
+      exportAbortRef.current = null
+      setIsExporting(false)
+      releaseActivity()
+    }
+  }
+
+  const runExportJobInternal = async (jobSettings, labelOverride = null) => {
     const isPngSequence = jobSettings.format === 'png-seq'
     const isGif = jobSettings.format === 'gif'
     const isVisualOnlyFormat = isPngSequence || isGif
@@ -1183,11 +1156,14 @@ function ExportPanel() {
     setExportError(null)
     setExportResult(null)
     setExternalExportNotice(null)
+    setExportProgress(0)
+    setExportStatus('Preparing export…')
     setIsExporting(true)
 
     if (shouldRunRtxUpscale) {
       setExportStatus('Checking the direct NVIDIA RTX runtime...')
       const readiness = await handleCheckRtxSetup()
+      checkExportStopped()
       if (!readiness.ready) {
         setIsExporting(false)
         throw new Error(readiness.error || 'The NVIDIA RTX runtime is not ready.')
@@ -1241,11 +1217,12 @@ function ExportPanel() {
         if (createRendersResult?.success === false) {
           throw new Error(createRendersResult.error || 'Could not create the project renders folder.')
         }
+        checkExportStopped()
 
         let finalOutputPath
         if (isPngSequence) {
           if (!window.electronAPI.selectDirectory) {
-            throw new Error('PNG image sequence folder selection is unavailable. Restart Belrog and try again.')
+            throw new Error('PNG image sequence folder selection is unavailable. Restart Velorn and try again.')
           }
           setExportStatus('Choose where to save the PNG image sequence...')
           const selectedParentFolder = await window.electronAPI.selectDirectory({
@@ -1281,8 +1258,9 @@ function ExportPanel() {
             throw new Error('Export cancelled')
           }
         }
+        checkExportStopped()
         const sourceOutputPath = shouldRunRtxUpscale
-          ? await window.electronAPI.pathJoin(outputFolder, `.Belrog-rtx-source-${Date.now()}.mp4`)
+          ? await window.electronAPI.pathJoin(outputFolder, `.velorn-rtx-source-${Date.now()}.mp4`)
           : finalOutputPath
         const postProcess = shouldRunRtxUpscale
           ? {
@@ -1295,7 +1273,10 @@ function ExportPanel() {
             }
           : null
         const state = {
-          timeline: { clips, tracks, transitions },
+          timeline: { clips, tracks, transitions,
+            timelineFps: useTimelineStore.getState().timelineFps,
+            masterAudioVolume: useTimelineStore.getState().masterAudioVolume,
+            masterAudioInserts: useTimelineStore.getState().masterAudioInserts },
           assets: assets.map((a) => ({
             id: a.id,
             path: a.path,
@@ -1321,6 +1302,7 @@ function ExportPanel() {
         // unhandled rejection while we are still awaiting startup.
         workerExportCompletion.catch(() => {})
         const completionRecord = { jobId, resolve: resolveWorkerExport, reject: rejectWorkerExport }
+        checkExportStopped()
         workerExportCompletionRef.current = completionRecord
         const workerStart = await window.electronAPI.runExportInWorker({
           jobId,
@@ -1340,8 +1322,11 @@ function ExportPanel() {
           if (workerExportCompletionRef.current === completionRecord) {
             workerExportCompletionRef.current = null
           }
-          throw new Error('Could not correlate the export worker job. Restart Belrog and try again.')
+          throw new Error('Could not correlate the export worker job. Restart Velorn and try again.')
         }
+        // Cancel pressed while native startup was in flight still owns this
+        // completion promise; keep the lock until the worker acknowledges it.
+        if (exportStopRequestedRef.current) await window.electronAPI.cancelExport?.()
         return await workerExportCompletion
       } catch (err) {
         workerExportCompletionRef.current = null
@@ -1362,16 +1347,17 @@ function ExportPanel() {
       throw new Error(
         window.electronAPI.runExportInWorker
           ? 'Export worker unavailable: the project location is not a local folder path. Re-open the project from disk and try again.'
-          : 'Export worker unavailable. Restart Belrog and try again.'
+          : 'Export worker unavailable. Restart Velorn and try again.'
       )
     }
 
     if (isVisualOnlyFormat) {
       setExportStatus('Export failed')
       setIsExporting(false)
-      throw new Error(`${isGif ? 'Animated GIF' : 'PNG image sequence'} export is available in the Belrog desktop app.`)
+      throw new Error(`${isGif ? 'Animated GIF' : 'PNG image sequence'} export is available in the Velorn desktop app.`)
     }
 
+    checkExportStopped()
     const directAbortController = new AbortController()
     exportAbortRef.current = directAbortController
     const result = await exportTimeline({ ...options, signal: directAbortController.signal }, (progress) => {
@@ -1409,7 +1395,7 @@ function ExportPanel() {
   }
 
   const handleStartExport = async () => {
-    if (isExporting || queueRunning) return
+    if (isExporting || isXmlExporting || queueRunning || isExportBusy()) return
     try {
       await runExportJob(settings)
     } catch (err) {
@@ -1421,7 +1407,7 @@ function ExportPanel() {
   }
 
   const handleExportXml = async () => {
-    if (isExporting || queueRunning || isXmlExporting) return
+    if (isExporting || queueRunning || isXmlExporting || isExportBusy()) return
     if (!window.electronAPI?.writeFile || !window.electronAPI?.saveFileDialog || !window.electronAPI?.pathJoin) {
       setExportError(`${xmlExportConfig.progressLabel} export is only available in the desktop app.`)
       return
@@ -1438,8 +1424,13 @@ function ExportPanel() {
     setEtaSeconds(null)
     setRenderFps(null)
     setExportStatus(`Preparing ${xmlExportConfig.progressLabel}...`)
+    exportStopRequestedRef.current = false
+    const releaseActivity = acquireExportActivity(`Preparing ${xmlExportConfig.progressLabel}…`)
 
     try {
+      if ((clips || []).some(clip => clip?.type === 'compound' || clip?.compound || clip?.compoundParentId)) {
+        throw new Error(`Editable compound clips are not supported by ${xmlExportConfig.progressLabel} export yet. Export a rendered video instead.`)
+      }
       const projectPath = currentProjectHandle
       const resolvedAssets = await Promise.all((assets || []).map(async (asset) => {
         if (!asset?.path) return { ...asset, absolutePath: '' }
@@ -1495,6 +1486,7 @@ function ExportPanel() {
         return
       }
 
+      checkExportStopped()
       const writeResult = await window.electronAPI.writeFile(outputPath, xml, { encoding: 'utf8' })
       if (!writeResult?.success) {
         throw new Error(writeResult?.error || `Failed to write ${xmlExportConfig.progressLabel} file.`)
@@ -1511,971 +1503,394 @@ function ExportPanel() {
       setExportStatus(`${xmlExportConfig.progressLabel} export failed`)
     } finally {
       setIsXmlExporting(false)
+      releaseActivity()
     }
   }
 
+  const timelineSettings = getCurrentTimelineSettings() || { width: 1920, height: 1080, fps: 24 }
+  const range = resolveRange()
+  const timelineFps = Number(timelineSettings.fps) || 24
+  const rangeStartFrame = timeToFrameIndex(range.start, timelineFps)
+  const rangeEndFrame = timeToFrameIndex(range.end, timelineFps, 'ceil')
+  const hasInOut = Number.isFinite(inPoint) && Number.isFinite(outPoint) && inPoint !== outPoint
+  // Match resolveRange without rewriting the saved choice when marks disappear.
+  const effectiveRangeMode = settings.range === 'inout' && inPoint !== null && outPoint !== null ? 'inout' : 'full'
+  const collapsedMarkedRange = effectiveRangeMode === 'inout' && range.end === range.start
+  const hasContent = clips.length > 0 && range.end > range.start
+  const previewBusy = isExporting || isXmlExporting || queueRunning || globalExportBusy
+  const visualOnly = settings.format === 'png-seq' || settings.format === 'gif'
+  const visualExport = settings.format !== 'audio'
+  const pendingCount = queue.filter(item => item.status === 'queued').length
+  const delivery = (value = settings) => {
+    const sourceDimensions = resolveResolution(value)
+    const upscaleOutput = !value.transparent && value.postProcessUpscale === 'rtx-4k' && value.format === 'mp4'
+    const dimensions = upscaleOutput
+      ? resolveRtx4kDimensions(sourceDimensions.width, sourceDimensions.height) : sourceDimensions
+    const extension = value.format === 'audio'
+      ? (value.audioCodec === 'aac' ? 'm4a' : value.audioCodec)
+      : ({ mp4: 'mp4', webm: 'webm', prores: 'mov', gif: 'gif', 'png-seq': 'png' }[value.format] || 'mp4')
+    const formatName = value.format === 'audio' ? (extension || 'WAV').toUpperCase()
+      : value.format === 'png-seq' ? 'PNG' : value.format === 'gif' ? 'GIF'
+        : value.format === 'prores' ? 'ProRes' : String(value.videoCodec).toUpperCase().replace('H264', 'H.264').replace('H265', 'H.265')
+    return {
+      name: value.format === 'png-seq'
+        ? sanitizePngSequenceBaseName(value.filename || defaultFilename) + '_png/'
+        : (value.filename?.trim() || defaultFilename) + (upscaleOutput ? '_rtx4k' : '') + '.' + extension,
+      summary: value.format === 'audio'
+        ? [formatName, (Number(value.audioSampleRate) / 1000) + ' kHz', AUDIO_CHANNELS.find(c => c.id === Number(value.audioChannels))?.label || 'Stereo'].join(' · ')
+        : [formatName, dimensions.width + ' × ' + dimensions.height, resolveFps(value) + ' fps'].join(' · '),
+    }
+  }
+  const currentDelivery = delivery()
+  const renderSelect = (key, label, options, { numeric = false, disabled = false } = {}) => (
+    <ExportField id={'export-' + key} label={label}>
+      <select id={'export-' + key} value={settings[key]} disabled={disabled}
+        onChange={event => handleSettingChange(key, numeric ? Number(event.target.value) : event.target.value)}>
+        {options.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+      </select>
+    </ExportField>
+  )
+  const renderNumber = (key, label, options = {}) => (
+    <ExportField id={'export-' + key} label={label}>
+      <input id={'export-' + key} type="number" value={settings[key]} {...options}
+        onChange={event => handleSettingChange(key, Number(event.target.value))} />
+    </ExportField>
+  )
+  const renderCheck = (key, label, { disabled = false, title } = {}) => (
+    <label className="export-check" title={title}>
+      <input id={'export-' + key} type="checkbox" checked={!!settings[key]} disabled={disabled}
+        onChange={event => handleSettingChange(key, event.target.checked)} />
+      <span>{label}</span>
+    </label>
+  )
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden bg-sf-dark-950">
-      {/* Header */}
-      <div className="h-12 flex items-center justify-between px-4 border-b border-sf-dark-700">
-        <div className="flex items-center gap-2">
-          <Download className="w-4 h-4 text-sf-accent" />
-          <span className="text-sm font-semibold text-sf-text-primary">{t('export.title')}</span>
-          <span className="text-[10px] text-sf-text-muted">{t('export.headerReady')}</span>
+    <div data-testid="export-workspace" className="export-workspace flex-1 min-h-0 flex flex-col min-w-0 overflow-hidden bg-sf-dark-950">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-sf-dark-700 bg-sf-dark-900 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Film className="h-4 w-4 shrink-0 text-sf-accent" />
+          <span className="truncate text-xs font-medium text-sf-text-primary">{projectName}</span>
+          {currentTimeline?.name && <span className="truncate text-[11px] text-sf-text-muted">/ {currentTimeline.name}</span>}
         </div>
-        <div className="text-[10px] text-sf-text-muted">
-          {isExporting ? exportStatus : t('export.ready')}
+        <div className="flex items-center gap-3">
+          <span className="hidden text-[11px] text-sf-text-muted lg:inline">{timelineSettings.width} × {timelineSettings.height} · {timelineFps} fps</span>
+          <button type="button" className="export-action export-action--quiet" aria-expanded={queueOpen}
+            aria-controls="export-render-queue" onClick={() => setQueueOpen(open => !open)}
+            title={t(queueOpen ? 'export.workspace.hideQueue' : 'export.workspace.showQueue', undefined, queueOpen ? 'Hide queue' : 'Show queue')}>
+            <ListVideo className="h-4 w-4" />{t('export.queue')} <span className="text-sf-text-muted">{queue.length}</span>
+          </button>
         </div>
-      </div>
-      
-      {/* Content */}
-      <div className="flex-1 min-h-0 grid grid-cols-12 gap-4 overflow-hidden p-4">
-        {/* Settings */}
-        <div className="col-span-7 flex min-h-0 flex-col overflow-hidden bg-sf-dark-900 border border-sf-dark-700 rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-3 shrink-0">
-            <Settings className="w-4 h-4 text-sf-text-muted" />
-            <span className="text-xs font-semibold text-sf-text-primary uppercase tracking-wider">{t('export.settings')}</span>
-            <span className="ml-auto text-[10px] text-sf-text-muted">{t('export.savedForProject')}</span>
-          </div>
+      </header>
 
-          {settings.format !== 'png-seq' && settings.format !== 'gif' && (
-          <div className="mb-3 shrink-0 rounded-lg border border-sf-dark-700 bg-sf-dark-950/45 p-2">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-sf-text-muted">{t('export.presets')}</div>
-                <div className="text-[10px] text-sf-text-secondary">
-                  {t('export.presetsHelp')}
+      <ExportWorkspaceLayout active={active} queueOpen={queueOpen}>
+        <section id="export-settings-panel" className="export-workspace__settings" data-testid="export-settings" aria-label={t('export.settings')}>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="text-xs font-medium text-sf-text-primary">{t('export.settings')}</h2>
+            <button type="button" className="export-action export-action--quiet export-action--icon"
+              onClick={handleResetSettings} aria-label={t('export.reset')} title={t('export.resetHelp')}>
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="space-y-3">
+            <ExportPresetPicker presets={allExportPresets} activePresetId={activeExportPresetId}
+              hardwareLabel={hardwareLabel} onApply={handleApplyExportPreset} settings={settings}
+              active={active} sessionKey={settingsStorageKey}
+              tall={presetTimelineSettings.height > presetTimelineSettings.width} />
+            <ExportField id="export-filename" label={t('export.filename')}>
+              <input id="export-filename" type="text" value={settings.filename} placeholder={defaultFilename}
+                onChange={event => handleSettingChange('filename', event.target.value)} />
+            </ExportField>
+            <p className="export-help flex items-start gap-2">
+              <Folder className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{settings.format === 'png-seq'
+                ? t('export.pngOutputLocationHelp', { name: sanitizePngSequenceBaseName(settings.filename || defaultFilename) })
+                : t('export.outputLocationHelp')}</span>
+            </p>
+            <div className="border-t border-sf-dark-700 pt-3">
+              {renderSelect('format', t('export.format'), EXPORT_FORMATS.map(item => ({ ...item, label: item.translationKey ? t(item.translationKey) : item.label })))}
+            </div>
+            {visualOnly && <p className="export-help">{t(settings.format === 'gif' ? 'export.gifHelp' : 'export.imageSequenceHelp')}</p>}
+            {visualExport && <>
+              {!visualOnly && renderSelect('videoCodec', t('export.videoCodec'), VIDEO_CODECS[settings.format] || [])}
+              {settings.format === 'prores' && renderSelect('proresProfile', t('export.proresProfile'), PRORES_PROFILES)}
+              {renderSelect('resolution', t('export.resolution'), [
+                { id: 'project', label: t('export.projectSettings') + ' · ' + timelineSettings.width + ' × ' + timelineSettings.height },
+                ...['youtube-hd', 'youtube-uhd'].map(mode => {
+                  const size = resolveDeliveryResolution(mode, timelineSettings)
+                  return { id: mode, label: t(mode === 'youtube-hd' ? 'export.deliveryPresets.hdLimit' : 'export.deliveryPresets.uhdLimit',
+                    undefined, mode === 'youtube-hd' ? 'YouTube HD limit' : 'YouTube 4K limit') + ' · ' + size.width + ' × ' + size.height }
+                }),
+                ...EXPORT_RESOLUTION_SCALE_OPTIONS.map(item => ({ id: item.id, label: t(item.translationKey) })),
+                { id: 'custom', label: t('export.custom') },
+                ...RESOLUTION_PRESETS.map(item => ({ id: item.name, label: item.name })),
+              ])}
+              {['youtube-hd', 'youtube-uhd'].includes(settings.resolution) && <p className="export-help">
+                {t('export.deliveryPresets.sizeHelp', undefined, 'Fits within HD or 4K while keeping the timeline’s orientation. Smaller timelines are not enlarged.')}
+              </p>}
+              {settings.resolution === 'custom' && <>
+                <div className="export-fields-row">
+                  {renderNumber('customWidth', t('export.workspace.width', undefined, 'Width'), { min: visualOnly ? 1 : 2, step: visualOnly ? 1 : 2 })}
+                  {renderNumber('customHeight', t('export.workspace.height', undefined, 'Height'), { min: visualOnly ? 1 : 2, step: visualOnly ? 1 : 2 })}
                 </div>
+                {!visualOnly && <p className="export-help">{t('export.evenPixelsHelp')}</p>}
+              </>}
+              <div className="export-fields-row">
+                {renderSelect('fps', t('export.frameRate'), [
+                  { id: 'project', label: timelineFps + ' fps' },
+                  ...FPS_PRESETS.map(item => ({ id: item.value, label: item.label })),
+                ])}
+                {!visualOnly && settings.format !== 'prores' && renderNumber(
+                  settings.qualityMode === 'crf' ? 'crf' : 'bitrateKbps',
+                  settings.qualityMode === 'crf' ? 'CRF' : t('export.bitrate'),
+                  { min: settings.qualityMode === 'crf' ? 0 : 100, max: settings.qualityMode === 'crf' ? 63 : 200000 }
+                )}
               </div>
-              <button
-                type="button"
-                onClick={handleResetSettings}
-                className="flex items-center gap-1 rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-[10px] text-sf-text-muted transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
-                title={t('export.resetHelp')}
-              >
-                <RotateCcw className="h-3 w-3" />
-                {t('export.reset')}
-              </button>
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              {EXPORT_PRESETS.map((exportPreset) => {
-                const isActive = activeExportPresetId === exportPreset.id
-                return (
-                  <button
-                    key={exportPreset.id}
-                    type="button"
-                    onClick={() => handleApplyExportPreset(exportPreset)}
-                    className={`rounded border p-2 text-left transition-colors ${
-                      isActive
-                        ? 'border-sf-accent bg-sf-accent/15 text-sf-text-primary'
-                        : 'border-sf-dark-700 bg-sf-dark-900 text-sf-text-secondary hover:border-sf-dark-500 hover:bg-sf-dark-800'
-                    }`}
-                    title={t(`export.presetSummaries.${exportPreset.id}`)}
-                  >
-                    <div className="text-[11px] font-semibold">{exportPreset.label.split('NVENC').join(hardwareLabel)}</div>
-                    <div className="mt-1 text-[9px] leading-snug text-sf-text-muted">
-                      {t(`export.presetSummaries.${exportPreset.id}`, { hardware: hardwareLabel })}
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-          )}
-          
-          <div className="grid grid-cols-2 gap-3 shrink-0">
-            <div>
-              <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.filename')}</label>
-              <input
-                type="text"
-                value={settings.filename}
-                onChange={(e) => handleSettingChange('filename', e.target.value)}
-                className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                placeholder={defaultFilename}
-              />
-            </div>
-            
-            <div>
-              <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.format')}</label>
-              <select
-                value={settings.format}
-                onChange={(e) => handleSettingChange('format', e.target.value)}
-                className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-              >
-                {EXPORT_FORMATS.map((format) => (
-                  <option key={format.id} value={format.id} disabled={format.disabled}>
-                    {format.translationKey ? t(format.translationKey) : format.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+              {(transparentFormatAvailable || settings.transparent) && <div className="space-y-1">
+                {renderCheck('transparent', t('export.transparentBackground'), { disabled: !transparentFormatAvailable })}
+                <p className="export-help">{t('export.transparentBackgroundHelp')}</p>
+              </div>}
+            </>}
 
-            <div>
-              <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.range')}</label>
-              <select
-                value={settings.range}
-                onChange={(e) => handleSettingChange('range', e.target.value)}
-                className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-              >
-                {RANGE_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.translationKey ? t(preset.translationKey) : preset.label}
-                    </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-end">
-              <p className="text-[10px] text-sf-text-muted flex items-center gap-1">
-                <Clock className="w-3 h-3" /> {timelineRangeLabel}
+            {!visualOnly && <div className="border-t border-sf-dark-700 pt-3">
+              {settings.format === 'audio' ? <p className="export-help">{t('export.audioOnlyHelp')}</p>
+                : renderCheck('includeAudio', t('export.includeAudio'))}
+              <p className="export-help mt-1">
+                {(settings.includeAudio || settings.format === 'audio')
+                  ? [String(settings.audioCodec).toUpperCase(), AUDIO_CHANNELS.find(c => c.id === Number(settings.audioChannels))?.label, Number(settings.audioSampleRate) / 1000 + ' kHz'].join(' · ')
+                  : t('export.audioDisabled')}
               </p>
-            </div>
+            </div>}
           </div>
-          <p className="mt-1 text-[10px] text-sf-text-muted shrink-0">
-            {settings.format === 'png-seq'
-              ? t('export.pngOutputLocationHelp', { name: sanitizePngSequenceBaseName(settings.filename || defaultFilename) })
-              : t('export.outputLocationHelp')}
-          </p>
-          
-          {settings.format !== 'png-seq' && settings.format !== 'gif' && (
-          <div className="mt-2 flex items-center gap-2 text-[10px] text-sf-text-muted shrink-0">
-            <span className="uppercase tracking-wider">{t('export.render')}</span>
-            <button
-              onClick={() => handleSettingChange('renderMode', 'single')}
-              className={`px-2 py-0.5 rounded border transition-colors ${
-                settings.renderMode === 'single'
-                  ? 'bg-sf-accent/20 text-sf-accent border-sf-accent/40'
-                  : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-              }`}
-            >
-              {t('export.singleClip')}
-            </button>
-            <button
-              disabled
-              className="px-2 py-0.5 rounded border border-sf-dark-700 text-sf-text-muted/60 cursor-not-allowed"
-              title={t('export.individualSoon')}
-            >
-              {t('export.individualClips')}
-            </button>
-          </div>
+
+          {!visualOnly && (settings.includeAudio || settings.format === 'audio') && (
+            <details className="export-disclosure" open={settings.format === 'audio' ? true : undefined}>
+              <summary>{t('export.workspace.audioSettings', undefined, 'Audio settings')}</summary>
+              <div className="space-y-3">
+                <div className="export-fields-row">
+                  {renderSelect('audioCodec', t('export.audioCodec'), AUDIO_CODECS[settings.format] || [])}
+                  {!(settings.format === 'audio' && settings.audioCodec === 'wav')
+                    && renderNumber('audioBitrateKbps', t('export.audioBitrate'), { min: 32, max: 512 })}
+                </div>
+                <div className="export-fields-row">
+                  {renderSelect('audioSampleRate', t('export.sampleRate'), AUDIO_SAMPLE_RATES, { numeric: true })}
+                  {renderSelect('audioChannels', t('export.channels'), AUDIO_CHANNELS, { numeric: true })}
+                </div>
+                {renderCheck('normalizeAudio', t('export.normalizeLoudness'))}
+                {settings.normalizeAudio && <>
+                  {renderSelect('loudnessTarget', t('export.loudnessTarget'), [
+                    { id: -14, label: 'Social / Streaming (−14 LUFS)' },
+                    { id: -16, label: 'Podcast / Web (−16 LUFS)' },
+                    { id: -23, label: 'Broadcast (−23 LUFS)' },
+                  ], { numeric: true })}
+                  <p className="export-help">{t('export.loudnessHelp')}</p>
+                </>}
+                <button type="button" className="export-action" onClick={handleMeasureLoudness}
+                  disabled={previewBusy || loudnessCheck.status === 'measuring'}>
+                  {loudnessCheck.status === 'measuring' ? t('export.measuring') : t('export.measureLoudness')}
+                </button>
+                {loudnessCheck.status === 'done' && loudnessCheck.result && <p className="export-help" aria-live="polite">
+                  ~{loudnessCheck.result.integratedLufsApprox ?? '—'} LUFS · {loudnessCheck.result.peakDb} dBFS
+                  {Number.isFinite(loudnessCheck.result.integratedLufsApprox) && Number.isFinite(Number(settings.loudnessTarget))
+                    && <> · {(loudnessCheck.result.integratedLufsApprox - Number(settings.loudnessTarget)).toFixed(1)} LU vs {settings.loudnessTarget}</>}
+                  <br />{t('export.approximateMix')}
+                </p>}
+                {loudnessCheck.status === 'error' && <p className="export-help !text-sf-error" role="alert">{loudnessCheck.error}</p>}
+              </div>
+            </details>
           )}
-          
-          <div className="mt-3 border-t border-sf-dark-700 pt-2 flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
-            {/* Visual export settings — the whole section is moot for an audio-only export */}
-            {settings.format !== 'audio' && (
-            <div>
-              <div className="text-[10px] text-sf-text-muted uppercase tracking-wider mb-2">
-                {settings.format === 'png-seq'
-                  ? t('export.imageSequence')
-                  : settings.format === 'gif'
-                    ? t('export.animatedGif')
-                    : t('export.video')}
+
+          {visualExport && !visualOnly && settings.format !== 'prores' && (
+            <details className="export-disclosure">
+              <summary>{t('export.workspace.advancedEncoding', undefined, 'Advanced encoding')}</summary>
+              <div className="space-y-3">
+                {renderSelect('qualityMode', t('export.qualityMode'), QUALITY_MODES)}
+                {renderSelect('preset', t('export.encoderPreset'), ENCODER_PRESETS)}
+                {settings.useHardwareEncoder && hardwareKind === 'nvenc' && renderSelect('nvencPreset', t('export.nvencPreset'), NVENC_PRESETS)}
+                {renderSelect('keyframeMode', t('export.keyframes'), KEYFRAME_MODES)}
+                {renderNumber('keyframeInterval', t('export.keyframeInterval'), { min: 1, disabled: settings.keyframeMode === 'auto' })}
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {settings.format === 'png-seq' && (
-                  <div className="col-span-2 rounded border border-sf-dark-700 bg-sf-dark-950/45 p-2 text-xs text-sf-text-secondary">
-                    {t('export.imageSequenceHelp')}
-                  </div>
-                )}
-                {settings.format === 'gif' && (
-                  <div className="col-span-2 rounded border border-sf-dark-700 bg-sf-dark-950/45 p-2 text-xs text-sf-text-secondary">
-                    {t('export.gifHelp')}
-                  </div>
-                )}
-                <div className="col-span-2 rounded border border-sf-dark-700 bg-sf-dark-950/35 p-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div id="transparent-export-label" className="text-xs font-medium text-sf-text-primary">
-                        {t('export.transparentBackground')}
-                      </div>
-                      <div id="transparent-export-help" className="mt-0.5 text-[10px] text-sf-text-muted">
-                        {transparentFormatAvailable
-                          ? t('export.transparentBackgroundHelp')
-                          : t('export.transparentBackgroundFormats')}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-labelledby="transparent-export-label"
-                      aria-describedby="transparent-export-help"
-                      aria-checked={settings.transparent === true}
-                      disabled={!transparentFormatAvailable}
-                      onClick={() => handleSettingChange('transparent', !settings.transparent)}
-                      className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-                        settings.transparent
-                          ? 'border-sf-accent bg-sf-accent'
-                          : 'border-sf-dark-600 bg-sf-dark-800'
-                      } ${transparentFormatAvailable ? '' : 'cursor-not-allowed opacity-50'}`}
-                    >
-                      <span className={`absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                        settings.transparent ? 'translate-x-4' : 'translate-x-0'
-                      }`} />
+            </details>
+          )}
+
+          {visualExport && (
+            <details className="export-disclosure">
+              <summary>{t('export.workspace.encodingPerformance', undefined, 'Encoding & performance')}</summary>
+              <div className="space-y-3">
+                {!visualOnly && <>
+                  {renderCheck('useHardwareEncoder', t('export.useHardware', { hardware: hardwareVendorLabel }),
+                    { disabled: Boolean(nvencToggleDisabledReason), title: nvencToggleDisabledReason || undefined })}
+                  <p className={'export-help ' + (!nvencStatus.available ? '!text-sf-warning' : '')}>{nvencSummaryText}</p>
+                  {nvencExpectedEncoder && <p className="export-help">{t('export.expectedEncoder')}: {nvencExpectedEncoder}</p>}
+                  {renderCheck('useDirectFramePipe', t('export.fastPipe'), { title: t('export.fastPipeHelp') })}
+                  <p className="export-help">{t('export.fastPipeShortHelp')}</p>
+                </>}
+                {renderCheck('useProxyMedia', t('export.useProxies'), { disabled: proxyCoverage.total === 0 })}
+                <p className="export-help">{t('export.proxiesHelp')} {t('export.proxyReady', { ready: proxyCoverage.ready, total: proxyCoverage.total })}</p>
+                {!visualOnly && <div className="space-y-2 border-t border-sf-dark-700 pt-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="flex items-center gap-1 text-xs text-sf-text-primary"><Sparkles className="h-3.5 w-3.5 shrink-0 text-sf-accent" />{t('export.rtxUpscale')}</span>
+                    <button type="button" role="switch" aria-label="NVIDIA RTX 4K upscale" aria-checked={rtxUpscaleEnabled}
+                      disabled={Boolean(rtxToggleDisabledReason) || previewBusy || rtxReadiness.status === 'installing'} onClick={handleToggleRtxUpscale}
+                      className={'relative h-5 w-9 shrink-0 rounded-full border border-sf-dark-600 disabled:opacity-50 ' + (rtxUpscaleEnabled ? 'bg-sf-accent' : 'bg-sf-dark-800')}>
+                      <span className={'absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white ' + (rtxUpscaleEnabled ? 'translate-x-4' : '')} />
                     </button>
                   </div>
-                </div>
-                {settings.format !== 'png-seq' && settings.format !== 'gif' && (
-                <>
-                <div className="col-span-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleSettingChange('useHardwareEncoder', !settings.useHardwareEncoder)}
-                      disabled={Boolean(nvencToggleDisabledReason)}
-                      className={`px-2 py-1 text-xs rounded border transition-colors ${
-                        settings.useHardwareEncoder
-                          ? 'bg-sf-accent text-white border-sf-accent'
-                          : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-                      } ${nvencToggleDisabledReason ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      title={nvencToggleDisabledReason || `Use ${hardwareVendorLabel} for faster MP4 exports`}
-                    >
-                      {t('export.useHardware', { hardware: hardwareVendorLabel })}
-                    </button>
-                    <span className="text-[10px] text-sf-text-muted">
-                      {t('export.hardwareEncoding')}
-                    </span>
-                  </div>
-                  <div className={`mt-1 text-[10px] ${
-                    nvencStatus.checked && nvencStatus.available ? 'text-sf-text-secondary' : 'text-sf-warning'
-                  }`}>
-                    {nvencSummaryText}
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <span className={`px-1.5 py-0.5 rounded border text-[10px] ${
-                      nvencStatus.h264
-                        ? 'border-sf-accent/40 bg-sf-accent/10 text-sf-accent'
-                        : 'border-sf-dark-600 bg-sf-dark-800 text-sf-text-muted'
-                    }`}>
-                      H.264 {hardwareLabel}
-                    </span>
-                    <span className={`px-1.5 py-0.5 rounded border text-[10px] ${
-                      nvencStatus.h265
-                        ? 'border-sf-accent/40 bg-sf-accent/10 text-sf-accent'
-                        : 'border-sf-dark-600 bg-sf-dark-800 text-sf-text-muted'
-                    }`}>
-                      H.265 {hardwareLabel}
-                    </span>
-                    {nvencStatus.gpuName && (
-                      <span className="px-1.5 py-0.5 rounded border border-sf-dark-600 bg-sf-dark-800 text-[10px] text-sf-text-secondary">
-                        {nvencStatus.gpuName}
-                      </span>
-                    )}
-                  </div>
-                  {nvencExpectedEncoder && (
-                    <div className="mt-1 text-[10px] text-sf-accent font-mono">
-                      {t('export.expectedEncoder')}: {nvencExpectedEncoder}
-                    </div>
-                  )}
-                  <div className="mt-3 flex items-center gap-2">
-                    <button
-                      onClick={() => handleSettingChange('useDirectFramePipe', !settings.useDirectFramePipe)}
-                      className={`px-2 py-1 text-xs rounded border transition-colors ${
-                        settings.useDirectFramePipe
-                          ? 'bg-sf-accent text-white border-sf-accent'
-                          : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-                      }`}
-                      title={t('export.fastPipeHelp')}
-                    >
-                      {t('export.fastPipe')}
-                    </button>
-                    <span className="text-[10px] text-sf-text-muted">
-                      {t('export.fastPipeShortHelp')}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 border-t border-sf-dark-700 pt-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-sf-text-primary">
-                        <Sparkles className="h-3.5 w-3.5 shrink-0 text-sf-accent" />
-                        <span>{t('export.rtxUpscale')}</span>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-label="NVIDIA RTX 4K upscale"
-                        aria-checked={rtxUpscaleEnabled}
-                        disabled={Boolean(rtxToggleDisabledReason) || isExporting || rtxReadiness.status === 'installing'}
-                        onClick={handleToggleRtxUpscale}
-                        title={rtxToggleDisabledReason || 'Upscale the finished MP4 directly with NVIDIA RTX Video Super Resolution'}
-                        className={`relative h-5 w-9 shrink-0 rounded-full border transition-colors ${
-                          rtxUpscaleEnabled
-                            ? 'border-sf-accent bg-sf-accent'
-                            : 'border-sf-dark-600 bg-sf-dark-800'
-                        } ${(rtxToggleDisabledReason || isExporting || rtxReadiness.status === 'installing') ? 'cursor-not-allowed opacity-50' : ''}`}
-                      >
-                        <span className={`absolute left-0.5 top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-transform ${
-                          rtxUpscaleEnabled ? 'translate-x-4' : 'translate-x-0'
-                        }`} />
-                      </button>
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-sf-text-muted">
-                      {t('export.rtxAfterRender')} {rtxTargetResolution.width}x{rtxTargetResolution.height}.
-                    </div>
-
-                    {rtxUpscaleEnabled && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <label className="text-[10px] uppercase tracking-wider text-sf-text-muted" htmlFor="rtx-upscale-quality">
-                          {t('export.quality')}
-                        </label>
-                        <select
-                          id="rtx-upscale-quality"
-                          value={settings.rtxUpscaleQuality || RTX_VIDEO_UPSCALE_DEFAULTS.quality}
-                          onChange={(event) => handleSettingChange('rtxUpscaleQuality', event.target.value)}
-                          disabled={rtxReadiness.status === 'installing'}
-                          className="rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none disabled:opacity-50"
-                        >
-                          {RTX_VIDEO_UPSCALE_QUALITY_OPTIONS.map((option) => (
-                            <option key={option.id} value={option.id}>{option.label}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => void handleCheckRtxSetup()}
-                          disabled={rtxReadiness.status === 'checking' || rtxReadiness.status === 'installing'}
-                          className="text-[10px] text-sf-accent hover:text-sf-accent-hover disabled:opacity-50"
-                        >
-                          {t('export.checkSetup')}
-                        </button>
-                        {rtxReadiness.status === 'error' && rtxReadiness.installAvailable && (
-                          <button
-                            type="button"
-                            onClick={() => void handleInstallRtxRuntime()}
-                            className="rounded border border-sf-accent/50 bg-sf-accent/10 px-2 py-1 text-[10px] font-medium text-sf-accent hover:bg-sf-accent/20"
-                          >
-                            {t('export.installRtx')}
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {rtxReadiness.status === 'installing' && (
-                      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-sf-dark-800">
-                        <div
-                          className="h-full bg-sf-accent transition-[width]"
-                          style={{ width: `${Math.max(2, Math.min(100, Number(rtxInstallProgress?.percent) || 2))}%` }}
-                        />
-                      </div>
-                    )}
-                    <div className={`mt-1 text-[10px] ${
-                      rtxReadiness.status === 'error'
-                        ? 'text-sf-warning'
-                        : rtxReadiness.status === 'ready'
-                          ? 'text-sf-accent'
-                          : 'text-sf-text-muted'
-                    }`}>
-                      {rtxToggleDisabledReason || rtxReadinessText}
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.videoCodec')}</label>
-                  <select
-                    value={settings.videoCodec}
-                    onChange={(e) => handleSettingChange('videoCodec', e.target.value)}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  >
-                    {(VIDEO_CODECS[settings.format] || []).map((codec) => (
-                      <option key={codec.id} value={codec.id}>{codec.label}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                {settings.format === 'prores' && (
-                  <div>
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.proresProfile')}</label>
-                    <select
-                      value={settings.proresProfile}
-                      onChange={(e) => handleSettingChange('proresProfile', e.target.value)}
-                      className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                    >
-                      {PRORES_PROFILES.map((p) => (
-                        <option key={p.id} value={p.id}>{p.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                
-                {settings.format !== 'prores' && (
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.encoderPreset')}</label>
-                  <select
-                    value={settings.preset}
-                    onChange={(e) => handleSettingChange('preset', e.target.value)}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  >
-                    {ENCODER_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>{preset.label}</option>
-                    ))}
-                  </select>
-                </div>
-                )}
-
-                {settings.format !== 'prores' && settings.useHardwareEncoder && hardwareKind === 'nvenc' && (
-                  <div>
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.nvencPreset')}</label>
-                    <select
-                      value={settings.nvencPreset}
-                      onChange={(e) => handleSettingChange('nvencPreset', e.target.value)}
-                      className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                    >
-                      {NVENC_PRESETS.map((preset) => (
-                        <option key={preset.id} value={preset.id}>{preset.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                
-                {settings.format !== 'prores' && (
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.qualityMode')}</label>
-                  <select
-                    value={settings.qualityMode}
-                    onChange={(e) => handleSettingChange('qualityMode', e.target.value)}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  >
-                    {QUALITY_MODES.map((mode) => (
-                      <option key={mode.id} value={mode.id}>{mode.label}</option>
-                    ))}
-                  </select>
-                </div>
-                )}
-                
-                {settings.format !== 'prores' && (
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">
-                    {settings.qualityMode === 'crf' ? 'CRF' : t('export.bitrate')}
-                  </label>
-                  <input
-                    type="number"
-                    min={settings.qualityMode === 'crf' ? 0 : 100}
-                    max={settings.qualityMode === 'crf' ? 63 : 200000}
-                    value={settings.qualityMode === 'crf' ? settings.crf : settings.bitrateKbps}
-                    onChange={(e) => handleSettingChange(
-                      settings.qualityMode === 'crf' ? 'crf' : 'bitrateKbps',
-                      Number(e.target.value)
-                    )}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  />
-                </div>
-                )}
-                
-                {settings.format !== 'prores' && (
-                <>
-                  <div>
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.keyframes')}</label>
-                    <select
-                      value={settings.keyframeMode}
-                      onChange={(e) => handleSettingChange('keyframeMode', e.target.value)}
-                      className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                    >
-                      {KEYFRAME_MODES.map((mode) => (
-                        <option key={mode.id} value={mode.id}>{mode.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.keyframeInterval')}</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={settings.keyframeInterval}
-                      onChange={(e) => handleSettingChange('keyframeInterval', Number(e.target.value))}
-                      disabled={settings.keyframeMode === 'auto'}
-                      className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary disabled:text-sf-text-muted disabled:opacity-60 focus:outline-none focus:border-sf-accent"
-                    />
-                  </div>
-                </>
-                )}
-                </>
-                )}
-                
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.resolution')}</label>
-                  <select
-                    value={settings.resolution}
-                    onChange={(e) => handleSettingChange('resolution', e.target.value)}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  >
-                    <option value="project">{t('export.projectSettings')}</option>
-                    {EXPORT_RESOLUTION_SCALE_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>{t(option.translationKey)}</option>
-                    ))}
-                    <option value="custom">{t('export.custom')}</option>
-                    {RESOLUTION_PRESETS.map((preset) => (
-                      <option key={preset.name} value={preset.name}>{preset.name}</option>
-                    ))}
-                  </select>
-                  <div className="mt-1 text-[10px] text-sf-text-muted">
-                    {t('export.output')}: {getResolutionLabel()}
-                  </div>
-                </div>
-
-                {settings.resolution === 'custom' && (
-                  <div>
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.customSize')}</label>
-                    <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-1">
-                      <input
-                        type="number"
-                        min={settings.format === 'png-seq' || settings.format === 'gif' ? 1 : 2}
-                        step={settings.format === 'png-seq' || settings.format === 'gif' ? 1 : 2}
-                        value={settings.customWidth}
-                        onChange={(e) => handleSettingChange('customWidth', Number(e.target.value))}
-                        className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                        aria-label="Custom export width"
-                      />
-                      <span className="text-[10px] text-sf-text-muted">×</span>
-                      <input
-                        type="number"
-                        min={settings.format === 'png-seq' || settings.format === 'gif' ? 1 : 2}
-                        step={settings.format === 'png-seq' || settings.format === 'gif' ? 1 : 2}
-                        value={settings.customHeight}
-                        onChange={(e) => handleSettingChange('customHeight', Number(e.target.value))}
-                        className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                        aria-label="Custom export height"
-                      />
-                    </div>
-                    {settings.format !== 'png-seq' && settings.format !== 'gif' && (
-                      <div className="mt-1 text-[10px] text-sf-text-muted">
-                        {t('export.evenPixelsHelp')}
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                <div>
-                  <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.frameRate')}</label>
-                  <select
-                    value={settings.fps}
-                    onChange={(e) => handleSettingChange('fps', e.target.value)}
-                    className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                  >
-                    <option value="project">{t('export.projectSettings')}</option>
-                    {FPS_PRESETS.map((preset) => (
-                      <option key={preset.value} value={preset.value}>{preset.label}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div className="col-span-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleSettingChange('useProxyMedia', !settings.useProxyMedia)}
-                      disabled={proxyCoverage.total === 0}
-                      title={proxyCoverage.total === 0
-                        ? 'No video clips on this timeline'
-                        : `Use ready low-res proxies for faster draft exports. ${proxyCoverage.ready}/${proxyCoverage.total} video asset${proxyCoverage.total === 1 ? '' : 's'} have proxies.`}
-                      className={`px-2 py-1 text-xs rounded border transition-colors ${
-                        settings.useProxyMedia
-                          ? 'bg-sf-accent/20 text-sf-accent border-sf-accent/40'
-                          : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-                      } ${proxyCoverage.total === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      {t('export.useProxies')}
-                    </button>
-                  </div>
-                  <div className="mt-1 text-[10px] text-sf-text-muted">
-                    {t('export.proxiesHelp')}
-                    {settings.useProxyMedia && proxyCoverage.total > 0 && (
-                      <span className="ml-1 text-sf-accent">
-                        {t('export.proxyReady', { ready: proxyCoverage.ready, total: proxyCoverage.total })}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  <p className="export-help">{t('export.rtxAfterRender')} {rtxTargetResolution.width} × {rtxTargetResolution.height}</p>
+                  {rtxUpscaleEnabled && <>
+                    {renderSelect('rtxUpscaleQuality', t('export.quality'), RTX_VIDEO_UPSCALE_QUALITY_OPTIONS, { disabled: rtxReadiness.status === 'installing' })}
+                    <button type="button" className="export-action" onClick={() => void handleCheckRtxSetup()}
+                      disabled={previewBusy || rtxReadiness.status === 'checking' || rtxReadiness.status === 'installing'}>{t('export.checkSetup')}</button>
+                    {rtxReadiness.status === 'error' && rtxReadiness.installAvailable && <button type="button" className="export-action"
+                      disabled={previewBusy} onClick={() => void handleInstallRtxRuntime()}>{t('export.installRtx')}</button>}
+                  </>}
+                  <p className={'export-help ' + (rtxReadiness.status === 'error' ? '!text-sf-warning' : '')}>{rtxToggleDisabledReason || rtxReadinessText}</p>
+                  {rtxReadiness.status === 'installing' && <progress className="h-1 w-full accent-sf-accent" max="100" value={Math.max(0, Math.min(100, Number(rtxInstallProgress?.percent) || 0))} />}
+                </div>}
               </div>
-            </div>
-            )}
+            </details>
+          )}
 
-            {/* Audio */}
-            {settings.format !== 'png-seq' && settings.format !== 'gif' && (
-            <div>
-              <div className="text-[10px] text-sf-text-muted uppercase tracking-wider mb-2">{t('export.audio')}</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  {settings.format === 'audio' ? (
-                    <div className="text-xs text-sf-text-muted">
-                      {t('export.audioOnlyHelp')}
-                    </div>
-                  ) : (
-                  <button
-                    onClick={() => handleSettingChange('includeAudio', !settings.includeAudio)}
-                    className={`px-2 py-1 text-xs rounded border transition-colors ${
-                      settings.includeAudio
-                        ? 'bg-sf-accent text-white border-sf-accent'
-                        : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-                    }`}
-                  >
-                    {t('export.includeAudio')}
-                  </button>
-                  )}
-                </div>
-
-                {(settings.includeAudio || settings.format === 'audio') ? (
-                  <>
-                    <div>
-                      <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.audioCodec')}</label>
-                      <select
-                        value={settings.audioCodec}
-                        onChange={(e) => handleSettingChange('audioCodec', e.target.value)}
-                        className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                      >
-                        {(AUDIO_CODECS[settings.format] || []).map((codec) => (
-                          <option key={codec.id} value={codec.id}>{codec.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    {!(settings.format === 'audio' && settings.audioCodec === 'wav') && (
-                    <div>
-                      <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.audioBitrate')}</label>
-                      <input
-                        type="number"
-                        min={32}
-                        max={512}
-                        value={settings.audioBitrateKbps}
-                        onChange={(e) => handleSettingChange('audioBitrateKbps', Number(e.target.value))}
-                        className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                      />
-                    </div>
-                    )}
-                    
-                    <div>
-                      <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.sampleRate')}</label>
-                      <select
-                        value={settings.audioSampleRate}
-                        onChange={(e) => handleSettingChange('audioSampleRate', Number(e.target.value))}
-                        className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                      >
-                        {AUDIO_SAMPLE_RATES.map((rate) => (
-                          <option key={rate.id} value={rate.id}>{rate.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.channels')}</label>
-                      <select
-                        value={settings.audioChannels}
-                        onChange={(e) => handleSettingChange('audioChannels', Number(e.target.value))}
-                        className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                      >
-                        {AUDIO_CHANNELS.map((channel) => (
-                          <option key={channel.id} value={channel.id}>{channel.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="col-span-2">
-                      <button
-                        onClick={() => handleSettingChange('normalizeAudio', !settings.normalizeAudio)}
-                        className={`px-2 py-1 text-xs rounded border transition-colors ${
-                          settings.normalizeAudio
-                            ? 'bg-sf-accent text-white border-sf-accent'
-                            : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600'
-                        }`}
-                      >
-                        {t('export.normalizeLoudness')}
-                      </button>
-                    </div>
-
-                    {settings.normalizeAudio ? (
-                      <div className="col-span-2">
-                        <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">{t('export.loudnessTarget')}</label>
-                        <select
-                          value={settings.loudnessTarget}
-                          onChange={(e) => handleSettingChange('loudnessTarget', Number(e.target.value))}
-                          className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent"
-                        >
-                          <option value={-14}>Social / Streaming (-14 LUFS)</option>
-                          <option value={-16}>Podcast / Web (-16 LUFS)</option>
-                          <option value={-23}>Broadcast (-23 LUFS)</option>
-                        </select>
-                        <div className="mt-1 text-[10px] text-sf-text-muted">{t('export.loudnessHelp')}</div>
-                      </div>
-                    ) : null}
-
-                    <div className="col-span-2">
-                      <button
-                        onClick={handleMeasureLoudness}
-                        disabled={loudnessCheck.status === 'measuring'}
-                        className="px-2 py-1 text-xs rounded border bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 hover:border-sf-accent hover:text-sf-text-primary transition-colors disabled:opacity-50 disabled:cursor-default"
-                      >
-                        {loudnessCheck.status === 'measuring' ? t('export.measuring') : t('export.measureLoudness')}
-                      </button>
-                      {loudnessCheck.status === 'done' && loudnessCheck.result && (
-                        <div className="mt-1 text-[10px] text-sf-text-secondary">
-                          ~{loudnessCheck.result.integratedLufsApprox ?? '—'} LUFS integrated, peak {loudnessCheck.result.peakDb} dBFS
-                          {Number.isFinite(loudnessCheck.result.integratedLufsApprox) && Number.isFinite(Number(settings.loudnessTarget)) && (
-                            <span className={
-                              Math.abs(loudnessCheck.result.integratedLufsApprox - Number(settings.loudnessTarget)) <= 1
-                                ? ' text-sf-success'
-                                : ' text-amber-400'
-                            }>
-                              {' '}({(loudnessCheck.result.integratedLufsApprox - Number(settings.loudnessTarget)) >= 0 ? '+' : ''}
-                              {(loudnessCheck.result.integratedLufsApprox - Number(settings.loudnessTarget)).toFixed(1)} LU vs {settings.loudnessTarget} target)
-                            </span>
-                          )}
-                          <span className="text-sf-text-muted"> — {t('export.approximateMix')}</span>
-                        </div>
-                      )}
-                      {loudnessCheck.status === 'error' && (
-                        <div className="mt-1 text-[10px] text-sf-error">{loudnessCheck.error}</div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <div className="col-span-2 text-[10px] text-sf-text-muted">
-                    {t('export.audioDisabled')}
-                  </div>
-                )}
-              </div>
-            </div>
-            )}
-            
-          </div>
-          
-          <div className="mt-3 flex flex-wrap items-center justify-end gap-2 shrink-0">
-            <button
-              onClick={handleAddToQueue}
-              className="px-3 py-1.5 text-xs rounded bg-sf-dark-700 text-sf-text-primary hover:bg-sf-dark-600 transition-colors flex items-center gap-1.5"
-            >
-              <Plus className="w-3 h-3" />
-              {t('export.addToQueue')}
-            </button>
-            <button
-              onClick={handleStartExport}
-              disabled={isExporting || queueRunning}
-              className={`px-3 py-1.5 text-xs rounded border flex items-center gap-1.5 transition-colors ${
-                isExporting || queueRunning
-                  ? 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-                  : 'bg-sf-accent text-white border-sf-accent hover:bg-sf-accent-hover'
-              }`}
-            >
-              <Play className="w-3 h-3" />
-              {isExporting
-                ? (settings.format === 'png-seq'
-                    ? t('export.exportingPngs')
-                    : settings.format === 'gif'
-                      ? t('export.exportingGif')
-                      : t('export.exporting'))
-                : queueRunning
-                  ? t('export.queueRunning')
-                  : settings.format === 'png-seq'
-                    ? t('export.exportPngSequence')
-                    : settings.format === 'gif'
-                      ? t('export.exportGif')
-                      : t('export.startExport')}
-            </button>
-            {isExporting && (
-              <button
-                onClick={handleStopExport}
-                className="px-3 py-1.5 text-xs rounded border border-red-500/60 text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-1.5"
-              >
-                <Square className="w-3 h-3" />
-                {t('export.stop')}
-              </button>
-            )}
-            <div className="flex items-center">
-              <select
-                value={xmlExportFormat}
-                onChange={(event) => setXmlExportFormat(event.target.value)}
-                disabled={isExporting || queueRunning || isXmlExporting}
-                aria-label="XML export format"
-                className="h-[30px] max-w-52 px-2 text-xs rounded-l border border-r-0 bg-sf-dark-800 text-sf-text-primary border-sf-dark-600 focus:outline-none focus:border-sf-accent disabled:text-sf-text-muted disabled:cursor-not-allowed"
-              >
-                {XML_EXPORT_FORMATS.map((format) => (
-                  <option key={format.id} value={format.id}>{format.label}</option>
-                ))}
-              </select>
-              <button
-                onClick={handleExportXml}
-                disabled={isExporting || queueRunning || isXmlExporting}
-                className={`h-[30px] px-3 text-xs rounded-r border flex items-center gap-1.5 transition-colors ${
-                  isExporting || queueRunning || isXmlExporting
-                    ? 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-                    : 'bg-sf-dark-800 text-sf-text-primary border-sf-dark-600 hover:border-sf-accent hover:text-white'
-                }`}
-                title={xmlExportConfig.tooltip}
-              >
-                <Download className="w-3 h-3" />
-                {isXmlExporting ? `Exporting ${xmlExportConfig.progressLabel}...` : xmlExportConfig.buttonLabel}
+          <details className="export-disclosure">
+            <summary>{t('export.workspace.handoff', undefined, 'Send to another editor')}</summary>
+            <div className="space-y-3">
+              <ExportField id="export-xml-format" label={t('export.format')}>
+                <select id="export-xml-format" aria-label="XML export format" value={xmlExportFormat} disabled={previewBusy}
+                  onChange={event => setXmlExportFormat(event.target.value)}>
+                  {XML_EXPORT_FORMATS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
+                </select>
+              </ExportField>
+              <button type="button" className="export-action" onClick={handleExportXml} disabled={previewBusy} title={xmlExportConfig.tooltip}>
+                <Download className="h-3.5 w-3.5" />{isXmlExporting ? t('export.exporting') : xmlExportConfig.buttonLabel}
               </button>
             </div>
-          </div>
+          </details>
+          {performanceHints.length > 0 && <details className="export-disclosure">
+            <summary>{t('export.performanceHints')}</summary>
+            <ul className="list-disc space-y-1 pl-4">{performanceHints.map(hint => <li key={hint} className="export-help">{hint}</li>)}</ul>
+          </details>}
+          <ExportReadinessPanel active={active} rangeStart={range.start} rangeEnd={range.end}
+            includeAudio={settings.includeAudio} format={settings.format} useProxyMedia={settings.useProxyMedia}
+            disabled={previewBusy} onInspect={time => {
+              const timeline = useTimelineStore.getState()
+              if (timeline.isPlaying) timeline.togglePlay()
+              timeline.setPlayheadPosition(Math.max(range.start, Math.min(time, range.end - 1 / timelineFps)))
+            }} />
+          <p className="export-help mt-4">{t('export.savedForProject')}</p>
+        </section>
 
-          {(isExporting || exportProgress > 0) && (
-            <div className="mt-3 shrink-0">
-              <div className="flex items-center justify-between text-[10px] text-sf-text-muted mb-1">
+        <section className="export-workspace__review" aria-label={t('export.workspace.preview', undefined, 'Timeline preview')}>
+          <div className="flex shrink-0 items-center justify-between px-3 py-2.5">
+            <h2 className="text-xs font-medium text-sf-text-primary">{t('export.workspace.preview', undefined, 'Timeline preview')}</h2>
+            <span className="text-[11px] text-sf-text-muted">{t('preview.fit')}</span>
+          </div>
+          <div className="export-workspace__viewer">
+            <ExportReviewPreview active={active} disabled={previewBusy} rangeStart={range.start} rangeEnd={range.end} />
+          </div>
+          <div className="shrink-0 border-t border-sf-dark-700 px-3 py-3">
+            <div className="export-workspace__scope">
+              <div className="flex flex-wrap gap-0.5 rounded border border-sf-dark-700 bg-sf-dark-900 p-0.5" role="group" aria-label={t('export.range')}>
+                {RANGE_PRESETS.map(item => <button type="button" key={item.id} data-testid={'export-range-' + item.id}
+                  aria-pressed={effectiveRangeMode === item.id} disabled={item.id === 'inout' && !hasInOut}
+                  onClick={() => handleSettingChange('range', item.id)}
+                  className={'rounded px-2 py-1 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' +
+                    (effectiveRangeMode === item.id ? 'bg-sf-accent/20 text-sf-accent' : 'text-sf-text-muted hover:text-sf-text-primary')}>
+                  {t(item.translationKey)}
+                </button>)}
+              </div>
+              <span className="text-[11px] text-sf-text-muted">{t('export.workspace.duration', undefined, 'Duration')} <span className="font-mono tabular-nums">{formatExportOverviewTimecode(rangeEndFrame - rangeStartFrame, timelineFps)}</span></span>
+            </div>
+            {!hasInOut && <p className="export-help mt-2">{t(collapsedMarkedRange
+              ? 'export.workspace.collapsedMarks'
+              : settings.range === 'inout' ? 'export.workspace.missingMarksFallback' : 'export.workspace.missingMarks', undefined,
+              collapsedMarkedRange ? 'In and Out are at the same position. Set distinct marks in the editor or choose Full Timeline.'
+                : settings.range === 'inout' ? 'In/Out marks are missing; the full timeline will be exported.'
+                  : 'Set both In/Out marks in the editor to use that range.')}</p>}
+          </div>
+          {active && <ExportTimelineOverview startFrame={rangeStartFrame} endFrame={rangeEndFrame} rangeMode={effectiveRangeMode} disabled={previewBusy || !hasContent} />}
+          <p className="export-help shrink-0 border-t border-sf-dark-700 px-3 py-2">{t('export.workspace.previewHelp', undefined, 'Review at timeline settings. Export resolution, encoding and audio settings are applied when rendering.')}</p>
+        </section>
+
+        {queueOpen && <aside id="export-render-queue" data-testid="export-queue" className="export-workspace__queue" aria-label={t('export.queue')}>
+          <div className="flex shrink-0 items-center justify-between gap-2">
+            <h2 className="text-xs font-medium text-sf-text-primary">{t('export.queue')} <span className="ml-1 font-normal text-sf-text-muted">{queue.length}</span></h2>
+            <button type="button" className="export-action export-action--quiet export-action--icon"
+              aria-label={t('export.workspace.hideQueue', undefined, 'Hide queue')} onClick={() => setQueueOpen(false)}><PanelRightClose className="h-4 w-4" /></button>
+          </div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+            {queue.length === 0 && <div className="flex flex-col items-center gap-2 px-2 py-10 text-center text-xs text-sf-text-muted">
+              <ListVideo className="h-6 w-6 opacity-50" /><span>{t('export.noQueued')}</span>
+            </div>}
+            {queue.map(item => <article key={item.id} data-testid="export-queue-item" className="export-workspace__queue-item">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className={'text-[11px] ' + (item.status === 'failed' ? 'text-sf-error' : item.status === 'completed' ? 'text-sf-success' : item.status === 'rendering' ? 'text-sf-accent' : 'text-sf-text-muted')}>
+                  {t('export.workspace.status.' + item.status, undefined, EXPORT_QUEUE_STATUS_LABELS[item.status] || 'Queued')}
+                </span>
+                <button type="button" className="export-action export-action--quiet export-action--icon" disabled={item.status === 'rendering'}
+                  aria-label={t('export.removeFromQueue') + ': ' + item.name} onClick={() => handleRemoveFromQueue(item.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+              <h3 className="export-workspace__queue-name text-xs font-medium text-sf-text-primary">{delivery(item.settings).name}</h3>
+              <p className="export-help mt-1">{delivery(item.settings).summary}</p>
+              <p className="export-help">{t(item.settings.range === 'inout' ? 'export.rangeInOut' : 'export.rangeFull')}</p>
+              {item.error && <p className="export-help mt-2 !text-sf-error">{item.error}</p>}
+            </article>)}
+          </div>
+          <div className="shrink-0 space-y-2 border-t border-sf-dark-700 pt-3">
+            <p className="export-help">{t('export.workspace.queueHelp', undefined, 'Jobs use the current timeline and In/Out marks when started. Save locations are chosen at export.')}</p>
+            {queueRunning ? <button type="button" data-testid="export-queue-pause" className="export-action w-full"
+              onClick={handlePauseQueue} disabled={queuePauseRequested}><Pause className="h-3.5 w-3.5" />
+              {queuePauseRequested ? t('export.pausingAfterCurrent') : t('export.workspace.pauseAfterCurrent', undefined, 'Pause after current')}</button>
+              : queuePaused ? <button type="button" data-testid="export-queue-resume" className="export-action w-full"
+                onClick={handleResumeQueue} disabled={isExporting || isXmlExporting || pendingCount === 0}><Play className="h-3.5 w-3.5" />{t('export.resume')}</button>
+              : <button type="button" data-testid="export-queue-start" className="export-action w-full"
+                onClick={handleStartQueue} disabled={isExporting || isXmlExporting || pendingCount === 0}><Play className="h-3.5 w-3.5" />{t('export.startQueue')}</button>}
+            {queue.length > 0 && <button type="button" className="export-action export-action--quiet w-full" disabled={queueRunning}
+              onClick={handleClearQueue}><Trash2 className="h-3.5 w-3.5" />{t('export.workspace.clearQueue', undefined, 'Clear queue')}</button>}
+          </div>
+        </aside>}
+      </ExportWorkspaceLayout>
+
+      <footer className="shrink-0 border-t border-sf-dark-700 bg-sf-dark-900">
+        {(isExporting || isXmlExporting || exportProgress > 0 || exportError || externalExportNotice || exportResult?.outputPath) && (
+          <div className="export-workspace__status border-b border-sf-dark-700 px-4 py-2">
+            {(isExporting || exportProgress > 0) && <div>
+              <div className="mb-1 flex flex-wrap justify-between gap-2 text-[11px] text-sf-text-muted">
                 <span>{exportStatus || t('export.exporting')}</span>
-                <span>{Math.round(exportProgress)}% • {t('export.eta')} {formatDuration(etaSeconds)}</span>
+                <span>{Math.round(exportProgress)}% · {t('export.eta')} {formatDuration(etaSeconds)}{renderFps ? ' · ' + renderFps.toFixed(1) + ' fps' : ''}</span>
               </div>
-              <div className="h-1.5 bg-sf-dark-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-sf-accent transition-all"
-                  style={{ width: `${exportProgress}%` }}
-                />
-              </div>
-              {renderFps && (
-                <div className="mt-1 text-[10px] text-sf-text-muted">
-                  {t('export.renderSpeed')}: {renderFps.toFixed(1)} fps
-                </div>
-              )}
-            </div>
-          )}
-          
-          {exportError && (
-            <div className="mt-2 shrink-0 text-[11px] text-sf-error">
-              {exportError}
-            </div>
-          )}
-
-          {externalExportNotice && (
-            <div className={`mt-2 shrink-0 text-[11px] ${
-              externalExportNotice.type === 'error'
-                ? 'text-sf-error'
-                : externalExportNotice.type === 'success'
-                  ? 'text-sf-success'
-                  : 'text-sf-text-secondary'
-            }`}>
-              {externalExportNotice.message}
-            </div>
-          )}
-          
-          {exportResult?.outputPath && !exportError && (
-            <div className="mt-2 shrink-0 text-[11px] text-sf-text-secondary">
-              {exportResult.format === 'png-seq' || exportResult.encoderUsed === 'png-sequence'
-                ? `${t('export.savedPngSequenceTo')}: ${exportResult.outputPath}`
-                : `${t('export.savedTo')}: ${exportResult.outputPath}`}
-              {(exportResult.format === 'png-seq' || exportResult.encoderUsed === 'png-sequence') && Number.isFinite(exportResult.frameCount) && (
-                <div>{t('export.pngFrameCount', { count: exportResult.frameCount })}</div>
-              )}
-              {exportResult.cleanupWarning && (
-                <div className="text-sf-warning">{exportResult.cleanupWarning}</div>
-              )}
-              {exportResult.encoderUsed && exportResult.format !== 'png-seq' && exportResult.encoderUsed !== 'png-sequence' && (
-                <div>{t('export.encoder')}: {exportResult.encoderUsed}</div>
-              )}
-            </div>
-          )}
-          
-          {performanceHints.length > 0 && (
-            <div className="mt-3 border-t border-sf-dark-700 pt-2 shrink-0 max-h-24 overflow-y-auto">
-              <div className="text-[10px] text-sf-text-muted uppercase tracking-wider mb-1">{t('export.performanceHints')}</div>
-              <div className="space-y-0.5">
-                {performanceHints.map((hint) => (
-                  <div key={hint} className="text-[10px] text-sf-text-muted">
-                    • {hint}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+              <div role="progressbar" aria-label={t('export.exporting')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(exportProgress)}
+                className="h-1 overflow-hidden rounded bg-sf-dark-800"><div className="h-full bg-sf-accent" style={{ width: Math.max(0, Math.min(100, exportProgress)) + '%' }} /></div>
+            </div>}
+            {isXmlExporting && <p className="export-help">{exportStatus}</p>}
+            {exportError && <p className="export-help !text-sf-error" role="alert">{exportError}</p>}
+            {externalExportNotice && <p className={'export-help ' + (externalExportNotice.type === 'error' ? '!text-sf-error' : externalExportNotice.type === 'success' ? '!text-sf-success' : '')} role="status">{externalExportNotice.message}</p>}
+            {exportResult?.outputPath && !exportError && <div className="export-help" role="status">
+              {exportResult.format === 'png-seq' || exportResult.encoderUsed === 'png-sequence' ? t('export.savedPngSequenceTo') : t('export.savedTo')}: {exportResult.outputPath}
+              {(exportResult.format === 'png-seq' || exportResult.encoderUsed === 'png-sequence') && Number.isFinite(exportResult.frameCount)
+                && <span> · {t('export.pngFrameCount', { count: exportResult.frameCount })}</span>}
+              {exportResult.cleanupWarning && <p className="text-sf-warning">{exportResult.cleanupWarning}</p>}
+              {exportResult.encoderUsed && <p>{t('export.encoder')}: {exportResult.encoderUsed}</p>}
+            </div>}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-sf-text-primary" title={currentDelivery.name}>{currentDelivery.name}</p>
+            <p className="export-help">{currentDelivery.summary} · {t(effectiveRangeMode === 'inout' ? 'export.rangeInOut' : 'export.rangeFull')}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="export-action" data-testid="export-add-queue" onClick={handleAddToQueue} disabled={!hasContent}>
+              <Plus className="h-3.5 w-3.5" />{t('export.addToQueue')}
+            </button>
+            <button type="button" className="export-action export-action--primary" data-testid="export-start"
+              onClick={handleStartExport} disabled={previewBusy || !hasContent}>
+              <Download className="h-3.5 w-3.5" />{isExporting ? t('export.exporting') : queueRunning ? t('export.queueRunning') : t('export.workspace.exportNow', undefined, 'Export now')}
+            </button>
+            {isExporting && <button type="button" data-testid="export-stop" onClick={() => { void handleStopExport().catch(error => setExportError(error.message)) }} className="export-action !border-sf-error/50 !text-sf-error">
+              <Square className="h-3.5 w-3.5" />{t('export.stop')}
+            </button>}
+          </div>
         </div>
-        
-        {/* Queue */}
-        <div className="col-span-5 bg-sf-dark-900 border border-sf-dark-700 rounded-lg p-4 flex min-h-0 flex-col overflow-hidden">
-          <div className="flex items-center gap-2 mb-4">
-            <Film className="w-4 h-4 text-sf-text-muted" />
-            <span className="text-xs font-semibold text-sf-text-primary uppercase tracking-wider">{t('export.queue')}</span>
-            <span className="ml-auto text-[10px] text-sf-text-muted">
-              {queueRunning
-                ? (queuePauseRequested ? t('export.pausingAfterCurrent') : t('export.running'))
-                : (queuePaused ? t('export.paused') : t('export.idle'))}
-              {' '}• {t('export.itemCount', { count: queue.length })}
-            </span>
-          </div>
-          
-          <div className="flex items-center gap-2 mb-3">
-            <button
-              onClick={handleStartQueue}
-              disabled={queueRunning || queue.length === 0}
-              className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                queueRunning || queue.length === 0
-                  ? 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-                  : 'bg-sf-dark-700 text-sf-text-primary border-sf-dark-500 hover:bg-sf-dark-600'
-              }`}
-            >
-              {t('export.startQueue')}
-            </button>
-            <button
-              onClick={handlePauseQueue}
-              disabled={!queueRunning || queuePauseRequested}
-              className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                !queueRunning || queuePauseRequested
-                  ? 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-                  : 'bg-sf-dark-700 text-sf-text-primary border-sf-dark-500 hover:bg-sf-dark-600'
-              }`}
-            >
-              {t('export.pause')}
-            </button>
-            <button
-              onClick={handleResumeQueue}
-              disabled={!queuePaused}
-              className={`px-2 py-1 text-[11px] rounded border transition-colors ${
-                queuePaused
-                  ? 'bg-sf-dark-700 text-sf-text-primary border-sf-dark-500 hover:bg-sf-dark-600'
-                  : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-              }`}
-            >
-              {t('export.resume')}
-            </button>
-          </div>
-          
-          <div className="flex-1 overflow-auto space-y-2">
-            {queue.length === 0 && (
-              <div className="text-center text-[11px] text-sf-text-muted py-8">
-                {t('export.noQueued')}
-              </div>
-            )}
-            {queue.map((item) => (
-              <div key={item.id} className="border border-sf-dark-700 rounded p-2 bg-sf-dark-800/60">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs text-sf-text-primary truncate">{item.name}</div>
-                    <div className="text-[10px] text-sf-text-muted">
-                      {item.settings.format === 'png-seq'
-                        ? `PNG Image Sequence • ${getResolutionLabel(item.settings)} • ${item.settings.fps === 'project' ? 'Project FPS' : `${item.settings.fps} fps`}`
-                        : item.settings.format === 'gif'
-                          ? `Animated GIF • ${getResolutionLabel(item.settings)} • ${item.settings.fps === 'project' ? 'Project FPS' : `${item.settings.fps} fps`}`
-                        : item.settings.format === 'audio'
-                          ? `${item.settings.audioCodec?.toUpperCase() || 'Audio'} only`
-                          : `${item.settings.format.toUpperCase()} • ${item.settings.videoCodec?.toUpperCase()} • ${getResolutionLabel(item.settings)} • ${item.settings.fps === 'project' ? 'Project FPS' : `${item.settings.fps} fps`}`}
-                    </div>
-                    <div className="text-[10px] text-sf-text-muted">
-                      {t('export.range')}: {item.settings.range}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveFromQueue(item.id)}
-                    className="p-1 hover:bg-sf-dark-700 rounded"
-                    title={t('export.removeFromQueue')}
-                  >
-                    <Trash2 className="w-3 h-3 text-sf-text-muted" />
-                  </button>
-                </div>
-                <div className="mt-2 text-[10px] text-sf-text-muted">
-                  Status: {item.status}
-                  {item.error ? ` • ${item.error}` : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {queue.length > 0 && (
-            <button
-              onClick={handleClearQueue}
-              disabled={queueRunning}
-              className={`mt-3 px-3 py-1.5 text-xs rounded border transition-colors flex items-center justify-center gap-1.5 ${
-                queueRunning
-                  ? 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 cursor-not-allowed'
-                  : 'bg-sf-dark-800 text-sf-text-muted border-sf-dark-600 hover:text-sf-text-primary hover:border-sf-dark-500'
-              }`}
-            >
-              <Trash2 className="w-3 h-3" />
-              Clear Queue
-            </button>
-          )}
-        </div>
-      </div>
+      </footer>
     </div>
   )
 }

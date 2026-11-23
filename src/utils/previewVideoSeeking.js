@@ -62,6 +62,30 @@ export function getTargetVideoFrameIndex(targetTime, fps) {
   return Math.max(0, Math.floor(finiteNonNegative(targetTime) * safeFps + 1e-7))
 }
 
+// Chromium can truncate currentTime to microseconds. An exact frame boundary
+// such as 19 / 24 then lands just inside the preceding frame. Seek into the
+// intended frame's presentation interval while keeping the logical target
+// unchanged for frame validation and timeline positioning.
+export function getVideoFrameSeekTime(targetTime, fps, duration = Infinity) {
+  const safeFps = positiveFps(fps)
+  const time = safeFps
+    ? (getTargetVideoFrameIndex(targetTime, safeFps) + 0.5) / safeFps
+    : finiteNonNegative(targetTime)
+  const finiteDuration = Number(duration)
+  if (!Number.isFinite(finiteDuration) || finiteDuration <= 0) return time
+  return Math.min(time, Math.max(0, finiteDuration - PRECISE_VIDEO_SEEK_EPSILON_SECONDS))
+}
+
+// Decoder time-base conversion can round twice (e.g. 4.020833333 becomes
+// 4.020832). This tolerance is only for physical element ownership, never
+// logical timeline targets or presentation PTS. Require the same frame too.
+export function isSameVideoFrameSeekTime(actualTime, seekTime, fps) {
+  if (!Number.isFinite(Number(actualTime)) || !Number.isFinite(Number(seekTime))) return false
+  const frame = getTargetVideoFrameIndex(seekTime, fps)
+  return frame !== null && getTargetVideoFrameIndex(actualTime, fps) === frame
+    && Math.abs(Number(actualTime) - Number(seekTime)) <= 1e-5
+}
+
 export function getPresentedVideoFrameIndex(mediaTime, fps) {
   const safeFps = positiveFps(fps)
   if (!safeFps || !Number.isFinite(Number(mediaTime))) return null

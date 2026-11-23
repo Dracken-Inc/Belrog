@@ -40,6 +40,9 @@ const STRUCTURED_FIELD_PATTERNS = Object.freeze([
   // roster is empty or when no match is found — the planner then falls back
   // to the lyric-tag resolver and finally to the default (first cast entry).
   { key: 'artist', pattern: /^(?:artist|singer|performer|cast|vocalist)\s*:\s*(.*)$/i },
+  // Music-video-only: the place this shot is filmed in, by its short name.
+  // Resolved to a place picture in the music planner.
+  { key: 'place', pattern: /^(?:place|location|environment)\s*:\s*(.*)$/i },
   // Music-video-only: explicit audio offset (Phase 8). Accepted forms include
   // "0:15", "15s", "00:00:15,500" — see parseTimeSpecToSeconds in
   // musicVideoShotConfig.js. When present, the music planner pins audioStart
@@ -105,39 +108,6 @@ function parseShotHeadingLine(line = '') {
   return { isHeading: true, label }
 }
 
-// LLMs sometimes ECHO fragments of the instruction brief back inside shot
-// fields: "LIGHTING: script; use "Shot type: ..." for every shot). - The
-// script timeline MUST cover ... - Lyrics/SRT lines are timing anch" blocks
-// spliced into the middle of the scene prose. That meta text has never
-// belonged in a reference-image prompt. Anchor on brief-only vocabulary
-// ("for every shot", "script timeline", "timing anch", "STYLE/TAGS") —
-// never on scene words like "must" — so real scene copy survives untouched.
-const BRIEF_ECHO_RULES = [
-  // trailing echo block from "script;" to the end of the line
-  [/\bscript;\s*use\s+["“]Shot type:[\s\S]*$/i, ''],
-  // mid-line echo sentence "script; use "Shot type: ..." for every shot)."
-  [/script;\s*use\s+["“]Shot type:[^"”]*["”]\s+for every shot\s*\)?\.?\s*[-]?\s*/gi, ''],
-  // ". - The script timeline MUST cover ... (239.1s)." — embedded bullet
-  [/\s*\.?\s*-\s*The\s+script\s+timeline\s+MUST\s+cover[^)]*\)\s*\.?\s*/gi, ''],
-  // " - Lyrics/SRT lines are timing anch(ors...)" truncated echo runs
-  [/\s*-?\s*Lyrics\/SRT\s+lines\s+are\s+timing\s+\w{1,10}\s*(?:[;,]\s*[^\n]{0,80})?/gi, ''],
-  // "Look per STYLE/TAGS:" / "brief's STYLE/TAGS" lead-ins (drop to line end)
-  [/\s*(?:Look per|matching the)\s*(?:brief's\s+)?STYLE\/TAGS\s*[:：]?[^\n]*/gi, ''],
-  [/\bbrief's\s+STYLE\/TAGS\b/gi, 'the style notes'],
-  [/\bbrief names them together\b/gi, 'the scene calls for them'],
-  // crumbs left behind
-  [/\(\s*\)/g, ' '],
-  [/\s\.\s*\./g, ' .'],
-  [/-\s*-\s*/g, '-'],
-]
-
-function stripBriefEcho(text = '') {
-  let value = String(text || '')
-  if (!/script;|script\s+timeline\s+MUST|timing\s+anch|STYLE\/TAGS|brief names/i.test(value)) return value
-  for (const [pattern, replacement] of BRIEF_ECHO_RULES) value = value.replace(pattern, replacement)
-  return value.replace(/\(\s*\)/g, ' ').replace(/\s{2,}/g, ' ').replace(/\s+([,.;])/g, '$1').trim()
-}
-
 function matchStructuredFieldLine(line = '') {
   const text = String(line || '').trim()
   for (const entry of STRUCTURED_FIELD_PATTERNS) {
@@ -149,246 +119,6 @@ function matchStructuredFieldLine(line = '') {
     }
   }
   return null
-}
-
-// ── Asset legend (explicit declarations, 0.4.5) ────────────────────────────
-// The director script may open with an asset legend BEFORE the first scene:
-//   CHARACTER: rose — the lead singer, silver braid, kind eyes
-//   LOCATION:  monastery-cell — cavernous damp cell, charcoal-grey walls
-//   PROP:      old-cassette — a worn cassette tape, green-glowing label
-// `CAST:` is an alias for `CHARACTER:`. Format: `TYPE: slug — description`
-// (an em/en dash, or a colon, separates slug from description; a missing
-// description is fine — the entry still declares slug + type). The legend is
-// the AUTHORITATIVE asset list: the gap detector prefers these over its
-// heuristic guesses, and the plan builder passes them through so auto-stub
-// creates correctly-named, correctly-described Cast entries.
-const LEGEND_TYPE_ALIASES = Object.freeze({
-  character: 'character',
-  cast: 'character',
-  person: 'character',
-  people: 'character',
-  prop: 'prop',
-  props: 'prop',
-  object: 'prop',
-  location: 'location',
-  locations: 'location',
-  place: 'location',
-  scene: 'location',
-})
-
-const LEGEND_LINE_RE = /^(character|cast|person|people|prop|props|object|location|locations|place)\s*:\s*(.+)$/i
-// Trailing-type form (the Perchance LTX director list uses this):
-//   slug : description , TYPE
-// e.g. `monastery-cell : cavernous damp cell with charcoal-grey walls , LOCATION`
-const LEGEND_LINE_TRAILING_RE = /^([a-zA-Z0-9][a-zA-Z0-9 _-]{0,40})\s*:\s*(.+?)\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i
-
-function legendTypeFor(typeWord) {
-  return LEGEND_TYPE_ALIASES[String(typeWord || '').toLowerCase()]
-}
-
-function parseLegendLine(line) {
-  const text = String(line || '').trim()
-  if (!text) return null
-  // Form A: TYPE: slug — description
-  const a = text.match(LEGEND_LINE_RE)
-  if (a) {
-    const kind = legendTypeFor(a[1])
-    if (kind) return { kind, body: a[2] }
-  }
-  // Form B: slug : description , TYPE
-  const b = text.match(LEGEND_LINE_TRAILING_RE)
-  if (b) {
-    const kind = legendTypeFor(b[3])
-    if (kind) return { kind, body: `${b[1]} — ${b[2]}` }
-  }
-  return null
-}
-
-// ── Inline asset directives (0.4.7) ────────────────────────────────────────
-// The Perchance LTX director list declares assets INLINE inside keyframe
-// prompts instead of a legend block:
-//   LOCATION: neon-phone-booth: rain-slick street, sodium-lamp glow, ...
-//   PROP: old-cassette: worn cassette tape with green-glowing label
-//   CHARACTER: rose: the lead singer, silver braid
-// Each occurrence is an authoritative declaration. Scan the WHOLE script (not
-// just pre-scene lines), dedupe by kind+slug, and keep the first description.
-// "CHARACTER: no person visible; ..." is a negative directive — skip it.
-const INLINE_ASSET_BOUNDARY = String.raw`\s+(?:CHARACTERS?|LOCATIONS?|PROPS?|LIGHTING|STYLE|EMOTION|ACTION-FROZEN|CAMERA|SHOT|CONTINUITY|DIRECTOR)\s*:|\.\s|$`
-const INLINE_LOCATION_RE = new RegExp(String.raw`\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
-const INLINE_PROP_RE = new RegExp(String.raw`\bPROPS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
-const INLINE_CHARACTER_RE = new RegExp(String.raw`\bCHARACTERS?\s*:\s*([a-zA-Z][a-zA-Z0-9 _-]{0,40}?)\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
-// Boilerplate the director list appends to every location description.
-const INLINE_BOILERPLATE_RE = /\b(?:establish architecture[, ]+spatial relationships[, ]+surfaces[, ]+atmosphere and environmental depth before any subject|no bodies, faces, silhouettes or human-shaped forms)[\s\S]*/gi
-
-function cleanInlineDescription(text = '') {
-  return String(text || '')
-    .replace(INLINE_BOILERPLATE_RE, '')
-    .replace(/\s+/g, ' ')
-    .replace(/[,;:\s]+$/g, '')
-    .trim()
-    .slice(0, 300)
-}
-
-function slugifyAssetToken(token = '') {
-  // Keep underscores — Henry's slugs (location_dpf, prop_lantern) use them.
-  return String(token || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
-export function parseInlineAssetDirectives(script = '') {
-  const text = String(script || '')
-  if (!/\b(?:LOCATIONS?|PROPS?|CHARACTERS?)\s*:/i.test(text)) return []
-  const found = []
-  const seen = new Set()
-  const push = (kind, slugRaw, descRaw) => {
-    const slug = slugifyAssetToken(slugRaw)
-    if (!slug || slug.length > 60) return
-    const key = `${kind}:${slug}`
-    if (seen.has(key)) return
-    const description = cleanInlineDescription(descRaw)
-    if (!description || /^(?:no|not|none|nothing)\b/i.test(description)) return
-    seen.add(key)
-    found.push({ kind, slug, name: slug, description, source: 'inline-directive' })
-  }
-  for (const match of text.matchAll(INLINE_LOCATION_RE)) push('location', match[1], match[2])
-  for (const match of text.matchAll(INLINE_PROP_RE)) push('prop', match[1], match[2])
-  for (const match of text.matchAll(INLINE_CHARACTER_RE)) push('character', match[1], match[2])
-  return found
-}
-
-/**
- * Legend contract audit (0.4.8.3 hardening): validates a parsed legend
- * against the format-directive contract instead of silently picking winners.
- * Returns an issues list — each { severity, kind, slug?, name?, message } —
- * covering exactly the failure classes Henry called out:
- *   - duplicate slug (same slug declared twice, same or different kind)
- *   - duplicate name (two assets with the same human name)
- *   - name/slug kind mismatch (slug says location_ but type says PROP, etc.)
- *   - prefix violations on location_/prop_ slugs
- * A clean legend returns []. Callers (detection + UI) surface these loudly;
- * they must NEVER be auto-resolved by renaming or re-typing.
- */
-export function auditAssetLegend(assets = []) {
-  const issues = []
-  const bySlug = new Map()
-  const byName = new Map()
-  for (const entry of Array.isArray(assets) ? assets : []) {
-    if (!entry?.kind) continue
-    const slug = String(entry.slug || '').toLowerCase()
-    const name = String(entry.name || '').trim().toLowerCase()
-    if (slug) {
-      const prev = bySlug.get(slug)
-      if (prev) {
-        issues.push({
-          severity: 'error',
-          kind: 'duplicate-slug',
-          slug,
-          message: prev.kind === entry.kind
-            ? `Slug "${slug}" declared twice as ${prev.kind.toUpperCase()} (names "${prev.name}" and "${entry.name}") — one slug must mean one asset.`
-            : `Slug "${slug}" declared as BOTH ${prev.kind.toUpperCase()} and ${entry.kind.toUpperCase()} — a slug may only be one kind.`,
-        })
-      } else {
-        bySlug.set(slug, { kind: entry.kind, name: entry.name })
-      }
-      // Prefix discipline: prefixed slugs belong to their declared kind.
-      const prefixed = slug.startsWith('location_') ? 'location' : slug.startsWith('prop_') ? 'prop' : null
-      if (prefixed && prefixed !== entry.kind) {
-        issues.push({
-          severity: 'error',
-          kind: 'slug-kind-mismatch',
-          slug,
-          message: `Slug "${slug}" carries a "${prefixed}_" prefix but is declared as ${entry.kind.toUpperCase()} — wrong cast type.`,
-        })
-      }
-      if (entry.kind === 'location' && !slug.startsWith('location_')) {
-        issues.push({
-          severity: 'warning',
-          kind: 'missing-prefix',
-          slug,
-          message: `Location "${slug}" is missing the required location_ prefix.`,
-        })
-      }
-      if (entry.kind === 'prop' && !slug.startsWith('prop_')) {
-        issues.push({
-          severity: 'warning',
-          kind: 'missing-prefix',
-          slug,
-          message: `Prop "${slug}" is missing the required prop_ prefix.`,
-        })
-      }
-    }
-    if (name) {
-      const prev = byName.get(name)
-      if (prev && prev.slug !== slug) {
-        issues.push({
-          severity: prev.kind !== entry.kind ? 'error' : 'warning',
-          kind: 'duplicate-name',
-          name: entry.name,
-          slug,
-          message: `Name "${entry.name}" used by two ${prev.kind === entry.kind ? 'same-kind' : 'DIFFERENT-kind'} assets (slugs "${prev.slug}" and "${slug}") — Cast will show two identical titles.`,
-        })
-      } else {
-        byName.set(name, { kind: entry.kind, slug })
-      }
-    }
-  }
-  return issues
-}
-
-export function parseAssetLegendLines(script = '') {
-  // Only lines BEFORE the first scene heading belong to the legend; anything
-  // after the first Scene/Shot block is normal script text (and stays so).
-  const assets = []
-  for (const rawLine of String(script || '').replace(/\r\n/g, '\n').split('\n')) {
-    const line = String(rawLine || '').trim()
-    if (!line) continue
-    if (parseSceneHeadingLine(line).isHeading || /^shot\s*\d+/i.test(line)) break
-    const parsedLine = parseLegendLine(line)
-    if (!parsedLine) continue
-    const kind = parsedLine.kind
-    const body = String(parsedLine.body || '').trim()
-    // Canonical Henry format (format-directive-v2): NAME | slug | description
-    //   LOCATION: Pine Forest | location_dpf | dense pine forest at blue hour
-    // Names may contain " | " never (pipe is reserved). Slug keeps underscores.
-    let slug = ''
-    let name = ''
-    let description = ''
-    if (body.includes('|')) {
-      const segs = body.split('|').map((p) => p.trim())
-      if (segs.length >= 3) {
-        // name | slug | description — extra pipes fold into the description.
-        name = segs[0].replace(/["']/g, '')
-        slug = segs[1].replace(/["']/g, '')
-        description = segs.slice(2).join(' | ')
-      } else if (segs.length === 2) {
-        // Tolerated short form: slug | description (name falls back to slug).
-        slug = segs[0].replace(/["']/g, '')
-        description = segs[1]
-        name = slug
-      } else {
-        continue
-      }
-    } else {
-      // Legacy: slug — description  |  slug: description
-      const parts = body.split(/\s+(?:—|–|---|-)\s+|\s*:\s+/).map((p) => p.trim()).filter(Boolean)
-      slug = String(parts[0] || '').trim().replace(/["']/g, '')
-      name = slug
-      description = parts.slice(1).join(' ').trim()
-        .replace(/\s*,\s*(characters?|casts?|people|person|props?|objects?|locations?|places?)\s*$/i, '')
-        .trim()
-    }
-    if (!slug || slug.length > 60) continue
-    description = description.slice(0, 300)
-    // Slug key: lowercase, trim; underscores are MEANINGFUL (location_dpf is a
-    // different byte-string than location-dpf and must byte-match shot tokens
-    // and plate filenames). Spaces/punctuation still fold to hyphens.
-    const slugKey = slug.toLowerCase().replace(/\s+/g, '-').replace(/^[-.]+|[-.]+$/g, '')
-    if (!slugKey) continue
-    // Duplicates are KEPT in the parsed output (0.4.8.3): silently dropping
-    // them here hid contract violations from every consumer. auditAssetLegend
-    // surfaces them; detectScriptGaps dedups (first wins) for generation.
-    assets.push({ kind, slug: slugKey, name: name || slugKey, description, source: 'asset-legend' })
-  }
-  return assets
 }
 
 function splitScriptIntoScenes(script = '') {
@@ -634,14 +364,15 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       // Music-video-only pass-through. Resolved to actual cast asset ids in
       // the music planner (src/components/GenerateWorkspace.jsx).
       artistRaw: sanitizeSnippet(currentShot.artist || '', 120),
+      placeRaw: sanitizeSnippet(currentShot.place || '', 120),
       // Music-video-only pass-through (Phase 8). The music planner calls
       // parseTimeSpecToSeconds on this to pin audioStart, bypassing the
       // Lyric-moment fuzzy lookup when it's present and parseable.
       startAtRaw: sanitizeSnippet(currentShot.startAt || '', 32),
       // Keyframe + motion prompts stay full-length for editing and generation.
       // Cards and compact labels should truncate visually in the UI only.
-      keyframePromptRaw: stripBriefEcho(compactPromptText(currentShot.keyframePrompt || '')),
-      motionPromptRaw: stripBriefEcho(compactPromptText(currentShot.motionPrompt || '')),
+      keyframePromptRaw: compactPromptText(currentShot.keyframePrompt || ''),
+      motionPromptRaw: compactPromptText(currentShot.motionPrompt || ''),
       locked: false,
     })
 
@@ -716,7 +447,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       currentScene = {
         label: sceneHeading.label,
         coverageType: coverageContext?.coverageType || '',
-        coverageLabel: coverageContext?.coverageLabel || '',
+        coverageLabel: coverageContext?.coverageLabel || coverageContext?.label || '',
         coverageSectionIndex: coverageContext?.index || null,
         coverageSectionLabel: coverageContext?.label || '',
         rawLines: [line],
@@ -725,13 +456,6 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       }
       continue
     }
-
-        // Asset-legend lines (both forms: "TYPE: slug — description" and
-    // "slug : description , TYPE") BEFORE the first scene/shot are
-    // declarations, not scene content. Skip them here so they don't pollute
-    // scene context / shot text (the legend itself is read separately by
-    // parseAssetLegendLines).
-    if (!currentScene && !currentShot && parseLegendLine(line)) continue
 
     const structuredField = matchStructuredFieldLine(line)
     if (
@@ -753,15 +477,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       && coverageContext
       && (activeField === 'coverageType' || activeField === 'coverageLabel')
     ) {
-      // A LABELED line inside the coverage block (`Purpose: ...`, `Notes: ...`)
-      // is its own field, not a continuation of the coverage label. Appending
-      // it produced coverageLabel = "Main Purpose: Per-brief take lane..." —
-      // which then leaked "Main Purpose" into asset detection as a fake
-      // location (0.4.8.2, Director Suite golden fixture). Swallow labeled
-      // lines; keep appending unlabeled prose as before.
-      if (!/^[A-Za-z][A-Za-z ]{1,24}\s*:/.test(line)) {
-        appendToActiveField(coverageContext, activeField, line)
-      }
+      appendToActiveField(coverageContext, activeField, line)
       continue
     }
 
@@ -792,6 +508,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
         // structured-field matcher — see STRUCTURED_FIELD_PATTERNS above.
         lyricMoment: '',
         artist: '',
+        place: '',
         startAt: '',
         notes: '',
       }
@@ -830,10 +547,6 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
   flushScene()
 
   if (!sawStructuredField || scenes.length === 0) return null
-  // The asset legend is an array property on the scenes array (the parser's
-  // return shape is pinned by tests as a bare Array of scenes). Empty scripts
-  // still get an empty legend so downstream code can rely on `parsed.assets`.
-  scenes.assets = parseAssetLegendLines(normalized)
   return scenes
 }
 
@@ -1027,13 +740,9 @@ export function flattenYoloPlanVariants(plan = []) {
             resolvedArtistAssetIds: Array.isArray(shot?.resolvedArtistAssetIds)
               ? shot.resolvedArtistAssetIds.filter(Boolean).slice(0, 2)
               : [],
-            // 0.4.8: location reference threading. The plan-level slug match
-            // (resolved at parse time) plus the raw directive text, so the
-            // queue can re-resolve against the CURRENT library when the plan
-            // predates a generated location image.
-            resolvedLocationAssetId: String(shot?.resolvedLocationAssetId || '').trim() || null,
-            keyframePromptRaw: String(shot?.keyframePromptRaw || '').trim(),
-            motionPromptRaw: String(shot?.motionPromptRaw || '').trim(),
+            // The picture of the place this shot is filmed in, for a person's
+            // own workflow that has an input just for it.
+            placeAssetId: String(shot?.shotPlaceAssetId || shot?.resolvedPlaceAssetId || ''),
             nanoBananaReferenceOverride: shot?.nanoBananaReferenceOverrideEnabled
               ? {
                   enabled: true,

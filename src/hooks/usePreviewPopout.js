@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { attachPreviewPopoutKeyboard } from '../utils/previewPopoutKeyboard.mjs'
+import { hasVisibleKeyboardModal } from '../utils/transportKeyboardGuards.mjs'
 
 // Detachable preview window ("clean feed"). Opens a named same-origin child
 // window via window.open — Electron's window-open handler (main.js) allows
@@ -6,8 +8,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // same-origin and same-process, the parent scripts its DOM directly and
 // mirrors the active preview element (compositor canvas or preview <video>)
 // onto a canvas in the child with one drawImage per child animation frame.
-const POPOUT_NAME = 'Belrog-preview-popout'
-const BOUNDS_KEY = 'Belrog-preview-popout-bounds'
+const POPOUT_NAME = 'velorn-preview-popout'
+const BOUNDS_KEY = 'velorn-preview-popout-bounds'
 
 export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
   const [isPoppedOut, setIsPoppedOut] = useState(false)
@@ -44,14 +46,15 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
     const child = window.open('about:blank', POPOUT_NAME, features)
     if (!child) return
     popoutRef.current = child
+    child.__velornPreviewCleanup?.()
 
     // Re-adopting a still-open window (e.g. after HMR) must not stack blit
     // loops: each adoption bumps the token and stale loops see the mismatch.
-    const blitToken = (child.__BelrogBlitToken || 0) + 1
-    child.__BelrogBlitToken = blitToken
+    const blitToken = (child.__velornBlitToken || 0) + 1
+    child.__velornBlitToken = blitToken
 
     const doc = child.document
-    doc.title = 'Belrog Preview'
+    doc.title = 'Velorn Preview'
     doc.documentElement.style.height = '100%'
     doc.body.style.cssText = 'margin:0;height:100%;background:#000;overflow:hidden;'
     doc.body.textContent = ''
@@ -61,7 +64,7 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
     const ctx = canvas.getContext('2d')
 
     const blit = () => {
-      if (child.closed || child.__BelrogBlitToken !== blitToken) return
+      if (child.closed || child.__velornBlitToken !== blitToken) return
       const source = getSourceRef.current?.()
       if (source) {
         const isVideo = typeof source.videoWidth === 'number' && source.videoWidth > 0
@@ -86,13 +89,12 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
       } catch { /* fullscreen denied — ignore */ }
     }
     canvas.addEventListener('dblclick', toggleChildFullscreen)
-    doc.addEventListener('keydown', (event) => {
-      if (event.code === 'Space') {
-        event.preventDefault()
-        onTogglePlayRef.current?.()
-      } else if (event.key === 'f' || event.key === 'F') {
-        toggleChildFullscreen()
-      }
+    const stopKeyboard = attachPreviewPopoutKeyboard({
+      windowTarget: child, documentTarget: doc,
+      canHandle: () => !child.closed && popoutRef.current === child && child.__velornBlitToken === blitToken
+        && !hasVisibleKeyboardModal(),
+      onTogglePlay: () => onTogglePlayRef.current?.(),
+      onToggleFullscreen: toggleChildFullscreen,
     })
 
     const saveBounds = () => {
@@ -102,13 +104,22 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
         }))
       } catch { /* storage full — ignore */ }
     }
-    child.addEventListener('beforeunload', () => {
+    const handleChildUnload = () => {
       saveBounds()
+      cleanup()
       if (popoutRef.current === child) {
         popoutRef.current = null
         setIsPoppedOut(false)
       }
-    })
+    }
+    const cleanup = () => {
+      stopKeyboard()
+      canvas.removeEventListener('dblclick', toggleChildFullscreen)
+      child.removeEventListener('beforeunload', handleChildUnload)
+      if (child.__velornPreviewCleanup === cleanup) delete child.__velornPreviewCleanup
+    }
+    child.__velornPreviewCleanup = cleanup
+    child.addEventListener('beforeunload', handleChildUnload)
 
     setIsPoppedOut(true)
   }, [])
@@ -128,7 +139,7 @@ export default function usePreviewPopout({ getSourceElement, onTogglePlay }) {
       }
     }
     window.addEventListener('beforeunload', closeChild)
-    return () => window.removeEventListener('beforeunload', closeChild)
+    return () => { window.removeEventListener('beforeunload', closeChild); closeChild() }
   }, [])
 
   return { isPoppedOut, open, close, toggle }

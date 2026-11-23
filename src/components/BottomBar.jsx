@@ -1,15 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
-import { Settings, LogOut, Save, FolderOpen, Minus, Maximize2, BookOpen, ChevronDown } from 'lucide-react'
+import { Settings, LogOut, Save, FolderOpen, Minus, Maximize2, BookOpen, ChevronDown, Clapperboard } from 'lucide-react'
 import useTimelineStore from '../stores/timelineStore'
 import useProjectStore from '../stores/projectStore'
+import { useTimelineFields } from '../hooks/useTimelineFields'
 import { useI18n } from '../i18n/I18nContext'
 
-function BottomBar({ onOpenSettings, onOpenGettingStarted, projectName }) {
+// Undo availability is derived from these; nothing here follows the playhead.
+const BOTTOM_BAR_TIMELINE_FIELDS = ['undo', 'redo', 'canUndo', 'canRedo', 'history', 'historyIndex']
+
+function BottomBar({ onOpenSettings, onOpenGettingStarted, onOpenStoryboard, projectName }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
 
-  const { undo, redo, canUndo, canRedo } = useTimelineStore()
+  const { undo, redo, canUndo, canRedo } = useTimelineFields(BOTTOM_BAR_TIMELINE_FIELDS)
   const timelineHistoryLastChangedAt = useTimelineStore((state) => state.historyLastChangedAt)
   const {
     saveProject,
@@ -124,26 +128,26 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, projectName }) {
         {projectName || t('bottomBar.untitled')}
       </div>
       <Separator />
-      {/* Belrog - dropdown: Leave, Settings, Project Selection, Save Project (with dividers) */}
+      {/* Velorn - dropdown: Leave, Settings, Project Selection, Save Project (with dividers) */}
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setMenuOpen((o) => !o)}
           className="flex items-center gap-2 px-2 py-1 rounded text-sf-text-muted hover:text-sf-text-primary hover:bg-sf-dark-800 transition-colors"
-          title="Belrog"
+          title="Velorn"
         >
           <svg
             className="block h-[14px] w-[45px]"
             viewBox="0 0 52 16"
             role="img"
-            aria-label="Belrog"
+            aria-label="Velorn"
           >
             <defs>
-              <linearGradient id="Belrog-bottombar-gradient" x1="0" y1="0" x2="52" y2="0" gradientUnits="userSpaceOnUse">
+              <linearGradient id="velorn-bottombar-gradient" x1="0" y1="0" x2="52" y2="0" gradientUnits="userSpaceOnUse">
                 <stop offset="0%" stopColor="#8fcfff" />
                 <stop offset="48%" stopColor="#f8fbff" />
                 <stop offset="100%" stopColor="#f6d985" />
               </linearGradient>
-              <filter id="Belrog-bottombar-glow" x="-20%" y="-80%" width="140%" height="260%">
+              <filter id="velorn-bottombar-glow" x="-20%" y="-80%" width="140%" height="260%">
                 <feDropShadow dx="0" dy="0" stdDeviation="0.8" floodColor="#8fcfff" floodOpacity="0.28" />
                 <feDropShadow dx="0" dy="0" stdDeviation="0.9" floodColor="#f6d985" floodOpacity="0.24" />
               </filter>
@@ -151,17 +155,17 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, projectName }) {
             <text
               x="0"
               y="12.2"
-              fill="url(#Belrog-bottombar-gradient)"
+              fill="url(#velorn-bottombar-gradient)"
               stroke="rgba(255,255,255,0.24)"
               strokeWidth="0.18"
               paintOrder="stroke fill"
-              filter="url(#Belrog-bottombar-glow)"
+              filter="url(#velorn-bottombar-glow)"
               fontFamily="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
               fontSize="13"
               fontWeight="800"
               letterSpacing="0"
             >
-              Belrog
+              Velorn
             </text>
           </svg>
           <ChevronDown
@@ -180,6 +184,16 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, projectName }) {
               {t('bottomBar.leave')}
             </button>
             <div className="h-px bg-sf-dark-600 my-0.5 mx-2" />
+            {onOpenStoryboard && <>
+              <button
+                onClick={() => { setMenuOpen(false); onOpenStoryboard() }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 transition-colors"
+              >
+                <Clapperboard className="w-3.5 h-3.5 text-sf-text-muted" />
+                {t('bottomBar.openStoryboard', undefined, 'Open storyboard')}
+              </button>
+              <div className="h-px bg-sf-dark-600 my-0.5 mx-2" />
+            </>}
             <button
               onClick={handleOpenGettingStarted}
               className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 transition-colors"
@@ -235,4 +249,3 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, projectName }) {
 }
 
 export default BottomBar
-

@@ -131,3 +131,27 @@ test('watched key lists match the save path shape', () => {
   assert.ok(ASSETS_PROJECT_KEYS.includes('assets'))
   assert.ok(PROJECT_STORE_KEYS.includes('currentProject'))
 })
+
+test('selection focus ignores only its own zoom publication and preserves existing dirty', () => {
+  const store = makeFakeStore({ zoom: 100, clips: [], viewportNavigationRevision: 0 })
+  const stop = watchStoreForProjectChanges(store, TIMELINE_PROJECT_KEYS)
+  markProjectClean()
+  store.setState({ zoom: 500, viewportNavigationRevision: 1, viewportNavigation: { zoom: 500 } })
+  assert.equal(isProjectDirty(), false)
+  markProjectDirty()
+  store.setState({ zoom: 100, viewportNavigationRevision: 2, viewportNavigation: { zoom: 100 } })
+  assert.equal(isProjectDirty(), true)
+  markProjectClean()
+  store.setState({ zoom: 200 })
+  assert.equal(isProjectDirty(), true, 'ordinary zoom still follows existing saved-view policy')
+  stop()
+})
+
+test('selection focus revision cannot suppress simultaneous authored changes', () => {
+  const store = makeFakeStore({ zoom: 100, clips: [], viewportNavigationRevision: 0 })
+  const stop = watchStoreForProjectChanges(store, TIMELINE_PROJECT_KEYS)
+  markProjectClean()
+  store.setState({ zoom: 500, clips: [{ id: 'edited' }], viewportNavigationRevision: 1, viewportNavigation: { zoom: 500 } })
+  assert.equal(isProjectDirty(), true)
+  stop()
+})

@@ -178,6 +178,185 @@
     }
   },
   "export": {
+    "readiness": {
+      "checking": "Checking…",
+      "stale": "Refresh needed",
+      "warningCount": "{{count}} warnings",
+      "optional": "Optional",
+      "title": "Before you export",
+      "help": "Check source availability, Optical Flow cache metadata, and possible picture or audio gaps in this range. Warnings are advisory; intentional black and silence are allowed.",
+      "refresh": "Refresh checks",
+      "check": "Check this range",
+      "cancel": "Cancel check",
+      "staleHelp": "The timeline, source records, or export settings changed. Refresh to check the current range.",
+      "failed": "The check could not finish. Try again; no media or project data was changed.",
+      "noWarnings": "No warnings found by these checks.",
+      "warnings": "Export readiness warnings",
+      "inspect": "Inspect",
+      "limitations": "Availability and timeline checks only—not a decode or render test. Source changes and cache fingerprints are validated during export. Refresh after moving files; export safety checks still apply.",
+      "warning": {
+        "invalid-range": {
+          "title": "Choose an export range",
+          "detail": "The selected range has no duration."
+        },
+        "missing-asset": {
+          "title": "Media record is missing",
+          "detail": "“{{name}}” refers to media that is no longer in this project."
+        },
+        "missing-location": {
+          "title": "Media location is missing",
+          "detail": "“{{name}}” has no recorded file location or media URL."
+        },
+        "media-unverified": {
+          "title": "Some media could not be checked",
+          "detail": "File availability could not be checked for “{{name}}”. Browser or remote media needs export validation."
+        },
+        "missing-source": {
+          "title": "Source file is unavailable",
+          "detail": "The recorded source for “{{name}}” was not found or is inaccessible. Relink it in the Editor if needed."
+        },
+        "missing-proxy-source": {
+          "title": "Original source file is unavailable",
+          "detail": "The original for “{{name}}” was not found or is inaccessible. A review proxy may still be available; verify the original before final delivery."
+        },
+        "missing-mask": {
+          "title": "Mask media is unavailable",
+          "detail": "A mask file used by “{{name}}” was not found or is inaccessible."
+        },
+        "optical-unready": {
+          "title": "Optical Flow needs attention",
+          "detail": "The cache for “{{name}}” is unavailable or no longer covers this edit. Review Optical Flow in the Inspector."
+        },
+        "optical-path": {
+          "title": "Optical Flow location is invalid",
+          "detail": "The cache for “{{name}}” does not have a supported project-relative location. Rebuild it in the Inspector."
+        },
+        "optical-unsaved": {
+          "title": "Optical Flow needs a saved project",
+          "detail": "Save the project and review the cache for “{{name}}” in the Inspector."
+        },
+        "optical-signature": {
+          "title": "Optical Flow source is unverified",
+          "detail": "The cache for “{{name}}” has no source fingerprint. Export will require a valid cache built from the current source."
+        },
+        "missing-optical": {
+          "title": "Optical Flow file is unavailable",
+          "detail": "The cache file for “{{name}}” was not found or is inaccessible. Rebuild it in the Inspector."
+        },
+        "file-unverified": {
+          "title": "File availability could not be checked",
+          "detail": "The recorded file for “{{name}}” could not be checked. No media has been changed."
+        },
+        "picture-gap": {
+          "title": "Possible picture gap",
+          "detail": "No active picture clip covers this interval. Black or transparency may be intentional."
+        },
+        "picture-tail": {
+          "title": "Possible blank ending",
+          "detail": "No active picture clip covers the end of this export range. Black or transparency may be intentional."
+        },
+        "no-audio": {
+          "title": "No active audio clips in this range",
+          "detail": "Audio is requested, but no enabled, audible audio clips were found. Silence may be intentional."
+        },
+        "master-muted": {
+          "title": "Master audio is muted",
+          "detail": "The master volume is zero. Audio is requested, but the output will be silent."
+        },
+        "compound-unverified": {
+          "title": "Compound could not be checked",
+          "detail": "“{{name}}” has unsupported compound contents or timing. Review it in the Editor before exporting."
+        }
+      }
+    },
+    "overview": {
+      "regionLabel": "Export timeline overview",
+      "title": "Timeline overview",
+      "readOnly": "Read-only",
+      "fullTimeline": "Full timeline",
+      "inOut": "In / Out",
+      "audioTrack": "Audio {{number}}",
+      "videoTrack": "Video {{number}}",
+      "audioClip": "Audio clip",
+      "clip": "Clip",
+      "timecodeHint": "Timecode uses non-drop-frame numbering.",
+      "frameRate": "{{fps}} fps",
+      "muted": "Muted",
+      "hidden": "Hidden",
+      "excludedBySolo": "Excluded by solo",
+      "inactive": "Inactive",
+      "empty": "No clips on this timeline",
+      "startBoundary": "First frame of the export range",
+      "endBoundary": "The Out boundary is exclusive; its frame is not exported.",
+      "scrubLabel": "Scrub export preview",
+      "scrubValue": "{{timecode}} at {{fps}} frames per second, non-drop-frame"
+    },
+    "deliveryPresets": {
+      "title": "Delivery presets",
+      "more": "More presets",
+      "customHelp": "Adjust the settings below, or choose a preset as a starting point.",
+      "hdLimit": "YouTube HD limit",
+      "uhdLimit": "YouTube 4K limit",
+      "sizeHelp": "Fits within HD or 4K while keeping the timeline’s orientation. Smaller timelines are not enlarged.",
+      "items": {
+        "youtube-1080p": {
+          "label": "YouTube 1080p",
+          "detail": "Up to HD · MP4",
+          "summary": "H.264 upload with an HD size cap. Keeps aspect ratio and project FPS; never enlarges."
+        },
+        "youtube-4k": {
+          "label": "YouTube 4K",
+          "detail": "Up to 4K · MP4",
+          "summary": "H.264 upload with a 4K size cap. Keeps aspect ratio and project FPS; never enlarges."
+        },
+        "h264-master": {
+          "label": "H.264 Master",
+          "detail": "High-quality MP4",
+          "summary": "High-quality H.264 at project size, with CRF 16 and source media."
+        },
+        "prores-master": {
+          "label": "ProRes Master",
+          "detail": "ProRes HQ · MOV",
+          "summary": "Large, editing-friendly ProRes HQ MOV at project size."
+        },
+        "review-copy": {
+          "label": "Review Copy",
+          "detail": "Small, quick sharing",
+          "summary": "Smaller half-resolution review MP4. Uses available proxies for quicker renders."
+        }
+      }
+    },
+    "workspace": {
+      "preview": "Timeline preview",
+      "previewHelp": "Review at timeline settings. Export resolution, encoding and audio settings are applied when rendering.",
+      "hideQueue": "Hide queue",
+      "resizeSettings": "Resize export settings",
+      "resizeQueue": "Resize export queue",
+      "resizePanelHelp": "Drag to resize. Double-click or press Enter to reset. Arrow keys adjust width; hold Shift for larger steps.",
+      "showQueue": "Show queue",
+      "customPreset": "Custom settings",
+      "width": "Width",
+      "height": "Height",
+      "audioSettings": "Audio settings",
+      "advancedEncoding": "Advanced encoding",
+      "encodingPerformance": "Encoding & performance",
+      "handoff": "Send to another editor",
+      "duration": "Duration",
+      "missingMarks": "Set both In/Out marks in the editor to use that range.",
+      "missingMarksFallback": "In/Out marks are missing; the full timeline will be exported.",
+      "collapsedMarks": "In and Out are at the same position. Set distinct marks in the editor or choose Full Timeline.",
+      "queueHelp": "Jobs use the current timeline and In/Out marks when started. Save locations are chosen at export.",
+      "pauseAfterCurrent": "Pause after current",
+      "clearQueue": "Clear queue",
+      "exportNow": "Export now",
+      "status": {
+        "queued": "Queued",
+        "rendering": "Rendering",
+        "completed": "Completed",
+        "failed": "Failed",
+        "stopped": "Stopped"
+      }
+    },
     "title": "Export",
     "headerReady": "Queue + settings ready",
     "ready": "Ready to export",
@@ -186,7 +365,7 @@
     "presets": "Export presets",
     "presetsHelp": "Presets change render settings only. Filename and range stay as-is.",
     "reset": "Reset defaults",
-    "resetHelp": "Reset export settings to the default Belrog export setup",
+    "resetHelp": "Reset export settings to the default Velorn export setup",
     "presetSummaries": {
       "balanced-mp4": "Clean everyday export, project size, H.264.",
       "fast-nvenc": "Fast H.264 delivery for NVIDIA systems.",
@@ -203,7 +382,7 @@
     "rangeFull": "Full Timeline",
     "rangeInOut": "In/Out Range",
     "outputLocationHelp": "Output location will be chosen when export starts.",
-    "pngOutputLocationHelp": "Choose a parent location when export starts. Belrog will create {{name}}_png with frames named {{name}}_000001.png and onward.",
+    "pngOutputLocationHelp": "Choose a parent location when export starts. Velorn will create {{name}}_png with frames named {{name}}_000001.png and onward.",
     "render": "Render",
     "singleClip": "Single clip",
     "individualClips": "Individual clips",
@@ -323,16 +502,18 @@
   },
   "topTabs": {
     "navigation": "Workspace modes",
+    "storyboard": "Storyboard",
     "editor": "Editor",
-    "generate": "Generate",
+    "generate": "Director",
     "agent": "Agent",
     "flow-ai": "Flow AI",
     "mog": "MoGraph",
     "stock": "Stock",
-    "discover": "Discover",
+    "discover": "Tutorials",
     "export": "Export"
   },
   "bottomBar": {
+    "openStoryboard": "Open storyboard",
     "saveProject": "Save Project",
     "undo": "Undo",
     "redo": "Redo",
@@ -342,6 +523,9 @@
     "minimize": "Minimize",
     "maximize": "Maximize",
     "projectSelection": "Project Selection"
+  },
+  "storyboard": {
+    "backToEditor": "Back to editor"
   },
   "inspector": {
     "title": "Inspector",
@@ -359,9 +543,9 @@
   },
   "welcome": {
     "browserUnsupported": "Browser Not Supported",
-    "browserUnsupportedHelp": "Belrog requires the File System Access API. Please use Google Chrome or Microsoft Edge.",
+    "browserUnsupportedHelp": "Velorn requires the File System Access API. Please use Google Chrome or Microsoft Edge.",
     "setupWorkspace": "Set Up Your Workspace",
-    "setupWorkspaceHelp": "Choose a folder where your Belrog projects and media will be stored. Each project will have its own subfolder with all assets and imported media organized inside.",
+    "setupWorkspaceHelp": "Choose a folder where your Velorn projects and media will be stored. Each project will have its own subfolder with all assets and imported media organized inside.",
     "currentLocation": "Current location:",
     "chooseProjectsFolder": "Choose Projects Folder",
     "changeLater": "You can change this later in Settings",
@@ -369,9 +553,9 @@
     "openLatestAutosaveFor": "Open latest autosave for {{project}}",
     "openProject": "Open Project",
     "newProject": "New Project",
-    "discover": "Discover",
-    "discoverHelp": "Explore videos made with Belrog and learn from tutorials.",
-    "discoverLoading": "Loading Discover...",
+    "discover": "Tutorials",
+    "discoverHelp": "Short videos that teach Velorn.",
+    "discoverLoading": "Loading tutorials...",
     "selectProject": "Select a project",
     "noRecentProjects": "No recent projects",
     "createFirstProject": "Create your first project to get started",
@@ -381,76 +565,23 @@
     "dismiss": "Dismiss"
   },
   "discover": {
-    "title": "Discover",
-    "subtitle": "See what creators make with Belrog and learn the workflows behind it.",
-    "visibilityHint": "You can hide the Discover tab anytime in Settings → Appearance.",
-    "tabs": {
-      "featured": "Featured",
-      "showcase": "Made with Belrog",
-      "tutorials": "Tutorials"
-    },
-    "sections": {
-      "featured": "Featured",
-      "featuredDescription": "A curated mix of standout community work and practical lessons.",
-      "showcase": "Made with Belrog",
-      "showcaseDescription": "Videos created or edited by the Belrog community.",
-      "tutorials": "Tutorials",
-      "tutorialsDescription": "Learn Belrog through focused, practical walkthroughs."
+    "title": "Tutorials",
+    "subtitle": "Short videos that teach Velorn, one part at a time.",
+    "visibilityHint": "You can hide the Tutorials tab anytime in Settings → Appearance.",
+    "groups": {
+      "start": "Getting started",
+      "tabs": "The tabs",
+      "editor": "The Editor, step by step",
+      "project": "A whole project"
     },
     "actions": {
       "watch": "Watch {{title}}",
       "openYouTube": "Open on YouTube",
-      "submit": "Submit a YouTube video",
-      "retry": "Retry",
       "close": "Close"
-    },
-    "labels": {
-      "by": "By {{creator}}"
     },
     "player": {
       "title": "YouTube video: {{title}}",
-      "privacy": "Thumbnails are provided by YouTube. Belrog loads the player only after you choose to watch a video."
-    },
-    "states": {
-      "loading": "Loading Discover...",
-      "offline": "Showing saved Discover content. New videos may appear when you are back online.",
-      "error": "Could not load Discover right now.",
-      "empty": "There is nothing in this section yet."
-    },
-    "submit": {
-      "title": "Submit your work",
-      "body": "Share a YouTube video made with Belrog. Every submission is reviewed before anything is featured.",
-      "youtubeUrl": "YouTube URL",
-      "youtubePlaceholder": "https://www.youtube.com/watch?v=...",
-      "creator": "Creator or display name",
-      "creatorPlaceholder": "How should we credit you?",
-      "category": "Category",
-      "categories": {
-        "musicVideo": "Music video",
-        "podcast": "Podcast",
-        "shortFilm": "Short film",
-        "social": "Social video",
-        "ad": "Advertisement",
-        "animation": "Animation",
-        "other": "Other"
-      },
-      "description": "How did you use Belrog?",
-      "descriptionPlaceholder": "Tell us briefly which parts of the project you made or edited in Belrog.",
-      "email": "Contact email",
-      "emailPlaceholder": "you@example.com",
-      "rights": "I own this work or have the authorization required to submit and share it.",
-      "featurePermission": "Belrog may feature the video title, thumbnail, link, description, and creator attribution.",
-      "reviewNote": "Submissions go to a private moderation queue and are never published automatically.",
-      "requiredFields": "Complete the video, creator, description, and contact fields.",
-      "permissionsRequired": "Confirm both permissions before submitting.",
-      "invalidYouTube": "Enter a valid YouTube video URL.",
-      "tooLong": "Please shorten the description and try again.",
-      "sendFailed": "Could not send the submission. Try again later.",
-      "submitting": "Submitting...",
-      "submit": "Submit for review",
-      "successTitle": "Submitted for review",
-      "successBody": "Thank you. The Belrog team will review your submission; it will not be published automatically.",
-      "submitAnother": "Submit another"
+      "privacy": "Thumbnails are provided by YouTube. Velorn loads the player only after you choose to watch a video."
     }
   },
   "settings": {
@@ -461,18 +592,18 @@
     "saveHelp": "Some settings save as you edit. Use Save Settings to persist shared preferences and shortcuts.",
     "saveHelpWorkflow": "Workflow installs happen in the panel above. Save Settings only persists shared preferences and shortcuts.",
     "languageLabel": "Display language",
-    "languageHelp": "Choose the language used by Belrog. The change applies immediately.",
+    "languageHelp": "Choose the language used by Velorn. The change applies immediately.",
     "fallbackHelp": "Missing translations automatically fall back to English.",
     "sections": {
       "storage": { "title": "Projects & Storage", "description": "Choose where projects live and control auto-save behavior." },
       "stock": { "title": "Stock (Pexels)", "description": "Manage stock-media search credentials." },
       "connection": { "title": "ComfyUI Connection", "description": "Configure the local ComfyUI endpoint, partner API key, and advanced tab visibility." },
       "agents": { "title": "Agents (MCP)", "description": "Connect Claude, Codex, Cursor, or other MCP clients to the open project." },
-      "launcher": { "title": "ComfyUI Launcher", "description": "Let Belrog start, stop, and restart your local ComfyUI process." },
+      "launcher": { "title": "ComfyUI Launcher", "description": "Let Velorn start, stop, and restart your local ComfyUI process." },
       "paths": { "title": "File Paths", "description": "Review output and workflow path settings." },
       "workflow-setup": { "title": "Workflow Setup", "description": "Scan workflows, review missing dependencies, and install curated models or node packs." },
-      "language": { "title": "Language", "description": "Choose the language used in the Belrog interface." },
-      "appearance": { "title": "Appearance", "description": "Customize Belrog's theme and workspace navigation." },
+      "language": { "title": "Language", "description": "Choose the language used in the Velorn interface." },
+      "appearance": { "title": "Appearance", "description": "Customize Velorn's theme and workspace navigation." },
       "notifications": { "title": "Notifications", "description": "Control completion sounds and lightweight app alerts." },
       "hotkeys": { "title": "Hotkeys", "description": "Customize editor shortcuts and apply familiar keymap presets." },
       "project": { "title": "New Project Defaults", "description": "Set default resolution and frame rate for new projects." },
@@ -487,7 +618,7 @@
       "autoSave": "Auto-save",
       "autoSaveHelp": "Save every 30 sec",
       "reopenLastProject": "Reopen last project on startup",
-      "reopenLastProjectHelp": "When off, Belrog opens to the project picker.",
+      "reopenLastProjectHelp": "When off, Velorn opens to the project picker.",
       "showHero": "Show hero background on project picker",
       "showHeroHelp": "Cinematic image at the top of the project picker. Turn off for a minimal look.",
       "cache": {
@@ -509,6 +640,22 @@
         "failedSuffix": ", {{count}} failed",
         "rebuildFailed": "Playback cache rebuild failed."
       }
+    },
+    "comfySetup": {
+      "title": "Connect ComfyUI",
+      "openHelp": "Open ComfyUI on this computer, then find it here. In Comfy Desktop, start the local instance you want to use. No launcher script is required.",
+      "find": "Find running ComfyUI",
+      "choose": "Choose the local connection to use. Finding it does not change your settings.",
+      "ready": "ComfyUI is ready",
+      "connect": "Connect",
+      "notFound": "No running ComfyUI found on the usual local ports. Open ComfyUI, finish its setup, start a local instance, then try again. If it uses another port, enter it below.",
+      "manual": "Enter a port manually",
+      "port": "ComfyUI port",
+      "testConnect": "Test and connect",
+      "connected": "Connected to ComfyUI on port {{port}}.",
+      "failed": "Could not connect. Please try again.",
+      "advanced": "Advanced connection settings",
+      "localOnly": "Local connection only. This does not install anything, launch ComfyUI, or generate media. Your editor works without ComfyUI."
     },
     "connection": {
       "localPort": "Local ComfyUI Port",
@@ -535,7 +682,7 @@
         "invalidPort": "Invalid local ComfyUI port. Enter a number from 1 to 65535.",
         "testing": "Testing {{endpoint}}...",
         "connected": "Connected to {{endpoint}}",
-        "http403": "ComfyUI returned HTTP 403. Enable CORS or use Belrog's built-in launcher.",
+        "http403": "ComfyUI returned HTTP 403. Enable CORS or use Velorn's built-in launcher.",
         "httpError": "ComfyUI returned HTTP {{status}}.",
         "connectFailed": "Could not connect to {{endpoint}}.",
         "resetFailed": "Could not reset local ComfyUI port.",
@@ -547,6 +694,15 @@
     },
     "launcher": {
       "desktopOnly": "ComfyUI Launcher is only available in the desktop build.",
+      "connectedExternally": "Connected externally",
+      "connectedManaged": "Connected · managed by Velorn",
+      "externalConnectionHelp": "ComfyUI is connected. Open its app or terminal to stop or restart it; generation does not require Velorn to manage startup.",
+      "optionalStartup": "Let Velorn start ComfyUI (optional)",
+      "optionalStartupHelp": "Already open ComfyUI yourself? Keep using it that way. To start it here instead, choose a detected installation or browse for your launch script.",
+      "noAppOptional": "No app selected. Browse for ComfyUI.app, or open it yourself and connect above.",
+      "noScriptOptional": "No launch script selected. You can still open ComfyUI yourself and connect above.",
+      "scriptChoiceHelp": "Choose the script you normally use to start ComfyUI, such as a .bat file on Windows or a .sh file on Linux/macOS. For a desktop app, open the app and start the instance you want to use.",
+      "detectedInstallations": "Detected installations",
       "saveFailed": "Failed to save launcher settings.",
       "actionFailed": "Action failed.",
       "states": {
@@ -571,43 +727,43 @@
       "stop": "Stop",
       "restart": "Restart",
       "refresh": "Re-probe ComfyUI",
-      "externalHelp": "ComfyUI is already running, but Belrog did not start it. Stop it from the window where you launched it, then select Start to let Belrog manage it. This enables automatic restarts after node-pack installs.",
+      "externalHelp": "ComfyUI is already running, but Velorn did not start it. Stop it from the window where you launched it, then select Start to let Velorn manage it. This enables automatic restarts after node-pack installs.",
       "mode": "Launcher mode",
       "macAppHelp": "Open the official Mac app and connect when it is ready.",
       "script": "Script",
       "scriptHelp": "Run a custom .sh launcher or standalone ComfyUI installation.",
       "useDefault": "Use default",
       "browse": "Browse...",
-      "noApp": "No app configured. Select ComfyUI.app to let Belrog open it for you.",
-      "macBehaviorHelp": "Belrog opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.",
+      "noApp": "No app configured. Select ComfyUI.app to let Velorn open it for you.",
+      "macBehaviorHelp": "Velorn opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.",
       "background": "Launch in background",
       "backgroundHelp": "Open ComfyUI.app hidden so the embedded ComfyUI tab stays front and center.",
       "backgroundToggle": "Toggle background launch for ComfyUI.app",
       "launcherScript": "Launcher script",
-      "noLauncher": "No launcher configured. Pick your run_nvidia_gpu.bat (or equivalent) to let Belrog start ComfyUI for you.",
+      "noLauncher": "No launcher configured. Pick your run_nvidia_gpu.bat (or equivalent) to let Velorn start ComfyUI for you.",
       "detectedNearby": "Detected near your ComfyUI folder",
       "behavior": "Behavior",
-      "autoStart": "Auto-start ComfyUI when Belrog launches",
-      "autoStartHelp": "Off by default. When enabled, Belrog starts ComfyUI automatically as soon as the app opens.",
+      "autoStart": "Auto-start ComfyUI when Velorn launches",
+      "autoStartHelp": "Off by default. When enabled, Velorn starts ComfyUI automatically as soon as the app opens.",
       "autoStartToggle": "Toggle auto-start",
-      "keepRunning": "Keep ComfyUI running after Belrog quits",
-      "keepRunningHelp": "When enabled, closing Belrog leaves ComfyUI open in the background without asking.",
+      "keepRunning": "Keep ComfyUI running after Velorn quits",
+      "keepRunningHelp": "When enabled, closing Velorn leaves ComfyUI open in the background without asking.",
       "keepRunningToggle": "Toggle keeping ComfyUI running after quit",
       "noBrowser": "Do not open ComfyUI in a browser tab on start",
-      "noBrowserHelpBefore": "On by default. Belrog passes",
+      "noBrowserHelpBefore": "On by default. Velorn passes",
       "noBrowserHelpAfter": "so the classic ComfyUI tab does not steal focus each time it boots.",
       "noBrowserToggle": "Toggle disabling auto-launch",
       "advanced": "Advanced",
       "timeout": "Startup timeout (seconds)",
       "timeoutHelpBefore": "If ComfyUI has not responded on",
-      "timeoutHelpAfter": "within this many seconds after launch, Belrog will give up and stop the process.",
+      "timeoutHelpAfter": "within this many seconds after launch, Velorn will give up and stop the process.",
       "extraArgs": "Extra arguments",
       "extraArgsHelp": "Appended to the launcher script. Quoted strings are kept together.",
       "logs": "Logs",
       "openLogViewer": "Open log viewer",
       "openLogFile": "Open log file",
       "noLog": "No log file written this session yet.",
-      "connectionHelpBefore": "Belrog talks to ComfyUI on",
+      "connectionHelpBefore": "Velorn talks to ComfyUI on",
       "connectionHelpMiddle": ". Change the port in",
       "connectionHelpAfter": "if you need a different one.",
       "working": "Working..."
@@ -633,7 +789,7 @@
         "failed": "Could not connect to {{endpoint}}{{detail}}"
       },
       "comfyFolder": "ComfyUI Folder",
-      "comfyFolderHelp": "Auto-install needs the root of your local ComfyUI install so Belrog knows where to place custom nodes and models.",
+      "comfyFolderHelp": "Auto-install needs the root of your local ComfyUI install so Velorn knows where to place custom nodes and models.",
       "choose": "Choose",
       "clear": "Clear",
       "folderValid": "ComfyUI folder looks valid.",
@@ -675,7 +831,7 @@
       "theme": "Theme",
       "active": "Active",
       "themes": {
-        "Belrog": "Default brand theme with deep blues, violet, and readable old-gold accents",
+        "velorn": "Default brand theme with deep blues, violet, and readable old-gold accents",
         "midnight": "Neutral dark grey inspired by DaVinci Resolve",
         "soft-dark": "Softer contrast with a subtle cool-purple tint",
         "high-contrast": "Maximum readability with vivid blue accent",
@@ -684,14 +840,18 @@
       },
       "timelineThumbnails": "Timeline clip thumbnails",
       "timelineThumbnailsHelp": "Turn off for heavy edits so clips draw as lightweight colored blocks.",
-      "discoverTab": "Show Discover tab",
-      "discoverTabHelp": "Keep a shortcut to community work and tutorials in the top tab bar.",
-      "hideDiscoverTab": "Hide the Discover tab",
-      "showDiscoverTab": "Show the Discover tab"
+      "discoverTab": "Show Tutorials tab",
+      "generateTab": "Show Director tab",
+      "generateTabHelp": "Hide the tab for an agent-first layout. ComfyUI, agent tools and the generation queue remain available. You can show it again anytime.",
+      "discoverTabHelp": "Keep the tutorial videos one click away in the top tab bar.",
+      "hideDiscoverTab": "Hide the Tutorials tab",
+      "showDiscoverTab": "Show the Tutorials tab",
+      "otherTabs": "Other tabs",
+      "otherTabsHelp": "Switch off the tabs you do not use. Editor and Export always stay."
     },
     "notifications": {
       "completionSound": "Generation complete sound",
-      "completionSoundHelp": "Play a short sound when the Generate queue finishes.",
+      "completionSoundHelp": "Play a short sound when the generation queue finishes.",
       "volume": "Volume",
       "volumeHelp": "0 is muted, 10 is loudest.",
       "off": "Off",
@@ -723,6 +883,7 @@
       },
       "actions": {
         "timeline": {
+          "playAround": "Play around edit",
           "selectToEnd": "Select clips from playhead to end",
           "selectFromStart": "Select clips from start to playhead",
           "splitActive": "Split at playhead on active track",
@@ -738,6 +899,7 @@
           "previousMarker": "Jump to previous marker",
           "nextMarker": "Jump to next marker",
           "frameAll": "Frame all timeline content",
+          "zoomToSelection": "Zoom to selection / restore previous view",
           "zoomOut": "Zoom out timeline",
           "zoomIn": "Zoom in timeline",
           "openMoveBy": "Open Move By dialog",
@@ -913,7 +1075,7 @@
     "no": "no",
     "categories": { "bug": "Bug", "idea": "Idea", "other": "Other" },
     "diagnostics": {
-      "appVersion": "Belrog version", "platform": "Platform", "os": "OS",
+      "appVersion": "Velorn version", "platform": "Platform", "os": "OS",
       "gpu": "GPU", "comfyConnected": "ComfyUI connected", "screen": "Screen"
     }
   },
@@ -941,8 +1103,17 @@
     "lineSummary": "{{visible}} of {{total}} lines{{rolling}}{{paused}}"
   },
   "launcherChip": {
+    "connectedExternally": "Connected externally",
+    "externalConnectionHelp": "ComfyUI is connected. You can generate normally. Use its app or terminal to stop or restart it, or recheck whether Velorn can safely manage it.",
+    "recheckControls": "Recheck controls",
+    "optionalStartup": "Let Velorn start ComfyUI (optional)",
+    "optionalStartupHelp": "Choose an installation only if you want to start it from Velorn. Otherwise, open ComfyUI yourself and use Find running ComfyUI to connect.",
+    "noAppOptional": "No app selected. Browse for ComfyUI.app, or open it yourself and connect.",
+    "noScriptOptional": "No launch script selected. Open ComfyUI yourself and connect, or browse for the .bat or .sh script you normally use.",
+    "detectedInstallations": "Detected installations",
+    "troubleshootingLogs": "Troubleshooting and logs",
     "states": { "unknown": "ComfyUI", "idle": "offline", "starting": "Starting…", "running": "Running", "external": "External", "stopping": "Stopping…", "stopped": "Stopped", "crashed": "Crashed" },
-    "summary": { "unavailable": "Launcher unavailable (not Electron).", "running": "Running • pid {{pid}}{{uptime}}", "up": "up", "external": "External process detected at {{endpoint}}", "notRunning": "ComfyUI is not running.", "unknown": "ComfyUI status unknown." },
+    "summary": { "unavailable": "Launcher unavailable (not Electron).", "running": "Running • pid {{pid}}{{uptime}}", "up": "up", "external": "External process detected at {{endpoint}}", "notRunning": "ComfyUI is not running.", "unknown": "ComfyUI status unknown.", "managedApp": "Connected · ComfyUI.app managed by Velorn{{uptime}}", "managed": "Connected · managed by Velorn{{uptime}}", "connectedExternal": "Connected at {{endpoint}} · startup managed outside Velorn" },
     "reprobeHelp": "Re-probe ComfyUI", "start": "Start", "stop": "Stop", "restart": "Restart", "script": "Launcher script", "pickScript": "Pick a .bat / .sh launcher script", "browse": "Browse", "logTail": "Log tail", "openViewerHelp": "Open the full log viewer with search and filters", "openViewer": "Open log viewer", "noLogFile": "No log file written yet", "openLogFile": "Open log file", "noLogs": "No log output yet. Logs appear when ComfyUI starts.", "manage": "Manage in Settings → ComfyUI Launcher", "apiKeySet": "API key set", "apiKeyNeeded": "API key needed", "apiKeySetHelp": "Cloud API key is set. Click to manage.", "apiKeyNeededHelp": "Set up your Comfy.org API key to unlock cloud workflows."
   },
   "preview": {
@@ -957,7 +1128,7 @@
     }
   },
   "generate": {
-    "mode": { "generate": "Generate", "director": "Director" },
+    "mode": { "generate": "Generate", "director": "Director", "backToDirector": "Back to Director" },
     "browser": {
       "tabs": { "featured": "Featured", "custom": "My Workflows", "templates": "Templates" },
       "searchTemplates": "Search ComfyUI templates, models, tags...",
@@ -1018,7 +1189,7 @@
   "gettingStarted": {
     "badge": "Getting Started",
     "title": "Get from install to first generation",
-    "intro": "Belrog can run local, cloud, and hybrid AI workflows. This guide keeps the first-run path simple: choose how you want to connect, prepare the workflows you need, then start creating.",
+    "intro": "Velorn can run local, cloud, and hybrid AI workflows. This guide keeps the first-run path simple: choose how you want to connect, prepare the workflows you need, then start creating.",
     "closeAria": "Close getting started",
     "project": "Project",
     "untitled": "Untitled",
@@ -1027,7 +1198,7 @@
     "setupChecklist": "Setup Checklist",
     "quickTour": "Quick Tour",
     "choosePath": "Choose your setup path",
-    "choosePathHelp": "Use Quick Start if you want Belrog to guide you through a starter kit. Use Bring Your Own ComfyUI if you already have a custom ComfyUI install and just need Belrog pointed at it.",
+    "choosePathHelp": "Use Quick Start if you want Velorn to guide you through a starter kit. Use Bring Your Own ComfyUI if you already have a custom ComfyUI install and just need Velorn pointed at it.",
     "quickStartSetup": "Quick Start Setup",
     "bringComfy": "Bring Your Own ComfyUI",
     "status": {
@@ -1056,7 +1227,7 @@
     },
     "connection": {
       "title": "Local ComfyUI connection",
-      "description": "Belrog talks to a local ComfyUI server on localhost only. If generations fail immediately, check the saved port first.",
+      "description": "Velorn talks to a local ComfyUI server on localhost only. If generations fail immediately, check the saved port first.",
       "savedEndpoint": "Saved endpoint: {{endpoint}}",
       "portHelp": "If your ComfyUI window uses a different port, update it in Settings before generating."
     },
@@ -1065,7 +1236,7 @@
       "description": "Each workflow can require custom nodes, models, or a partner API key even though the workflow file is already bundled in the app.",
       "status": "Use Workflow Setup",
       "help1": "Open Settings > Workflow Setup to scan every built-in workflow at once.",
-      "help2": "Use Generate for workflow-specific fallback tools such as Load in ComfyUI and per-workflow Re-check.",
+      "help2": "Scan again after you install models or nodes.",
       "help3": "This is the fastest way to find why a workflow works on one machine but not another.",
       "action": "Workflow Setup"
     },
@@ -1095,8 +1266,8 @@
     "tour": {
       "intro": "This quick orientation answers where to go next. Detailed editing and prompting techniques can be learned from the videos.",
       "editorTitle": "Editor workspace", "editorDescription": "This is the day-to-day editing view once media is inside the project.",
-      "editor1": "Assets panel: import videos, audio, and images, then drag them to the timeline.", "editor2": "Preview: review media and send a frame to Generate as a starting keyframe.", "editor3": "Timeline: trim, ripple, snap, markers, and arrange your cut.", "editor4": "Inspector: transform, crop, timing, effects, text, and adjustments for the selected item.", "openEditor": "Open Editor",
-      "generateTitle": "Generate", "generateDescription": "Create images, videos, or audio with local or cloud workflows.", "generate1": "Single mode is for one-off image, video, or audio jobs.", "generate2": "Director mode walks through Setup, Script, Keyframes, and Videos.", "generate3": "If a workflow is missing models or nodes, use Re-check before you queue anything.",
+      "editor1": "Assets panel: import videos, audio, and images, then drag them to the timeline.", "editor2": "Preview: review media and use a frame as a starting keyframe for AI.", "editor3": "Timeline: trim, ripple, snap, markers, and arrange your cut.", "editor4": "Inspector: transform, crop, timing, effects, text, and adjustments for the selected item.", "openEditor": "Open Editor",
+      "generateTitle": "Director", "generateDescription": "Make ads, music videos, and short films step by step.", "generate1": "Pick what to make: an ad, a music video, or a short film.", "generate2": "Director walks through Setup, Script, Keyframes, and Videos.", "generate3": "If models or nodes are missing, open Settings > Workflow Setup.",
       "stockTitle": "Stock", "stockDescription": "Search Pexels and import footage or stills directly into the current project.", "stock1": "Best used when you need quick placeholder footage, inspiration, or background plates.", "stock2": "Requires a Pexels API key in Settings.", "openStock": "Open Stock",
       "exportTitle": "Export", "exportDescription": "Render the current timeline to a deliverable file and manage the export queue.", "export1": "Choose format, codec, render range, resolution, FPS, and audio settings.", "export2": "Queue multiple exports if you want a few output variants.", "openExport": "Open Export",
       "settingsTitle": "Settings", "settingsDescription": "Return here whenever the machine-specific setup changes.", "settings1": "Projects folder, ComfyUI port, Comfy account API key, Pexels key, and new-project defaults all live here.", "settings2": "If something works on one machine and not another, this is the first place to compare."
@@ -1107,7 +1278,7 @@
       "testing": "Testing...",
       "testConnection": "Test Connection",
       "connectionSettings": "Connection Settings",
-      "openGenerate": "Open Generate"
+      "openGenerate": "Open Director"
     }
   },
   "timelineEditor": {
@@ -1146,6 +1317,7 @@
       "toolTrim": "Trim clip heads/tails from their edges.",
       "toolRazor": "Click any clip to split it at the cursor.",
       "toolSlip": "Drag inside a video/audio clip to slip source timing without moving it.",
+      "toolSlide": "Slide a clip between two touching neighbors. Its source and duration stay unchanged; the neighboring edges trim together.",
       "snapping": "Snapping {{state}} ({{shortcut}} to toggle)",
       "ripple": "Ripple Edit {{state}} ({{shortcut}} to toggle) - Moving clips shifts subsequent clips",
       "generateMusic": "Generate music with ACE-Step — duration prefills from the in/out range",
@@ -1155,6 +1327,9 @@
       "durationBy": "Change selected clip duration by an exact signed amount{{shortcut}}",
       "moreTools": "More tools",
       "frameAll": "Frame all – fit timeline or all clips in view",
+      "zoomToSelection": "Zoom to Selection",
+      "restoreSelectionView": "Restore Previous View",
+      "zoomToSelectionHelp": "Fit selected clips; repeat to restore the previous zoom and scroll position",
       "trackHeightCompact": "Compact tracks — fit the most tracks on screen",
       "trackHeightNormal": "Normal track height",
       "trackHeightTall": "Tall tracks — room for waveforms and keyframes",
@@ -1164,7 +1339,7 @@
   },
   "apiKey": {
     "title": "Cloud Workflows · Comfy.org API key",
-    "subtitle": "Unlocks the cloud-rendered workflows that ship with Belrog.",
+    "subtitle": "Unlocks the cloud-rendered workflows that ship with Velorn.",
     "unlocks": "Unlocks",
     "coverage": "One key covers all of them. You pay Comfy.org per generation (usually a few cents).",
     "alreadySaved": "A key is already saved",
@@ -1185,7 +1360,7 @@
     "saveFailed": "Could not save the key.",
     "removeFailed": "Could not remove the key.",
     "openFailed": "Could not open your browser. Visit platform.comfy.org manually.",
-    "storagePrefix": "Your key is stored locally on this machine in Belrog's settings. Belrog attaches it as",
+    "storagePrefix": "Your key is stored locally on this machine in Velorn's settings. Velorn attaches it as",
     "storageSuffix": "when it queues a cloud-workflow prompt — it never leaves your computer except to reach Comfy.org.",
     "replace": "Replace key",
     "save": "Save key"

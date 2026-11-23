@@ -18,7 +18,8 @@ import {
 import { useTimelineStore } from './timelineStore'
 import { useAssetsStore } from './assetsStore'
 import { captureAndSaveProjectThumbnail } from '../utils/projectThumbnail'
-import { markProjectClean } from '../services/projectDirtyTracker'
+import { markProjectClean, markProjectDirty } from '../services/projectDirtyTracker'
+import { normalizeStoryboard } from '../utils/storyboard.mjs'
 import {
   createDefaultFlowAiProjectData,
   normalizeFlowAiProjectData,
@@ -85,6 +86,13 @@ const createDefaultTimeline = (name = 'Timeline 1', id = null, settings = null) 
 
 const MAX_PROJECT_HISTORY_SIZE = 25
 
+// Focus is a view of an embedded document, never a project timeline. Commit
+// its one parent checkpoint before any operation that changes that identity.
+const finishCompoundFocus = () => {
+  const timeline = useTimelineStore.getState()
+  return !timeline.compoundEditContext || timeline.closeCompound().ok
+}
+
 const cloneProjectHistoryValue = (value) => JSON.parse(JSON.stringify(value))
 
 const createTimelineStructureSnapshot = (state) => {
@@ -107,6 +115,21 @@ const areTimelineStructureSnapshotsEqual = (a, b) => {
   if (!a || !b) return false
   return JSON.stringify(a) === JSON.stringify(b)
 }
+
+// Project history is shared with timeline structure edits, but storyboard
+// entries restore only the board. They must never reload or replace a timeline.
+const createStoryboardSnapshot = state => ({ type: 'storyboard',
+  present: state.currentProject.storyboard !== undefined,
+  ...(state.currentProject.storyboard !== undefined
+    ? { storyboard: cloneProjectHistoryValue(state.currentProject.storyboard) } : {}) })
+const restoreStoryboardSnapshot = (project, snapshot) => {
+  const next = { ...project }
+  if (snapshot.present) next.storyboard = cloneProjectHistoryValue(snapshot.storyboard)
+  else delete next.storyboard
+  return next
+}
+const projectHistoryTimestamp = state => Math.max(Date.now(), (state.projectHistoryLastChangedAt || 0) + 1,
+  (useTimelineStore.getState().historyLastChangedAt || 0) + 1)
 
 /**
  * Helper to get display name from path or handle
@@ -198,6 +221,7 @@ const hydrateOpenedProjectSession = async (projectHandleOrPath, rawProjectData, 
     projectHistory: [],
     projectFuture: [],
     projectHistoryLastChangedAt: 0,
+    storyboardRevision: (state.storyboardRevision || 0) + 1,
     recentProjects: [recentProject, ...state.recentProjects.filter((p) => p.name !== projectData.name)].slice(0, 10),
     isLoading: false,
     error: null,
@@ -247,9 +271,10 @@ export const useProjectStore = create(
       currentProject: null, // { name, settings, created, modified, timelines, currentTimelineId }
       currentProjectHandle: null, // FileSystemDirectoryHandle (web) or string path (Electron) - not persisted
       currentTimelineId: null, // ID of the currently active timeline
-      projectHistory: [], // Timeline-structure snapshots for create/duplicate/rename/delete
+      projectHistory: [], // Timeline-structure or typed storyboard snapshots
       projectFuture: [],
       projectHistoryLastChangedAt: 0,
+      storyboardRevision: 0, // Transient, monotonic within this renderer session
       
       // Default projects location
       defaultProjectsLocation: null, // Path string for display
@@ -275,7 +300,7 @@ export const useProjectStore = create(
       lastAutoSave: null,
 
       // Startup behavior (persisted)
-      // When false (default), Belrog lands on the project picker so
+      // When false (default), Velorn lands on the project picker so
       // users can explicitly choose what to work on (Resolve-style hub).
       // Power users can flip this on to jump straight back into their
       // last project.
@@ -329,7 +354,7 @@ export const useProjectStore = create(
           
           // Try to restore current project (only when the user has opted
           // in via Settings → General → "Reopen last project on startup").
-          // By default Belrog lands on the project picker instead.
+          // By default Velorn lands on the project picker instead.
           const shouldReopenLast = get().reopenLastProjectOnStartup === true
           const storedProject = shouldReopenLast
             ? await getStoredDirectoryHandle('currentProject')
@@ -398,6 +423,7 @@ export const useProjectStore = create(
        * @param {number} options.fps - Frame rate
        */
       createProject: async ({ name, width, height, fps }) => {
+        if (!finishCompoundFocus()) return null
         const state = get()
         
         if (!state.defaultProjectsHandle) {
@@ -465,6 +491,7 @@ export const useProjectStore = create(
             projectHistory: [],
             projectFuture: [],
             projectHistoryLastChangedAt: 0,
+            storyboardRevision: (state.storyboardRevision || 0) + 1,
             recentProjects: [recentProject, ...state.recentProjects.filter(p => p.name !== name)].slice(0, 10),
             isLoading: false,
           }))
@@ -482,6 +509,7 @@ export const useProjectStore = create(
        * @param {FileSystemDirectoryHandle|string} projectHandleOrPath - The project directory handle or path
        */
       openProject: async (projectHandleOrPath) => {
+        if (!finishCompoundFocus()) return null
         set({ isLoading: true, error: null, lastFailedProjectHandle: null, lastFailedProjectName: null })
         
         try {
@@ -631,7 +659,9 @@ export const useProjectStore = create(
         
         try {
           // Gather current state from timeline and assets stores
-          const currentTimelineData = useTimelineStore.getState().getProjectData()
+          const timelineState = useTimelineStore.getState()
+          const savedTimelineSessionId = timelineState.timelineSessionId
+          const currentTimelineData = timelineState.getProjectData()
           const assetsData = useAssetsStore.getState().getProjectData()
           
           // Update the current timeline in the timelines array
@@ -668,9 +698,23 @@ export const useProjectStore = create(
           }
           
           await saveProjectToFile(state.currentProjectHandle, updatedProject)
+
+          // A storyboard edit can arrive while thumbnail/file IPC is awaited.
+          // Keep that newer board dirty instead of overwriting it with the save
+          // snapshot. The same handle can have been reopened while IPC was in
+          // flight; a changed timeline session also covers that case and a
+          // newly selected timeline. Never replace or mark that session clean.
+          const latestState = get()
+          if (latestState.currentProjectHandle !== state.currentProjectHandle || !latestState.currentProject
+            || useTimelineStore.getState().timelineSessionId !== savedTimelineSessionId) return true
+          const storyboardChanged = latestState.storyboardRevision !== state.storyboardRevision
+            || latestState.currentProject.storyboard !== state.currentProject.storyboard
+          const restoredProject = storyboardChanged
+            ? restoreStoryboardSnapshot(updatedProject, createStoryboardSnapshot(latestState))
+            : updatedProject
           
           set({
-            currentProject: updatedProject,
+            currentProject: restoredProject,
             lastAutoSave: new Date().toISOString(),
           })
           
@@ -686,7 +730,8 @@ export const useProjectStore = create(
           // After the save-induced set() calls above, so their transient
           // dirty mark is cleared too. Everything gathered above is now on
           // disk.
-          markProjectClean()
+          if (storyboardChanged) markProjectDirty()
+          else markProjectClean()
 
           return true
         } catch (err) {
@@ -696,7 +741,25 @@ export const useProjectStore = create(
         }
       },
 
+      setStoryboardWithHistory: (board) => {
+        if (useTimelineStore.getState().compoundEditContext) return false
+        const state = get()
+        if (!state.currentProject) return false
+        const normalized = normalizeStoryboard(board)
+        if (JSON.stringify(normalized) === JSON.stringify(normalizeStoryboard(state.currentProject.storyboard))) return false
+        set({
+          currentProject: { ...state.currentProject, storyboard: normalized },
+          projectHistory: [...state.projectHistory, createStoryboardSnapshot(state)].slice(-MAX_PROJECT_HISTORY_SIZE),
+          projectFuture: [],
+          projectHistoryLastChangedAt: projectHistoryTimestamp(state),
+          storyboardRevision: (state.storyboardRevision || 0) + 1,
+        })
+        markProjectDirty()
+        return true
+      },
+
       saveTimelineStructureToHistory: () => {
+        if (useTimelineStore.getState().compoundEditContext) return false
         const state = get()
         const snapshot = createTimelineStructureSnapshot(state)
         if (!snapshot) return false
@@ -721,12 +784,24 @@ export const useProjectStore = create(
       },
 
       undoTimelineStructureChange: () => {
+        if (useTimelineStore.getState().compoundEditContext) return false
         const state = get()
         if (!state.currentProject || state.projectHistory.length === 0) return false
 
-        const currentSnapshot = createTimelineStructureSnapshot(state)
         const targetSnapshot = state.projectHistory[state.projectHistory.length - 1]
         const remainingHistory = state.projectHistory.slice(0, -1)
+        if (targetSnapshot.type === 'storyboard') {
+          set({
+            currentProject: restoreStoryboardSnapshot(state.currentProject, targetSnapshot),
+            projectHistory: remainingHistory,
+            projectFuture: [...state.projectFuture, createStoryboardSnapshot(state)],
+            projectHistoryLastChangedAt: projectHistoryTimestamp(state),
+            storyboardRevision: (state.storyboardRevision || 0) + 1,
+          })
+          markProjectDirty()
+          return true
+        }
+        const currentSnapshot = createTimelineStructureSnapshot(state)
         const nextFuture = currentSnapshot
           && !areTimelineStructureSnapshotsEqual(state.projectFuture[state.projectFuture.length - 1], currentSnapshot)
           ? [...state.projectFuture, currentSnapshot]
@@ -759,12 +834,24 @@ export const useProjectStore = create(
       },
 
       redoTimelineStructureChange: () => {
+        if (useTimelineStore.getState().compoundEditContext) return false
         const state = get()
         if (!state.currentProject || state.projectFuture.length === 0) return false
 
-        const currentSnapshot = createTimelineStructureSnapshot(state)
         const targetSnapshot = state.projectFuture[state.projectFuture.length - 1]
         const remainingFuture = state.projectFuture.slice(0, -1)
+        if (targetSnapshot.type === 'storyboard') {
+          set({
+            currentProject: restoreStoryboardSnapshot(state.currentProject, targetSnapshot),
+            projectHistory: [...state.projectHistory, createStoryboardSnapshot(state)].slice(-MAX_PROJECT_HISTORY_SIZE),
+            projectFuture: remainingFuture,
+            projectHistoryLastChangedAt: projectHistoryTimestamp(state),
+            storyboardRevision: (state.storyboardRevision || 0) + 1,
+          })
+          markProjectDirty()
+          return true
+        }
+        const currentSnapshot = createTimelineStructureSnapshot(state)
         const nextHistory = currentSnapshot
           && !areTimelineStructureSnapshotsEqual(state.projectHistory[state.projectHistory.length - 1], currentSnapshot)
           ? [...state.projectHistory, currentSnapshot].slice(-MAX_PROJECT_HISTORY_SIZE)
@@ -796,8 +883,8 @@ export const useProjectStore = create(
         return true
       },
 
-      canUndoTimelineStructureChange: () => get().projectHistory.length > 0,
-      canRedoTimelineStructureChange: () => get().projectFuture.length > 0,
+      canUndoTimelineStructureChange: () => !useTimelineStore.getState().compoundEditContext && get().projectHistory.length > 0,
+      canRedoTimelineStructureChange: () => !useTimelineStore.getState().compoundEditContext && get().projectFuture.length > 0,
       clearTimelineStructureHistory: () => set({
         projectHistory: [],
         projectFuture: [],
@@ -808,6 +895,7 @@ export const useProjectStore = create(
        * Close the current project
        */
       closeProject: async () => {
+        if (!finishCompoundFocus()) return false
         // Save before closing
         await get().saveProject()
         
@@ -825,6 +913,7 @@ export const useProjectStore = create(
           projectHistory: [],
           projectFuture: [],
           projectHistoryLastChangedAt: 0,
+          storyboardRevision: (get().storyboardRevision || 0) + 1,
         })
       },
       
@@ -884,8 +973,12 @@ export const useProjectStore = create(
        * @param {string} timelineId - ID of the timeline to switch to
        */
       switchTimeline: async (timelineId) => {
+        if (!finishCompoundFocus()) return false
         const state = get()
         if (!state.currentProject?.timelines) return false
+        // The live store may contain an edited child just committed by Back.
+        // Selecting its current timeline must not reload the older project copy.
+        if (timelineId === state.currentTimelineId) return true
         
         // Find the target timeline
         const targetTimeline = state.currentProject.timelines.find(t => t.id === timelineId)
@@ -928,6 +1021,7 @@ export const useProjectStore = create(
        * @param {number} options.durationSeconds - Optional starting timeline duration in seconds
        */
       createTimeline: (options = null) => {
+        if (!finishCompoundFocus()) return null
         const state = get()
         if (!state.currentProject) return null
         get().saveTimelineStructureToHistory()
@@ -965,6 +1059,7 @@ export const useProjectStore = create(
        * @param {string} timelineId - ID of the timeline to duplicate
        */
       duplicateTimeline: (timelineId) => {
+        if (!finishCompoundFocus()) return null
         const state = get()
         if (!state.currentProject?.timelines) return null
         get().saveTimelineStructureToHistory()
@@ -1014,6 +1109,7 @@ export const useProjectStore = create(
        * @param {string} newName - New name for the timeline
        */
       renameTimeline: (timelineId, newName) => {
+        if (!finishCompoundFocus()) return false
         const state = get()
         if (!state.currentProject?.timelines || !newName.trim()) return false
         get().saveTimelineStructureToHistory()
@@ -1038,6 +1134,7 @@ export const useProjectStore = create(
        * @param {string|null} color - Hex color or null
        */
       setTimelineColor: (timelineId, color) => {
+        if (!finishCompoundFocus()) return false
         const state = get()
         if (!state.currentProject?.timelines) return false
         const existingTimeline = state.currentProject.timelines.find((timeline) => timeline.id === timelineId)
@@ -1066,6 +1163,7 @@ export const useProjectStore = create(
        * @param {string|null} folderId - Destination folder ID (null = root)
        */
       moveTimelineToFolder: (timelineId, folderId = null) => {
+        if (!finishCompoundFocus()) return false
         const state = get()
         if (!state.currentProject?.timelines) return false
         const normalizedFolderId = folderId || null
@@ -1094,6 +1192,7 @@ export const useProjectStore = create(
        * @param {string} timelineId - ID of the timeline to delete
        */
       deleteTimeline: (timelineId) => {
+        if (!finishCompoundFocus()) return false
         const state = get()
         if (!state.currentProject?.timelines) return false
         
@@ -1218,12 +1317,21 @@ export const useProjectStore = create(
        * Update project settings
        */
       updateProjectSettings: (settings) => {
+        const state = get()
+        const timeline = useTimelineStore.getState()
+        const hasCompound = timeline.compoundEditContext || timeline.clips.some(clip => clip.type === 'compound')
+          || state.currentProject?.timelines?.some(item => item.clips?.some(clip => clip.type === 'compound'))
+        if (hasCompound && ['width', 'height', 'fps'].some(key => Object.hasOwn(settings || {}, key)
+          && settings[key] !== state.currentProject?.settings?.[key])) {
+          return { ok: false, reason: 'Sequence dimensions and frame rate cannot change while the project contains compounds.' }
+        }
         set((state) => ({
           currentProject: state.currentProject ? {
             ...state.currentProject,
             settings: { ...state.currentProject.settings, ...settings },
           } : null,
         }))
+        return { ok: true }
       },
 
       getFlowAiData: () => {
@@ -1276,7 +1384,7 @@ export const useProjectStore = create(
       },
 
       /**
-       * Toggle whether Belrog should reopen the last project on
+       * Toggle whether Velorn should reopen the last project on
        * startup (true) or show the project picker (false, default).
        */
       setReopenLastProjectOnStartup: (enabled) => {

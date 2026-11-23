@@ -8,7 +8,7 @@ import { enqueueProxyTranscode, isProxyPlaybackEnabled } from '../services/proxy
 import { getPexelsApiKey } from '../services/pexelsSettings'
 import {
   PEXELS_DEFAULT_PER_PAGE,
-  Belrog_OPEN_STOCK_EVENT,
+  VELORN_OPEN_STOCK_EVENT,
   buildPexelsAssetRecord,
   downloadPexelsMediaItem,
   getBestPexelsVideoFile,
@@ -74,8 +74,8 @@ function StockPanel() {
       setError(null)
       setPreviewVideo(null)
     }
-    window.addEventListener(Belrog_OPEN_STOCK_EVENT, handler)
-    return () => window.removeEventListener(Belrog_OPEN_STOCK_EVENT, handler)
+    window.addEventListener(VELORN_OPEN_STOCK_EVENT, handler)
+    return () => window.removeEventListener(VELORN_OPEN_STOCK_EVENT, handler)
   }, [])
 
   // Fetch trending/popular content when no search query (first visit or cleared search)
@@ -176,7 +176,7 @@ function StockPanel() {
   }, [loadDefaultContent])
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-sf-dark-950">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 bg-sf-dark-950">
       {/* Header */}
       <div className="flex-shrink-0 p-4 border-b border-sf-dark-700">
         <div className="flex items-center gap-3 mb-3">

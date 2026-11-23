@@ -98,6 +98,7 @@ export async function getAudioWaveformData(url, sampleCount = DEFAULT_AUDIO_WAVE
     return {
       ...built,
       duration: audioBuffer.duration || 0,
+      hopSeconds: Math.max(1, Math.floor(audioBuffer.length / Math.max(32, sampleCount))) / audioBuffer.sampleRate,
     }
   })()
     .then((result) => {

@@ -13,6 +13,8 @@ import {
   notifyComfyPartnerCreditsLow,
 } from './comfyPartnerAuth'
 import { extractCreditCountFromText } from '../utils/comfyCredits'
+import { buildYue2Workflow } from './musicGenerationModels.mjs'
+import { submitManagedGeneration } from './generationSpending'
 import {
   MUSIC_VIDEO_SHOT_DEFAULTS,
   getMusicVideoShotTypeOption,
@@ -25,37 +27,39 @@ const COMFY_BINARY_EVENT_TYPES = Object.freeze({
   TEXT: 3,
 })
 const UTF8_DECODER = typeof TextDecoder !== 'undefined' ? new TextDecoder('utf-8') : null
-// Canonical marker titles are Belrog_*; legacy COMFYSTUDIO_* titles from
+// Canonical marker titles are VELORN_*; legacy COMFYSTUDIO_* titles from
 // graphs tagged before the rename still match (see endpointTitleAliases).
 export const CUSTOM_KEYFRAME_ENDPOINTS = Object.freeze({
-  inputImage: 'Belrog_INPUT_IMAGE',
-  prompt: 'Belrog_PROMPT',
-  seed: 'Belrog_SEED',
-  width: 'Belrog_WIDTH',
-  height: 'Belrog_HEIGHT',
-  referenceImage1: 'Belrog_REFERENCE_IMAGE_1',
-  referenceImage2: 'Belrog_REFERENCE_IMAGE_2',
-  outputImage: 'Belrog_OUTPUT_IMAGE',
+  inputImage: 'VELORN_INPUT_IMAGE',
+  prompt: 'VELORN_PROMPT',
+  seed: 'VELORN_SEED',
+  width: 'VELORN_WIDTH',
+  height: 'VELORN_HEIGHT',
+  referenceImage1: 'VELORN_REFERENCE_IMAGE_1',
+  referenceImage2: 'VELORN_REFERENCE_IMAGE_2',
+  // The place a shot is filmed in (see customKeyframePlace.mjs).
+  placeImage: 'VELORN_PLACE_IMAGE',
+  outputImage: 'VELORN_OUTPUT_IMAGE',
 })
 export const CUSTOM_VIDEO_ENDPOINTS = Object.freeze({
-  inputImage: 'Belrog_INPUT_IMAGE',
-  prompt: 'Belrog_PROMPT',
-  seed: 'Belrog_SEED',
-  width: 'Belrog_WIDTH',
-  height: 'Belrog_HEIGHT',
-  fps: 'Belrog_FPS',
-  duration: 'Belrog_DURATION',
-  inputAudio: 'Belrog_AUDIO',
-  outputVideo: 'Belrog_OUTPUT_VIDEO',
+  inputImage: 'VELORN_INPUT_IMAGE',
+  prompt: 'VELORN_PROMPT',
+  seed: 'VELORN_SEED',
+  width: 'VELORN_WIDTH',
+  height: 'VELORN_HEIGHT',
+  fps: 'VELORN_FPS',
+  duration: 'VELORN_DURATION',
+  inputAudio: 'VELORN_AUDIO',
+  outputVideo: 'VELORN_OUTPUT_VIDEO',
 })
-const Belrog_OUTPUT_RESIZE_TITLE = 'Belrog Output Resize'
+const VELORN_OUTPUT_RESIZE_TITLE = 'Velorn Output Resize'
 const LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE = 'ComfyStudio Output Resize'
-const OUTPUT_RESIZE_TITLES = [Belrog_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
+const OUTPUT_RESIZE_TITLES = [VELORN_OUTPUT_RESIZE_TITLE, LEGACY_COMFYSTUDIO_OUTPUT_RESIZE_TITLE]
 
 // Users commonly organize ComfyUI model folders into subfolders (e.g.
 // models/diffusion_models/WAN/wan2.2_i2v.safetensors); ComfyUI then lists the
 // file to loader nodes as the relative path "WAN/wan2.2_i2v.safetensors".
-// Belrog's built-in workflows reference bare filenames, so an unmatched
+// Velorn's built-in workflows reference bare filenames, so an unmatched
 // model input is resolved against the node's actual choice list by basename
 // before queueing (see resolveSubfolderModelPaths).
 const MODEL_FILE_INPUT_RE = /\.(safetensors|sft|ckpt|pt|pth|bin|gguf|onnx)$/i
@@ -113,7 +117,7 @@ function normalizeEndpointTitle(value = '') {
 }
 
 function endpointTitleAliases(endpointName) {
-  return [endpointName, endpointName.replace(/^Belrog_/, 'COMFYSTUDIO_')]
+  return [endpointName, endpointName.replace(/^VELORN_/, 'COMFYSTUDIO_')]
 }
 
 function titleMatchesEndpoint(title, endpointName) {
@@ -147,12 +151,14 @@ function findCustomVideoEndpointNodes(workflow) {
   return findCustomEndpointNodes(workflow, CUSTOM_VIDEO_ENDPOINTS)
 }
 
-const REQUIRED_CUSTOM_KEYFRAME_ENDPOINT_KEYS = ['inputImage', 'prompt', 'outputImage']
+// A keyframe can be made from the description alone, so a starting picture
+// input is optional: the same rule the workflow is checked with once loaded.
+const REQUIRED_CUSTOM_KEYFRAME_ENDPOINT_KEYS = ['prompt', 'outputImage']
 const REQUIRED_CUSTOM_VIDEO_ENDPOINT_KEYS = ['inputImage', 'prompt', 'outputVideo']
 
 /**
  * Pre-check a UI-format graph (as saved in the personal workflow library)
- * against a custom slot's Belrog node-title contract. Mirrors the
+ * against a custom slot's VELORN node-title contract. Mirrors the
  * required markers of validateCustomKeyframeWorkflow /
  * validateCustomVideoWorkflow but reads LiteGraph `node.title`, so it can run
  * without converting the graph to API format first.
@@ -269,7 +275,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
     workflow[resizeNodeId] = {
       class_type: 'ImageScale',
       inputs: {},
-      _meta: { title: Belrog_OUTPUT_RESIZE_TITLE },
+      _meta: { title: VELORN_OUTPUT_RESIZE_TITLE },
     }
   }
 
@@ -285,7 +291,7 @@ export function addQwenImageEditResolutionControls(workflow, options = {}) {
   }
   resizeNode._meta = {
     ...(resizeNode._meta || {}),
-    title: Belrog_OUTPUT_RESIZE_TITLE,
+    title: VELORN_OUTPUT_RESIZE_TITLE,
   }
 
   const resizeRef = [resizeNodeId, 0]
@@ -309,7 +315,7 @@ function normalizeComfyStudioOutputResize(workflow) {
     resizeNode.inputs.crop = 'center'
     resizeNode._meta = {
       ...(resizeNode._meta || {}),
-      title: Belrog_OUTPUT_RESIZE_TITLE,
+      title: VELORN_OUTPUT_RESIZE_TITLE,
     }
   }
   return workflow
@@ -952,26 +958,11 @@ class ComfyUIService {
   /**
    * Queue a prompt for execution
    */
-  async queuePrompt(workflow) {
+  async queuePrompt(workflow, { priced = false, batchCount = 0 } = {}) {
     try {
       const resolvedWorkflow = await this.resolveSubfolderModelPaths(workflow)
-      const apiKey = await this.getComfyOrgApiKey();
-      const payload = {
-        prompt: resolvedWorkflow,
-        client_id: this.clientId
-      };
-      if (apiKey) {
-        payload.extra_data = {
-          api_key_comfy_org: apiKey
-        };
-      }
-      const response = await fetch(`${this.getHttpBase()}/prompt`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      const response = await submitManagedGeneration({ workflow: resolvedWorkflow,
+        endpoint: this.getHttpBase(), clientId: this.clientId, priced, batchCount });
 
       if (!response.ok) {
         // Try to pull a structured body for better error messages. Some
@@ -1462,7 +1453,7 @@ export function modifyMaskWorkflow(workflow, options = {}) {
   const {
     inputFilename = '',       // The uploaded filename in ComfyUI
     textPrompt = '',          // What to segment (e.g., "person on the left")
-    outputPrefix = 'BelrogMask',  // Output filename prefix
+    outputPrefix = 'VelornMask',  // Output filename prefix
     scoreThreshold = 0.04,    // Detection sensitivity (lower = more sensitive)
     frameIdx = 0,             // Which frame to use for initial detection
   } = options;
@@ -1524,20 +1515,20 @@ export function modifyWAN22Workflow(workflow, options = {}) {
     frames = 81,
     fps = 16,
     seed = Math.floor(Math.random() * 1000000000000),
-    filenamePrefix = 'video/Belrog_wan',
+    filenamePrefix = 'video/Velorn_wan',
     qualityPreset = 'balanced', // balanced | face-lock
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
-  const useFaceLockPreset = String(qualityPreset || 'face-lock') === 'face-lock'
+  const useFaceLockPreset = String(qualityPreset || 'balanced') === 'face-lock'
   const positivePrompt = String(prompt || '')
   const effectiveNegativePrompt = String(negativePrompt || '')
 
-  const samplerSteps = useFaceLockPreset ? 8 : 6
-  const samplerCfg = useFaceLockPreset ? 1.5 : 1.3
+  const samplerSteps = useFaceLockPreset ? 6 : 4
+  const samplerCfg = useFaceLockPreset ? 1.3 : 1
   const splitStep = Math.max(2, Math.floor(samplerSteps / 2))
-  const modelShift = useFaceLockPreset ? 4.0 : 4.5
-  const loraStrength = useFaceLockPreset ? 1.15 : 1.05
+  const modelShift = useFaceLockPreset ? 4.5 : 5.0
+  const loraStrength = useFaceLockPreset ? 1.05 : 1.0
   const numericFps = Math.max(1, Math.round(Number(fps) || 16))
   const numericFrames = Math.max(2, Math.round(Number(frames) || 81))
   const numericDuration = Math.max(0.1, (numericFrames - 1) / numericFps)
@@ -1728,6 +1719,7 @@ export function modifyLTX23IA2VWorkflow(workflow, options = {}) {
     negativePrompt = '',
     inputImage = '',
     inputAudio = '',
+    audioStartSeconds = 0,
     width = 1280,
     height = 720,
     duration = 9,
@@ -1743,6 +1735,13 @@ export function modifyLTX23IA2VWorkflow(workflow, options = {}) {
   const numericFps = Math.max(1, Math.round(Number(fps) || 24))
   const numericSeed = Math.round(Number(seed) || Math.floor(Math.random() * 1000000000000))
   const effectiveNegativePrompt = String(negativePrompt || '')
+  const numericAudioStart = Number(audioStartSeconds)
+  if (!Number.isFinite(numericAudioStart) || numericAudioStart < 0) throw new Error('Conditioning-audio start must be a finite non-negative source time.')
+  const audioTrim = modified['340:332']
+  const hasAudioRangeControl = audioTrim?.class_type === 'TrimAudioDuration' && audioTrim.inputs
+    && Object.prototype.hasOwnProperty.call(audioTrim.inputs, 'start_index')
+  if (numericAudioStart > 0 && !hasAudioRangeControl) throw new Error('This IA2V graph has no verified conditioning-audio range control; the requested source offset was not applied.')
+  if (hasAudioRangeControl) audioTrim.inputs.start_index = numericAudioStart
 
   for (const imageNodeId of ['269', '345']) {
     if (modified[imageNodeId]?.inputs && inputImage) {
@@ -1922,11 +1921,11 @@ export function modifyMultipleAnglesWorkflow(workflow, options = {}) {
     }
   }
 
-  // Update save prefixes to Belrog
+  // Update save prefixes to Velorn
   const saveNodes = { '31': 'close_up', '34': 'wide_shot', '36': '45_right', '38': '90_right', '47': '90_left', '41': 'aerial_view', '43': 'low_angle', '45': '45_left' }
   for (const [nodeId, suffix] of Object.entries(saveNodes)) {
     if (modified[nodeId]) {
-      modified[nodeId].inputs.filename_prefix = `Belrog-${suffix}`
+      modified[nodeId].inputs.filename_prefix = `Velorn-${suffix}`
     }
   }
 
@@ -1938,10 +1937,10 @@ export function modifyMultipleAnglesWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   Belrog_PROMPT, Belrog_OUTPUT_IMAGE
+ *   VELORN_PROMPT, VELORN_OUTPUT_IMAGE
  * - Optional node titles:
- *   Belrog_INPUT_IMAGE, Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
- *   Belrog_REFERENCE_IMAGE_1, Belrog_REFERENCE_IMAGE_2
+ *   VELORN_INPUT_IMAGE, VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
+ *   VELORN_REFERENCE_IMAGE_1, VELORN_REFERENCE_IMAGE_2, VELORN_PLACE_IMAGE
  */
 export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
   const {
@@ -1951,6 +1950,7 @@ export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
     width = null,
     height = null,
     referenceImages = [],
+    placeImage = '',
     filenamePrefix = 'image/custom_keyframe',
     requireInputImage = true,
     requirePrompt = true,
@@ -1984,6 +1984,7 @@ export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
   const ref2 = Array.isArray(referenceImages) ? referenceImages[1] : null
   if (ref1 && endpoints.referenceImage1) setEndpointValue(endpoints.referenceImage1.node, ref1, ['image'])
   if (ref2 && endpoints.referenceImage2) setEndpointValue(endpoints.referenceImage2.node, ref2, ['image'])
+  if (placeImage && endpoints.placeImage) setEndpointValue(endpoints.placeImage.node, placeImage, ['image'])
 
   if (endpoints.outputImage?.node?.inputs && 'filename_prefix' in endpoints.outputImage.node.inputs) {
     endpoints.outputImage.node.inputs.filename_prefix = filenamePrefix || endpoints.outputImage.node.inputs.filename_prefix || 'image/custom_keyframe'
@@ -1999,10 +2000,10 @@ export function modifyCustomKeyframeWorkflow(workflow, options = {}) {
  *
  * Contract:
  * - Required node titles:
- *   Belrog_INPUT_IMAGE, Belrog_PROMPT, Belrog_OUTPUT_VIDEO
+ *   VELORN_INPUT_IMAGE, VELORN_PROMPT, VELORN_OUTPUT_VIDEO
  * - Optional node titles:
- *   Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT,
- *   Belrog_FPS, Belrog_DURATION, Belrog_AUDIO
+ *   VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT,
+ *   VELORN_FPS, VELORN_DURATION, VELORN_AUDIO
  */
 export function modifyCustomVideoWorkflow(workflow, options = {}) {
   const {
@@ -2054,19 +2055,12 @@ export function modifyCustomVideoWorkflow(workflow, options = {}) {
 export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
   const {
     prompt = 'edit the image',
-    negativePrompt = '',
     inputImage = '',
     seed = Math.floor(Math.random() * 1000000000000),
     width = null,
     height = null,
     referenceImages = [],
     filenamePrefix = '',
-    // Optional sampler overrides. Defaults preserve current behavior
-    // (Lightning 4-step, cfg 1, denoise 1). Pass explicit values to test
-    // stronger prompt adherence without forking the workflow JSON.
-    denoise = null,
-    steps = null,
-    cfg = null,
   } = options
 
   const modified = JSON.parse(JSON.stringify(workflow))
@@ -2110,25 +2104,12 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
         node.inputs.image = inputImage
       }
     }
-    // Text prompt: positive nodes get the edit instruction; negative nodes
-    // get negativePrompt when provided. Previously EVERY node with a
-    // prompt/text/string key was overwritten with the positive prompt,
-    // which could clobber the negative conditioning pass.
+    // Text prompt: node with string/prompt/text or value (only if node looks like a prompt node)
     if (node.inputs) {
       const key = ['prompt', 'text', 'string'].find(k => k in node.inputs)
       const valueKey = (key === undefined && 'value' in node.inputs && (title.includes('Prompt') || cls.includes('Prompt'))) ? 'value' : null
-      const targetKey = key || valueKey
-      if (targetKey) {
-        // Image-stage negative conditioning only. The LTX video stage has
-        // its own CLIPTextEncode 'Motion Prompt (Negative)' node, which must
-        // keep its existing behavior — do not reroute it.
-        const isNegativeNode = /negative/i.test(title) && (cls === 'TextEncodeQwenImageEditPlus' || /conditioning/i.test(title))
-        if (isNegativeNode) {
-          if (negativePrompt) node.inputs[targetKey] = negativePrompt
-        } else {
-          node.inputs[targetKey] = prompt
-        }
-      }
+      if (key) node.inputs[key] = prompt
+      else if (valueKey) node.inputs[valueKey] = prompt
     }
     // Seed: apply to edit-specific nodes and sampler nodes.
     // The 2509 workflows use KSampler seed directly, so this must be updated per take.
@@ -2143,21 +2124,9 @@ export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
     if (node.inputs && 'seed' in node.inputs && isSeedTargetNode) {
       node.inputs.seed = seed
     }
-    // Optional sampler tuning (KSampler nodes only). Null = leave workflow default.
-    if (cls === 'KSampler' && node.inputs) {
-      // Null = leave the workflow default untouched. (Number(null) === 0, so
-      // Number.isFinite(Number(x)) would wrongly treat the null default as 0
-      // and clobber the Lightning 4/1/1 sampler for every existing user.)
-      const dDenoise = denoise == null ? null : Number(denoise)
-      const dSteps = steps == null ? null : Number(steps)
-      const dCfg = cfg == null ? null : Number(cfg)
-      if (dDenoise != null && Number.isFinite(dDenoise) && 'denoise' in node.inputs) node.inputs.denoise = Math.max(0, Math.min(1, dDenoise))
-      if (dSteps != null && Number.isFinite(dSteps) && 'steps' in node.inputs) node.inputs.steps = Math.max(1, Math.round(dSteps))
-      if (dCfg != null && Number.isFinite(dCfg) && 'cfg' in node.inputs) node.inputs.cfg = dCfg
-    }
     // Save Image: set prefix
     if (cls === 'SaveImage' && node.inputs && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Belrog_edit'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Velorn_edit'
     }
   }
 
@@ -2246,10 +2215,10 @@ export function modifyLocalApiWorkflow(workflow, options = {}) {
     }
 
     if (cls === 'SaveImage' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/Belrog_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/velorn_local'
     }
     if (cls === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/Belrog_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_local'
     }
 
     if (cls === 'CLIPTextEncode' && typeof node.inputs.text === 'string') {
@@ -2823,7 +2792,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     height = 1440,
     duration = 5,
     seed = Math.floor(Math.random() * 1000000000000),
-    filenamePrefix = 'video/Belrog_minimax_h3',
+    filenamePrefix = 'video/velorn_minimax_h3',
     assetFilenames = {},
   } = options
 
@@ -2855,7 +2824,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     }
 
     if (node.class_type === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/Belrog_minimax_h3'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_minimax_h3'
     }
   }
 
@@ -3513,9 +3482,26 @@ export function modifyMusicWorkflow(workflow, options = {}) {
   }
   // Output prefix (node 107)
   if (modified['107']) {
-    modified['107'].inputs.filename_prefix = 'audio/Belrog'
+    modified['107'].inputs.filename_prefix = 'audio/Velorn'
   }
 
+  return modified
+}
+
+/** YuE2 stays a separate workflow so saved ACE-Step jobs resume unchanged. */
+export function modifyYue2MusicWorkflow(workflow, options = {}) {
+  const lyrics = String(options.lyrics || '').trim()
+  const modified = buildYue2Workflow({
+    tags: options.tags,
+    lyrics,
+    instrumental: options.instrumental ?? !lyrics,
+    durationSeconds: options.duration,
+    lengthMode: options.lengthMode,
+    seed: options.seed ?? 0,
+  })
+  const checkpoint = Object.values(workflow || {}).find((node) => node?.class_type === 'CheckpointLoaderSimple')
+  if (checkpoint?.inputs?.ckpt_name) modified['104'].inputs.ckpt_name = checkpoint.inputs.ckpt_name
+  if (options.filenamePrefix) modified['107'].inputs.filename_prefix = options.filenamePrefix
   return modified
 }
 

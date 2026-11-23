@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { CheckCircle2, Clipboard, ExternalLink, RefreshCw, X } from 'lucide-react'
 import useAssetsStore from '../../stores/assetsStore'
+import { supportsExplicitGenerationDuration } from '../../../electron/generationHandoff.mjs'
+import { MUSIC_DURATION_MIN, YUE2_CUSTOM_DURATION_MAX, resolveMusicLength } from '../../services/musicGenerationModels.mjs'
 
 const VIDEO_RESOLUTION_OPTIONS = [
   { label: '1080p', value: '1920x1080' },
@@ -176,6 +178,13 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
           {field.helper && (
             <p className="mt-2 text-[10px] leading-snug text-sf-text-muted">{field.helper}</p>
           )}
+          {field.id === 'audioAsset' && <p className="mt-2 text-[10px] leading-snug text-sf-text-muted" aria-label="Conditioning audio range">
+            {values.conditioningAudio
+              ? (values.conditioningAudio.startSeconds !== null
+                ? `Conditioning source: ${values.conditioningAudio.startSeconds}s–${values.conditioningAudio.startSeconds + values.conditioningAudio.durationSeconds}s. Not automatically matched to timeline audio.`
+                : 'Selected audio asset; conditioning range is determined by this workflow. No timeline song segment was matched.')
+              : 'Select conditioning audio. A timeline frame does not select the matching song segment.'}
+          </p>}
         </div>
       </div>
     )
@@ -207,12 +216,12 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
               </div>
               <p className="mt-1 text-[10px] leading-4 text-sf-text-muted">
                 {customKind === 'video'
-                  ? 'Required: Belrog_PROMPT and Belrog_OUTPUT_VIDEO. Optional: Belrog_INPUT_IMAGE, Belrog_AUDIO, Belrog_SEED, Belrog_WIDTH, Belrog_HEIGHT, Belrog_FPS, Belrog_DURATION.'
-                  : 'Required: Belrog_OUTPUT_IMAGE.'}
+                  ? 'Required: VELORN_PROMPT and VELORN_OUTPUT_VIDEO. Optional: VELORN_INPUT_IMAGE, VELORN_AUDIO, VELORN_SEED, VELORN_WIDTH, VELORN_HEIGHT, VELORN_FPS, VELORN_DURATION.'
+                  : 'Required: VELORN_OUTPUT_IMAGE.'}
               </p>
               <p className="mt-1 text-[10px] leading-4 text-sf-text-muted">
                 {customKind === 'video'
-                  ? 'Belrog shows controls for supported endpoint nodes found in the loaded graph. Leave an endpoint out when you want ComfyUI to control that setting.'
+                  ? 'Velorn shows controls for supported endpoint nodes found in the loaded graph. Leave an endpoint out when you want ComfyUI to control that setting.'
                   : 'Use ComfyUI to control prompts, references, seed, size, and model settings for this image graph.'}
               </p>
               <div className={`mt-2 text-[10px] ${isReady ? 'text-emerald-300' : 'text-amber-200'}`}>
@@ -257,7 +266,7 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
           {customState.bridge && (
             <div className="mt-3 flex flex-col gap-2 border-t border-sf-dark-700 pt-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2 text-[10px] text-sf-text-muted">
-                <span className="font-semibold uppercase tracking-wider">Belrog bridge</span>
+                <span className="font-semibold uppercase tracking-wider">Velorn bridge</span>
                 <span className={`rounded-full border px-2 py-0.5 ${
                   customState.bridge.installed
                     ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
@@ -306,6 +315,9 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
           placeholder={field.placeholder || (stateKey === 'prompt' ? 'Describe what you want to generate...' : '')}
           className="w-full resize-y rounded-lg border border-sf-dark-700 bg-sf-dark-800 px-3 py-2 text-xs text-sf-text-primary outline-none transition-colors placeholder:text-sf-text-muted focus:border-sf-accent"
         />
+        {field.helper && (
+          <p className="text-[10px] leading-snug text-sf-text-muted">{field.helper}</p>
+        )}
       </div>
     )
   }
@@ -362,9 +374,9 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
   }
 
   if (field.type === 'duration') {
-    const ltxDurationWorkflowIds = new Set(['ltx23-i2v', 'ltx23-ia2v', 'ltx23-t2v'])
+    const supportsExplicitDuration = supportsExplicitGenerationDuration(workflow?.workflowId)
     const seedanceDurationWorkflowIds = new Set(['seedance2-t2v', 'seedance2-mini-r2v', 'seedance2-flf2v', 'seedance2-r2v'])
-    const durationOptions = ltxDurationWorkflowIds.has(workflow?.workflowId)
+    const durationOptions = supportsExplicitDuration
       ? [5, 8, 10, 15]
       : seedanceDurationWorkflowIds.has(workflow?.workflowId)
         ? [5, 7, 10]
@@ -377,6 +389,39 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
       <div className="space-y-1.5">
         {commonLabel}
         <Segmented options={options} value={values.duration} onChange={(value) => actions.setValue('duration', Number(value))} />
+        {supportsExplicitDuration && <label className="block text-[10px] text-sf-text-muted">
+          Seconds · buttons above are presets
+          <input type="number" aria-label="Generation duration seconds" min="1" step="1" value={values.duration}
+            onChange={event => {
+              const next = Number(event.target.value)
+              if (Number.isFinite(next) && next >= 1) actions.setValue('duration', next)
+            }}
+            className="mt-1 w-full rounded-lg border border-sf-dark-700 bg-sf-dark-800 px-3 py-2 text-xs text-sf-text-primary outline-none focus:border-sf-accent" />
+        </label>}
+      </div>
+    )
+  }
+
+  if (field.type === 'yue2Length') {
+    return (
+      <div className="space-y-1.5">
+        {commonLabel}
+        <Segmented
+          options={[{ label: 'Automatic', value: 'automatic' }, { label: 'Custom maximum', value: 'custom' }]}
+          value={values.musicLengthMode || 'automatic'}
+          onChange={value => actions.setValue('musicLengthMode', value)}
+        />
+        {values.musicLengthMode === 'custom' && <label className="block text-[10px] text-sf-text-muted">
+          Maximum seconds
+          <input type="number" aria-label="YuE2 maximum seconds" min={MUSIC_DURATION_MIN} max={YUE2_CUSTOM_DURATION_MAX} step="1" value={values.musicDuration}
+            onChange={event => {
+              const next = event.target.value
+              if (next === '' || Number.isFinite(Number(next))) actions.setValue('musicDuration', next === '' ? '' : Number(next))
+            }}
+            onBlur={event => actions.setValue('musicDuration', resolveMusicLength({ backend: 'yue2', lengthMode: 'custom', durationSeconds: event.target.value }).durationSeconds)}
+            className="mt-1 w-full rounded-lg border border-sf-dark-700 bg-sf-dark-800 px-3 py-2 text-xs text-sf-text-primary outline-none focus:border-sf-accent" />
+        </label>}
+        {field.helper && <p className="text-[10px] leading-snug text-sf-text-muted">{field.helper}</p>}
       </div>
     )
   }
@@ -390,6 +435,9 @@ export default function WorkflowFieldRenderer({ field, workflow, values, actions
           value={values.musicDuration}
           onChange={(value) => actions.setValue('musicDuration', Number(value))}
         />
+        {field.helper && (
+          <p className="text-[10px] leading-snug text-sf-text-muted">{field.helper}</p>
+        )}
       </div>
     )
   }

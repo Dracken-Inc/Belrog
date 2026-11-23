@@ -178,6 +178,185 @@
     }
   },
   "export": {
+    "readiness": {
+      "checking": "確認中…",
+      "stale": "再確認が必要",
+      "warningCount": "警告 {{count}}件",
+      "optional": "任意",
+      "title": "書き出し前の確認",
+      "help": "この範囲のソースの利用可否、Optical Flowキャッシュの情報、映像や音声の空白の可能性を確認します。警告は参考情報です。意図した黒画面や無音は許容されます。",
+      "refresh": "再確認",
+      "check": "この範囲を確認",
+      "cancel": "確認をキャンセル",
+      "staleHelp": "タイムライン、ソースの登録情報、または書き出し設定が変更されました。現在の範囲を再確認してください。",
+      "failed": "確認を完了できませんでした。もう一度お試しください。メディアやプロジェクトのデータは変更されていません。",
+      "noWarnings": "今回の確認では警告は見つかりませんでした。",
+      "warnings": "書き出し前の確認で見つかった警告",
+      "inspect": "位置を確認",
+      "limitations": "ファイルの利用可否とタイムラインのみを確認します。デコードやレンダリングのテストではありません。ソースの変更とキャッシュの識別情報は書き出し時に検証されます。ファイルを移動した場合は再確認してください。書き出し時の安全確認も引き続き行われます。",
+      "warning": {
+        "invalid-range": {
+          "title": "書き出し範囲を選択してください",
+          "detail": "選択した範囲の長さがありません。"
+        },
+        "missing-asset": {
+          "title": "メディアの登録情報がありません",
+          "detail": "「{{name}}」は、このプロジェクトに存在しないメディアを参照しています。"
+        },
+        "missing-location": {
+          "title": "メディアの場所がありません",
+          "detail": "「{{name}}」には、ファイルの場所もメディアURLも登録されていません。"
+        },
+        "media-unverified": {
+          "title": "一部のメディアを確認できませんでした",
+          "detail": "「{{name}}」のファイルの利用可否を確認できませんでした。ブラウザー内やリモートのメディアは書き出し時の検証が必要です。"
+        },
+        "missing-source": {
+          "title": "ソースファイルを利用できません",
+          "detail": "「{{name}}」の登録されたソースが見つからないか、アクセスできません。必要に応じてエディターで再リンクしてください。"
+        },
+        "missing-proxy-source": {
+          "title": "元のソースファイルを利用できません",
+          "detail": "「{{name}}」の元ファイルが見つからないか、アクセスできません。確認用プロキシは利用できる可能性がありますが、最終納品前に元ファイルを確認してください。"
+        },
+        "missing-mask": {
+          "title": "マスクのメディアを利用できません",
+          "detail": "「{{name}}」で使用するマスクファイルが見つからないか、アクセスできません。"
+        },
+        "optical-unready": {
+          "title": "Optical Flowの確認が必要です",
+          "detail": "「{{name}}」のキャッシュを利用できないか、現在の編集範囲をカバーしていません。インスペクターでOptical Flowを確認してください。"
+        },
+        "optical-path": {
+          "title": "Optical Flowの保存場所が無効です",
+          "detail": "「{{name}}」のキャッシュには、対応するプロジェクト相対の保存場所が設定されていません。インスペクターで再作成してください。"
+        },
+        "optical-unsaved": {
+          "title": "Optical Flowにはプロジェクトの保存が必要です",
+          "detail": "プロジェクトを保存し、インスペクターで「{{name}}」のキャッシュを確認してください。"
+        },
+        "optical-signature": {
+          "title": "Optical Flowのソースが未確認です",
+          "detail": "「{{name}}」のキャッシュにはソースの識別情報がありません。書き出しには、現在のソースから作成された有効なキャッシュが必要です。"
+        },
+        "missing-optical": {
+          "title": "Optical Flowのファイルを利用できません",
+          "detail": "「{{name}}」のキャッシュファイルが見つからないか、アクセスできません。インスペクターで再作成してください。"
+        },
+        "file-unverified": {
+          "title": "ファイルの利用可否を確認できませんでした",
+          "detail": "「{{name}}」に登録されたファイルを確認できませんでした。メディアは変更されていません。"
+        },
+        "picture-gap": {
+          "title": "映像に空白がある可能性があります",
+          "detail": "この区間をカバーする有効な映像クリップがありません。黒画面や透明部分は意図したものかもしれません。"
+        },
+        "picture-tail": {
+          "title": "末尾が空白になる可能性があります",
+          "detail": "書き出し範囲の末尾をカバーする有効な映像クリップがありません。黒画面や透明部分は意図したものかもしれません。"
+        },
+        "no-audio": {
+          "title": "この範囲に有効な音声クリップがありません",
+          "detail": "音声の書き出しが指定されていますが、有効で音声を出力する音声クリップが見つかりませんでした。無音は意図したものかもしれません。"
+        },
+        "master-muted": {
+          "title": "マスター音声がミュートされています",
+          "detail": "マスター音量がゼロです。音声の書き出しが指定されていますが、出力は無音になります。"
+        },
+        "compound-unverified": {
+          "title": "コンパウンドを確認できませんでした",
+          "detail": "「{{name}}」には、対応していないコンパウンドの内容またはタイミング設定があります。書き出す前にエディターで確認してください。"
+        }
+      }
+    },
+    "overview": {
+      "regionLabel": "書き出しタイムラインの概要",
+      "title": "タイムラインの概要",
+      "readOnly": "読み取り専用",
+      "fullTimeline": "タイムライン全体",
+      "inOut": "イン／アウト",
+      "audioTrack": "音声 {{number}}",
+      "videoTrack": "映像 {{number}}",
+      "audioClip": "音声クリップ",
+      "clip": "クリップ",
+      "timecodeHint": "タイムコードはノンドロップフレームで表示します。",
+      "frameRate": "{{fps}} fps",
+      "muted": "ミュート",
+      "hidden": "非表示",
+      "excludedBySolo": "ソロ設定により除外",
+      "inactive": "無効",
+      "empty": "このタイムラインにはクリップがありません",
+      "startBoundary": "書き出し範囲の最初のフレーム",
+      "endBoundary": "アウト点のフレーム自体は書き出されません。",
+      "scrubLabel": "書き出しプレビューをスクラブ",
+      "scrubValue": "{{timecode}}、毎秒{{fps}}フレーム、ノンドロップフレーム"
+    },
+    "deliveryPresets": {
+      "title": "用途別プリセット",
+      "more": "その他のプリセット",
+      "customHelp": "下の設定を調整するか、プリセットを選んで開始してください。",
+      "hdLimit": "YouTube HD上限",
+      "uhdLimit": "YouTube 4K上限",
+      "sizeHelp": "タイムラインの縦横比を維持し、HDまたは4Kの範囲に収めます。小さいタイムラインは拡大しません。",
+      "items": {
+        "youtube-1080p": {
+          "label": "YouTube 1080p",
+          "detail": "最大HD · MP4",
+          "summary": "HDを上限とするH.264アップロード用設定。縦横比とプロジェクトのFPSを維持し、拡大しません。"
+        },
+        "youtube-4k": {
+          "label": "YouTube 4K",
+          "detail": "最大4K · MP4",
+          "summary": "4Kを上限とするH.264アップロード用設定。縦横比とプロジェクトのFPSを維持し、拡大しません。"
+        },
+        "h264-master": {
+          "label": "H.264マスター",
+          "detail": "高品質MP4",
+          "summary": "元のメディアを使用し、プロジェクトの解像度でCRF 16の高品質H.264を書き出します。"
+        },
+        "prores-master": {
+          "label": "ProResマスター",
+          "detail": "ProRes HQ · MOV",
+          "summary": "プロジェクトの解像度で、追加編集に適した大容量のProRes HQ MOVを書き出します。"
+        },
+        "review-copy": {
+          "label": "確認用コピー",
+          "detail": "小容量ですばやく共有",
+          "summary": "解像度を半分にした確認用MP4。利用可能なプロキシでレンダーを高速化します。"
+        }
+      }
+    },
+    "workspace": {
+      "preview": "タイムラインのプレビュー",
+      "previewHelp": "タイムライン設定で確認できます。書き出しの解像度、エンコード、音声設定はレンダリング時に適用されます。",
+      "hideQueue": "キューを隠す",
+      "resizeSettings": "書き出し設定パネルの幅を変更",
+      "resizeQueue": "書き出しキューパネルの幅を変更",
+      "resizePanelHelp": "ドラッグで幅を変更します。ダブルクリックまたは Enter でリセット。矢印キーで調整し、Shift で大きく変更します。",
+      "showQueue": "キューを表示",
+      "customPreset": "カスタム設定",
+      "width": "幅",
+      "height": "高さ",
+      "audioSettings": "音声設定",
+      "advancedEncoding": "エンコードの詳細設定",
+      "encodingPerformance": "エンコードとパフォーマンス",
+      "handoff": "別の編集ソフトに送る",
+      "duration": "長さ",
+      "missingMarks": "この範囲を使うには、エディターでイン点とアウト点の両方を設定してください。",
+      "missingMarksFallback": "イン点またはアウト点が未設定のため、タイムライン全体を書き出します。",
+      "collapsedMarks": "イン点とアウト点が同じ位置です。エディターで別々の位置に設定するか、タイムライン全体を選択してください。",
+      "queueHelp": "開始時のタイムラインとイン点／アウト点を使用します。保存先は書き出し時に選択します。",
+      "pauseAfterCurrent": "現在の処理後に一時停止",
+      "clearQueue": "キューを空にする",
+      "exportNow": "今すぐ書き出す",
+      "status": {
+        "queued": "待機中",
+        "rendering": "レンダリング中",
+        "completed": "完了",
+        "failed": "失敗",
+        "stopped": "停止"
+      }
+    },
     "title": "書き出し",
     "headerReady": "キューと設定の準備完了",
     "ready": "書き出し可能",
@@ -186,7 +365,7 @@
     "presets": "書き出しプリセット",
     "presetsHelp": "プリセットで変わるのはレンダー設定だけです。ファイル名と範囲は維持されます。",
     "reset": "初期値に戻す",
-    "resetHelp": "書き出し設定をBelrogの初期設定に戻す",
+    "resetHelp": "書き出し設定をVelornの初期設定に戻す",
     "presetSummaries": {
       "balanced-mp4": "日常用途向けの標準的なH.264書き出しです。プロジェクトの解像度を使用します。",
       "fast-nvenc": "NVIDIA環境向けの高速なH.264書き出しです。",
@@ -203,7 +382,7 @@
     "rangeFull": "タイムライン全体",
     "rangeInOut": "イン点／アウト点の範囲",
     "outputLocationHelp": "書き出し開始時に出力先を選択します。",
-    "pngOutputLocationHelp": "書き出し開始時に親フォルダーを選択します。Belrogは{{name}}_pngフォルダーを作成し、{{name}}_000001.png以降の連番でフレームを保存します。",
+    "pngOutputLocationHelp": "書き出し開始時に親フォルダーを選択します。Velornは{{name}}_pngフォルダーを作成し、{{name}}_000001.png以降の連番でフレームを保存します。",
     "render": "レンダー",
     "singleClip": "単一クリップ",
     "individualClips": "個別クリップ",
@@ -323,16 +502,18 @@
   },
   "topTabs": {
     "navigation": "ワークスペースモード",
+    "storyboard": "ストーリーボード",
     "editor": "編集",
-    "generate": "生成",
+    "generate": "ディレクター",
     "agent": "エージェント",
     "flow-ai": "Flow AI",
     "mog": "MoGraph",
     "stock": "ストック",
-    "discover": "見つける",
+    "discover": "チュートリアル",
     "export": "書き出し"
   },
   "bottomBar": {
+    "openStoryboard": "ストーリーボードを開く",
     "saveProject": "プロジェクトを保存",
     "undo": "元に戻す",
     "redo": "やり直す",
@@ -342,6 +523,9 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "projectSelection": "プロジェクト選択"
+  },
+  "storyboard": {
+    "backToEditor": "編集に戻る"
   },
   "inspector": {
     "title": "インスペクター",
@@ -359,9 +543,9 @@
   },
   "welcome": {
     "browserUnsupported": "このブラウザは対応していません",
-    "browserUnsupportedHelp": "BelrogにはFile System Access APIが必要です。Google ChromeまたはMicrosoft Edgeをご利用ください。",
+    "browserUnsupportedHelp": "VelornにはFile System Access APIが必要です。Google ChromeまたはMicrosoft Edgeをご利用ください。",
     "setupWorkspace": "ワークスペースを設定",
-    "setupWorkspaceHelp": "Belrogのプロジェクトとメディアを保存するフォルダーを選択してください。プロジェクトごとにサブフォルダーが作成され、素材と読み込んだメディアが整理されます。",
+    "setupWorkspaceHelp": "Velornのプロジェクトとメディアを保存するフォルダーを選択してください。プロジェクトごとにサブフォルダーが作成され、素材と読み込んだメディアが整理されます。",
     "currentLocation": "現在の保存先:",
     "chooseProjectsFolder": "プロジェクトフォルダーを選択",
     "changeLater": "この設定は後から設定画面で変更できます",
@@ -369,9 +553,9 @@
     "openLatestAutosaveFor": "{{project}}の最新の自動保存を開く",
     "openProject": "プロジェクトを開く",
     "newProject": "新規プロジェクト",
-    "discover": "作品を見る",
-    "discoverHelp": "Belrogで制作された作品とチュートリアルを見ます。",
-    "discoverLoading": "Discoverを読み込み中...",
+    "discover": "チュートリアル",
+    "discoverHelp": "Velornの使い方を学べる短い動画です。",
+    "discoverLoading": "チュートリアルを読み込み中...",
     "selectProject": "プロジェクトを選択",
     "noRecentProjects": "最近使ったプロジェクトはありません",
     "createFirstProject": "最初のプロジェクトを作成して始めましょう",
@@ -381,76 +565,23 @@
     "dismiss": "閉じる"
   },
   "discover": {
-    "title": "見つける",
-    "subtitle": "Belrogでクリエイターが制作した作品を見て、その制作ワークフローを学びましょう。",
-    "visibilityHint": "Discoverタブは「設定」→「外観」からいつでも非表示にできます。",
-    "tabs": {
-      "featured": "おすすめ",
-      "showcase": "Belrog作品",
-      "tutorials": "チュートリアル"
-    },
-    "sections": {
-      "featured": "おすすめ",
-      "featuredDescription": "注目のコミュニティ作品と実践的なチュートリアルを紹介します。",
-      "showcase": "Belrogで制作",
-      "showcaseDescription": "Belrogコミュニティが制作または編集した動画です。",
-      "tutorials": "チュートリアル",
-      "tutorialsDescription": "実践的な解説を通してBelrogの使い方を学べます。"
+    "title": "チュートリアル",
+    "subtitle": "Velornの使い方を少しずつ学べる短い動画です。",
+    "visibilityHint": "チュートリアルタブは「設定」→「外観」からいつでも非表示にできます。",
+    "groups": {
+      "start": "はじめに",
+      "tabs": "各タブの紹介",
+      "editor": "エディターを順番に学ぶ",
+      "project": "作品を最初から最後まで"
     },
     "actions": {
       "watch": "{{title}}を再生",
       "openYouTube": "YouTubeで開く",
-      "submit": "YouTube動画を投稿",
-      "retry": "再試行",
       "close": "閉じる"
-    },
-    "labels": {
-      "by": "{{creator}}"
     },
     "player": {
       "title": "YouTube動画: {{title}}",
-      "privacy": "サムネイルはYouTubeから提供されます。Belrogは動画の再生を選択した後にのみプレーヤーを読み込みます。"
-    },
-    "states": {
-      "loading": "Discoverを読み込み中...",
-      "offline": "保存済みのDiscoverコンテンツを表示しています。オンラインに戻ると新しい動画が表示される場合があります。",
-      "error": "現在Discoverを読み込めません。",
-      "empty": "このセクションにはまだコンテンツがありません。"
-    },
-    "submit": {
-      "title": "作品を投稿",
-      "body": "Belrogで制作したYouTube動画を共有してください。掲載前にすべての投稿を確認します。",
-      "youtubeUrl": "YouTube URL",
-      "youtubePlaceholder": "https://www.youtube.com/watch?v=...",
-      "creator": "クリエイター名または表示名",
-      "creatorPlaceholder": "掲載する名前を入力してください",
-      "category": "カテゴリー",
-      "categories": {
-        "musicVideo": "ミュージックビデオ",
-        "podcast": "ポッドキャスト",
-        "shortFilm": "短編映画",
-        "social": "ソーシャル動画",
-        "ad": "広告",
-        "animation": "アニメーション",
-        "other": "その他"
-      },
-      "description": "Belrogをどのように使いましたか？",
-      "descriptionPlaceholder": "作品のどの部分をBelrogで制作または編集したか、簡単に教えてください。",
-      "email": "連絡先メールアドレス",
-      "emailPlaceholder": "you@example.com",
-      "rights": "私はこの作品を所有しているか、投稿および共有に必要な許可を得ています。",
-      "featurePermission": "Belrogが動画のタイトル、サムネイル、リンク、説明、クリエイター名を掲載することを許可します。",
-      "reviewNote": "投稿は非公開の審査キューに送られ、自動的に公開されることはありません。",
-      "requiredFields": "動画、クリエイター名、説明、連絡先をすべて入力してください。",
-      "permissionsRequired": "投稿する前に両方の許可を確認してください。",
-      "invalidYouTube": "有効なYouTube動画のURLを入力してください。",
-      "tooLong": "説明を短くしてから、もう一度お試しください。",
-      "sendFailed": "投稿を送信できませんでした。後でもう一度お試しください。",
-      "submitting": "送信中...",
-      "submit": "確認用に送信",
-      "successTitle": "確認用に送信しました",
-      "successBody": "ありがとうございます。Belrogチームが投稿を確認します。自動的に公開されることはありません。",
-      "submitAnother": "別の作品を投稿"
+      "privacy": "サムネイルはYouTubeから提供されます。Velornは動画の再生を選択した後にのみプレーヤーを読み込みます。"
     }
   },
   "settings": {
@@ -461,18 +592,18 @@
     "saveHelp": "一部の設定は変更時に自動保存されます。共通設定とショートカットを保存するには「設定を保存」を使用してください。",
     "saveHelpWorkflow": "ワークフローのインストールは上のパネルで行います。「設定を保存」では共通設定とショートカットのみを保存します。",
     "languageLabel": "表示言語",
-    "languageHelp": "Belrogで使用する言語を選択します。変更はすぐに反映されます。",
+    "languageHelp": "Velornで使用する言語を選択します。変更はすぐに反映されます。",
     "fallbackHelp": "未翻訳の項目は自動的に英語で表示されます。",
     "sections": {
       "storage": { "title": "プロジェクトとストレージ", "description": "プロジェクトの保存先と自動保存を設定します。" },
       "stock": { "title": "ストック素材（Pexels）", "description": "ストックメディア検索の認証情報を管理します。" },
       "connection": { "title": "ComfyUI接続", "description": "ローカルComfyUI、パートナーAPIキー、詳細タブを設定します。" },
       "agents": { "title": "エージェント（MCP）", "description": "Claude、Codex、CursorなどのMCPクライアントを開いているプロジェクトに接続します。" },
-      "launcher": { "title": "ComfyUIランチャー", "description": "BelrogからローカルComfyUIを起動、停止、再起動します。" },
+      "launcher": { "title": "ComfyUIランチャー", "description": "VelornからローカルComfyUIを起動、停止、再起動します。" },
       "paths": { "title": "ファイルパス", "description": "出力先とワークフローのパスを確認します。" },
       "workflow-setup": { "title": "ワークフロー設定", "description": "ワークフローを検査し、不足する依存関係やモデルをインストールします。" },
-      "language": { "title": "言語", "description": "Belrogの画面で使用する言語を選択します。" },
-      "appearance": { "title": "外観", "description": "Belrogのテーマとワークスペースのナビゲーションを設定します。" },
+      "language": { "title": "言語", "description": "Velornの画面で使用する言語を選択します。" },
+      "appearance": { "title": "外観", "description": "Velornのテーマとワークスペースのナビゲーションを設定します。" },
       "notifications": { "title": "通知", "description": "完了音とアプリ内通知を設定します。" },
       "hotkeys": { "title": "ショートカット", "description": "エディターのショートカットとキーマップを設定します。" },
       "project": { "title": "新規プロジェクトの初期値", "description": "新しいプロジェクトの解像度とフレームレートを設定します。" },
@@ -487,7 +618,7 @@
       "autoSave": "自動保存",
       "autoSaveHelp": "30秒ごとに保存します",
       "reopenLastProject": "起動時に前回のプロジェクトを開く",
-      "reopenLastProjectHelp": "オフにすると、Belrogはプロジェクト選択画面を開きます。",
+      "reopenLastProjectHelp": "オフにすると、Velornはプロジェクト選択画面を開きます。",
       "showHero": "プロジェクト選択画面に背景画像を表示",
       "showHeroHelp": "プロジェクト選択画面の上部にシネマティックな画像を表示します。シンプルな表示にする場合はオフにしてください。",
       "cache": {
@@ -509,6 +640,22 @@
         "failedSuffix": "（{{count}}件失敗）",
         "rebuildFailed": "動画キャッシュを再作成できませんでした。"
       }
+    },
+    "comfySetup": {
+      "title": "ComfyUIに接続",
+      "openHelp": "このコンピューターでComfyUIを開いてから、ここで検索してください。Comfy Desktopでは、使用したいローカルインスタンスを起動してください。起動スクリプトは不要です。",
+      "find": "起動中のComfyUIを検索",
+      "choose": "使用するローカル接続先を選択してください。検索だけでは設定は変更されません。",
+      "ready": "ComfyUIは接続できます",
+      "connect": "接続",
+      "notFound": "通常のローカルポートでは、起動中のComfyUIが見つかりませんでした。ComfyUIを開いて初期設定を完了し、ローカルインスタンスを起動してから、もう一度お試しください。別のポートを使用している場合は、下に入力してください。",
+      "manual": "ポートを手動で入力",
+      "port": "ComfyUIポート",
+      "testConnect": "テストして接続",
+      "connected": "ポート{{port}}のComfyUIに接続しました。",
+      "failed": "接続できませんでした。もう一度お試しください。",
+      "advanced": "接続の詳細設定",
+      "localOnly": "ローカル接続専用です。この操作では、インストール、ComfyUIの起動、素材の生成は行いません。ComfyUIがなくても編集はできます。"
     },
     "connection": {
       "localPort": "ローカルComfyUIポート",
@@ -535,7 +682,7 @@
         "invalidPort": "ローカルComfyUIポートが正しくありません。1～65535の数値を入力してください。",
         "testing": "{{endpoint}}への接続をテスト中...",
         "connected": "{{endpoint}}に接続しました",
-        "http403": "ComfyUIからHTTP 403が返されました。CORSを有効にするか、Belrog内蔵ランチャーを使用してください。",
+        "http403": "ComfyUIからHTTP 403が返されました。CORSを有効にするか、Velorn内蔵ランチャーを使用してください。",
         "httpError": "ComfyUIからHTTP {{status}}が返されました。",
         "connectFailed": "{{endpoint}}に接続できませんでした。",
         "resetFailed": "ローカルComfyUIポートを初期値に戻せませんでした。",
@@ -547,6 +694,15 @@
     },
     "launcher": {
       "desktopOnly": "ComfyUIランチャーはデスクトップ版でのみ利用できます。",
+      "connectedExternally": "接続済み（Velornの管理外）",
+      "connectedManaged": "接続済み・Velornで管理",
+      "externalConnectionHelp": "ComfyUIに接続しています。停止や再起動は、ComfyUIのアプリまたはターミナルで行ってください。Velornで起動を管理しなくても生成できます。",
+      "optionalStartup": "VelornからComfyUIを起動する（任意）",
+      "optionalStartupHelp": "ComfyUIを自分で開いている場合は、そのまま利用できます。ここから起動したい場合は、検出されたインストール先を選ぶか、起動スクリプトを参照してください。",
+      "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて上の項目から接続してください。",
+      "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて、上の項目から接続することもできます。",
+      "scriptChoiceHelp": "Windowsの.batファイルやLinux／macOSの.shファイルなど、普段ComfyUIの起動に使っているスクリプトを選択してください。デスクトップアプリの場合は、アプリを開いて使用したいインスタンスを起動してください。",
+      "detectedInstallations": "検出されたインストール先",
       "saveFailed": "ランチャー設定を保存できませんでした。",
       "actionFailed": "操作に失敗しました。",
       "states": {
@@ -571,43 +727,43 @@
       "stop": "停止",
       "restart": "再起動",
       "refresh": "ComfyUIを再検出",
-      "externalHelp": "ComfyUIはすでに実行されていますが、Belrogから起動されたものではありません。起動に使用したウィンドウから停止し、「起動」を選ぶとBelrogで管理できます。これにより、ノードパックのインストール後に自動再起動できるようになります。",
+      "externalHelp": "ComfyUIはすでに実行されていますが、Velornから起動されたものではありません。起動に使用したウィンドウから停止し、「起動」を選ぶとVelornで管理できます。これにより、ノードパックのインストール後に自動再起動できるようになります。",
       "mode": "ランチャーモード",
       "macAppHelp": "公式Macアプリを開き、準備ができたら接続します。",
       "script": "スクリプト",
       "scriptHelp": "任意の.shランチャーまたは単独のComfyUI環境を実行します。",
       "useDefault": "初期値を使用",
       "browse": "参照...",
-      "noApp": "アプリが設定されていません。ComfyUI.appを選択するとBelrogから開けます。",
-      "macBehaviorHelp": "BelrogがMacアプリを開き、設定済みのComfyUI接続先が応答するまで待機します。また、macOSへ終了や再起動を要求できます。",
+      "noApp": "アプリが設定されていません。ComfyUI.appを選択するとVelornから開けます。",
+      "macBehaviorHelp": "VelornがMacアプリを開き、設定済みのComfyUI接続先が応答するまで待機します。また、macOSへ終了や再起動を要求できます。",
       "background": "バックグラウンドで起動",
       "backgroundHelp": "ComfyUI.appを非表示で開き、内蔵ComfyUIタブを手前に保ちます。",
       "backgroundToggle": "ComfyUI.appのバックグラウンド起動を切り替える",
       "launcherScript": "ランチャースクリプト",
-      "noLauncher": "ランチャーが設定されていません。run_nvidia_gpu.bat（または同等のファイル）を選択すると、BelrogからComfyUIを起動できます。",
+      "noLauncher": "ランチャーが設定されていません。run_nvidia_gpu.bat（または同等のファイル）を選択すると、VelornからComfyUIを起動できます。",
       "detectedNearby": "ComfyUIフォルダー付近で検出されたファイル",
       "behavior": "動作設定",
-      "autoStart": "Belrog起動時にComfyUIを自動起動",
-      "autoStartHelp": "初期設定ではオフです。有効にすると、Belrogを開いた直後にComfyUIを自動的に起動します。",
+      "autoStart": "Velorn起動時にComfyUIを自動起動",
+      "autoStartHelp": "初期設定ではオフです。有効にすると、Velornを開いた直後にComfyUIを自動的に起動します。",
       "autoStartToggle": "自動起動を切り替える",
-      "keepRunning": "Belrog終了後もComfyUIを実行し続ける",
-      "keepRunningHelp": "有効にすると、Belrogを閉じても確認せずComfyUIをバックグラウンドで実行し続けます。",
-      "keepRunningToggle": "Belrog終了後のComfyUI継続実行を切り替える",
+      "keepRunning": "Velorn終了後もComfyUIを実行し続ける",
+      "keepRunningHelp": "有効にすると、Velornを閉じても確認せずComfyUIをバックグラウンドで実行し続けます。",
+      "keepRunningToggle": "Velorn終了後のComfyUI継続実行を切り替える",
       "noBrowser": "起動時にComfyUIをブラウザータブで開かない",
-      "noBrowserHelpBefore": "初期設定ではオンです。Belrogは",
+      "noBrowserHelpBefore": "初期設定ではオンです。Velornは",
       "noBrowserHelpAfter": "を渡し、ComfyUIの起動時に従来のブラウザータブへフォーカスが移るのを防ぎます。",
       "noBrowserToggle": "ブラウザーの自動起動を切り替える",
       "advanced": "詳細設定",
       "timeout": "起動待機時間（秒）",
       "timeoutHelpBefore": "起動後、指定した秒数以内にComfyUIの",
-      "timeoutHelpAfter": "が応答しない場合、Belrogは待機を終了してプロセスを停止します。",
+      "timeoutHelpAfter": "が応答しない場合、Velornは待機を終了してプロセスを停止します。",
       "extraArgs": "追加引数",
       "extraArgsHelp": "ランチャースクリプトの末尾へ追加します。引用符で囲まれた文字列はひとまとまりとして扱われます。",
       "logs": "ログ",
       "openLogViewer": "ログビューアーを開く",
       "openLogFile": "ログファイルを開く",
       "noLog": "このセッションではまだログファイルが作成されていません。",
-      "connectionHelpBefore": "Belrogは次のアドレスでComfyUIと通信します:",
+      "connectionHelpBefore": "Velornは次のアドレスでComfyUIと通信します:",
       "connectionHelpMiddle": "。別のポートを使用する場合は",
       "connectionHelpAfter": "で変更してください。",
       "working": "処理中..."
@@ -633,7 +789,7 @@
         "failed": "{{endpoint}}に接続できませんでした{{detail}}"
       },
       "comfyFolder": "ComfyUIフォルダー",
-      "comfyFolderHelp": "カスタムノードとモデルの配置先をBelrogが判断できるよう、自動インストールにはローカルComfyUIのルートフォルダーが必要です。",
+      "comfyFolderHelp": "カスタムノードとモデルの配置先をVelornが判断できるよう、自動インストールにはローカルComfyUIのルートフォルダーが必要です。",
       "choose": "選択",
       "clear": "クリア",
       "folderValid": "有効なComfyUIフォルダーです。",
@@ -675,7 +831,7 @@
       "theme": "テーマ",
       "active": "使用中",
       "themes": {
-        "Belrog": "深い青と紫を基調に、読みやすい古金色をアクセントにした標準テーマ",
+        "velorn": "深い青と紫を基調に、読みやすい古金色をアクセントにした標準テーマ",
         "midnight": "DaVinci Resolveを参考にしたニュートラルなダークグレー",
         "soft-dark": "控えめな寒色系の紫を加えた、柔らかなコントラスト",
         "high-contrast": "鮮やかな青をアクセントに、視認性を最大限に高めたテーマ",
@@ -684,10 +840,12 @@
       },
       "timelineThumbnails": "タイムラインのクリップサムネイル",
       "timelineThumbnailsHelp": "負荷の高い編集ではオフにすると、クリップを軽量な色付きブロックとして表示します。",
-      "discoverTab": "Discoverタブを表示",
-      "discoverTabHelp": "コミュニティ作品とチュートリアルへのショートカットを上部のタブバーに表示します。",
-      "hideDiscoverTab": "Discoverタブを非表示",
-      "showDiscoverTab": "Discoverタブを表示"
+      "discoverTab": "チュートリアルタブを表示",
+      "generateTab": "ディレクタータブを表示",
+      "generateTabHelp": "エージェント中心のレイアウトにするにはタブを非表示にします。ComfyUI、エージェントツール、生成キューは引き続き利用でき、タブはいつでも再表示できます。",
+      "discoverTabHelp": "チュートリアル動画へのショートカットを上部のタブバーに表示します。",
+      "hideDiscoverTab": "チュートリアルタブを非表示",
+      "showDiscoverTab": "チュートリアルタブを表示"
     },
     "notifications": {
       "completionSound": "生成完了音",
@@ -716,13 +874,14 @@
       "custom": "カスタム",
       "active": "使用中",
       "presetDescriptions": {
-        "comfystudio": "Belrog標準のキー割り当てです。",
+        "comfystudio": "Velorn標準のキー割り当てです。",
         "premiere": "Ctrl+Kで分割、Ctrl+Shift+Kですべて分割、Mでマーカー、Sでスナップを切り替えます。",
         "resolve": "Ctrl+\\で分割、Ctrl+Shift+\\ですべて分割、Mでマーカー、Nでスナップを切り替えます。",
         "final-cut": "Ctrl+Bで分割、Ctrl+Shift+Bですべて分割、Mでマーカー、Nでスナップを切り替えます。"
       },
       "actions": {
         "timeline": {
+          "playAround": "編集点の前後を再生",
           "selectToEnd": "再生ヘッドから末尾までのクリップを選択",
           "selectFromStart": "先頭から再生ヘッドまでのクリップを選択",
           "splitActive": "再生ヘッド位置で現在のトラックを分割",
@@ -738,6 +897,7 @@
           "previousMarker": "前のマーカーへ移動",
           "nextMarker": "次のマーカーへ移動",
           "frameAll": "タイムライン全体を表示",
+          "zoomToSelection": "選択範囲を表示 / 前の表示に戻す",
           "zoomOut": "タイムラインを縮小",
           "zoomIn": "タイムラインを拡大",
           "openMoveBy": "移動量ダイアログを開く",
@@ -913,7 +1073,7 @@
     "no": "いいえ",
     "categories": { "bug": "不具合", "idea": "アイデア", "other": "その他" },
     "diagnostics": {
-      "appVersion": "Belrogバージョン", "platform": "プラットフォーム", "os": "OS",
+      "appVersion": "Velornバージョン", "platform": "プラットフォーム", "os": "OS",
       "gpu": "GPU", "comfyConnected": "ComfyUI接続", "screen": "画面"
     }
   },
@@ -941,8 +1101,17 @@
     "lineSummary": "{{total}}行中{{visible}}行{{rolling}}{{paused}}"
   },
   "launcherChip": {
+    "connectedExternally": "接続済み（Velornの管理外）",
+    "externalConnectionHelp": "ComfyUIに接続しています。通常どおり生成できます。停止や再起動はComfyUIのアプリまたはターミナルで行うか、Velornで安全に管理できるか再確認してください。",
+    "recheckControls": "操作できるか再確認",
+    "optionalStartup": "VelornからComfyUIを起動する（任意）",
+    "optionalStartupHelp": "Velornから起動したい場合だけ、インストール先を選択してください。それ以外の場合は、ComfyUIを自分で開き、「起動中のComfyUIを検索」から接続してください。",
+    "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて接続してください。",
+    "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて接続するか、普段使っている.batまたは.shスクリプトを参照してください。",
+    "detectedInstallations": "検出されたインストール先",
+    "troubleshootingLogs": "トラブルシューティングとログ",
     "states": { "unknown": "ComfyUI", "idle": "オフライン", "starting": "起動中…", "running": "実行中", "external": "外部プロセス", "stopping": "停止中…", "stopped": "停止済み", "crashed": "異常終了" },
-    "summary": { "unavailable": "ランチャーを利用できません（Electron外）。", "running": "実行中 • PID {{pid}}{{uptime}}", "up": "稼働時間", "external": "外部プロセスを検出：{{endpoint}}", "notRunning": "ComfyUIは実行されていません。", "unknown": "ComfyUIの状態は不明です。" },
+    "summary": { "unavailable": "ランチャーを利用できません（Electron外）。", "running": "実行中 • PID {{pid}}{{uptime}}", "up": "稼働時間", "external": "外部プロセスを検出：{{endpoint}}", "notRunning": "ComfyUIは実行されていません。", "unknown": "ComfyUIの状態は不明です。", "managedApp": "接続済み・ComfyUI.appをVelornで管理{{uptime}}", "managed": "接続済み・Velornで管理{{uptime}}", "connectedExternal": "{{endpoint}}に接続済み・起動はVelornの管理外" },
     "reprobeHelp": "ComfyUIの状態を再確認", "start": "起動", "stop": "停止", "restart": "再起動", "script": "ランチャースクリプト", "pickScript": ".bat／.shランチャースクリプトを選択", "browse": "参照...", "logTail": "最新ログ", "openViewerHelp": "検索・絞り込み対応のログビューアーを開く", "openViewer": "ログビューアーを開く", "noLogFile": "ログファイルはまだ作成されていません", "openLogFile": "ログファイルを開く", "noLogs": "ログ出力はまだありません。ComfyUIを起動するとここに表示されます。", "manage": "設定で管理 → ComfyUIランチャー", "apiKeySet": "APIキー設定済み", "apiKeyNeeded": "APIキーが必要", "apiKeySetHelp": "クラウドAPIキーは設定済みです。クリックして管理します。", "apiKeyNeededHelp": "クラウドワークフローを利用するにはComfy.org APIキーを設定してください。"
   },
   "preview": {
@@ -957,7 +1126,7 @@
     }
   },
   "generate": {
-    "mode": { "generate": "生成", "director": "ディレクター" },
+    "mode": { "generate": "生成", "director": "ディレクター", "backToDirector": "ディレクターに戻る" },
     "browser": {
       "tabs": { "featured": "おすすめ", "custom": "マイワークフロー", "templates": "テンプレート" },
       "searchTemplates": "ComfyUIテンプレート、モデル、タグを検索...",
@@ -1018,7 +1187,7 @@
   "gettingStarted": {
     "badge": "まずはじめに",
     "title": "インストールから最初の生成まで",
-    "intro": "Belrogではローカル、クラウド、または両方を組み合わせたAIワークフローを実行できます。このガイドでは、接続方法を選び、必要なワークフローを準備して、制作を始めるまでをわかりやすく案内します。",
+    "intro": "Velornではローカル、クラウド、または両方を組み合わせたAIワークフローを実行できます。このガイドでは、接続方法を選び、必要なワークフローを準備して、制作を始めるまでをわかりやすく案内します。",
     "closeAria": "「まずはじめに」を閉じる",
     "project": "プロジェクト",
     "untitled": "名称未設定",
@@ -1027,7 +1196,7 @@
     "setupChecklist": "セットアップ確認",
     "quickTour": "クイックツアー",
     "choosePath": "セットアップ方法を選択",
-    "choosePathHelp": "Belrogの案内に沿ってスターターキットを準備する場合は「クイックスタート設定」を使用します。カスタムComfyUIをすでに導入済みで、Belrogの接続先だけを設定する場合は「既存のComfyUIを使用」を選択します。",
+    "choosePathHelp": "Velornの案内に沿ってスターターキットを準備する場合は「クイックスタート設定」を使用します。カスタムComfyUIをすでに導入済みで、Velornの接続先だけを設定する場合は「既存のComfyUIを使用」を選択します。",
     "quickStartSetup": "クイックスタート設定",
     "bringComfy": "既存のComfyUIを使用",
     "status": {
@@ -1056,7 +1225,7 @@
     },
     "connection": {
       "title": "ローカルComfyUI接続",
-      "description": "Belrogはlocalhost上のローカルComfyUIサーバーにのみ接続します。生成がすぐ失敗する場合は、最初に保存済みポートを確認してください。",
+      "description": "Velornはlocalhost上のローカルComfyUIサーバーにのみ接続します。生成がすぐ失敗する場合は、最初に保存済みポートを確認してください。",
       "savedEndpoint": "保存済み接続先：{{endpoint}}",
       "portHelp": "ComfyUIが別のポートを使用している場合は、生成前に設定画面で更新してください。"
     },
@@ -1065,7 +1234,7 @@
       "description": "ワークフローファイルがアプリに同梱されていても、カスタムノード、モデル、または提携サービスのAPIキーが必要な場合があります。",
       "status": "ワークフロー設定を使用",
       "help1": "設定 > ワークフロー設定を開くと、すべての内蔵ワークフローをまとめて検査できます。",
-      "help2": "ComfyUIで読み込む、ワークフローごとの再チェックなどが必要な場合は「生成」を使用します。",
+      "help2": "モデルやノードをインストールした後は、もう一度スキャンします。",
       "help3": "同じワークフローが別のコンピューターで動作しない原因を素早く確認できます。",
       "action": "ワークフロー設定"
     },
@@ -1095,8 +1264,8 @@
     "tour": {
       "intro": "このクイックガイドでは、次にどこへ進めばよいかを案内します。詳しい編集方法やプロンプト作成方法は動画で確認できます。",
       "editorTitle": "編集ワークスペース", "editorDescription": "プロジェクトに素材を追加した後、日常的な編集を行う画面です。",
-      "editor1": "素材パネル：映像、音声、画像を読み込み、タイムラインへドラッグします。", "editor2": "プレビュー：素材を確認し、フレームを開始キーフレームとして「生成」へ送ります。", "editor3": "タイムライン：トリミング、リップル、スナップ、マーカーを使って編集します。", "editor4": "インスペクター：選択項目の変形、クロップ、タイミング、エフェクト、テキスト、調整を設定します。", "openEditor": "編集画面を開く",
-      "generateTitle": "生成", "generateDescription": "ローカルまたはクラウドのワークフローで画像、映像、音声を作成します。", "generate1": "シングルモードは、画像、映像、音声を個別に生成する場合に使用します。", "generate2": "ディレクターモードでは、設定、台本、キーフレーム、映像の順に作業します。", "generate3": "モデルやノードが不足している場合は、キューへ追加する前に再チェックします。",
+      "editor1": "素材パネル：映像、音声、画像を読み込み、タイムラインへドラッグします。", "editor2": "プレビュー：素材を確認し、フレームをAIの開始キーフレームとして使います。", "editor3": "タイムライン：トリミング、リップル、スナップ、マーカーを使って編集します。", "editor4": "インスペクター：選択項目の変形、クロップ、タイミング、エフェクト、テキスト、調整を設定します。", "openEditor": "編集画面を開く",
+      "generateTitle": "ディレクター", "generateDescription": "広告、ミュージックビデオ、ショートフィルムを手順に沿って作成します。", "generate1": "作るものを選びます：広告、ミュージックビデオ、ショートフィルム。", "generate2": "ディレクターでは、設定、台本、キーフレーム、映像の順に作業します。", "generate3": "モデルやノードが不足している場合は、設定 > ワークフロー設定を開きます。",
       "stockTitle": "ストック", "stockDescription": "Pexelsを検索し、映像や静止画を現在のプロジェクトへ直接読み込みます。", "stock1": "仮素材、アイデア探し、背景素材がすぐ必要な場合に便利です。", "stock2": "設定画面でPexels APIキーが必要です。", "openStock": "ストックを開く",
       "exportTitle": "書き出し", "exportDescription": "現在のタイムラインをファイルへレンダリングし、書き出しキューを管理します。", "export1": "形式、コーデック、範囲、解像度、FPS、音声設定を選択します。", "export2": "複数の出力形式が必要な場合は、複数の書き出しをキューへ追加できます。", "openExport": "書き出しを開く",
       "settingsTitle": "設定", "settingsDescription": "コンピューター固有の構成が変わった場合は、ここで更新します。", "settings1": "プロジェクトフォルダー、ComfyUIポート、ComfyアカウントのAPIキー、Pexelsキー、新規プロジェクトの初期値を設定できます。", "settings2": "別のコンピューターで動作が異なる場合は、最初にこの設定を比較してください。"
@@ -1107,7 +1276,7 @@
       "testing": "テスト中...",
       "testConnection": "接続をテスト",
       "connectionSettings": "接続設定",
-      "openGenerate": "生成を開く"
+      "openGenerate": "ディレクターを開く"
     }
   },
   "timelineEditor": {
@@ -1146,6 +1315,7 @@
       "toolTrim": "クリップの先頭または末尾を端からトリミングします。",
       "toolRazor": "クリップをクリックし、カーソル位置で分割します。",
       "toolSlip": "映像／音声クリップ内をドラッグし、位置を変えずにソースのタイミングをスリップします。",
+      "toolSlide": "隣接する2つのクリップの間でスライドします。素材と長さは変えずに、両隣の端を一緒にトリムします。",
       "snapping": "スナップ {{state}}（{{shortcut}}で切り替え）",
       "ripple": "リップル編集 {{state}}（{{shortcut}}で切り替え）— クリップ移動時に後続クリップも移動します",
       "generateMusic": "ACE-Stepで音楽を生成 — イン／アウト範囲から長さを自動入力します",
@@ -1155,6 +1325,9 @@
       "durationBy": "選択したクリップの長さを指定量だけ変更{{shortcut}}",
       "moreTools": "その他のツール",
       "frameAll": "全体表示 — タイムラインまたは全クリップを表示範囲に合わせる",
+      "zoomToSelection": "選択範囲を表示",
+      "restoreSelectionView": "前の表示に戻す",
+      "zoomToSelectionHelp": "選択したクリップを表示範囲に合わせます。もう一度実行すると、以前のズームとスクロール位置に戻ります",
       "trackHeightCompact": "コンパクト — 画面に多くのトラックを表示",
       "trackHeightNormal": "標準のトラック高さ",
       "trackHeightTall": "高く表示 — 波形とキーフレーム用の領域を確保",
@@ -1164,7 +1337,7 @@
   },
   "apiKey": {
     "title": "クラウドワークフロー・Comfy.org APIキー",
-    "subtitle": "Belrogに付属するクラウドレンダリングワークフローを利用可能にします。",
+    "subtitle": "Velornに付属するクラウドレンダリングワークフローを利用可能にします。",
     "unlocks": "利用可能になる機能",
     "coverage": "1つのキーですべて利用できます。生成ごとにComfy.orgの料金（通常は数セント）が発生します。",
     "alreadySaved": "キーは保存済みです",
@@ -1185,7 +1358,7 @@
     "saveFailed": "キーを保存できませんでした。",
     "removeFailed": "キーを削除できませんでした。",
     "openFailed": "ブラウザを開けませんでした。platform.comfy.orgへ直接アクセスしてください。",
-    "storagePrefix": "キーはこのコンピューター上のBelrog設定に保存されます。クラウドワークフローをキューへ送る際に",
+    "storagePrefix": "キーはこのコンピューター上のVelorn設定に保存されます。クラウドワークフローをキューへ送る際に",
     "storageSuffix": "として付加され、Comfy.orgへの接続以外でコンピューター外へ送信されることはありません。",
     "replace": "キーを置き換え",
     "save": "キーを保存"

@@ -16,6 +16,7 @@ import {
 import { isBetweenClipTransition } from '../utils/transitionKinds'
 import { getClipPlaybackTimeAtTimeline as getMappedClipPlaybackTimeAtTimeline } from '../utils/clipPlaybackTiming'
 import { isFullBakeFresh } from '../utils/clipBakeSignature'
+import { createClipCacheReadRequest, isClipCacheReadCurrent, getClipCacheReadKey, createClipSourceRequest, isClipSourceRequestCurrent } from '../utils/clipCacheReadGuard.mjs'
 import { hasUsableProxy } from '../services/proxyCache'
 import { getSpriteFramePosition } from '../services/thumbnailSprites'
 import {
@@ -342,24 +343,13 @@ function scheduleCutFrameCapture(clip, url, video, targetTime) {
 /**
  * Track which clips are currently being loaded from disk to prevent duplicate loads
  */
-const loadingCacheFromDisk = new Set()
+const loadingCacheFromDisk = new Map()
 
 /**
- * Cache of loaded blob URLs from disk (clipId -> blobUrl)
+ * Cache of loaded blob URLs from disk (clipId -> { request, url })
  * This persists across re-renders until the blob is explicitly revoked
  */
 const diskCacheUrls = new Map()
-
-/**
- * Helper to check if a blob URL is still valid
- * Blob URLs become invalid after page refresh
- */
-function isBlobUrlValid(url) {
-  if (!url || !url.startsWith('blob:')) return false
-  // We can't truly validate a blob URL without fetching it,
-  // but we can check if it's in our known-good map
-  return diskCacheUrls.has(url) || false
-}
 
 /**
  * Hook to load render cache from disk when needed
@@ -367,86 +357,58 @@ function isBlobUrlValid(url) {
  */
 function useDiskCacheLoader(clip) {
   const currentProjectHandle = useProjectStore(state => state.currentProjectHandle)
+  const timelineSessionId = useTimelineStore(state => state.timelineSessionId)
   const setCacheUrl = useTimelineStore(state => state.setCacheUrl)
-  const [loadedUrl, setLoadedUrl] = useState(null)
+  const [loaded, setLoaded] = useState(null)
+  const readKey = getClipCacheReadKey(clip, timelineSessionId)
   
   useEffect(() => {
-    // Only proceed if:
-    // 1. We have a clip with a cachePath (saved to disk)
-    // 2. The clip is marked as cached but cacheUrl is missing or might be stale
-    // 3. We have a project handle to read from disk
-    // 4. We're not already loading this clip
-    if (!clip || !clip.cachePath || !currentProjectHandle) return
+    const request = createClipCacheReadRequest(clip, timelineSessionId, currentProjectHandle)
+    setLoaded(null)
+    if (!request) return
     if (
       clip.cacheKind !== 'full'
       && normalizeFrameSamplingMode(clip.frameSampling) === FRAME_SAMPLING_MODE.OPTICAL_FLOW
     ) return
-    if (loadingCacheFromDisk.has(clip.id)) return
-    
-    // Check if we already have a valid loaded URL for this clip
-    const existingUrl = diskCacheUrls.get(clip.id)
-    if (existingUrl) {
-      setLoadedUrl(existingUrl)
+    const isCurrent = value => isClipCacheReadCurrent(value, useTimelineStore.getState(), useProjectStore.getState().currentProjectHandle)
+    const existing = diskCacheUrls.get(clip.id)
+    if (existing && isCurrent(existing.request)) {
+      setLoaded(existing)
       return
     }
-    
-    // Check if the current cacheUrl looks valid (not a stale blob URL)
-    // After page refresh, blob URLs become invalid
-    if (clip.cacheUrl && !clip.cacheUrl.startsWith('blob:')) {
-      // Non-blob URL, probably fine
-      return
-    }
-    
-    // If cacheStatus is 'cached' but we don't have a verified URL, we need to reload
-    // This happens after page refresh when blob URLs become invalid
-    const needsReload = clip.cachePath && (
-      !clip.cacheUrl || 
-      (clip.cacheStatus === 'cached' && clip.cacheUrl?.startsWith('blob:') && !diskCacheUrls.has(clip.id))
-    )
-    
-    if (!needsReload) return
-    
-    // Mark as loading to prevent duplicate loads
-    loadingCacheFromDisk.add(clip.id)
-    
-    // Load from disk
+    if (isCurrent(loadingCacheFromDisk.get(clip.id))) return
+    if (clip.cacheUrl && !clip.cacheUrl.startsWith('blob:')) return
+    let cancelled = false
+    loadingCacheFromDisk.set(clip.id, request)
     const loadFromDisk = async () => {
       try {
-        console.log(`Loading render cache from disk for clip ${clip.id}: ${clip.cachePath}`)
         const result = await loadRenderCache(currentProjectHandle, clip.cachePath)
-        
+        if (cancelled || !isCurrent(request)) return
         if (result && result.url) {
-          // Store in our local map for future reference
-          diskCacheUrls.set(clip.id, result.url)
-          
-          // Update the clip's cacheUrl in the store
-          setCacheUrl(clip.id, result.url, clip.cachePath)
-          setLoadedUrl(result.url)
-          
-          console.log(`Successfully loaded render cache for clip ${clip.id}`)
-        } else {
-          console.warn(`Failed to load render cache for clip ${clip.id}: no URL returned`)
+          const entry = { request, url: result.url }
+          diskCacheUrls.set(clip.id, entry)
+          setCacheUrl(clip.id, result.url, clip.cachePath, clip.cacheKind || null, clip.cacheSignature || null)
+          setLoaded(entry)
         }
       } catch (err) {
-        console.error(`Error loading render cache for clip ${clip.id}:`, err)
+        if (!cancelled && isCurrent(request)) console.error(`Error loading render cache for clip ${clip.id}:`, err)
       } finally {
-        loadingCacheFromDisk.delete(clip.id)
+        if (loadingCacheFromDisk.get(clip.id) === request) loadingCacheFromDisk.delete(clip.id)
       }
     }
-    
     loadFromDisk()
+    return () => {
+      cancelled = true
+      if (loadingCacheFromDisk.get(clip.id) === request) loadingCacheFromDisk.delete(clip.id)
+    }
   }, [
-    clip?.id,
-    clip?.cachePath,
+    readKey,
     clip?.cacheUrl,
-    clip?.cacheStatus,
-    clip?.cacheKind,
-    clip?.frameSampling,
     currentProjectHandle,
     setCacheUrl,
   ])
   
-  return loadedUrl
+  return loaded && isClipCacheReadCurrent(loaded.request, useTimelineStore.getState(), currentProjectHandle) ? loaded.url : null
 }
 
 /**
@@ -499,10 +461,6 @@ function useClipUrl(clip) {
       // Use disk-loaded URL if available (this is guaranteed fresh)
       if (diskLoadedUrl) {
         return { url: diskLoadedUrl, isCached: true }
-      }
-      // Use clip.cacheUrl if it's in our verified map
-      if (clip.cacheUrl && diskCacheUrls.has(clip.id)) {
-        return { url: clip.cacheUrl, isCached: true }
       }
       // Use clip.cacheUrl if it exists (might be from current session)
       if (clip.cacheUrl) {
@@ -2882,6 +2840,8 @@ function VideoLayerRenderer({
     const videoUrl = asset?.url || clip.url
     if (!videoUrl) return
 
+    const sourceRequest = createClipSourceRequest(clip, useTimelineStore.getState().timelineSessionId, currentProjectHandle)
+    const stillCurrent = () => isClipSourceRequestCurrent(sourceRequest, useTimelineStore.getState(), useProjectStore.getState().currentProjectHandle)
     setCacheStatus(clip.id, 'rendering', 0)
 
     try {
@@ -2894,7 +2854,7 @@ function VideoLayerRenderer({
           fps: 30,
           onProgress: (progress) => {
             if (progress.progress !== undefined) {
-              setCacheStatus(clip.id, 'rendering', progress.progress)
+              if (stillCurrent()) setCacheStatus(clip.id, 'rendering', progress.progress)
             }
           }
         }
@@ -2913,10 +2873,10 @@ function VideoLayerRenderer({
         }
       }
 
-      setCacheUrl(clip.id, blobUrl, cachePath)
+      if (stillCurrent()) setCacheUrl(clip.id, blobUrl, cachePath)
     } catch (err) {
       console.error('Auto render cache failed:', err)
-      setCacheStatus(clip.id, 'none', 0)
+      if (stillCurrent()) setCacheStatus(clip.id, 'none', 0)
     }
   }, [currentProjectHandle, getAssetById, getEnabledEffects, setCacheStatus, setCacheUrl])
 
@@ -3329,7 +3289,7 @@ function VideoLayerRenderer({
  * Call this when clearing a clip's render cache
  */
 export function clearDiskCacheUrl(clipId) {
-  const url = diskCacheUrls.get(clipId)
+  const url = diskCacheUrls.get(clipId)?.url
   if (url) {
     URL.revokeObjectURL(url)
     diskCacheUrls.delete(clipId)

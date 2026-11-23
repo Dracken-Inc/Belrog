@@ -1,5 +1,6 @@
 import { hasVideoSolo, isVideoTrackVisible } from './videoTrackVisibility.js'
 import { isBetweenClipTransition } from './transitionKinds.js'
+import { getClipPlaybackWindow } from './compoundPlayback.mjs'
 
 const normalizeTransitionSplit = (split = null, alignment = 'center') => {
   if (split && Number.isFinite(Number(split.clipA)) && Number.isFinite(Number(split.clipB))) {
@@ -67,8 +68,7 @@ export function getRenderableVideoClipIds({
     if (!clip?.id || clip.enabled === false) return false
     if (soloSet && !soloSet.has(clip.id)) return false
     if (clip.trackId && !visibleVideoTrackIds.has(clip.trackId)) return false
-    const clipStart = Number(clip.startTime) || 0
-    const clipEnd = clipStart + Math.max(0, Number(clip.duration) || 0)
-    return (clipStart < safeEnd && clipEnd > safeStart) || transitionContributorIds.has(clip.id)
+    const { start: clipStart, end: clipEnd } = getClipPlaybackWindow(clip)
+    return (clipEnd > clipStart && clipStart < safeEnd && clipEnd > safeStart) || transitionContributorIds.has(clip.id)
   }).map((clip) => clip.id))
 }

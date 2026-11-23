@@ -3,6 +3,16 @@ const fs = fsSync.promises
 const http = require('http')
 const path = require('path')
 const { spawnSync } = require('child_process')
+const mcpParity = require('./mcpParityTools.cjs')
+const mcpGenerationRunTools = require('./mcpGenerationRunTools.cjs')
+const mcpComfyRouterTools = require('./mcpComfyRouterTools.cjs')
+const mcpCaptionEngineTools = require('./mcpCaptionEngineTools.cjs')
+const comfyWorkflowAuthoring = require('./comfyWorkflowAuthoring.cjs')
+const optionalSetupTools = require('./optionalSetup.cjs')
+const toolSetupTools = require('./toolSetupTools.cjs')
+const lmStudioSetupTools = require('./lmStudioSetupTools.cjs')
+const comfyCloudSetupTools = require('./comfyCloudSetup.cjs')
+let exportPriorityPolicyPromise
 
 const DEFAULT_MCP_PORT = 19790
 const MCP_PROTOCOL_VERSION = '2024-11-05'
@@ -15,6 +25,9 @@ const MCP_PROMPT_BATCH_MAX_VARIATIONS_PER_WORKFLOW = 8
 const MCP_PROMPT_BATCH_MAX_TOTAL_JOBS = 24
 const MCP_MY_WORKFLOW_ID_PREFIX = 'my-workflow:'
 const MCP_ASSET_BATCH_MAX_ITEMS = 24
+const COMFY_SETUP_DEFAULT_PORTS = Object.freeze([8188, 8000, 8189, 8190, 8191, 7860])
+const COMFY_SETUP_MAX_EXTRA_PORTS = 8
+const COMFY_SETUP_MAX_TIMEOUT_MS = 5000
 const MCP_TEMPLATE_REPO = 'Comfy-Org/workflow_templates'
 const MCP_TEMPLATE_INDEX_URL = `https://raw.githubusercontent.com/${MCP_TEMPLATE_REPO}/main/templates/index.json`
 const MCP_TEMPLATE_RAW_BASE = `https://raw.githubusercontent.com/${MCP_TEMPLATE_REPO}/main/`
@@ -23,6 +36,14 @@ const MCP_TEMPLATE_FETCH_TIMEOUT_MS = 20_000
 const MCP_TEMPLATE_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000
 const MCP_ACTION_PLAN_MAX_STEPS = 50
 const MCP_ACTION_PLAN_WRITABLE_TOOLS = new Set([
+  ...mcpParity.writableTools,
+  'split_clip',
+  'extract_range',
+  'set_clip_speed',
+  'set_clip_audio',
+  'transcribe_captions',
+  'update_caption_cues',
+  'generate_captions',
   'undo',
   'redo',
   'set_playhead',
@@ -77,6 +98,7 @@ const MCP_ACTION_PLAN_WRITABLE_TOOLS = new Set([
   'set_clip_keyframes',
   'add_dip_to_black',
   'generate_music',
+  'generate_local_voice',
   'configure_music_video',
   'update_music_video_session',
   'manage_music_video_cast',
@@ -131,6 +153,8 @@ const MCP_PROMPT_BATCH_WORKFLOW_ALIASES = new Map([
   ['grokimage', 'grok-text-to-image'],
   ['grokt2i', 'grok-text-to-image'],
   ['ltx23t2v', 'ltx23-t2v'],
+  ['ltx23i2v', 'ltx23-i2v'],
+  ['ltxi2v', 'ltx23-i2v'],
   ['ltx23', 'ltx23-t2v'],
   ['ltxt2v', 'ltx23-t2v'],
   ['ltx', 'ltx23-t2v'],
@@ -212,6 +236,15 @@ const MCP_PROMPT_BATCH_SUPPORTED_WORKFLOWS = new Map([
     label: 'LTX 2.3 Text to Video',
     category: 'video',
     outputType: 'video',
+    defaultDurationSeconds: 5,
+    defaultFps: 24,
+    defaultResolution: { width: 1280, height: 720 },
+  }],
+  ['ltx23-i2v', {
+    label: 'Image to Video (LTX 2.3)',
+    category: 'video',
+    outputType: 'video',
+    requiresInputImage: true,
     defaultDurationSeconds: 5,
     defaultFps: 24,
     defaultResolution: { width: 1280, height: 720 },
@@ -390,6 +423,14 @@ function textResult(value) {
   }
 }
 
+// Raw API graphs must be complete JSON, never a truncated tool transcript.
+// Leave room below the embedded Agent's 128 KiB text-result boundary.
+function boundedWorkflowTextResult(value) {
+  const text = JSON.stringify(value)
+  if (Buffer.byteLength(text) > 120 * 1024) throw new Error('Workflow graph, bindings or plan exceeds the bounded response limit. Use a smaller workflow; no partial graph is returned.')
+  return textResult(text)
+}
+
 function errorResult(message) {
   return {
     content: [{ type: 'text', text: message || 'Tool failed.' }],
@@ -420,13 +461,50 @@ function normalizeLocalPort(value) {
   return parsed
 }
 
+function comfySetupPortOptions(args) {
+  const validPort = value => (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value.trim())))
+    ? normalizeLocalPort(value) : null
+  const port = args.port === undefined ? null : validPort(args.port)
+  if (args.port !== undefined && !port) return { error: 'Invalid ComfyUI port. Use a number from 1 to 65535.' }
+  const candidates = args.candidatePorts === undefined ? [] : args.candidatePorts
+  if (!Array.isArray(candidates) || candidates.length > COMFY_SETUP_MAX_EXTRA_PORTS || candidates.some(value => !validPort(value))) {
+    return { error: `candidatePorts must contain at most ${COMFY_SETUP_MAX_EXTRA_PORTS} local ports from 1 to 65535.` }
+  }
+  return { port, candidates: candidates.map(validPort) }
+}
+
+async function probeComfySetupCandidates(diagnose, configured, ports, timeoutMs) {
+  const results = new Array(ports.length)
+  let next = 0
+  // Bound work for offline setups; do not scan arbitrary ranges or serially
+  // wait a full timeout for every port. Preserve input order in the result.
+  await Promise.all(Array.from({ length: Math.min(3, ports.length) }, async () => {
+    while (next < ports.length) {
+      const index = next++
+      results[index] = ports[index] === configured?.connection?.port
+        ? configured : await diagnose({ port: ports[index], timeoutMs })
+    }
+  }))
+  return results
+}
+
+function selectComfySetupConnection(configured, diagnoses, requestedPort) {
+  const available = diagnoses.filter(value => value?.connection?.ok)
+  if (requestedPort) return {
+    reachable: available.find(value => value.connection.port === requestedPort) || null,
+    requestedPortUnavailable: !available.some(value => value.connection.port === requestedPort), available,
+  }
+  if (configured?.connection?.ok) return { reachable: configured, available }
+  return { reachable: available.length === 1 ? available[0] : null, ambiguous: available.length > 1, available }
+}
+
 function hasSnapshot(snapshot) {
   return Boolean(snapshot && snapshot.project)
 }
 
 function getSnapshotOrEmpty(snapshot) {
   return snapshot || {
-    app: { name: 'Belrog' },
+    app: { name: 'Velorn' },
     project: null,
     timelines: [],
     currentTimeline: null,
@@ -760,7 +838,7 @@ function getClipVisualSource(snapshot, clip, asset) {
     return {
       kind: 'poster',
       filePath: resolveProjectFilePath(snapshot, posterPath),
-      description: 'Representative poster frame generated by Belrog.',
+      description: 'Representative poster frame generated by Velorn.',
     }
   }
 
@@ -1000,7 +1078,7 @@ function getEffectClipForMcp(snapshot, clipId) {
   const clips = Array.isArray(timeline?.clips) ? timeline.clips : []
   const selectedIds = Array.isArray(timeline?.selectedClipIds) ? timeline.selectedClipIds.filter(Boolean) : []
   const id = String(clipId || '').trim() || (selectedIds.length === 1 ? selectedIds[0] : '')
-  if (!id) return { error: 'Provide clipId from get_timeline, or select exactly one visual clip in Belrog.' }
+  if (!id) return { error: 'Provide clipId from get_timeline, or select exactly one visual clip in Velorn.' }
   const clip = clips.find((candidate) => candidate?.id === id)
   if (!clip) return { error: `Clip ${id} was not found.` }
   const clipType = String(clip.type || '').toLowerCase()
@@ -1310,7 +1388,7 @@ function normalizeSolidTrackPlacement(value) {
 function resolveSolidColorPlan(snapshot, args = {}) {
   const timeline = snapshot?.currentTimeline || null
   const project = snapshot?.project || null
-  if (!timeline || !project) return { error: 'Open a saved Belrog project and timeline before creating a solid color.' }
+  if (!timeline || !project) return { error: 'Open a saved Velorn project and timeline before creating a solid color.' }
 
   const rawColor = args.color || args.fill || args.solidColor || '#000000'
   const color = normalizeClipLabelColor(rawColor)
@@ -1515,7 +1593,7 @@ function normalizeTimelineFps(value, fallback) {
 
 function resolveCreateTimelinePlan(snapshot, args = {}) {
   const project = snapshot?.project || null
-  if (!project) return { error: 'Open a saved Belrog project before creating a sequence.' }
+  if (!project) return { error: 'Open a saved Velorn project before creating a sequence.' }
 
   const timelines = Array.isArray(snapshot?.timelines) ? snapshot.timelines : []
   const currentTimeline = snapshot?.currentTimeline || null
@@ -1662,7 +1740,7 @@ function resolveAssetFolderParent(snapshot, args = {}) {
 
 function resolveCreateAssetFolderPlan(snapshot, args = {}) {
   const project = snapshot?.project || null
-  if (!project) return { error: 'Open a saved Belrog project before creating an asset folder.' }
+  if (!project) return { error: 'Open a saved Velorn project before creating an asset folder.' }
 
   const folders = Array.isArray(snapshot?.folders) ? snapshot.folders : []
   const rawPath = args.path ?? args.folderPath ?? args.segments ?? args.folderSegments
@@ -2025,7 +2103,7 @@ function resolveAssetsForFolderMove(snapshot, args = {}, target = {}) {
 
 function resolveMoveAssetsToFolderPlan(snapshot, args = {}) {
   const project = snapshot?.project || null
-  if (!project) return { error: 'Open a saved Belrog project before moving assets.' }
+  if (!project) return { error: 'Open a saved Velorn project before moving assets.' }
 
   const folders = Array.isArray(snapshot?.folders) ? snapshot.folders : []
   const target = resolveAssetMoveTargetFolder(snapshot, args)
@@ -2439,7 +2517,7 @@ function buildAiReviewPasses(snapshot) {
   const suggestedShotLimit = duration > 180 ? 40 : 30
 
   return {
-    purpose: 'Use these recipes as safe AI review passes for the open Belrog project. Prefer previewOnly before write actions that alter clips or markers.',
+    purpose: 'Use these recipes as safe AI review passes for the open Velorn project. Prefer previewOnly before write actions that alter clips or markers.',
     timeline: timeline ? {
       id: timeline.id,
       name: timeline.name,
@@ -2576,7 +2654,7 @@ function buildAiReviewPasses(snapshot) {
       {
         id: 'project_sandbox_setup',
         title: 'Project Sandbox Setup',
-        goal: 'Create or duplicate a Belrog project before risky AI edits or fresh automated layouts.',
+        goal: 'Create or duplicate a Velorn project before risky AI edits or fresh automated layouts.',
         prompt: 'If I want a fresh project, use create_project with previewOnly first. If I want to experiment safely on the current edit, use duplicate_project with previewOnly first, then apply only after I approve so the duplicate opens before you continue.',
         tools: ['get_project', 'create_project', 'duplicate_project'],
         safeDefaults: {
@@ -2625,7 +2703,7 @@ function buildAiReviewPasses(snapshot) {
       {
         id: 'native_transition_polish',
         title: 'Native Transition Polish Pass',
-        goal: 'Add, update, or remove Belrog native transitions such as dissolves, fades, wipes, slides, zooms, blur, and dip-to-black style edits.',
+        goal: 'Add, update, or remove Velorn native transitions such as dissolves, fades, wipes, slides, zooms, blur, and dip-to-black style edits.',
         prompt: 'Inspect adjacent clips first. Preview the exact transition type, duration, edge/alignment, and affected clip IDs before applying transitions.',
         tools: ['get_timeline', 'add_transition', 'update_transition', 'remove_transitions'],
         safeDefaults: {
@@ -2693,9 +2771,9 @@ function buildAiReviewPasses(snapshot) {
       {
         id: 'brief_to_generated_assets',
         title: 'Brief To Generated Assets Pass',
-        goal: 'Turn a written creative brief into source images or videos that can be assembled into a new Belrog sequence.',
-        prompt: 'Break my brief into a small shot/asset plan first. If several new assets will be generated, use create_asset_folder with previewOnly first so the results land in a named/nested project folder instead of the asset root. Use queue_prompt_generation_batch with previewOnly first to show the exact prompts, workflows, variation counts, seeds, resolution, duration, FPS, and folderId. After I approve, queue the generation jobs. Once generated assets exist, create a new timeline if needed, place results with add_assets_to_timeline, add titles/supers/shapes, animate transform/opacity/crop/color/shape style with set_clip_keyframes, inspect sample frames, and export only after I ask.',
-        tools: ['list_Belrog_workflows', 'create_project_checkpoint', 'create_asset_folder', 'queue_prompt_generation_batch', 'get_generation_status', 'create_timeline', 'add_assets_to_timeline', 'add_text_clip', 'add_shape_clip', 'set_clip_style', 'set_clip_keyframes', 'inspect_timeline_range', 'export_timeline'],
+        goal: 'Turn a written creative brief into source images or videos that can be assembled into a new Velorn sequence.',
+        prompt: 'First ask what story, casting and existing references I intend unless already established in our conversation. Propose a small shot/asset plan and ask for yes/no to the next creative step unless I explicitly delegated that whole scope. Never generate first and ask afterward whether I wanted it. If several approved new assets will be generated, use create_asset_folder with previewOnly first so results land in a named/nested project folder. Use queue_prompt_generation_batch with previewOnly first to show exact prompts, workflows, variation counts, seeds, resolution, duration, FPS, and folderId. Queue only within my explicit execution approval. After separate approval for timeline placement, create a new timeline if needed, place results with add_assets_to_timeline, and add approved titles/supers/shapes or keyframes. Inspect sample frames and export only after I ask.',
+        tools: ['list_velorn_workflows', 'create_project_checkpoint', 'create_asset_folder', 'queue_prompt_generation_batch', 'get_generation_status', 'create_timeline', 'add_assets_to_timeline', 'add_text_clip', 'add_shape_clip', 'set_clip_style', 'set_clip_keyframes', 'inspect_timeline_range', 'export_timeline'],
         safeDefaults: {
           previewOnlyFirst: true,
           queuesGenerationOnlyAfterApproval: true,
@@ -2708,9 +2786,57 @@ function buildAiReviewPasses(snapshot) {
         },
       },
       {
+        id: 'guided_production',
+        title: 'Guided Video Production',
+        goal: 'Help a creator develop a music video or other video one reviewable decision at a time, using the shared project Storyboard without a fixed model or Director wizard.',
+        prompt: 'Begin with get_production_guide and get_storyboard. The board is a read-only visual reference page; the conversation happens with an external assistant or the separate Velorn Agent dock. Ask about the user\'s story, casting intent and existing references before choosing characters, scenes or a look. Ask at most two focused questions at a time and offer options without deciding for them. Get yes/no to each proposed next creative step unless the user explicitly delegated that whole scope in this conversation; persisted agent-led is only a preference, not proof of delegation. Never generate first and ask afterward whether it was wanted. Preview edit_storyboard to save agreed decisions and record review_production_stage only after actual human review, not merely because a stage is ready. A stage review never grants permission for generation, spending, downloads, imports or timeline edits. Read the guide again after changes. For separately authorized media work, discover/import an appropriate workflow and preview exact execution inputs with existing tools. Attach approved results as takes; use update_shot.patch.storyboardAssetId for an approved storyboard first-frame image. Resolve stable Shot 01-style labels through presentation.shots to exact shotId, not array position. If the user approves an animatic, inspect the existing timelines, create or switch to the intended normal Velorn timeline, then preview a sequential still-image strip and approved song segment with existing placement/trim tools. Add shot-label text or markers only if requested. The board itself never plays or assembles an animatic, and the timeline remains the authoritative edit. This guide is deterministic shared-state guidance, not an embedded LLM. Read the accompanying get_production_guide recipe and get_production_run before resuming. Ask whether the user has a model or workflow in mind first; otherwise verify current official evidence and the actual machine before recommending. Start with one approved audition. Record per-shot attempts and uncertain jobs using edit_production_run; inspect the real backend before retrying. Review changed, missing or ambiguous shot links instead of guessing. Deliver a saved editable timeline ready for review in Velorn; export only on explicit user request.',
+        tools: ['get_production_guide', 'get_production_run', 'edit_production_run', 'get_storyboard', 'edit_storyboard', 'list_velorn_workflows', 'inspect_velorn_workflow', 'import_comfyui_workflow', 'queue_prompt_generation_batch', 'queue_timeline_template_generation', 'get_generation_status', 'import_asset_from_path', 'get_project', 'get_timeline', 'create_timeline', 'switch_timeline', 'add_assets_to_timeline', 'add_asset_to_timeline', 'trim_clips', 'add_text_clip', 'add_timeline_markers'],
+        safeDefaults: {
+          previewOnlyFirst: true,
+          maximumQuestionsPerTurn: 2,
+          askStoryCastAndReferencesFirst: true,
+          requireYesNoForNextCreativeStepUnlessScopeExplicitlyDelegated: true,
+          persistedDelegationIsNotAuthorization: true,
+          neverGenerateBeforePermission: true,
+          boardIsReadOnlyReference: true,
+          animaticUsesNormalTimeline: true,
+          exportByDefault: false,
+          recordProgressInProject: true,
+          askWorkflowPreferenceFirst: true,
+          requireHumanStageReview: true,
+          stageApprovalAuthorizesExecution: false,
+          requireSeparateGenerationApproval: true,
+          requireSeparateTimelinePlacementApproval: true,
+          useSharedProjectState: true,
+        },
+      },
+      {
+        id: 'project_storyboard',
+        title: 'Project Storyboard',
+        goal: 'Discuss and update model-agnostic shot plans through the external assistant while the read-only project Storyboard remains a shared visual reference, independently of Director.',
+        prompt: 'Read get_storyboard and get_production_guide. Ask what story, cast and references the user has in mind before making creative decisions. Save agreed general mood/prop references with update_board.patch.referenceAssetIds (existing image/video IDs), even before shots exist; never invent placeholder shots just to show references. Ask for yes/no to the next proposed creative step unless its whole scope was explicitly delegated in conversation. Read presentation.shots to map stable labels such as Shot 01 to exact shotId and stillAssetId; never use the display order as identity. Preview edit_storyboard to save agreed briefs, shots, references and durations, applying only the unchanged suggestedApplyPayload with previewToken and expectedContext. Labels are assigned by Velorn, not renamed through take label. After separate execution approval, generate with existing workflow tools, import if needed, attach_take and select_take after review. Set update_shot.patch.storyboardAssetId to an approved existing image to identify the storyboard first frame separately from cast references and selected video takes; null deliberately clears it, and a missing explicit image must not be silently substituted. Prompt/workflow notes are authored notes, not verified provenance. For an approved animatic, inspect get_project/get_timeline and preview create_timeline/switch_timeline for the intended sequence; re-read context after creation or switching. Use add_assets_to_timeline with trackStrategy singleTrack and layout sequential for distinct resolved still images with explicit per-entry durationSeconds. That batch deduplicates repeated asset IDs: if shots reuse an image, use separate add_asset_to_timeline calls at cumulative frame-rounded startSeconds so every shot remains present. Place the approved audio song asset at startSeconds 0 with sourceInSeconds from production.songStartSeconds and explicit durationSeconds for the segment; use trim_clips for later timing edits. An audio-bearing video also inserts video, so do not silently cover the stills; agree on an appropriate track plan first. Preview target tracks and overlaps to avoid overwriting an existing edit. Re-inspect the timeline to resolve created clip IDs; bind exact timelineId and clipId through previewed edit_production_run after placement; board edits never auto-synchronize those clips. Optional Shot 01 labels are ordinary add_text_clip overlays or add_timeline_markers only when requested. Preview each supported timeline write and stay within the agreed placement scope. The read-only board has no player or approval controls; no board operation runs models, imports media, synchronizes existing clips or assembles a timeline. The ordinary timeline remains the authoritative edit. Read the accompanying get_production_guide recipe and get_production_run before resuming. Ask whether the user has a model or workflow in mind first; otherwise verify current official evidence and the actual machine before recommending. Start with one approved audition. Record per-shot attempts and uncertain jobs using edit_production_run; inspect the real backend before retrying. Review changed, missing or ambiguous shot links instead of guessing. Deliver a saved editable timeline ready for review in Velorn; export only on explicit user request.',
+        tools: ['get_production_guide', 'get_production_run', 'edit_production_run', 'get_storyboard', 'edit_storyboard', 'list_velorn_workflows', 'inspect_velorn_workflow', 'import_comfyui_workflow', 'queue_prompt_generation_batch', 'queue_timeline_template_generation', 'get_generation_status', 'import_asset_from_path', 'get_project', 'get_timeline', 'create_timeline', 'switch_timeline', 'add_assets_to_timeline', 'add_asset_to_timeline', 'trim_clips', 'add_text_clip', 'add_timeline_markers'],
+        safeDefaults: {
+          previewOnlyFirst: true,
+          requirePreviewToken: true,
+          askStoryCastAndReferencesFirst: true,
+          requireYesNoForNextCreativeStepUnlessScopeExplicitlyDelegated: true,
+          persistedDelegationIsNotAuthorization: true,
+          boardIsReadOnlyReference: true,
+          animaticUsesNormalTimeline: true,
+          exportByDefault: false,
+          recordProgressInProject: true,
+          askWorkflowPreferenceFirst: true,
+          requireApprovalBeforeGeneration: true,
+          requireApprovalBeforeTimelinePlacement: true,
+          useSharedProjectState: true,
+          timelineRemainsAuthoritative: true,
+        },
+      },
+      {
         id: 'guided_music_video_creation',
         title: 'Guided Music Video Creation',
-        goal: 'Create a complete, editable Music Video through a collaborative, approval-based conversation using the same Director state as the Belrog UI.',
+        goal: 'Continue an existing Director session or an explicitly requested legacy guided Director workflow. For new model-independent music-video planning, use the Guided Video Production recipe.',
         prompt: 'Start with get_music_video_session and continue from its saved agentSession checkpoint. Work in phases: song, artist/cast, creative direction, director plan, keyframes, videos, edit, and review. Ask focused questions and save the current phase, next question, decisions, and approvals with update_music_video_session. Use import_asset_from_path for new media, configure_music_video for setup, queue_music_video_character_asset plus manage_music_video_cast for people, manage_music_video_pass for alternate performance and b-roll coverage, and set_music_video_director_script to validate and parse each approved script. Use update_music_video_shot for targeted revisions. Always preview generation batches and timeline assembly, show exact targets/workflows, and apply only after explicit approval because generation may start local GPU work or spend cloud credits. Poll generation, inspect results, allow targeted replacement/reruns, then assemble and save. Keep every result editable in the normal Director and timeline UI.',
         tools: ['get_music_video_session', 'update_music_video_session', 'import_asset_from_path', 'configure_music_video', 'queue_music_video_character_asset', 'manage_music_video_cast', 'manage_music_video_pass', 'set_music_video_director_script', 'get_music_video_plan', 'update_music_video_shot', 'queue_music_video_keyframes', 'inspect_music_video_keyframe', 'replace_music_video_keyframe', 'queue_music_video_videos', 'inspect_music_video_video', 'replace_music_video_video', 'get_generation_status', 'assemble_music_video_timeline', 'replace_music_video_timeline_shot', 'save_project'],
         safeDefaults: {
@@ -2725,8 +2851,8 @@ function buildAiReviewPasses(snapshot) {
       {
         id: 'music_video_keyframe_rerun',
         title: 'Music Video Shot Rerun',
-        goal: 'Discover, inspect, and regenerate one Music Video Step 4 keyframe or Step 5 video through the active workflow settings.',
-        prompt: 'Call get_music_video_plan first to discover the exact sceneId and shotId, prompts, timing, and missing stages. For Step 4, inspect with inspect_music_video_keyframe, then preview regenerate_music_video_keyframe. For Step 5, inspect with inspect_music_video_video, then preview regenerate_music_video_video. Show the current inputs, selected workflow, routing, active job, and latest result. Apply only after I approve because a rerun may start local GPU work or spend cloud credits. Inspect the same stage again after generation finishes.',
+        goal: 'Discover, inspect, and regenerate one Music Video keyframe (Keyframes step) or video (Videos step) through the active workflow settings.',
+        prompt: 'Call get_music_video_plan first to discover the exact sceneId and shotId, prompts, timing, and missing stages. For a keyframe, inspect with inspect_music_video_keyframe, then preview regenerate_music_video_keyframe. For a video, inspect with inspect_music_video_video, then preview regenerate_music_video_video. Show the current inputs, selected workflow, routing, active job, and latest result. Apply only after I approve because a rerun may start local GPU work or spend cloud credits. Inspect the same stage again after generation finishes.',
         tools: ['get_music_video_status', 'get_music_video_plan', 'inspect_music_video_keyframe', 'regenerate_music_video_keyframe', 'inspect_music_video_video', 'regenerate_music_video_video', 'get_generation_status'],
         safeDefaults: {
           previewOnlyFirst: true,
@@ -2740,7 +2866,7 @@ function buildAiReviewPasses(snapshot) {
         title: 'Generate From Timeline Context',
         goal: 'Turn the selected clip or current playhead frame into a safe Generate-tab image-to-video/keyframe request, queue an approved multi-workflow variation batch, or run an official ComfyUI template on the source clip.',
         prompt: 'Prepare the selected timeline shot for LTX 2.3 image-to-video. Preview the source frame, workflow, and prompt first; after I approve, open Generate with the frame loaded and the prompt filled in. If I ask for variations across workflows, use queue_timeline_generation_batch with previewOnly first, show the exact workflows/counts/seeds, then apply only after I approve. If I ask to use an official ComfyUI template such as LTX 2.3 LoRA video outpainting, use list_comfyui_templates to find the exact template name, then queue_timeline_template_generation with previewOnly first; applying may import the template and queue local GPU work. After generation finishes, use add_asset_to_timeline for one result, add_assets_to_timeline for multiple review lanes, or replace_clip_with_asset when I explicitly approve replacing an existing timeline clip.',
-        tools: ['set_playhead', 'inspect_timeline_frame', 'list_Belrog_workflows', 'list_comfyui_templates', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_timeline_template_generation', 'select_assets', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset'],
+        tools: ['set_playhead', 'inspect_timeline_frame', 'list_velorn_workflows', 'list_comfyui_templates', 'prepare_generation_from_timeline_context', 'queue_prepared_generation', 'queue_timeline_generation_batch', 'queue_timeline_template_generation', 'select_assets', 'add_asset_to_timeline', 'add_assets_to_timeline', 'replace_clip_with_asset'],
         safeDefaults: {
           previewOnlyFirst: true,
           defaultWorkflowId: 'ltx23-i2v',
@@ -2813,7 +2939,7 @@ function buildAiReviewPasses(snapshot) {
       {
         id: 'fcpxml_interchange',
         title: 'XML Interchange Pass',
-        goal: 'Export the active Belrog timeline as FCPXML for Resolve/Final Cut or XMEML v5 for Premiere Pro.',
+        goal: 'Export the active Velorn timeline as FCPXML for Resolve/Final Cut or XMEML v5 for Premiere Pro.',
         prompt: 'Choose fcpxml for Resolve or Final Cut, or premiere for Adobe Premiere Pro. Preview the XML export plan first, including the active timeline name, clip count, format, and output path. After I approve, export the XML to the project renders folder or the path I requested.',
         tools: ['get_project', 'get_timeline', 'export_fcpxml'],
         safeDefaults: {
@@ -3383,21 +3509,21 @@ function inspectExportFile(snapshot, args = {}) {
 }
 
 function sanitizeExportBaseName(value) {
-  return String(value || 'Belrog_Timeline')
+  return String(value || 'Velorn_Timeline')
     .trim()
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, '_')
     .replace(/_+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 120)
-    || 'Belrog_Timeline'
+    || 'Velorn_Timeline'
 }
 
 function resolveExportDeliveryPlan(snapshot, args = {}) {
   const timeline = snapshot?.currentTimeline || null
   const project = snapshot?.project || null
   if (!project || !timeline) {
-    return { error: 'Open a saved Belrog project and timeline before exporting.' }
+    return { error: 'Open a saved Velorn project and timeline before exporting.' }
   }
 
   const timelineWidth = Math.max(2, Math.round(toFiniteNumber(timeline.width, project?.settings?.width || 1920)))
@@ -3492,7 +3618,7 @@ function resolveExportDeliveryPlan(snapshot, args = {}) {
   }
   const rangeDuration = Math.max(0, rangeEnd - rangeStart)
 
-  const safeProjectName = sanitizeExportBaseName(project.name || 'Belrog')
+  const safeProjectName = sanitizeExportBaseName(project.name || 'Velorn')
   const safeTimelineName = sanitizeExportBaseName(timeline.name || 'Timeline')
   const targetSuffix = sanitizeExportBaseName(target || 'h264_hd')
   const filename = sanitizeExportBaseName(args.filename || `${safeProjectName}_${safeTimelineName}_${targetSuffix}`)
@@ -3589,7 +3715,7 @@ function checkExportReadiness(snapshot, args = {}) {
   if (plan.settings.includeAudio && audioTracks.some((track) => track?.muted)) notes.push('One or more audio tracks are muted and will not contribute to export audio.')
   if (plan.settings.includeAudio && audioClips.length === 0) notes.push('Audio export is enabled, but no active audio/video clips with audio were detected.')
   if (visualTracks.some((track) => track?.visible === false)) notes.push('One or more visual tracks are hidden and will not appear in the export.')
-  if (plan.settings.useHardwareEncoder) notes.push('Export requests hardware encoding; Belrog probes the active export FFmpeg at runtime and falls back to software encoding if the requested encoder is unavailable.')
+  if (plan.settings.useHardwareEncoder) notes.push('Export requests hardware encoding; Velorn probes the active export FFmpeg at runtime and falls back to software encoding if the requested encoder is unavailable.')
   if (plan.settings.deliveryFraming === 'fill') notes.push('Delivery framing is fill/center-crop, so the export will fill the target aspect ratio instead of letterboxing.')
 
   return {
@@ -3699,7 +3825,7 @@ function buildExportDeliveryBatchPlan(snapshot, args = {}) {
   const project = snapshot?.project || null
   const timeline = snapshot?.currentTimeline || null
   if (!project || !timeline) {
-    return { error: 'Open a saved Belrog project and timeline before exporting.' }
+    return { error: 'Open a saved Velorn project and timeline before exporting.' }
   }
 
   const rawTargets = Array.isArray(args.targets) && args.targets.length > 0
@@ -3737,7 +3863,7 @@ function buildExportDeliveryBatchPlan(snapshot, args = {}) {
     if (Object.prototype.hasOwnProperty.call(args, key)) sharedArgs[key] = args[key]
   }
 
-  const safeProjectName = sanitizeExportBaseName(project.name || 'Belrog')
+  const safeProjectName = sanitizeExportBaseName(project.name || 'Velorn')
   const safeTimelineName = sanitizeExportBaseName(timeline.name || 'Timeline')
   const filenamePrefix = sanitizeExportBaseName(args.filenamePrefix || `${safeProjectName}_${safeTimelineName}`)
 
@@ -4341,7 +4467,8 @@ async function acquireComfyWorkflowSource(args = {}) {
   }
 
   if (looksLikeApiFormatWorkflow(uiWorkflow)) {
-    throw new Error('This looks like API-format (prompt) JSON — only UI/graph export format is supported. In ComfyUI use Workflow > Export, not Export (API).')
+    const { validateApiWorkflow } = await import('./workflowApiGraph.mjs')
+    return { apiWorkflow: validateApiWorkflow(uiWorkflow), sourceUrl, sourceKind, defaultName }
   }
   if (!Array.isArray(uiWorkflow?.nodes)) {
     throw new Error('This JSON does not look like a ComfyUI UI-format workflow (missing nodes array).')
@@ -5019,7 +5146,7 @@ function normalizePromptBatchWorkflows(args = {}, workflowInfos = new Map()) {
     const workflowInfo = getPromptBatchWorkflowInfo(workflowId, workflowInfos)
     if (!workflowInfo) {
       return {
-        error: `Unsupported prompt generation workflow "${rawWorkflow}". Use list_Belrog_workflows to choose a bundled workflow or an agent-ready My Workflows entry.`,
+        error: `Unsupported prompt generation workflow "${rawWorkflow}". Use list_velorn_workflows to choose a bundled workflow or an agent-ready My Workflows entry.`,
       }
     }
 
@@ -5144,6 +5271,9 @@ function resolvePromptGenerationBatchPlan(_snapshot, args = {}, workflowInfos = 
     try {
       jobs = args.jobs.map((job, index) => {
         const workflowId = normalizePromptBatchWorkflowId(job?.workflowId)
+        if (!workflowId) {
+          throw new Error(`Prompt generation job ${index + 1} is missing workflowId. Each jobs[] item must contain its own workflowId and prompt; keep that job's settings in the same object.`)
+        }
         const workflowInfo = getPromptBatchWorkflowInfo(workflowId, workflowInfos)
         if (!workflowInfo) {
           throw new Error(`Unsupported prompt generation workflow "${job?.workflowId || ''}".`)
@@ -5152,7 +5282,7 @@ function resolvePromptGenerationBatchPlan(_snapshot, args = {}, workflowInfos = 
         if (!prompt) throw new Error(`Prompt generation job ${index + 1} is missing prompt text.`)
         const assetFieldIds = normalizePromptBatchAssetFieldIds(job)
         if (workflowInfo.requiresInputImage && !assetFieldIds.image && !assetFieldIds.inputImage) {
-          throw new Error(`Workflow "${workflowId}" needs an input image. Provide jobs[].assetFieldIds.image with a Belrog image asset id.`)
+          throw new Error(`Workflow "${workflowId}" needs an input image. Provide jobs[].assetFieldIds.image with a Velorn image asset id.`)
         }
         return {
           workflowId,
@@ -5919,7 +6049,7 @@ function analyzeTimeline(snapshot, args = {}) {
       findings: [{
         severity: 'error',
         code: 'no_current_timeline',
-        message: 'Belrog does not currently have an active timeline snapshot.',
+        message: 'Velorn does not currently have an active timeline snapshot.',
       }],
     }
   }
@@ -6225,10 +6355,10 @@ function analyzeTimeline(snapshot, args = {}) {
 }
 
 function createToolDefinitions() {
-  return [
+  const legacyTools = [
     {
       name: 'get_project',
-      description: 'Return a concise summary of the open Belrog project, current timeline, asset counts, and MCP snapshot freshness.',
+      description: 'Return a concise summary of the open Velorn project, current timeline, asset counts, and MCP snapshot freshness.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -6236,7 +6366,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_timeline',
-      description: 'Return the current timeline with tracks and clips. Clip timing is in seconds. Use assetId values with get_assets.',
+      description: 'Return the current timeline with tracks and clips. Clip timing is in seconds. Each clip may include computedTiming: Velorn-calculated timeline boundaries/midpoint and original-media source midpoint with explicit availability status. Prefer these values over recalculating from sourceDuration. Unsupported or unavailable source mappings have no numeric midpoint. Use assetId values with get_assets.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6248,19 +6378,21 @@ function createToolDefinitions() {
     },
     {
       name: 'get_assets',
-      description: 'Return media assets from the open project. Heavy preview URLs and blobs are never exposed.',
+      description: 'Return media assets from the open project. Omit type, or use all/any, for every media type. To show existing audio/video players, or pictures (as stills, at most four per call), in a connected agent reply and on the person\'s paired phone, pass their exact assetIds and showInChat:true; these attachments persist across restarts without regenerating or importing files. Heavy preview URLs and blobs are never exposed.',
       inputSchema: {
         type: 'object',
         properties: {
-          type: { type: 'string', description: 'Optional asset type filter: video, audio, image, mask, etc.' },
+          type: { type: 'string', description: 'Optional asset type filter: video, audio, image, mask, etc. Omit it (or use all/any) for the complete inventory.' },
           status: { type: 'string', description: 'Optional generationStatus/status filter.' },
+          assetIds: { type:'array',items:{type:'string'},maxItems:100,description:'Optional exact project asset IDs. Required with showInChat.' },
+          showInChat: { type:'boolean',description:'Attach the selected audio, video or pictures to this connected agent reply. Does not generate, import or edit the timeline.' },
           limit: { type: 'integer', description: 'Maximum assets to return. Defaults to 200.' },
         },
       },
     },
     {
       name: 'search_stock_media',
-      description: 'Search Pexels photos or videos using the API key saved in Belrog Settings. Read-only. Returns result IDs, thumbnails, creator/source metadata, and opens the same results in the visible Stock tab by default. Use import_stock_media with previewOnly before downloading selected results.',
+      description: 'Search Pexels photos or videos using the API key saved in Velorn Settings. Read-only. Returns result IDs, thumbnails, creator/source metadata, and opens the same results in the visible Stock tab by default. Use import_stock_media with previewOnly before downloading selected results.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6269,14 +6401,14 @@ function createToolDefinitions() {
           page: { type: 'integer', description: 'Pexels results page. Defaults to 1.' },
           perPage: { type: 'integer', description: 'Results to return per page, 1-80. Defaults to 20.' },
           orientation: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Optional Pexels orientation filter.' },
-          openStockTab: { type: 'boolean', description: 'Open/populate Belrog\'s visible Stock tab with these results. Defaults to true.' },
+          openStockTab: { type: 'boolean', description: 'Open/populate Velorn\'s visible Stock tab with these results. Defaults to true.' },
         },
         required: ['query'],
       },
     },
     {
       name: 'import_stock_media',
-      description: 'Preview or bulk-import Pexels search results into the active Belrog project. Re-runs the Pexels search, validates optional result IDs, skips media already imported from Pexels by default, saves provenance, and can organize results into a Stock/Pexels/query folder. Defaults to previewOnly; applying downloads project-owned media files and may take time.',
+      description: 'Preview or bulk-import Pexels search results into the active Velorn project. Re-runs the Pexels search, validates optional result IDs, skips media already imported from Pexels by default, saves provenance, and can organize results into a Stock/Pexels/query folder. Defaults to previewOnly; applying downloads project-owned media files and may take time.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6291,7 +6423,7 @@ function createToolDefinitions() {
           page: { type: 'integer', description: 'Pexels results page matching search_stock_media. Defaults to 1.' },
           perPage: { type: 'integer', description: 'Search page size, 1-80. Keep this consistent with search_stock_media when using resultIds.' },
           orientation: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Optional orientation filter matching search_stock_media.' },
-          folderId: { type: 'string', description: 'Optional existing Belrog asset-folder ID.' },
+          folderId: { type: 'string', description: 'Optional existing Velorn asset-folder ID.' },
           folderPath: { oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }], description: 'Optional folder path to create/reuse. Defaults to Stock/Pexels/<query>.' },
           organizeInFolder: { type: 'boolean', description: 'Set false to import into the project asset root when folderId/folderPath are omitted. Defaults to true.' },
           skipExisting: { type: 'boolean', description: 'Skip Pexels IDs already present in the project. Defaults to true.' },
@@ -6304,7 +6436,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_ai_review_passes',
-      description: 'Return practical AI review recipes for Belrog MCP clients: timeline health, visible-shot review, hero presence checks, marker cleanup, disabled clip labeling, clip enable/disable previews, delivery checks, and current-frame questions.',
+      description: 'Return practical AI review recipes for Velorn MCP clients: timeline health, visible-shot review, hero presence checks, marker cleanup, disabled clip labeling, clip enable/disable previews, delivery checks, and current-frame questions.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -6312,7 +6444,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_mcp_recipes',
-      description: 'Return practical MCP agent recipes and recommended workflows for Belrog. This is a clearer alias for get_ai_review_passes and should be used when a user asks what the MCP can do.',
+      description: 'Return practical MCP agent recipes and recommended workflows for Velorn. This is a clearer alias for get_ai_review_passes and should be used when a user asks what the MCP can do.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -6372,51 +6504,53 @@ function createToolDefinitions() {
     },
     {
       name: 'diagnose_comfyui_connection',
-      description: 'Diagnose the local ComfyUI connection used by Belrog. Checks the configured localhost port, ComfyUI API endpoints, launcher state, port owner, likely install mode such as portable/Desktop/Docker/manual, and returns support-friendly next steps.',
+      description: 'Diagnose the local ComfyUI connection used by Velorn. Checks the configured localhost port, ComfyUI API endpoints, launcher state, port owner, likely install mode such as portable/Desktop/Docker/manual, and returns support-friendly next steps.',
       inputSchema: {
         type: 'object',
         properties: {
-          port: { type: 'integer', description: 'Optional local ComfyUI port to test. Defaults to Belrog Settings > ComfyUI Connection.' },
+          port: { type: 'integer', description: 'Optional local ComfyUI port to test. Defaults to Velorn Settings > ComfyUI Connection.' },
           timeoutMs: { type: 'integer', description: 'Request timeout in milliseconds. Defaults to 4500, max 30000.' },
         },
       },
     },
     {
       name: 'set_comfyui_connection',
-      description: 'Set the local ComfyUI connection port used by Belrog. Supports previewOnly so assistants can propose the change before applying it. This changes Belrog settings only; it does not restart ComfyUI or edit launcher scripts.',
+      description: 'Connect Velorn to a running local ComfyUI server. Supports previewOnly so assistants can propose the port change before applying it. Applying verifies the endpoint and cannot switch away from another active Velorn-managed instance. This changes Velorn settings only; it does not install software, restart ComfyUI, edit launcher scripts or generate media.',
       inputSchema: {
         type: 'object',
         properties: {
-          port: { type: 'integer', description: 'Local ComfyUI port to save, for example 8188.' },
-          previewOnly: { type: 'boolean', description: 'When true, returns the proposed before/after setting without changing Belrog.' },
+          port: { type: 'integer', minimum: 1, maximum: 65535, description: 'Running local ComfyUI port to save, for example 8188 or ComfyUI Desktop port 8000.' },
+          previewOnly: { type: 'boolean', description: 'When true, returns the proposed before/after setting without changing Velorn.' },
         },
         required: ['port'],
       },
     },
     {
       name: 'repair_comfyui_connection',
-      description: 'Diagnose the configured ComfyUI port, probe likely local ports, and propose or apply a settings fix when ComfyUI is reachable on a different localhost port. Use previewOnly first unless the user already approved the change.',
+      description: 'Diagnose the configured ComfyUI port, probe bounded common local ports (including ComfyUI Desktop port 8000), and propose or apply a settings fix. Keeps a healthy configured connection unless a different port is explicitly requested; if multiple alternatives are found, ask which port to use instead of guessing. Use previewOnly first unless the user already approved the change. Does not install software or generate media.',
       inputSchema: {
         type: 'object',
         properties: {
           strategy: {
             type: 'string',
             enum: ['useReachablePort'],
-            description: 'Repair strategy. useReachablePort finds a reachable local ComfyUI port and points Belrog at it.',
+            description: 'Repair strategy. useReachablePort finds a reachable local ComfyUI port and points Velorn at it.',
           },
+          port: { type: 'integer', minimum: 1, maximum: 65535, description: 'Explicit local target chosen by the user. If unavailable, do not substitute a different server.' },
           candidatePorts: {
             type: 'array',
-            items: { type: 'integer' },
-            description: 'Optional local ports to probe. Defaults to common ComfyUI ports plus the configured port.',
+            maxItems: COMFY_SETUP_MAX_EXTRA_PORTS,
+            items: { type: 'integer', minimum: 1, maximum: 65535 },
+            description: 'Up to eight extra local ports to probe, not a target selection. Includes common ports 8188, 8000, 8189, 8190, 8191 and 7860 plus the configured port.',
           },
-          timeoutMs: { type: 'integer', description: 'Request timeout per probe in milliseconds. Defaults to 4500, max 30000.' },
-          previewOnly: { type: 'boolean', description: 'When true, returns the proposed repair without changing Belrog. Defaults to true.' },
+          timeoutMs: { type: 'integer', minimum: 1000, maximum: COMFY_SETUP_MAX_TIMEOUT_MS, description: 'Request timeout per probe in milliseconds. Defaults to 4500, max 5000. Discovery uses at most three concurrent diagnostics.' },
+          previewOnly: { type: 'boolean', description: 'When true, returns the proposed repair without changing Velorn. Defaults to true.' },
         },
       },
     },
     {
       name: 'guide_comfyui_setup',
-      description: 'Beginner-friendly Belrog-to-ComfyUI setup wizard. Diagnoses the current connection, probes common local ComfyUI ports, explains what to do for Portable/Desktop/Docker/manual installs, and can preview or apply the safe port-setting fix when ComfyUI is found on a different port.',
+      description: 'Beginner-friendly Velorn-to-ComfyUI setup wizard. Diagnoses the current connection, probes bounded common local ports including ComfyUI Desktop port 8000, explains Portable/Desktop/Docker/manual setup, and previews or applies a verified port fix. Keeps a healthy configured connection unless a different port is explicitly requested, and asks which server to use if alternatives are ambiguous. Does not install software or generate media.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6427,24 +6561,29 @@ function createToolDefinitions() {
           },
           port: {
             type: 'integer',
-            description: 'Optional ComfyUI port the user sees in their browser/terminal, for example 8188.',
+            minimum: 1,
+            maximum: 65535,
+            description: 'Optional explicit local target chosen by the user, for example 8188 or ComfyUI Desktop port 8000. If unavailable, do not substitute a different server.',
           },
           candidatePorts: {
             type: 'array',
-            items: { type: 'integer' },
-            description: 'Optional extra localhost ports to probe. Common ComfyUI ports are included automatically.',
+            maxItems: COMFY_SETUP_MAX_EXTRA_PORTS,
+            items: { type: 'integer', minimum: 1, maximum: 65535 },
+            description: 'Up to eight extra localhost ports to probe, not a target selection. Common ComfyUI ports including 8000 are included automatically.',
           },
           timeoutMs: {
             type: 'integer',
-            description: 'Request timeout per probe in milliseconds. Defaults to 4500, max 30000.',
+            minimum: 1000,
+            maximum: COMFY_SETUP_MAX_TIMEOUT_MS,
+            description: 'Request timeout per probe in milliseconds. Defaults to 4500, max 5000. Discovery uses at most three concurrent diagnostics.',
           },
           applyFix: {
             type: 'boolean',
-            description: 'When true and previewOnly=false, update Belrog to the reachable ComfyUI port if a safe port mismatch is found. Defaults to false.',
+            description: 'When true and previewOnly=false, update Velorn to the reachable ComfyUI port if a safe port mismatch is found. Defaults to false.',
           },
           previewOnly: {
             type: 'boolean',
-            description: 'When true, diagnose and propose the setup/fix without changing Belrog. Defaults to true.',
+            description: 'When true, diagnose and propose the setup/fix without changing Velorn. Defaults to true.',
           },
           nodeClasses: {
             type: 'array',
@@ -6456,7 +6595,7 @@ function createToolDefinitions() {
     },
     {
       name: 'control_comfyui_launcher',
-      description: 'Preview or apply ComfyUI launcher actions through Belrog: start, stop, or restart. Defaults to previewOnly for safety. Stop/restart can interrupt running generations and only work for ComfyUI processes owned by Belrog.',
+      description: 'Preview or apply ComfyUI launcher actions through Velorn: start, stop, or restart. Defaults to previewOnly for safety. Stop/restart can interrupt running generations and only work for ComfyUI processes owned by Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6475,7 +6614,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_comfyui_launcher_logs',
-      description: 'Return recent ComfyUI launcher log lines from Belrog, with a lightweight summary of common support issues like port conflicts, import errors, missing models/files, and CUDA memory errors.',
+      description: 'Return recent ComfyUI launcher log lines from Velorn, with a lightweight summary of common support issues like port conflicts, import errors, missing models/files, and CUDA memory errors.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6500,15 +6639,15 @@ function createToolDefinitions() {
             items: { type: 'string' },
             description: 'ComfyUI class_type names to check, for example ["KSampler", "LoadImage", "VHS_VideoCombine"].',
           },
-          port: { type: 'integer', description: 'Optional local ComfyUI port to test. Defaults to Belrog Settings > ComfyUI Connection.' },
+          port: { type: 'integer', description: 'Optional local ComfyUI port to test. Defaults to Velorn Settings > ComfyUI Connection.' },
           timeoutMs: { type: 'integer', description: 'Request timeout in milliseconds. Defaults to 4500, max 30000.' },
         },
         required: ['nodeClasses'],
       },
     },
     {
-      name: 'list_Belrog_workflows',
-      description: 'List bundled Belrog workflows and graphs saved under Generate > My Workflows. Saved graphs include MCP readiness, detected Belrog markers, output type, and any setup blockers. Ready My Workflows entries can be passed to queue_prompt_generation_batch by their my-workflow: id.',
+      name: 'list_velorn_workflows',
+      description: 'List bundled and saved Velorn workflows by name, including user-captured graphs and managed API copies. When the user asks for a particular purpose or subject, pass those words in query; runtime and source only select where a workflow runs or is stored, not what it does. For saved reuse without Generate, inspect_velorn_workflow(includeGraph:true), then preview queue_comfyui_workflow with stable workflowId, graphFingerprint (and the queue preview resolvedFingerprint on apply) and exact inputOverrides. savedRunsReady is API-copy availability, not execution or spending approval; marker readiness applies only to older guided routes.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6524,12 +6663,12 @@ function createToolDefinitions() {
           },
           source: {
             type: 'string',
-            enum: ['registry', 'file-scan', 'my-workflows'],
-            description: 'Optional source filter. Use my-workflows for graphs saved by the user in Generate.',
+            enum: ['registry', 'file-scan', 'my-workflows', 'imported'],
+            description: 'Optional source filter. Use my-workflows for user-captured graphs or imported for managed API copies.',
           },
           query: {
             type: 'string',
-            description: 'Optional search text matched against workflow id, label, description, and file.',
+            description: 'Search text matched against workflow id, label, description, and file. Use the requested purpose or subject here (for example upscale) when the user asks for a matching subset.',
           },
           refresh: {
             type: 'boolean',
@@ -6539,14 +6678,14 @@ function createToolDefinitions() {
       },
     },
     {
-      name: 'inspect_Belrog_workflow',
-      description: 'Inspect a bundled, My Workflows, or explicit Belrog workflow JSON. Returns MCP readiness and marker requirements for saved graphs, extracts ComfyUI node classes, validates them against local /object_info, and provides setup hints.',
+      name: 'inspect_velorn_workflow',
+      description: 'Inspect a bundled, My Workflows, or explicit Velorn workflow JSON. Returns MCP readiness and marker requirements for saved graphs, extracts ComfyUI node classes, validates them against local /object_info, and provides setup hints.',
       inputSchema: {
         type: 'object',
         properties: {
           workflowId: {
             type: 'string',
-            description: 'Workflow id from list_Belrog_workflows, for example z-image-turbo, ltx23-i2v, or my-workflow:my-saved-graph.',
+            description: 'Workflow id from list_velorn_workflows, for example z-image-turbo, ltx23-i2v, or my-workflow:my-saved-graph.',
           },
           workflowFile: {
             type: 'string',
@@ -6564,9 +6703,13 @@ function createToolDefinitions() {
             type: 'boolean',
             description: 'Include the extracted node class list. Defaults to true.',
           },
+          includeGraph: {
+            type: 'boolean',
+            description: 'Opt in to bounded, validated API/prompt workflow JSON and exact parameter bindings for review/editing. Does not execute or save. Saved captures expose their API copy independently of Velorn markers; legacy UI-only graphs need the user to open and save them again. Reuse with queue_comfyui_workflow(workflowId, graphFingerprint (and the queue preview resolvedFingerprint on apply), inputOverrides), or save an edited API copy with an explicit managed name; originals are never overwritten by queueing.',
+          },
           port: {
             type: 'integer',
-            description: 'Optional local ComfyUI port to test. Defaults to Belrog Settings > ComfyUI Connection.',
+            description: 'Optional local ComfyUI port to test. Defaults to Velorn Settings > ComfyUI Connection.',
           },
           timeoutMs: {
             type: 'integer',
@@ -6649,7 +6792,7 @@ function createToolDefinitions() {
     },
     {
       name: 'inspect_clip',
-      description: 'Inspect one timeline clip with its track, source asset, timing, transform, label, and a representative still image when available.',
+      description: 'Inspect one timeline clip with its track, source asset, timing, transform, label, and a representative still image when available. clip.computedTiming provides Velorn-calculated timeline and original-media source midpoints when available; check each status and do not invent timestamps for unsupported mappings. Timestamps are not proof that an image was captured.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6677,7 +6820,7 @@ function createToolDefinitions() {
         properties: {
           timeSeconds: {
             type: 'number',
-            description: 'Optional timeline time in seconds. Defaults to the current Belrog playhead.',
+            description: 'Optional timeline time in seconds. Defaults to the current Velorn playhead.',
           },
           frame: {
             type: 'integer',
@@ -6704,7 +6847,7 @@ function createToolDefinitions() {
     },
     {
       name: 'prepare_generation_from_timeline_context',
-      description: 'Prepare the Generate tab from the current timeline context. Uses the selected visible video/image clip when possible, otherwise the playhead frame. Defaults to previewOnly and never queues generation; applying captures the frame, opens Generate, and prefills workflow/prompt/settings for user review.',
+      description: 'Prepare the Generate tab from the current timeline picture. Defaults to previewOnly and never queues generation; applying captures the frame and durably stages workflow/prompt/settings for review. LTX accepts explicit durations such as 3 seconds. A picture does not select timeline audio: for ltx23-ia2v provide an existing audioAssetId and an explicit source audioStartSeconds, then verify queue_prepared_generation preview before queueing.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6727,7 +6870,7 @@ function createToolDefinitions() {
           },
           workflowId: {
             type: 'string',
-            description: 'Belrog workflow id to select in Generate. Defaults to ltx23-i2v.',
+            description: 'Velorn workflow id to select in Generate. Defaults to ltx23-i2v.',
           },
           category: {
             type: 'string',
@@ -6736,7 +6879,7 @@ function createToolDefinitions() {
           },
           prompt: {
             type: 'string',
-            description: 'Prompt to prefill. If omitted, Belrog tries to reuse prompt metadata from the source clip/asset.',
+            description: 'Prompt to prefill. If omitted, Velorn tries to reuse prompt metadata from the source clip/asset.',
           },
           negativePrompt: {
             type: 'string',
@@ -6749,6 +6892,14 @@ function createToolDefinitions() {
           duration: {
             type: 'number',
             description: 'Alias for durationSeconds.',
+          },
+          audioAssetId: {
+            type: 'string',
+            description: 'For ltx23-ia2v only: exact existing project audio asset to condition on. Requires durationSeconds and known source duration. No audio is automatically selected from the timeline.',
+          },
+          audioStartSeconds: {
+            type: 'number', minimum: 0,
+            description: 'Source-file offset for the explicitly selected audioAssetId, not timeline time. Defaults to 0. The offset plus durationSeconds must fit the known audio duration.',
           },
           width: {
             type: 'integer',
@@ -6788,7 +6939,7 @@ function createToolDefinitions() {
     },
     {
       name: 'queue_prepared_generation',
-      description: 'Queue the generation currently staged in the Generate tab by using the same queue path as Belrog’s Queue button. Use previewOnly first. Applying can start local/credit-backed generation depending on the selected workflow, so only call with previewOnly=false after explicit user approval.',
+      description: 'Preview the actual staged generation, including duration/FPS/resolution and conditioning-audio source range, then queue via Velorn’s Queue path. Apply requires the exact one-use previewToken and expectedContext returned by preview; changed settings or inputs fail closed. There are no duration override arguments here. Generation may use local GPU or paid credits and requires explicit user approval.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -6800,6 +6951,8 @@ function createToolDefinitions() {
             type: 'boolean',
             description: 'When true, refuses to queue unless Generate is staged with a timeline frame from prepare_generation_from_timeline_context. Defaults to true.',
           },
+          previewToken: { type: 'string', description: 'Exact one-use token returned by the prepared-generation preview. Required for apply; expires after five minutes.' },
+          expectedContext: { type: 'object', description: 'Exact context returned by preview. Do not edit or construct it.' },
           timeoutMs: {
             type: 'integer',
             description: 'Renderer response timeout in milliseconds. Defaults to 10000.',
@@ -6876,7 +7029,7 @@ function createToolDefinitions() {
           },
           prompt: {
             type: 'string',
-            description: 'Prompt for every variation. If omitted, Belrog tries to reuse prompt metadata from the source clip/asset.',
+            description: 'Prompt for every variation. If omitted, Velorn tries to reuse prompt metadata from the source clip/asset.',
           },
           negativePrompt: {
             type: 'string',
@@ -6974,7 +7127,7 @@ function createToolDefinitions() {
     },
     {
       name: 'queue_timeline_template_generation',
-      description: 'Preview or queue an official ComfyUI template — or a community workflow imported with import_comfyui_workflow (pass importedWorkflowId) — using the selected/playhead timeline source clip as the primary input asset. Extra media inputs (e.g. a reference face image) go in assetFieldIds keyed by the manifest\'s required assetSelect field ids shown in the preview. Defaults to previewOnly; applying may import the template and start local GPU generation, so require explicit user approval first.',
+      description: 'Preview or queue an official ComfyUI template — or a community workflow imported with import_comfyui_workflow (pass importedWorkflowId) — using the selected/playhead timeline source clip as the primary input asset. Extra media inputs go in assetFieldIds keyed by the manifest\'s required assetSelect field ids. For managed API graphs, durationSeconds/fps/resolution are requested metadata only: inspect_velorn_workflow(includeGraph:true), set exact templateParameters binding IDs, and inspect actual generated media before claiming output duration or size. Preview lists applied input bindings, retained defaults and unverified output dimensions/timing. Defaults to previewOnly; applying may import and start local GPU generation, so require explicit user approval first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7024,7 +7177,7 @@ function createToolDefinitions() {
           },
           seed: {
             type: 'integer',
-            description: 'Optional seed. If omitted, Belrog generates one.',
+            description: 'Optional seed. If omitted, Velorn generates one.',
           },
           durationSeconds: {
             type: 'number',
@@ -7066,7 +7219,7 @@ function createToolDefinitions() {
           },
           templateParameters: {
             type: 'object',
-            description: 'Optional imported-template parameter overrides. For LTX 2.3 Video Outpainting, use { "target_aspect_w": 16, "target_aspect_h": 9 } for a landscape 16:9 outpaint target or { "target_aspect_w": 9, "target_aspect_h": 16 } for vertical.',
+            description: 'Imported-template parameter overrides. Managed API graphs require exact field IDs from inspect_velorn_workflow(includeGraph:true), such as node_12_value; generic duration/FPS/size controls do not rewrite their graph. Binding an input does not prove effective output timing/size. Legacy UI templates may expose aliases such as target_aspect_w/target_aspect_h for outpainting.',
             additionalProperties: true,
           },
           parameters: {
@@ -7076,12 +7229,12 @@ function createToolDefinitions() {
           },
           assetFieldIds: {
             type: 'object',
-            description: 'Optional map of imported template assetSelect field IDs to Belrog asset IDs, for templates with required extra media inputs.',
+            description: 'Optional map of imported template assetSelect field IDs to Velorn asset IDs, for templates with required extra media inputs.',
             additionalProperties: { type: 'string' },
           },
           folderId: {
             type: 'string',
-            description: 'Optional existing Belrog asset folder ID where generated result assets should be organized after import.',
+            description: 'Optional existing Velorn asset folder ID where generated result assets should be organized after import.',
           },
           outputFolderId: {
             type: 'string',
@@ -7104,28 +7257,28 @@ function createToolDefinitions() {
     },
     {
       name: 'import_comfyui_workflow',
-      description: 'Import a community ComfyUI workflow (UI/graph export format — a comfy.org share download URL, a local .json file, or inline JSON) into Belrog as a runnable imported template. previewOnly (default) returns the dependency analysis — unknown node types, registry-resolvable node packs, model references and which of them lack download URLs — WITHOUT importing anything. Applying converts the graph through the connected ComfyUI, registers it, and returns a tpl- workflowId usable with install_workflow_setup and queue_timeline_template_generation (importedWorkflowId). Requires ComfyUI running to apply. Provide exactly one of url, filePath, or workflowJson.',
+      description: 'Preview/import ComfyUI JSON from exactly one URL, local file or inline workflowJson; API/prompt graphs require an explicit lowercase name slug and previewOnly:true first, then the exact returned sourceFingerprint and targetFingerprint with previewOnly:false to apply. UI graphs use the existing conversion/dependency import. API graphs are validated, bounded to 96 KiB/200 nodes, and saved only as a managed tpl-mcp-<name> copy. To edit, inspect_velorn_workflow with includeGraph:true, modify the graph, and re-import with the same name and overwrite:true after review. Never overwrites bundled or arbitrary source files. Import does not execute/generate/install; those remain separate approved tools. Queue managed imports with queue_timeline_template_generation(importedWorkflowId).',
       inputSchema: {
         type: 'object',
         properties: {
           url: {
             type: 'string',
-            description: 'HTTPS URL of a UI-format workflow JSON, for example "https://comfy.org/workflows/download/<id>.json".',
+            description: 'HTTPS URL of workflow JSON, for example "https://comfy.org/workflows/download/<id>.json".',
           },
           filePath: {
             type: 'string',
-            description: 'Absolute local path to a UI-format workflow .json export.',
+            description: 'Absolute local path to a workflow .json export. Read-only source; imported copies are stored in Velorn-managed storage.',
           },
           workflowJson: {
-            description: 'Inline UI-format workflow JSON (object or JSON string).',
+            description: 'Inline UI/graph or API/prompt workflow JSON (object preferred, or JSON string). For a user-attached JSON file, use its actual attached contents here; attachment labels/receipts are not filesystem paths. API graphs use safe ComfyUI-relative file values, not paths, credentials or URLs. Graphs over 96 KiB fail explicitly; never truncate them.',
           },
           name: {
             type: 'string',
-            description: 'Stable slug for the imported workflow id (becomes tpl-mcp-<slug>). Defaults to the URL/file basename or a slug of title.',
+            description: 'Stable slug for the imported workflow id (becomes tpl-mcp-<slug>). API/prompt graphs require an explicit lowercase name slug, for example my-video-test; no default is inferred. UI/graph imports may default to the URL/file basename or a slug of title.',
           },
           title: {
             type: 'string',
-            description: 'Human title shown in Belrog.',
+            description: 'Human title shown in Velorn.',
           },
           modelUrls: {
             type: 'array',
@@ -7135,7 +7288,7 @@ function createToolDefinitions() {
               properties: {
                 filename: { type: 'string', description: 'Model filename referenced by the workflow (basename match, case-insensitive).' },
                 url: { type: 'string', description: 'HTTPS download URL for this model file.' },
-                targetSubdir: { type: 'string', description: 'ComfyUI models/ subfolder (for example "loras"). Needed when Belrog cannot infer it.' },
+                targetSubdir: { type: 'string', description: 'ComfyUI models/ subfolder (for example "loras"). Needed when Velorn cannot infer it.' },
               },
               required: ['filename', 'url'],
             },
@@ -7145,6 +7298,9 @@ function createToolDefinitions() {
             type: 'boolean',
             description: 'Replace an existing imported workflow with the same name. Defaults to false (the call errors and reports the existing workflowId).',
           },
+          outputType: { type: 'string', enum: ['image', 'video', 'audio'], description: 'API import only: explicit output media type when it cannot be inferred from a save node.' },
+          sourceFingerprint: { type: 'string', description: 'API apply only: exact sourceFingerprint from the latest preview; changed JSON/settings require a fresh preview.' },
+          targetFingerprint: { type: 'string', description: 'API apply only: exact targetFingerprint from the latest preview, including "absent" for a new managed workflow.' },
           previewOnly: {
             type: 'boolean',
             description: 'When true, returns the dependency analysis without importing. Defaults to true.',
@@ -7154,6 +7310,20 @@ function createToolDefinitions() {
             description: 'Renderer response timeout in milliseconds. Defaults to 60000.',
           },
         },
+      },
+    },
+    {
+      name: 'open_comfyui_workflow',
+      description: 'Show a saved workflow as an editable graph in Velorn’s embedded ComfyUI tab. Use the exact workflowId from import_comfyui_workflow or list_velorn_workflows (saved/imported sources). Preview reads the saved graph without changing the tab; apply loads it into the current ComfyUI canvas, replacing its displayed graph. The saved recipe is unchanged. Does not queue generation, install dependencies, or change the timeline. To build and show a new workflow: inspect live node schemas, validate, import it, then open the returned workflowId with this tool. Reports opened only after the embedded graph loader confirms success.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          workflowId: { type: 'string', minLength: 1, maxLength: 200, description: 'Exact saved workflow ID, e.g. tpl-mcp-my-workflow or my-workflow:<id>. Not a filename, URL, or display title.' },
+          previewOnly: { type: 'boolean', default: true, description: 'Preview the saved workflow and graph-replacement effect without opening. Set false to open through the current access/approval mode.' },
+          expectedContext: { type: 'object', description: 'Unmodified context returned by the preview, when supplied.' },
+          timeoutMs: { type: 'integer', minimum: 1000, maximum: 60000, description: 'Renderer response timeout. Defaults to 60000 milliseconds.' },
+        },
+        required: ['workflowId'],
       },
     },
     {
@@ -7201,17 +7371,19 @@ function createToolDefinitions() {
     },
     {
       name: 'generate_music',
-      description: 'Preview or queue ACE-Step 1.5 turbo text-to-music generation on the connected ComfyUI (local model, no credits): style tags plus optional [verse]/[chorus] lyrics, exact duration 5-240s, BPM, musical key, time signature, up to 4 seed variations. Returns promptIds immediately (turbo model: seconds to a couple minutes depending on GPU) — poll get_music_generation_status, then place a finished take with add_asset_to_timeline. Requires the ACE-Step 1.5 models installed in ComfyUI; the timeline Music popover offers a one-click download if they are missing. Defaults to previewOnly.',
+      description: 'Preview or queue local music generation on the connected ComfyUI (no cloud credits). backend="ace-step" remains the default for existing callers: ACE-Step 1.5 turbo supports exact duration, BPM, key and time signature. backend="yue2" defaults to Automatic length with a 360-second safety limit when lengthMode and durationSeconds are omitted; choose Custom maximum for a 5-360 second cap. YuE 2 may finish earlier and a complete ending is not guaranteed. It has no native BPM, key or time-signature controls. Both accept style tags, optional lyrics and up to 4 seed variations. Requires an open saved project to queue and the selected backend\'s nodes/models installed; inspect setup in the timeline Music popover. Defaults to previewOnly; queue only after approval. Poll get_music_generation_status, review completion warnings, then use the completed audio\'s measured duration with add_asset_to_timeline.',
       inputSchema: {
         type: 'object',
         properties: {
+          backend: { type: 'string', enum: ['ace-step', 'yue2'], description: 'Music backend. Omitted means ace-step for backward compatibility. Select yue2 explicitly for YuE 2.' },
           tags: { type: 'string', description: 'Style tags: genre, mood, instruments, tempo — e.g. "warm lo-fi hip hop, mellow keys".' },
           lyrics: { type: 'string', description: 'Optional lyrics with [verse]/[chorus]/[bridge] structure tags. Omit (or leave empty) for instrumental.' },
-          instrumental: { type: 'boolean', description: 'Force instrumental output. Defaults to true when no lyrics are provided.' },
-          durationSeconds: { type: 'number', description: 'Exact track length in seconds (5-240). Match the timeline range being scored.' },
-          bpm: { type: 'number', description: 'Tempo in beats per minute (40-220). Defaults to 120.' },
-          keyScale: { type: 'string', description: 'Musical key/scale, e.g. "C major", "A minor". Defaults to "C major".' },
-          timeSignature: { type: 'string', enum: ['2', '3', '4', '6'], description: 'Beats per bar (x/4). Defaults to "4".' },
+          instrumental: { type: 'boolean', description: 'Request instrumental output and ignore supplied lyrics. Defaults to true when lyrics are empty. YuE 2 uses empty lyrics plus an instrumental style hint, best effort only; vocals may still occur.' },
+          lengthMode: { type: 'string', enum: ['automatic', 'custom'], description: 'YuE 2 only; rejected for ace-step. automatic uses a 360-second safety limit and allows the model to stop earlier, without guaranteeing a complete ending. custom requires durationSeconds (5-360) as a maximum. If omitted, YuE 2 uses automatic when durationSeconds is absent; older explicit-duration calls use custom. No mode is inferred from lyrics.' },
+          durationSeconds: { type: 'number', minimum: 5, maximum: 360, description: 'ACE-Step: exact seconds (5-240), default 30. YuE 2: Custom maximum seconds (5-360); may stop earlier. Omit for Automatic; explicit automatic accepts only its resolved 360-second safety limit. An explicit duration with omitted lengthMode preserves older YuE 2 Custom behavior.' },
+          bpm: { type: 'number', description: 'ACE-Step only: tempo in beats per minute (40-220), default 120. Rejected for yue2; use style tags for best-effort musical preferences.' },
+          keyScale: { type: 'string', description: 'ACE-Step only: musical key/scale, e.g. "C major", "A minor", default "C major". Rejected for yue2.' },
+          timeSignature: { type: 'string', enum: ['2', '3', '4', '6'], description: 'ACE-Step only: beats per bar (x/4), default "4". Rejected for yue2.' },
           variations: { type: 'integer', description: 'Seed variations to queue, 1-4. Defaults to 1.' },
           seed: { type: 'integer', description: 'Base seed; variations increment from it. Random when omitted.' },
           previewOnly: { type: 'boolean', description: 'When true, returns the generation plan without queueing. Defaults to true.' },
@@ -7221,11 +7393,34 @@ function createToolDefinitions() {
     },
     {
       name: 'get_music_generation_status',
-      description: 'Check ACE-Step music generation jobs queued by generate_music. Returns per-job status (queued/running/completed/failed) and, for completed jobs, the imported "Generated Music" asset ids/summaries ready for add_asset_to_timeline.',
+      description: 'Check ACE-Step or YuE 2 music jobs queued by generate_music. Returns backend, frozen lengthMode (automatic/custom/exact), effective durationSeconds, durationMode (exact or maximum), completion information/warnings, per-job status (queued/running/awaiting-project/completed/failed), and completed "Generated Music" asset ids/summaries with measured audio duration when available. A measured limit-reached warning is not a verified end-of-song signal; no warning does not guarantee a natural ending. awaiting-project means reopen the originating project to import finished audio; belongsToCurrentProject identifies ownership. YuE 2 may stop before its requested maximum; use measured duration, not the maximum, for add_asset_to_timeline.',
       inputSchema: {
         type: 'object',
         properties: {
           promptIds: { type: 'array', items: { type: 'string' }, description: 'Prompt ids from generate_music. Omit to list all music jobs from this app session.' },
+        },
+      },
+    },
+    {
+      name: 'generate_local_voice',
+      description: 'Preview or make one voice recording with Velorn\'s built-in local voice (Kokoro), the same one as the Sound tab. It runs on this computer: no ComfyUI, no key, no cloud credits. Preview (the default) checks the text and voice and returns the plan and the voice list without making anything. Apply (previewOnly:false) starts one recording and returns a promptId at once; poll get_local_voice_status for the finished audio asset, which is saved in the "Generated Sound" asset folder. This is not a ComfyUI run: follow it only with get_local_voice_status, never with the ComfyUI run tools. When it finishes the recording is already in the project\'s assets; put it on the timeline only if the person asked for that. English only, up to 3000 characters per call; split longer text into several calls. The voice model must already be downloaded: the person does that once in the Sound tab, and an agent cannot start that download. For cloud voices and sound effects use generate_create_media.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', minLength: 1, maxLength: 3000, description: 'The words to say.' },
+          voice: { type: 'string', enum: ['af_heart', 'af_bella', 'af_nicole', 'af_sarah', 'am_michael', 'am_fenrir', 'am_puck', 'bf_emma', 'bm_george', 'bm_fable'], description: 'Voice id. af_ and am_ are American female and male; bf_ and bm_ are British. Default af_heart.' },
+          previewOnly: { type: 'boolean', description: 'When true, returns the plan without making anything. Defaults to true.' },
+        },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'get_local_voice_status',
+      description: 'Check voice recordings started by generate_local_voice in this app session: per-job status (queued/running/completed/failed) and the finished audio assets, plus whether the voice model is downloaded and the list of voices. Reading this starts nothing.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          promptIds: { type: 'array', items: { type: 'string' }, description: 'Prompt ids from generate_local_voice. Omit to list every voice job from this app session.' },
         },
       },
     },
@@ -7249,20 +7444,20 @@ function createToolDefinitions() {
     },
     {
       name: 'queue_h3_reference_video',
-      description: 'Preview or queue one MiniMax H3 reference-to-video job from an exact Belrog image asset and audio asset. Designed for paid hero performance and lip-sync shots. Defaults to previewOnly; applying can spend Comfy credits, so require explicit approval first. No negative prompt is sent.',
+      description: 'Preview or queue one MiniMax H3 reference-to-video job from an exact Velorn image asset and audio asset. Designed for paid hero performance and lip-sync shots. Defaults to previewOnly; applying can spend Comfy credits, so require explicit approval first. No negative prompt is sent.',
       inputSchema: {
         type: 'object',
         required: ['imageAssetId', 'audioAssetId', 'prompt'],
         properties: {
-          imageAssetId: { type: 'string', description: 'Belrog image asset ID for the exact first/reference frame.' },
-          audioAssetId: { type: 'string', description: 'Belrog audio asset ID for the exact performance segment.' },
+          imageAssetId: { type: 'string', description: 'Velorn image asset ID for the exact first/reference frame.' },
+          audioAssetId: { type: 'string', description: 'Velorn audio asset ID for the exact performance segment.' },
           prompt: { type: 'string', description: 'Positive H3 performance prompt. Refer to the connected inputs as Image 1 and Audio 1.' },
           shotId: { type: 'string', description: 'Optional shot label stored with the queued job for later identification.' },
           durationSeconds: { type: 'number', description: 'Generation duration, 5-15 whole seconds. Shorter shot audio is generated as 5 seconds and can be trimmed in the edit.' },
           resolutionTier: { type: 'string', enum: ['768P', '2K'], description: 'H3 output tier. Defaults to 2K.' },
           aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: 'Output aspect ratio. Defaults to 16:9.' },
           seed: { type: 'integer', description: 'Optional deterministic seed.' },
-          folderId: { type: 'string', description: 'Optional Belrog asset-folder ID for the completed result.' },
+          folderId: { type: 'string', description: 'Optional Velorn asset-folder ID for the completed result.' },
           previewOnly: { type: 'boolean', description: 'When true, validates and returns the exact paid-generation plan without queueing. Defaults to true.' },
           timeoutMs: { type: 'integer', description: 'Renderer response timeout. Defaults to 30000.' },
         },
@@ -7270,7 +7465,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_generation_queue_status',
-      description: 'Return live Belrog Generate-queue jobs, including queued/running/completed/failed state, progress, prompt IDs, and imported result asset IDs. Filter by workflowId, jobIds, or batchId. Read-only.',
+      description: 'Read app-wide Velorn Generate-queue status without opening a tab, resuming jobs, importing outputs or submitting generation. Safe to poll repeatedly with a delay; do not retry rapidly. Not filtered to the open project; filter by workflowId, jobIds, or batchId. source=live is the current in-session queue snapshot (check updatedAt/isConnected); source=persisted contains unverified last-known records with status=unknown, not proof of running work. source=unavailable is not proof of an empty service queue. Polling does not start Generate or perform ComfyUI recovery. Stop polling if only persisted/unavailable data is returned and explain the limitation rather than repeatedly retrying. Read-only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7284,7 +7479,7 @@ function createToolDefinitions() {
     },
     {
       name: 'queue_prompt_generation_batch',
-      description: 'Preview or queue text-to-image/text-to-video jobs from written prompts. Supports bundled workflows, image-input workflows, and agent-ready my-workflow: ids returned by list_Belrog_workflows. For saved workflows, provide any required input image through jobs[].assetFieldIds.image. Defaults to previewOnly; applying can start local/credit-backed generation, so require explicit user approval first.',
+      description: 'Preview or queue text-to-image/text-to-video jobs from written prompts. Supports bundled workflows, image-input workflows, and agent-ready my-workflow: ids returned by list_velorn_workflows. For saved workflows, provide any required input image through jobs[].assetFieldIds.image. Defaults to previewOnly; applying can start local/credit-backed generation, so require explicit user approval first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7317,9 +7512,10 @@ function createToolDefinitions() {
           },
           jobs: {
             type: 'array',
-            description: 'Explicit generation jobs. Use this for workflows that need per-job settings or reference asset fields such as Seedance 2.0 R2V.',
+            description: 'Explicit generation jobs. Each array item is one complete job: keep workflowId, prompt, seed, resolution and input assets in the same object, not separate items. Use this for per-job settings or input/reference images, including ltx23-i2v and Seedance 2.0 R2V.',
             items: {
               type: 'object',
+              required: ['workflowId', 'prompt'],
               properties: {
                 workflowId: { type: 'string' },
                 workflowLabel: { type: 'string' },
@@ -7338,7 +7534,7 @@ function createToolDefinitions() {
                 },
                 assetFieldIds: {
                   type: 'object',
-                  description: 'Map workflow asset fields to Belrog asset IDs, for example { "referenceImage1": "...", "referenceImage2": "..." } for Seedance 2.0 R2V, or { "image": "<image asset id>" } for input-image workflows such as image-edit.',
+                  description: 'Map workflow asset fields to Velorn asset IDs, for example { "referenceImage1": "...", "referenceImage2": "..." } for Seedance 2.0 R2V, or { "image": "<image asset id>" } for input-image workflows such as image-edit.',
                   additionalProperties: { type: 'string' },
                 },
                 referenceImages: {
@@ -7444,7 +7640,7 @@ function createToolDefinitions() {
           },
           folderId: {
             type: 'string',
-            description: 'Optional existing Belrog asset folder ID where generated result assets should be organized after import. Use create_asset_folder first when a new folder is needed.',
+            description: 'Optional existing Velorn asset folder ID where generated result assets should be organized after import. Use create_asset_folder first when a new folder is needed.',
           },
           outputFolderId: {
             type: 'string',
@@ -7469,7 +7665,7 @@ function createToolDefinitions() {
         properties: {
           startSeconds: {
             type: 'number',
-            description: 'Optional range start in seconds. Defaults to the current Belrog playhead.',
+            description: 'Optional range start in seconds. Defaults to the current Velorn playhead.',
           },
           endSeconds: {
             type: 'number',
@@ -7583,7 +7779,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_generation_status',
-      description: 'Return active, failed, and recent generated asset status for the open project.',
+      description: 'Return generated asset status and native generationSpending policy. This read-only status does NOT assess a specific workflow, open an approval dialog, or record a spending refusal. Under ask-cloud, an authorized queue_comfyui_workflow apply (previewOnly:false) opens native confirmation automatically if needed; do not wait for pre-recorded approval before calling it. Local-only blocks paid/unverified submissions. This read-only tool cannot change policy or grant spending permission.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -7648,7 +7844,7 @@ function createToolDefinitions() {
     },
     {
       name: 'list_recent_projects',
-      description: 'List recently opened Belrog projects (name, path, last modified, whether currently open). Works with no project open. Use with open_project to recover after an app restart or switch projects.',
+      description: 'List recently opened Velorn projects (name, path, last modified, whether currently open). Works with no project open. Use with open_project to recover after an app restart or switch projects.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7658,7 +7854,7 @@ function createToolDefinitions() {
     },
     {
       name: 'open_project',
-      description: 'Open a Belrog project by folder path or by recent-project name. Works with no project open; replaces the currently open project (work is autosaved). Defaults to previewOnly.',
+      description: 'Open a Velorn project by folder path or by recent-project name. Works with no project open; replaces the currently open project (work is autosaved). Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7670,7 +7866,7 @@ function createToolDefinitions() {
     },
     {
       name: 'transcribe_captions',
-      description: 'Transcribe spoken audio into timed caption cues with the local whisper caption engine (ComfyUI Qwen3-ASR only as a configured fallback). Starts a background job and returns a jobId immediately; poll get_caption_status for progress and the finished editable cue draft. Timeline scope transcribes the mixed program audio; asset scope transcribes one source asset. Defaults to previewOnly.',
+      description: 'Transcribe spoken audio into timed caption cues with the local whisper caption engine (ComfyUI Qwen3-ASR only as a configured fallback). If local setup is missing, inspect get_caption_engine_status, preview install_caption_engine, obtain approval, apply and poll the returned install job before retrying. Pass modelId to use that installed local model explicitly. Starts a background job and returns a jobId immediately; poll get_caption_status for progress and the finished editable cue draft. Timeline scope transcribes the mixed program audio; asset scope transcribes one source asset. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7678,6 +7874,9 @@ function createToolDefinitions() {
           assetId: { type: 'string', description: 'Source asset ID from get_assets. Required when scope is asset.' },
           language: { type: 'string', description: 'ASR language hint such as English or Auto. Defaults to Auto.' },
           vocabulary: { type: 'string', description: 'Optional comma-separated vocabulary (brand names, people, jargon) to bias recognition. Omit to auto-derive from the project (name, timelines, text clips); pass an empty string to disable hints.' },
+          modelId: { type: 'string', enum: ['tiny', 'base', 'small', 'large-v3-turbo'], description: 'Optional installed local model. Forces local transcription with this model, without changing the user preference. Omit to keep configured behavior.' },
+          expectedDraftRevision: { type: 'integer', minimum: 0, description: 'Agent draft revision from preview; rejects a changed draft.' },
+          expectedContext: { type: 'object', description: 'Opaque project/timeline context from preview.', additionalProperties: true },
           previewOnly: { type: 'boolean', description: 'When true, returns the transcription plan without starting a job. Defaults to true.' },
         },
       },
@@ -7740,6 +7939,8 @@ function createToolDefinitions() {
       inputSchema: {
         type: 'object',
         properties: {
+          expectedDraftRevision: { type: 'integer', minimum: 0, description: 'Agent draft revision from preview; rejects a changed draft.' },
+          expectedContext: { type: 'object', description: 'Opaque project/timeline context from preview.', additionalProperties: true },
           presetId: { type: 'string', enum: ['kinetic-pop', 'kinetic-traditional', 'kinetic-neon', 'kinetic-bold-dark', 'kinetic-punch'], description: 'Caption style preset. Defaults to kinetic-pop. kinetic-traditional renders static bottom subtitles.' },
           accentColor: { type: 'string', description: 'Spoken-word accent color as #RRGGBB. Defaults to the preset accent.' },
           textColor: { type: 'string', description: 'Base text color as #RRGGBB. Defaults to the preset text color.' },
@@ -7902,7 +8103,7 @@ function createToolDefinitions() {
     },
     {
       name: 'set_music_video_director_script',
-      description: 'Preview, validate, save, and optionally parse a complete Music Video director script into the editable Director plan. Targets master, active, or a coverage pass ID. Defaults to parsing and previewOnly.',
+      description: 'Preview, validate, save, and optionally parse a complete Music Video director script into the editable Director plan (the same as the "Use this script" button in the Director Script step). Targets master, active, or a coverage pass ID. Defaults to parsing and previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7946,7 +8147,7 @@ function createToolDefinitions() {
     },
     {
       name: 'queue_music_video_keyframes',
-      description: 'Preview or queue Music Video keyframes for missing, all, or selected shots using native Director routing. Reference-free b-roll still follows Belrog local fallback rules. Applying may start local GPU work or spend cloud credits. Defaults to previewOnly.',
+      description: 'Preview or queue Music Video keyframes for missing, all, or selected shots using native Director routing. Reference-free b-roll still follows Velorn local fallback rules. Applying may start local GPU work or spend cloud credits. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -7988,7 +8189,7 @@ function createToolDefinitions() {
     },
     {
       name: 'replace_music_video_keyframe',
-      description: 'Preview or replace one Music Video Step 4 keyframe with an existing project image asset while preserving Director metadata. Use import_asset_from_path first for a new local file. Defaults to previewOnly.',
+      description: 'Preview or replace one Music Video keyframe with an existing project image asset while preserving Director metadata. Use import_asset_from_path first for a new local file. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8003,7 +8204,7 @@ function createToolDefinitions() {
     },
     {
       name: 'replace_music_video_video',
-      description: 'Preview or replace one Music Video Step 5 result with an existing project video asset while preserving Director metadata. Use import_asset_from_path first for a new local file. Defaults to previewOnly.',
+      description: 'Preview or replace one Music Video shot video with an existing project video asset while preserving Director metadata. Use import_asset_from_path first for a new local file. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8063,7 +8264,7 @@ function createToolDefinitions() {
     },
     {
       name: 'save_project',
-      description: 'Preview or explicitly save the current Belrog project, including Director state, assets, and the active timeline. Defaults to previewOnly.',
+      description: 'Preview or explicitly save the current Velorn project, including Director state, assets, and the active timeline. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8073,7 +8274,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_music_video_status',
-      description: 'Summarize Belrog music-video workflow assets, assembled clips, and sync-locked clips in the current project.',
+      description: 'Summarize Velorn music-video workflow assets, assembled clips, and sync-locked clips in the current project.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -8081,7 +8282,7 @@ function createToolDefinitions() {
     },
     {
       name: 'inspect_music_video_keyframe',
-      description: 'Inspect one Music Video Step 4 shot through the open Generate workspace. Returns its prompt, current keyframe, generation history, active job, selected workflow, expected workflow routing, and whether it can be regenerated. Read-only.',
+      description: 'Inspect one Music Video shot in the Keyframes step through the open Director tab. Returns its prompt, current keyframe, generation history, active job, selected workflow, expected workflow routing, and whether it can be regenerated. Read-only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8096,7 +8297,7 @@ function createToolDefinitions() {
     },
     {
       name: 'regenerate_music_video_keyframe',
-      description: 'Preview or queue regeneration of one Music Video Step 4 shot using the exact active keyframe settings and native Belrog routing. This includes reference-free b-roll fallback routing. Defaults to previewOnly and may start local GPU work or spend cloud credits when applied.',
+      description: 'Preview or queue regeneration of one Music Video shot in the Keyframes step using the exact active keyframe settings and native Velorn routing. This includes reference-free b-roll fallback routing. Defaults to previewOnly and may start local GPU work or spend cloud credits when applied.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8110,7 +8311,7 @@ function createToolDefinitions() {
     },
     {
       name: 'get_music_video_plan',
-      description: 'Return the parsed Music Video director plan from the open Generate workspace, including every sceneId and shotId, timing, shot type, keyframe and motion prompts, selected workflows, active jobs, and Step 4/5 completion state. Includes shots that have not generated assets yet. Read-only.',
+      description: 'Return the parsed Music Video director plan from the open Director tab, including every sceneId and shotId, timing, shot type, keyframe and motion prompts, selected workflows, active jobs, and Keyframes and Videos step completion state. Includes shots that have not generated assets yet. Read-only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8120,7 +8321,7 @@ function createToolDefinitions() {
     },
     {
       name: 'inspect_music_video_video',
-      description: 'Inspect one Music Video Step 5 shot through the open Generate workspace. Returns its input keyframe, motion prompt, timing, active workflow settings, active job, latest video, output history, and latest poster image when available. Read-only.',
+      description: 'Inspect one Music Video shot in the Videos step through the open Director tab. Returns its input keyframe, motion prompt, timing, active workflow settings, active job, latest video, output history, and latest poster image when available. Read-only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8135,7 +8336,7 @@ function createToolDefinitions() {
     },
     {
       name: 'regenerate_music_video_video',
-      description: 'Preview or queue regeneration of one Music Video Step 5 shot using its generated keyframe and the exact active video settings and native Belrog routing. Defaults to previewOnly and may start local GPU work or spend cloud credits when applied.',
+      description: 'Preview or queue regeneration of one Music Video shot in the Videos step using its generated keyframe and the exact active video settings and native Velorn routing. Defaults to previewOnly and may start local GPU work or spend cloud credits when applied.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8173,7 +8374,7 @@ function createToolDefinitions() {
     },
     {
       name: 'set_clip_label_color',
-      description: 'Set or clear label colors for current timeline clips by explicit clipIds or a safe built-in filter. Non-destructive and undoable in Belrog.',
+      description: 'Set or clear label colors for current timeline clips by explicit clipIds or a safe built-in filter. Non-destructive and undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8204,7 +8405,7 @@ function createToolDefinitions() {
     },
     {
       name: 'set_clips_enabled',
-      description: 'Enable or disable current timeline clips by explicit clipIds or a safe built-in filter. Use previewOnly first for AI-assisted edit decisions. Undoable in Belrog.',
+      description: 'Enable or disable current timeline clips by explicit clipIds or a safe built-in filter. Use previewOnly first for AI-assisted edit decisions. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8236,7 +8437,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_timeline_markers',
-      description: 'Add one or more labeled timeline markers at explicit times, frames, or the current playhead. Non-destructive and undoable in Belrog.',
+      description: 'Add one or more labeled timeline markers at explicit times, frames, or the current playhead. Non-destructive and undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8282,7 +8483,7 @@ function createToolDefinitions() {
     },
     {
       name: 'remove_timeline_markers',
-      description: 'Remove timeline markers by ID, all markers, marker color, label text, or time range. Undoable in Belrog; use previewOnly for safety.',
+      description: 'Remove timeline markers by ID, all markers, marker color, label text, or time range. Undoable in Velorn; use previewOnly for safety.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8324,7 +8525,7 @@ function createToolDefinitions() {
     },
     {
       name: 'set_timeline_marker_properties',
-      description: 'Rename, recolor, or move existing timeline markers by ID, color, label text, or time range. Undoable in Belrog; use previewOnly before changing many review markers.',
+      description: 'Rename, recolor, or move existing timeline markers by ID, color, label text, or time range. Undoable in Velorn; use previewOnly before changing many review markers.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8390,7 +8591,7 @@ function createToolDefinitions() {
     },
     {
       name: 'undo',
-      description: 'Undo the latest Belrog timeline edit or sequence/project-structure edit. Scope can be auto, timeline, or project. Low-risk and mirrors the app undo stack.',
+      description: 'Undo the latest Velorn timeline edit or sequence/project-structure edit. Scope can be auto, timeline, or project. Low-risk and mirrors the app undo stack.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8401,7 +8602,7 @@ function createToolDefinitions() {
     },
     {
       name: 'redo',
-      description: 'Redo the latest Belrog timeline edit or sequence/project-structure edit. Scope can be auto, timeline, or project. Low-risk and mirrors the app redo stack.',
+      description: 'Redo the latest Velorn timeline edit or sequence/project-structure edit. Scope can be auto, timeline, or project. Low-risk and mirrors the app redo stack.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8449,7 +8650,7 @@ function createToolDefinitions() {
     },
     {
       name: 'select_assets',
-      description: 'Select/preview project assets by ID, name, type, folder, status, or latest match. Belrog currently previews the first matched asset.',
+      description: 'Select/preview project assets by ID, name, type, folder, status, or latest match. Velorn currently previews the first matched asset.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8483,7 +8684,7 @@ function createToolDefinitions() {
     },
     {
       name: 'restore_project_checkpoint',
-      description: 'Preview or restore an in-memory MCP project checkpoint created during this Belrog session. Defaults to previewOnly because it can replace current timeline/asset state.',
+      description: 'Preview or restore an in-memory MCP project checkpoint created during this Velorn session. Defaults to previewOnly because it can replace current timeline/asset state.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8496,7 +8697,7 @@ function createToolDefinitions() {
     },
     {
       name: 'import_asset_from_path',
-      description: 'Preview or import a local media path into the active Belrog project. Single files use the same copy/import path as the UI import button. Image sequences import too: point at a folder of numbered frames (or any one frame of a 3+ frame run — png/jpg/webp/tif/exr/dpx) and the run transcodes once into a single video clip tagged with its sequence provenance; gaps hold the previous frame.',
+      description: 'Preview or import a local media path into the active Velorn project. Single files use the same copy/import path as the UI import button. Image sequences import too: point at a folder of numbered frames (or any one frame of a 3+ frame run — png/jpg/webp/tif/exr/dpx) and the run transcodes once into a single video clip tagged with its sequence provenance; gaps hold the previous frame.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8515,7 +8716,7 @@ function createToolDefinitions() {
     },
     {
       name: 'relink_asset',
-      description: 'Preview or relink an existing Belrog asset record to a different local file path. Useful after check_media_health finds missing media. This updates Belrog project metadata only; it does not copy media. Defaults to previewOnly.',
+      description: 'Preview or relink an existing Velorn asset record to a different local file path. Useful after check_media_health finds missing media. This updates Velorn project metadata only; it does not copy media. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8620,7 +8821,7 @@ function createToolDefinitions() {
     },
     {
       name: 'run_mcp_action_plan',
-      description: 'Preview or run a small ordered batch of approved Belrog MCP write actions. Use this when an agent has already planned several safe steps and wants one checkpointed apply pass. Defaults to previewOnly.',
+      description: 'Preview or run a small ordered batch of approved Velorn MCP write actions. Preview validates tool names, not dependent future document edits; preview individual tools for semantic validation. A checkpoint precedes apply. Stops after starting an asynchronous job: inspect its status before submitting remaining steps. Defaults to previewOnly.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8640,6 +8841,7 @@ function createToolDefinitions() {
           },
           label: { type: 'string', description: 'Optional label for the plan/checkpoint.' },
           createCheckpointFirst: { type: 'boolean', description: 'Create an in-memory checkpoint before applying. Defaults to true.' },
+          expectedContext: { type: 'object', description: 'Context returned by plan preview; rejected if the document changed before starting.', additionalProperties: true },
           stopOnError: { type: 'boolean', description: 'Stop applying after the first failed step. Defaults to true.' },
           previewOnly: { type: 'boolean', description: 'When true, validates and returns the plan without running it. Defaults to true.' },
         },
@@ -8667,7 +8869,7 @@ function createToolDefinitions() {
     },
     {
       name: 'create_project',
-      description: 'Preview or create a new Belrog project in the configured Projects folder. Applying opens the new empty project. Defaults to previewOnly so agents cannot accidentally create folders without approval.',
+      description: 'Preview or create a new Velorn project in the configured Projects folder. Applying opens the new empty project. Defaults to previewOnly so agents cannot accidentally create folders without approval.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8685,15 +8887,15 @@ function createToolDefinitions() {
           },
           width: {
             type: 'integer',
-            description: 'Optional project width. Defaults to Belrog new-project defaults.',
+            description: 'Optional project width. Defaults to Velorn new-project defaults.',
           },
           height: {
             type: 'integer',
-            description: 'Optional project height. Defaults to Belrog new-project defaults.',
+            description: 'Optional project height. Defaults to Velorn new-project defaults.',
           },
           fps: {
             type: 'number',
-            description: 'Optional project frame rate. Defaults to Belrog new-project defaults.',
+            description: 'Optional project frame rate. Defaults to Velorn new-project defaults.',
           },
           previewOnly: {
             type: 'boolean',
@@ -8704,7 +8906,7 @@ function createToolDefinitions() {
     },
     {
       name: 'duplicate_project',
-      description: 'Preview or duplicate a Belrog project folder. Defaults to the current open project, copies the whole folder, remaps saved paths, creates a sibling copy, and opens the duplicate on apply.',
+      description: 'Preview or duplicate a Velorn project folder. Defaults to the current open project, copies the whole folder, remaps saved paths, creates a sibling copy, and opens the duplicate on apply.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8737,7 +8939,7 @@ function createToolDefinitions() {
     },
     {
       name: 'create_timeline',
-      description: 'Preview or create a new Belrog sequence/timeline with a name, optional dimensions, fps, duration, and optional switch-to-new-sequence behavior. Defaults to previewOnly; applying is undoable in Belrog.',
+      description: 'Preview or create a new Velorn sequence/timeline with a name, optional dimensions, fps, duration, and optional switch-to-new-sequence behavior. Defaults to previewOnly; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8779,7 +8981,7 @@ function createToolDefinitions() {
           },
           switchToTimeline: {
             type: 'boolean',
-            description: 'When true, switch Belrog to the new sequence after creation. Defaults to true.',
+            description: 'When true, switch Velorn to the new sequence after creation. Defaults to true.',
           },
           activate: {
             type: 'boolean',
@@ -8806,7 +9008,7 @@ function createToolDefinitions() {
     },
     {
       name: 'create_asset_folder',
-      description: 'Preview or create Belrog asset-panel folders. Accepts a single folder name or a nested path like "AI Spots / July 4th Demo"; reuses existing matching folders by default and creates only missing folders.',
+      description: 'Preview or create Velorn asset-panel folders. Accepts a single folder name or a nested path like "AI Spots / July 4th Demo"; reuses existing matching folders by default and creates only missing folders.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -8868,7 +9070,7 @@ function createToolDefinitions() {
     },
     {
       name: 'move_assets_to_folder',
-      description: 'Preview or move existing Belrog assets into an asset-panel folder. Can target explicit asset IDs/names or safe filters such as rootOnly + constantsOnly. Defaults to previewOnly and can create a missing target folder path before moving.',
+      description: 'Preview or move existing Velorn assets into an asset-panel folder. Can target explicit asset IDs/names or safe filters such as rootOnly + constantsOnly. Defaults to previewOnly and can create a missing target folder path before moving.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9034,7 +9236,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_track',
-      description: 'Create a new timeline track. Video tracks are added at the top of the stack, which is useful before adding another text/title layer. Undoable in Belrog.',
+      description: 'Create a new timeline track. Video tracks are added at the top of the stack, which is useful before adding another text/title layer. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9061,7 +9263,7 @@ function createToolDefinitions() {
     },
     {
       name: 'update_track',
-      description: 'Preview or update an existing timeline track: rename it, mute/unmute, solo, lock/unlock, show/hide, set mixer volume/pan, edit insert effects, change audio channels, or reorder within its video/audio group. Undoable in Belrog.',
+      description: 'Preview or update an existing timeline track: rename it, mute/unmute, solo, lock/unlock, show/hide, set mixer volume/pan, edit insert effects, change audio channels, or reorder within its video/audio group. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9122,7 +9324,7 @@ function createToolDefinitions() {
     },
     {
       name: 'remove_track',
-      description: 'Preview or remove a timeline track and all clips on it. Belrog protects the last track of each type. Use previewOnly first.',
+      description: 'Preview or remove a timeline track and all clips on it. Velorn protects the last track of each type. Use previewOnly first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9134,7 +9336,7 @@ function createToolDefinitions() {
     },
     {
       name: 'switch_timeline',
-      description: 'Preview or switch the active Belrog sequence/timeline. Useful when an agent creates review timelines and then needs to work inside one.',
+      description: 'Preview or switch the active Velorn sequence/timeline. Useful when an agent creates review timelines and then needs to work inside one.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9186,7 +9388,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_transition',
-      description: 'Preview or add a native Belrog transition. Use clipAId+clipBId for a between-clips transition on the same track, or clipId+edge for an in/out edge transition. Undoable in Belrog.',
+      description: 'Preview or add a native Velorn transition. Use clipAId+clipBId for a between-clips transition on the same track, or clipId+edge for an in/out edge transition. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9206,7 +9408,7 @@ function createToolDefinitions() {
     },
     {
       name: 'update_transition',
-      description: 'Preview or update a native transition type, duration, alignment, or settings. Undoable in Belrog.',
+      description: 'Preview or update a native transition type, duration, alignment, or settings. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9224,7 +9426,7 @@ function createToolDefinitions() {
     },
     {
       name: 'remove_transitions',
-      description: 'Preview or remove one or more native Belrog transitions. Undoable in Belrog.',
+      description: 'Preview or remove one or more native Velorn transitions. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9236,7 +9438,7 @@ function createToolDefinitions() {
     },
     {
       name: 'move_clips',
-      description: 'Preview or move one or more clips to a track and/or start time. Use for AI timeline layout cleanup, review lanes, and repositioning generated assets. Undoable in Belrog.',
+      description: 'Preview or move one or more clips to a track and/or start time. Use for AI timeline layout cleanup, review lanes, and repositioning generated assets. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9256,14 +9458,14 @@ function createToolDefinitions() {
           trackId: { type: 'string', description: 'Target track ID for a single move or shared batch target.' },
           startSeconds: { type: 'number', description: 'Target start time in seconds for a single move.' },
           startTime: { type: 'number', description: 'Alias for startSeconds.' },
-          resolveOverlaps: { type: 'boolean', description: 'When true, use Belrog overwrite/overlap resolution. Defaults to false.' },
+          resolveOverlaps: { type: 'boolean', description: 'When true, use Velorn overwrite/overlap resolution. Defaults to false.' },
           previewOnly: { type: 'boolean', description: 'When true, returns the move plan without changing the timeline. Defaults to true.' },
         },
       },
     },
     {
       name: 'trim_clips',
-      description: 'Preview or update clip timing/trim values for one or more clips. Supports startSeconds, durationSeconds, trimStartSeconds, and trimEndSeconds. Undoable in Belrog.',
+      description: 'Preview or update clip timing/trim values for one or more clips. Supports startSeconds, durationSeconds, trimStartSeconds, and trimEndSeconds. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9292,7 +9494,7 @@ function createToolDefinitions() {
     },
     {
       name: 'delete_clips',
-      description: 'Preview or delete timeline clips by ID or simple filter. Supports ripple delete. Destructive but undoable in Belrog; use previewOnly first.',
+      description: 'Preview or delete timeline clips by ID or simple filter. Supports ripple delete. Destructive but undoable in Velorn; use previewOnly first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9307,7 +9509,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_asset_to_timeline',
-      description: 'Preview or place a project asset on the active timeline. Can target a specific asset id/name or the latest generated asset, choose playhead/selected-clip/timeline-end placement, use an existing compatible track, or create a new top video/audio track. Defaults to previewOnly; applying is undoable in Belrog.',
+      description: 'Preview or place a project asset on the active timeline. Can target a specific asset id/name or the latest generated asset, choose playhead/selected-clip/timeline-end placement, use an existing compatible track, or create a new top video/audio track. Defaults to previewOnly; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9343,7 +9545,7 @@ function createToolDefinitions() {
           },
           trackId: {
             type: 'string',
-            description: 'Optional compatible target track ID. Video/image assets require a video track; audio assets require an audio track.',
+            description: 'Usually omit this for automatic placement. For a specific track, use its actual ID from get_timeline, never an assumed ID such as track-1. Video/image assets require a video track; audio assets require an audio track. A missing ID recovers to the sole available compatible track and reports trackResolution; multiple candidates require an exact choice.',
           },
           createTrack: {
             type: 'boolean',
@@ -9424,11 +9626,11 @@ function createToolDefinitions() {
     },
     {
       name: 'replace_clip_with_asset',
-      description: 'Preview or replace an existing video/image/audio timeline clip with another project asset while preserving its timeline slot, transform, label color, effects, and keyframes by default. The old asset is not deleted. Defaults to previewOnly and is undoable in Belrog.',
+      description: 'Preview or replace an existing video/image/audio timeline clip with another project asset while preserving its timeline slot, transform, label color, effects, and keyframes by default. The old asset is not deleted. Defaults to previewOnly and is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
-          clipId: { type: 'string', description: 'Timeline clip ID to replace. If omitted, Belrog must have exactly one selected clip.' },
+          clipId: { type: 'string', description: 'Timeline clip ID to replace. If omitted, Velorn must have exactly one selected clip.' },
           targetClipId: { type: 'string', description: 'Alias for clipId.' },
           assetId: { type: 'string', description: 'Replacement asset ID from get_assets.' },
           replacementAssetId: { type: 'string', description: 'Alias for assetId.' },
@@ -9450,7 +9652,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_solid_color',
-      description: 'Preview or create a solid-color image asset, optionally placing it on the active timeline as a color/black constant. Useful for black plates under opacity fades, color backgrounds, and simple matte layers. Defaults to previewOnly; applying writes a PNG asset to the project and timeline placement is undoable in Belrog.',
+      description: 'Preview or create a solid-color image asset, optionally placing it on the active timeline as a color/black constant. Useful for black plates under opacity fades, color backgrounds, and simple matte layers. Defaults to previewOnly; applying writes a PNG asset to the project and timeline placement is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9541,7 +9743,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_adjustment_clip',
-      description: 'Preview or create a Belrog adjustment clip on a video track. Adjustment clips apply color/blur/GLSL/keyframed effects to clips below them. Use previewOnly first; applying is undoable in Belrog.',
+      description: 'Preview or create a Velorn adjustment clip on a video track. Adjustment clips apply color/blur/GLSL/keyframed effects to clips below them. Use previewOnly first; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9596,7 +9798,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_assets_to_timeline',
-      description: 'Preview or place multiple project assets onto the active timeline as review lanes or a sequential run. Can target explicit asset IDs/names or the latest matching generated assets, create one new top track per asset, or place sequentially on one compatible track. Defaults to previewOnly; applying is undoable in Belrog.',
+      description: 'Preview or place multiple project assets onto the active timeline as review lanes or a sequential run. Can target explicit asset IDs/names or the latest matching generated assets, create one new top track per asset, or place sequentially on one compatible track. Defaults to previewOnly; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9668,7 +9870,7 @@ function createToolDefinitions() {
           },
           trackId: {
             type: 'string',
-            description: 'Optional target track ID for singleTrack placement.',
+            description: 'Optional actual track ID from get_timeline for singleTrack placement; never invent an ID. A missing ID recovers to the sole available compatible track and reports trackResolution; multiple candidates require an exact choice.',
           },
           trackName: {
             type: 'string',
@@ -9741,7 +9943,7 @@ function createToolDefinitions() {
     },
     {
       name: 'duplicate_clip',
-      description: 'Duplicate an existing timeline clip onto the same or another compatible track, preserving clip style, transform, effects, and keyframes. Useful for layered text/title effects. Undoable in Belrog; use previewOnly first.',
+      description: 'Duplicate an existing timeline clip onto the same or another compatible track, preserving clip style, transform, effects, and keyframes. Useful for layered text/title effects. Undoable in Velorn; use previewOnly first.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9783,7 +9985,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_text_clip',
-      description: 'Create a Belrog text clip on a video track, optionally with typography, transform, timing, preset animation, or explicit transform/text-color keyframes. Undoable in Belrog.',
+      description: 'Create a Velorn text clip on a video track, optionally with typography, transform, timing, preset animation, or explicit transform/text-color keyframes. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -9847,7 +10049,7 @@ function createToolDefinitions() {
               cropRight: { type: 'number' },
             },
           },
-          animationPreset: { type: 'string', enum: ['fade', 'slideUp', 'slideDown', 'slideLeft', 'pop', 'spinIn', 'none'], description: 'Optional existing Belrog text animation preset.' },
+          animationPreset: { type: 'string', enum: ['fade', 'slideUp', 'slideDown', 'slideLeft', 'pop', 'spinIn', 'none'], description: 'Optional existing Velorn text animation preset.' },
           animationMode: { type: 'string', enum: ['in', 'out', 'inOut'], description: 'Preset animation direction. Defaults to inOut.' },
           keyframes: {
             type: 'array',
@@ -9972,7 +10174,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_shape_clip',
-      description: 'Create a Belrog shape clip on a video track for motion graphics: rectangle, rounded rectangle, ellipse, polygon, or line. Use polygon with sides=3 for triangles, 6 for hexagons, 8 for octagons, etc. Supports solid, linear-gradient, and radial-gradient fills, stroke styling, transform, crop, blur, 2.5D rotation, and explicit visual keyframes including width, height, fillOpacity, gradient angle/center/radius, strokeWidth, strokeOpacity, cornerRadius, and polygon sides. Undoable in Belrog.',
+      description: 'Create a Velorn shape clip on a video track for motion graphics: rectangle, rounded rectangle, ellipse, polygon, or line. Use polygon with sides=3 for triangles, 6 for hexagons, 8 for octagons, etc. Supports solid, linear-gradient, and radial-gradient fills, stroke styling, transform, crop, blur, 2.5D rotation, and explicit visual keyframes including width, height, fillOpacity, gradient angle/center/radius, strokeWidth, strokeOpacity, cornerRadius, and polygon sides. Undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10162,7 +10364,7 @@ function createToolDefinitions() {
     },
     {
       name: 'list_glsl_effects',
-      description: 'List the GLSL/GPU-backed clip effects Belrog can add through MCP, including supported parameter keys, ranges, defaults, and presets. Use this before adding or changing GLSL effects.',
+      description: 'List the GLSL/GPU-backed clip effects Velorn can add through MCP, including supported parameter keys, ranges, defaults, and presets. Use this before adding or changing GLSL effects.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10173,7 +10375,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_glsl_effect',
-      description: 'Add a GLSL/GPU-backed effect to a visual clip. Supports presets, static parameter settings, and optional effect-parameter keyframes. Defaults to previewOnly; applying is undoable in Belrog.',
+      description: 'Add a GLSL/GPU-backed effect to a visual clip. Supports presets, static parameter settings, and optional effect-parameter keyframes. Defaults to previewOnly; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10266,7 +10468,7 @@ function createToolDefinitions() {
     },
     {
       name: 'set_clip_keyframes',
-      description: 'Preview or set explicit keyframes on an existing visual timeline clip. Use this for video/image/text/shape fades, dips to black, moves, scale/rotation, 2.5D rotation, blur, crop reveals, color-adjustment animation, shape size/style animation, speed ramps ("speed" property, video clips only), and animated corner pin (cornerPinTLX..cornerPinBRY, needs transform.cornerPinEnabled via set_clip_style). Position keyframes travel in straight lines unless the clip transform sets motionPathMode "smooth" (curved path through the keyframes). Defaults to previewOnly; applying is undoable in Belrog.',
+      description: 'Preview or set explicit keyframes on an existing visual timeline clip. Use this for video/image/text/shape fades, dips to black, moves, scale/rotation, 2.5D rotation, blur, crop reveals, color-adjustment animation, shape size/style animation, speed ramps ("speed" property, video clips only), and animated corner pin (cornerPinTLX..cornerPinBRY, needs transform.cornerPinEnabled via set_clip_style). Position keyframes travel in straight lines unless the clip transform sets motionPathMode "smooth" (curved path through the keyframes). Defaults to previewOnly; applying is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10323,7 +10525,7 @@ function createToolDefinitions() {
     },
     {
       name: 'add_dip_to_black',
-      description: 'Preview or apply dip-to-black opacity fades between adjacent visual clips. Accepts explicit clip pairs, a clipIds list, selected clips, or all adjacent clips on a track. This only writes opacity keyframes; use add_solid_color first if a black plate is needed underneath. Defaults to previewOnly and is undoable in Belrog.',
+      description: 'Preview or apply dip-to-black opacity fades between adjacent visual clips. Accepts explicit clip pairs, a clipIds list, selected clips, or all adjacent clips on a track. This only writes opacity keyframes; use add_solid_color first if a black plate is needed underneath. Defaults to previewOnly and is undoable in Velorn.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10364,7 +10566,7 @@ function createToolDefinitions() {
     },
     {
       name: 'export_timeline',
-      description: 'Start a Belrog timeline export using the existing hidden export worker. Defaults to MP4 H.264 1080p HD with AAC audio, written to the project renders folder. Use check_export_readiness first for final delivery.',
+      description: 'Start a Velorn timeline export using the existing hidden export worker. Defaults to MP4 H.264 1080p HD with AAC audio, written to the project renders folder. Use check_export_readiness first for final delivery.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10437,7 +10639,7 @@ function createToolDefinitions() {
           },
           useHardwareEncoder: {
             type: 'boolean',
-            description: 'Request platform hardware encoding using the active export FFmpeg. Belrog falls back safely to software encoding if the encoder cannot initialize. Defaults to false.',
+            description: 'Request platform hardware encoding using the active export FFmpeg. Velorn falls back safely to software encoding if the encoder cannot initialize. Defaults to false.',
           },
           useProxyMedia: {
             type: 'boolean',
@@ -10456,7 +10658,7 @@ function createToolDefinitions() {
     },
     {
       name: 'export_fcpxml',
-      description: 'Preview or export the active Belrog timeline as modern FCPXML for Resolve/Final Cut or legacy XMEML v5 for Adobe Premiere Pro. Writes to the project renders folder unless outputPath is provided.',
+      description: 'Preview or export the active Velorn timeline as modern FCPXML for Resolve/Final Cut or legacy XMEML v5 for Adobe Premiere Pro. Writes to the project renders folder unless outputPath is provided.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -10507,7 +10709,7 @@ function createToolDefinitions() {
           includeAudio: { type: 'boolean', description: 'Shared include-audio setting. Defaults to true.' },
           videoCodec: { type: 'string', enum: ['h264', 'h265'], description: 'Shared video codec. Defaults to h264.' },
           crf: { type: 'number', description: 'Shared CRF quality. Defaults to export_timeline behavior.' },
-          useHardwareEncoder: { type: 'boolean', description: 'Shared hardware encoder request. Belrog probes the active export FFmpeg and falls back to software if unavailable.' },
+          useHardwareEncoder: { type: 'boolean', description: 'Shared hardware encoder request. Velorn probes the active export FFmpeg and falls back to software if unavailable.' },
           deliveryFraming: { type: 'string', enum: ['fit', 'fill', 'center_crop'], description: 'Shared framing override. Square/vertical targets default to fill.' },
           filenamePrefix: { type: 'string', description: 'Optional filename prefix for every export. Target suffixes are appended automatically.' },
           previewOnly: { type: 'boolean', description: 'When true, returns all export plans without rendering. Defaults to true.' },
@@ -10517,35 +10719,54 @@ function createToolDefinitions() {
       },
     },
   ]
+  return [...new Map([...legacyTools, ...mcpParity.tools, ...comfyWorkflowAuthoring.tools, ...optionalSetupTools.tools, ...toolSetupTools.tools, ...comfyCloudSetupTools.tools, ...lmStudioSetupTools.tools].map(tool => [tool.name, tool])).values()]
 }
 
 class ComfyStudioMcpServer {
   constructor({
     port = DEFAULT_MCP_PORT,
     version = '0.1.0',
-    bindHost = '127.0.0.1',
-    authToken = null,
     performAction = null,
+    isExportBusy = null,
     diagnoseComfyUIConnection = null,
     setComfyUIConnection = null,
     controlComfyLauncher = null,
     getComfyLauncherLogs = null,
     validateComfyUINodes = null,
+    readComfyNodeCatalog = null,
     listComfyStudioWorkflows = null,
     inspectComfyStudioWorkflow = null,
+    importManagedApiWorkflow = null,
+    getGenerationSpendingStatus = null,
+    generationRuns = null,
+    comfyRouter = null,
+    captionEngineSetup = null,
+    optionalSetup = null,
+    toolSetup = null,
+    lmStudioSetup = null,
+    comfyCloudSetup = null,
   } = {}) {
     this.port = port
     this.version = version
-    this.bindHost = bindHost || '127.0.0.1'
-    this.authToken = authToken || null
     this.performAction = typeof performAction === 'function' ? performAction : null
+    this.isExportBusy = typeof isExportBusy === 'function' ? isExportBusy : () => false
     this.diagnoseComfyUIConnection = typeof diagnoseComfyUIConnection === 'function' ? diagnoseComfyUIConnection : null
     this.setComfyUIConnection = typeof setComfyUIConnection === 'function' ? setComfyUIConnection : null
     this.controlComfyLauncher = typeof controlComfyLauncher === 'function' ? controlComfyLauncher : null
     this.getComfyLauncherLogs = typeof getComfyLauncherLogs === 'function' ? getComfyLauncherLogs : null
     this.validateComfyUINodes = typeof validateComfyUINodes === 'function' ? validateComfyUINodes : null
+    this.readComfyNodeCatalog = readComfyNodeCatalog
     this.listComfyStudioWorkflows = typeof listComfyStudioWorkflows === 'function' ? listComfyStudioWorkflows : null
     this.inspectComfyStudioWorkflow = typeof inspectComfyStudioWorkflow === 'function' ? inspectComfyStudioWorkflow : null
+    this.importManagedApiWorkflow = typeof importManagedApiWorkflow === 'function' ? importManagedApiWorkflow : null
+    this.getGenerationSpendingStatus = typeof getGenerationSpendingStatus === 'function' ? getGenerationSpendingStatus : null
+    this.generationRuns = generationRuns && typeof generationRuns === 'object' ? generationRuns : null
+    this.comfyRouter = comfyRouter
+    this.captionEngineSetup = captionEngineSetup
+    this.optionalSetup = optionalSetup
+    this.toolSetup = toolSetup
+    this.lmStudioSetup = lmStudioSetup
+    this.comfyCloudSetup = comfyCloudSetup
     this.server = null
     this.running = false
     this.error = null
@@ -10569,7 +10790,7 @@ class ComfyStudioMcpServer {
 
     await new Promise((resolve, reject) => {
       this.server.once('error', reject)
-      this.server.listen(this.port, this.bindHost, () => {
+      this.server.listen(this.port, '127.0.0.1', () => {
         this.server.off('error', reject)
         this.running = true
         this.error = null
@@ -10604,7 +10825,7 @@ class ComfyStudioMcpServer {
     return {
       running: this.running,
       port: this.port,
-      url: `http://${this.bindHost === '0.0.0.0' ? '0.0.0.0' : this.bindHost}:${this.port}/mcp`,
+      url: `http://127.0.0.1:${this.port}/mcp`,
       error: this.error,
       toolCount: this.tools.length,
       lastSnapshotAt: this.lastSnapshotAt,
@@ -10619,15 +10840,6 @@ class ComfyStudioMcpServer {
       res.writeHead(204)
       res.end()
       return
-    }
-
-    if (this.authToken) {
-      const provided = req.headers['authorization'] === `Bearer ${this.authToken}`
-        || req.headers['x-belrog-mcp-token'] === this.authToken
-      if (!provided) {
-        this.writeJson(res, 401, { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized.' } })
-        return
-      }
     }
 
     const url = new URL(req.url || '/', `http://127.0.0.1:${this.port}`)
@@ -10711,11 +10923,17 @@ class ComfyStudioMcpServer {
               resources: { subscribe: false, listChanged: false },
             },
             serverInfo: {
-              name: 'Belrog',
+              name: 'velorn',
               version: this.version,
             },
-            instructions: 'You are connected to Belrog. Use guide_comfyui_setup first for beginner local ComfyUI setup questions like "How do I connect Belrog to ComfyUI?"; it diagnoses, probes likely ports, gives Portable/Desktop/Docker/manual steps, and previews safe port fixes. Use diagnose_comfyui_connection, repair_comfyui_connection, set_comfyui_connection, control_comfyui_launcher, get_comfyui_launcher_logs, validate_comfyui_nodes, list_Belrog_workflows, and inspect_Belrog_workflow for deeper local ComfyUI setup/support questions. Use get_mcp_recipes or get_ai_review_passes to choose safe review workflows. For agent-guided Music Video creation, begin with get_music_video_session, preserve the multi-turn checkpoint with update_music_video_session, and use the dedicated configure/cast/pass/script/shot/generation/assembly tools so the result stays editable in the visible Director and timeline UI; preview any generation or assembly action and get explicit approval before applying it. Use find_timeline_items before targeting timeline clips, tracks, markers, transitions, or project assets from a natural-language request. Use check_media_health before delivery/relinking work, relink_asset with previewOnly before changing asset paths, and inspect_export_file after rendering when the user asks whether a file exists or has the expected codec, duration, FPS, or dimensions. Use run_mcp_action_plan with previewOnly before applying an approved multi-step edit in one checkpointed pass. Use the tools to inspect the open project, timeline, assets, generation status, music-video workflow state, the composed timeline frame at the playhead, sampled visual timeline ranges, and top-visible shot pages for fast-cut edit review. Use create_project with previewOnly first when the user wants a fresh Belrog project, and use duplicate_project with previewOnly first before risky AI experiments on an existing project. Use create_timeline with previewOnly first when the user wants a new sequence/timeline for an alternate edit, review selects, generated variations, or a fresh AI-built layout; use switch_timeline, rename_timeline, duplicate_timeline, and delete_timeline with previewOnly first for sequence management. Use update_track and remove_track with previewOnly first for track cleanup, locking/muting/showing tracks, renaming, and layer order. Use add_transition, update_transition, and remove_transitions with previewOnly first for native dissolves, fades, wipes, slides, zooms, blur transitions, and dip-to-black style edits. Use move_clips, trim_clips, and delete_clips with previewOnly first for timeline edit operations such as cleanup passes, staggered layouts, trims, and ripple deletes. Use create_asset_folder with previewOnly first when a generation batch or AI-built layout should keep its source assets organized in a named/nested project folder. Use move_assets_to_folder with previewOnly first when assets should be cleaned up or moved into a folder, for example rootOnly + constantsOnly into a Constants folder. Use queue_prompt_generation_batch with previewOnly first when the user wants new images or videos generated from a written brief; show prompts, workflows, counts, seeds, resolution, duration, FPS, and output folder, then apply only after approval. Use prepare_generation_from_timeline_context with previewOnly first when the user wants to turn a timeline frame into a Generate-tab image-to-video or keyframe request; applying it only captures the frame and prefills Generate. Use queue_prepared_generation with previewOnly first and explicit user approval before queueing a staged Generate request. Use queue_timeline_generation_batch with previewOnly first when the user asks for multiple variations or multiple workflows from the same timeline frame; show workflow counts and seeds, then apply only after approval. Use list_comfyui_templates and queue_timeline_template_generation with previewOnly first when the user asks to run an official ComfyUI template such as LTX 2.3 LoRA video outpainting on a selected timeline clip; applying may import the template and queue local GPU work. Use import_comfyui_workflow with previewOnly first when the user brings a community ComfyUI workflow (comfy.org share URL, local .json, or pasted JSON); then install_workflow_setup with previewOnly and explicit approval for missing node packs/models (poll get_workflow_install_status, restart ComfyUI via control_comfyui_launcher when recommended), and run it with queue_timeline_template_generation using importedWorkflowId. Use add_asset_to_timeline with previewOnly first when the user wants one generated/imported asset placed back into the edit, or add_assets_to_timeline with previewOnly first when placing multiple results as review lanes or a sequential strip. Use add_solid_color with previewOnly first when the user needs black/color constants or background plates; it can create a bottom video track so solids sit behind the edit. Use add_adjustment_clip with previewOnly first when the user wants a color look, blur, GLSL effect, camera shake, vignette, grain, or keyframed treatment applied to multiple clips below a single adjustment layer. Use add_text_clip, add_shape_clip, update_text_clip, and update_shape_clip with previewOnly first for titles, lower thirds, lines, boxes, circles, frames, graphic accents, and simple motion graphics; use motionBlurEnabled/motionBlurSamples/motionBlurShutter on fast animated layers when requested. Use list_glsl_effects, add_glsl_effect, update_glsl_effect, and remove_glsl_effect with previewOnly first for GPU effects such as camera shake, directional blur, lens blur, fisheye, chroma warp, digital glitch, film grain, film look, flicker, VHS, and vignette; effect parameters can also be keyframed, including when the target clip is an adjustment clip. Use set_clip_keyframes with previewOnly first for visual clip fades, dips to black, moves, blur, crop reveals, and color/transform/shape style automation. Use export_fcpxml with previewOnly first when the user wants an interchange XML for Resolve, Final Cut, or Premiere. Queue tools use the same path as the Belrog Queue button and may spend credits or start local GPU work depending on the selected workflow. The write actions currently exposed are ComfyUI setup guidance/settings, ComfyUI launcher start/stop/restart, project creation/duplication/save, agent-guided Music Video setup/cast/pass/script/shot/generation/assembly, asset folder creation, asset folder cleanup/move/relink operations, sequence/timeline creation and management, track management, native transitions, clip move/trim/delete operations, clip label coloring, clip enable/disable, timeline marker creation/removal/property updates, text/title/shape/adjustment clip creation and updates, GLSL effect add/update/remove operations, visual clip keyframes, solid color asset/clip creation, media asset placement, prompt-based generation queueing, preparing/queueing Generate from a timeline frame, official ComfyUI template generation from timeline media, checkpointed multi-step action plans, starting timeline delivery exports through Belrog export worker, export-file QC, and FCPXML interchange export. Project creation/duplication writes project folders on disk; timeline/sequence, clip/marker/text/shape/adjustment/effect/media/keyframe actions are undoable in Belrog; exports write new files to disk.',
+            instructions: 'You are connected to Velorn. Use guide_comfyui_setup first for beginner local ComfyUI setup questions like "How do I connect Velorn to ComfyUI?"; it diagnoses, probes likely ports, gives Portable/Desktop/Docker/manual steps, and previews safe port fixes. Use diagnose_comfyui_connection, repair_comfyui_connection, set_comfyui_connection, control_comfyui_launcher, get_comfyui_launcher_logs, validate_comfyui_nodes, list_velorn_workflows, and inspect_velorn_workflow for deeper local ComfyUI setup/support questions. Use get_mcp_recipes or get_ai_review_passes to choose safe review workflows. For new model-agnostic production planning, including music videos, begin with get_production_guide and get_storyboard. The visual board is a read-only reference page, not an embedded assistant. First ask about the user\'s story, casting intent and existing references before deciding anything creative. Ask at most two focused questions at a time, and get yes/no to each next creative step unless that whole scope was explicitly delegated in conversation. A stored agent-led preference is not proof of delegation. Never generate first and ask afterward whether it was wanted. Preview edit_storyboard to save agreed choices. Creative review never grants permission to generate, spend, import or edit the timeline. An approved animatic belongs in an ordinary Velorn timeline using existing placement and trim tools, not a board player. The shared board works independently of Director. When the user explicitly wants the existing guided Director workflow or is continuing an existing Director session, begin with get_music_video_session, preserve its multi-turn checkpoint with update_music_video_session, and use the dedicated configure/cast/pass/script/shot/generation/assembly tools so that legacy guided session stays editable in Director; preview generation or assembly actions and get explicit approval before applying them. Use find_timeline_items before targeting timeline clips, tracks, markers, transitions, or project assets from a natural-language request. Use check_media_health before delivery/relinking work, relink_asset with previewOnly before changing asset paths, and inspect_export_file after rendering when the user asks whether a file exists or has the expected codec, duration, FPS, or dimensions. Use run_mcp_action_plan with previewOnly before applying an approved multi-step edit in one checkpointed pass. Use the tools to inspect the open project, timeline, assets, generation status, music-video workflow state, the composed timeline frame at the playhead, sampled visual timeline ranges, and top-visible shot pages for fast-cut edit review. Use create_project with previewOnly first when the user wants a fresh Velorn project, and use duplicate_project with previewOnly first before risky AI experiments on an existing project. Use create_timeline with previewOnly first when the user wants a new sequence/timeline for an alternate edit, review selects, generated variations, or a fresh AI-built layout; use switch_timeline, rename_timeline, duplicate_timeline, and delete_timeline with previewOnly first for sequence management. Use update_track and remove_track with previewOnly first for track cleanup, locking/muting/showing tracks, renaming, and layer order. Use add_transition, update_transition, and remove_transitions with previewOnly first for native dissolves, fades, wipes, slides, zooms, blur transitions, and dip-to-black style edits. Use move_clips, trim_clips, and delete_clips with previewOnly first for timeline edit operations such as cleanup passes, staggered layouts, trims, and ripple deletes. Use create_asset_folder with previewOnly first when a generation batch or AI-built layout should keep its source assets organized in a named/nested project folder. Use move_assets_to_folder with previewOnly first when assets should be cleaned up or moved into a folder, for example rootOnly + constantsOnly into a Constants folder. Use queue_prompt_generation_batch with previewOnly first when the user wants new images or videos generated from a written brief; show prompts, workflows, counts, seeds, resolution, duration, FPS, and output folder, then apply only after approval. Use prepare_generation_from_timeline_context with previewOnly first when the user wants to turn a timeline frame into a Generate-tab image-to-video or keyframe request; applying it only captures the frame and prefills Generate. Use queue_prepared_generation with previewOnly first and explicit user approval before queueing a staged Generate request. Use queue_timeline_generation_batch with previewOnly first when the user asks for multiple variations or multiple workflows from the same timeline frame; show workflow counts and seeds, then apply only after approval. Use list_comfyui_templates and queue_timeline_template_generation with previewOnly first when the user asks to run an official ComfyUI template such as LTX 2.3 LoRA video outpainting on a selected timeline clip; applying may import the template and queue local GPU work. Use import_comfyui_workflow with previewOnly first when the user brings a community ComfyUI workflow (comfy.org share URL, local .json, or pasted JSON); then install_workflow_setup with previewOnly and explicit approval for missing node packs/models (poll get_workflow_install_status, restart ComfyUI via control_comfyui_launcher when recommended), and run it with queue_timeline_template_generation using importedWorkflowId. Use add_asset_to_timeline with previewOnly first when the user wants one generated/imported asset placed back into the edit, or add_assets_to_timeline with previewOnly first when placing multiple results as review lanes or a sequential strip. Use add_solid_color with previewOnly first when the user needs black/color constants or background plates; it can create a bottom video track so solids sit behind the edit. Use add_adjustment_clip with previewOnly first when the user wants a color look, blur, GLSL effect, camera shake, vignette, grain, or keyframed treatment applied to multiple clips below a single adjustment layer. Use add_text_clip, add_shape_clip, update_text_clip, and update_shape_clip with previewOnly first for titles, lower thirds, lines, boxes, circles, frames, graphic accents, and simple motion graphics; use motionBlurEnabled/motionBlurSamples/motionBlurShutter on fast animated layers when requested. Use list_glsl_effects, add_glsl_effect, update_glsl_effect, and remove_glsl_effect with previewOnly first for GPU effects such as camera shake, directional blur, lens blur, fisheye, chroma warp, digital glitch, film grain, film look, flicker, VHS, and vignette; effect parameters can also be keyframed, including when the target clip is an adjustment clip. Use set_clip_keyframes with previewOnly first for visual clip fades, dips to black, moves, blur, crop reveals, and color/transform/shape style automation. Use export_fcpxml with previewOnly first when the user wants an interchange XML for Resolve, Final Cut, or Premiere. Queue tools use the same path as the Velorn Queue button and may spend credits or start local GPU work depending on the selected workflow. The write actions currently exposed are ComfyUI setup guidance/settings, ComfyUI launcher start/stop/restart, project creation/duplication/save, agent-guided Music Video setup/cast/pass/script/shot/generation/assembly, asset folder creation, asset folder cleanup/move/relink operations, sequence/timeline creation and management, track management, native transitions, clip move/trim/delete operations, clip label coloring, clip enable/disable, timeline marker creation/removal/property updates, text/title/shape/adjustment clip creation and updates, GLSL effect add/update/remove operations, visual clip keyframes, solid color asset/clip creation, media asset placement, prompt-based generation queueing, preparing/queueing Generate from a timeline frame, official ComfyUI template generation from timeline media, checkpointed multi-step action plans, starting timeline delivery exports through Velorn export worker, export-file QC, and FCPXML interchange export. Project creation/duplication writes project folders on disk; timeline/sequence, clip/marker/text/shape/adjustment/effect/media/keyframe actions are undoable in Velorn; exports write new files to disk.',
           }
+          result.instructions += ' Storyboard edits share persisted project state and Undo. Resolve Shot 01-style labels through get_storyboard.presentation.shots to exact shotId; display order is not identity. Set storyboardAssetId only to the approved existing first-frame image, independently of selected video takes; do not silently substitute a missing explicit frame. Apply the returned previewToken and expectedContext unchanged and re-read the guide after edits. Record review_production_stage only for actual human review, never automatically because readiness is ready. Use existing workflow generation/import tools only within separate explicit execution approval. For an approved animatic, create or switch to the agreed normal timeline and preview still-image placements with planned durations and the approved song segment; text labels or markers are optional only if requested. Storyboard reads and edits do not assemble or synchronize clips. The deterministic guide is not an embedded LLM; the timeline remains the final edit. The finish line is a saved editable timeline ready for review in Velorn: export only on explicit request. Consult get_production_run before resuming, use edit_production_run for reported attempts and exact shot-to-clip bindings, and reconcile uncertain backend jobs before retrying. Ask about the user-selected model/workflow first; verify current capabilities on their actual machine and follow get_production_guide.recipe.'
+          result.instructions += ' For an arbitrary resolved ComfyUI API graph, prefer queue_comfyui_workflow: preview is the default, applying uses Velorn\'s managed run record and existing spending gate, and it does not use Generate. Use get_comfyui_runs for repeatable cached status reads. For an existing direct ComfyUI job, use track_comfyui_prompt with its exact prompt ID instead of requeueing; tracking records Velorn\'s adoption/correlation and does not prove original authorship. inspect_comfyui_run returns a redacted non-replayable recipe; retry needs a fresh explicit inline workflow/workflowJson graph. For remembered workflows, list_velorn_workflows by name and inspect_velorn_workflow(includeGraph:true), then preview queue_comfyui_workflow with its stable workflowId, graphFingerprint (and the queue preview resolvedFingerprint on apply) and exact inputOverrides. Saved originals remain unchanged; no Generate workspace or marker nodes are required. UI-only legacy copies need the user to open and save them again. Raw local paths are never accepted by Runs; Full computer access may read an authorized file and submit its resolved graph inline. Import completed recorded outputs separately with import_comfyui_run_outputs.'
+          result.instructions += ` ${comfyWorkflowAuthoring.guidance}`
+          result.instructions += ` ${toolSetupTools.guidance}`
+          result.instructions += ` ${lmStudioSetupTools.guidance}`
+          result.instructions += ` ${comfyCloudSetupTools.guidance}`
           break
         case 'ping':
           result = {}
@@ -10750,9 +10968,28 @@ class ComfyStudioMcpServer {
   }
 
   async callTool(name, args = {}) {
+    if (this.isExportBusy()) {
+      // Native-only tools (for example ComfyUI launcher and H3 generation) do
+      // not pass through the renderer guard. Gate them before any work starts.
+      try {
+        exportPriorityPolicyPromise ||= import('./exportPriorityPolicy.mjs')
+        const { assertMcpActionAllowedDuringExport } = await exportPriorityPolicyPromise
+        assertMcpActionAllowedDuringExport(name, args, this.isExportBusy())
+      } catch (error) {
+        return errorResult(error?.message || String(error))
+      }
+    }
     const snapshot = getSnapshotOrEmpty(this.lastSnapshot)
     const toolsAllowedWithoutProject = new Set([
+      ...optionalSetupTools.names,
+      ...toolSetupTools.names,
+      ...lmStudioSetupTools.names,
+      ...comfyCloudSetupTools.names,
+      ...comfyWorkflowAuthoring.names,
+      'get_caption_engine_status', 'install_caption_engine',
       'get_project',
+      'get_comfyui_runs',
+      'inspect_comfyui_run',
       'list_recent_projects',
       'open_project',
       'create_project',
@@ -10763,24 +11000,126 @@ class ComfyStudioMcpServer {
       'control_comfyui_launcher',
       'get_comfyui_launcher_logs',
       'validate_comfyui_nodes',
-      'list_Belrog_workflows',
-      'inspect_Belrog_workflow',
+      'list_velorn_workflows',
+      'inspect_velorn_workflow',
       'list_comfystudio_workflows',
       'inspect_comfystudio_workflow',
       'list_glsl_effects',
       'import_comfyui_workflow',
+      'open_comfyui_workflow',
       'install_workflow_setup',
       'get_workflow_install_status',
+      'list_fonts',
+      'list_export_presets',
+      'save_export_preset',
+      'rename_export_preset',
+      'delete_export_preset',
+      'get_export_status',
+      'cancel_export',
+      'control_export_batch',
+      'inspect_export_file',
     ])
     if (!hasSnapshot(snapshot) && !toolsAllowedWithoutProject.has(name)) {
-      return errorResult('No Belrog project is open yet.')
+      return errorResult('No Velorn project is open yet.')
+    }
+
+    if (comfyWorkflowAuthoring.names.has(name)) {
+      const result = await comfyWorkflowAuthoring.dispatch(name, args, this.readComfyNodeCatalog)
+      const response = textResult(result)
+      if (result.success === false) response.isError = true
+      return response
+    }
+
+    if (comfyCloudSetupTools.names.has(name)) {
+      // Reject secret-bearing/model-supplied fields before invoking native setup.
+      if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length) return errorResult('Comfy cloud setup takes no arguments. Enter credentials only in the desktop dialog.')
+      try {
+        const method = comfyCloudSetupTools.methods[name]
+        if (typeof this.comfyCloudSetup?.[method] !== 'function') return errorResult('Comfy cloud setup is unavailable. Restart the current Velorn desktop build.')
+        const result = await this.comfyCloudSetup[method](args)
+        const response = textResult(result)
+        if (result?.success === false) response.isError = true
+        return response
+      } catch { return errorResult('Comfy cloud setup could not finish. No credential or generation approval was returned.') }
+    }
+
+    if (lmStudioSetupTools.names.has(name)) {
+      try {
+        const method = lmStudioSetupTools.methods[name]
+        if (typeof this.lmStudioSetup?.[method] !== 'function') return errorResult('LM Studio model setup is unavailable. Restart the current Velorn desktop build.')
+        const result = await this.lmStudioSetup[method](args)
+        const response = textResult(result)
+        if (result?.success === false) response.isError = true
+        return response
+      } catch { return errorResult('LM Studio setup could not finish. Inspect the existing job before retrying; no download or connection success is confirmed.') }
+    }
+
+    if (toolSetupTools.names.has(name)) {
+      try {
+        const method = toolSetupTools.methods[name]
+        if (typeof this.toolSetup?.[method] !== 'function') return errorResult('Guided tool installation is unavailable. Restart the current Velorn desktop build.')
+        const result = await this.toolSetup[method](args)
+        const response = textResult(result)
+        if (result?.success === false) response.isError = true
+        return response
+      } catch { return errorResult('Tool setup could not finish. Inspect the existing download status before retrying; no installation success is confirmed.') }
+    }
+
+    if (optionalSetupTools.names.has(name)) {
+      try {
+        const method = name === 'get_setup_status' ? 'inspect' : 'guide'
+        if (typeof this.optionalSetup?.[method] !== 'function') return errorResult('Optional setup inspection is unavailable. Restart the current Velorn desktop build.')
+        const result = await this.optionalSetup[method](args)
+        const response = textResult(result)
+        if (result?.success === false) response.isError = true
+        return response
+      } catch { return errorResult('The optional setup check could not finish. No settings were changed.') }
+    }
+
+    if (mcpCaptionEngineTools.names.has(name)) {
+      try {
+        const method = name === 'get_caption_engine_status' ? 'status' : 'install'
+        if (!this.captionEngineSetup?.[method]) return errorResult('Local caption setup is unavailable. Restart the current Velorn desktop build.')
+        const result = await this.captionEngineSetup[method](args)
+        const response = textResult(result)
+        if (result?.success === false) response.isError = true
+        return response
+      } catch { return errorResult('Caption setup could not be completed. Inspect get_caption_engine_status before retrying.') }
+    }
+
+    if (mcpGenerationRunTools.nativeToolNames.has(name)) {
+      return this.runGenerationRunTool(name, args)
+    }
+
+    if (mcpComfyRouterTools.nativeToolNames.has(name)) {
+      const result = await mcpComfyRouterTools.dispatchComfyRouterTool({ comfyRouter: this.comfyRouter, name, args })
+      const response = textResult(result)
+      if (result?.success === false) response.isError = true
+      return response
+    }
+
+    if (name === 'import_comfyui_run_outputs') {
+      return this.runRendererActionTool('import_comfyui_run_outputs', args, {
+        bridgeName: 'MCP ComfyUI Run import bridge', suggestedTool: 'import_comfyui_run_outputs', defaultPreviewOnly: true,
+      })
+    }
+
+    if (mcpParity.names.has(name)) {
+      return this.runRendererActionTool(name, args, {
+        bridgeName: 'Velorn MCP editing bridge', suggestedTool: name,
+        defaultPreviewOnly: mcpParity.previewByDefault(name, args),
+      })
     }
 
     switch (name) {
       case 'get_project':
         return textResult({
+          schemaVersion: snapshot.schemaVersion,
+          context: snapshot.context,
+          editingContext: snapshot.editingContext,
           app: snapshot.app,
           project: snapshot.project,
+          storyboard: snapshot.storyboard || null,
           currentTimeline: snapshot.currentTimeline ? {
             id: snapshot.currentTimeline.id,
             name: snapshot.currentTimeline.name,
@@ -10806,6 +11145,8 @@ class ComfyStudioMcpServer {
         const limit = clampLimit(args.limit, 300, 1000)
         return textResult({
           ...timeline,
+          context: snapshot.context,
+          editingContext: snapshot.editingContext,
           clipCounts: summarizeClipCounts(timeline.clips || []),
           clips: includeClips ? (timeline.clips || []).slice(0, limit) : undefined,
           transitions: includeTransitions ? (timeline.transitions || []) : undefined,
@@ -10813,10 +11154,13 @@ class ComfyStudioMcpServer {
         })
       }
       case 'get_assets': {
-        const type = String(args.type || '').trim().toLowerCase()
+        if (args.showInChat === true && (!Array.isArray(args.assetIds) || !args.assetIds.length || args.assetIds.length>100)) return errorResult('Inspect assets first, then provide exact assetIds with showInChat:true.')
+        const requestedType = String(args.type || '').trim().toLowerCase()
+        const type = ['all', 'any', '*'].includes(requestedType) ? '' : requestedType
         const status = String(args.status || '').trim().toLowerCase()
         const limit = clampLimit(args.limit, 200, 1000)
         let assets = snapshot.assets || []
+        if (Array.isArray(args.assetIds)) assets=assets.filter(asset=>args.assetIds.includes(asset.id))
         if (type) assets = assets.filter((asset) => String(asset?.type || '').toLowerCase() === type)
         if (status) {
           assets = assets.filter((asset) => (
@@ -10825,6 +11169,9 @@ class ComfyStudioMcpServer {
         }
         return textResult({
           count: assets.length,
+          ...(args.showInChat===true ? {reviewMedia:true,assetIds:assets.slice(0,limit).filter(asset=>['audio','video'].includes(asset.type)).map(asset=>asset.id),
+            // Pictures are shown as stills: at most four per call.
+            pictureAssetIds:assets.slice(0,limit).filter(asset=>asset.type==='image').slice(0,4).map(asset=>asset.id)} : {}),
           limitApplied: assets.length > limit,
           assets: assets.slice(0, limit),
         })
@@ -10861,10 +11208,10 @@ class ComfyStudioMcpServer {
         return this.getComfyUILauncherLogsTool(args)
       case 'validate_comfyui_nodes':
         return this.runComfyUINodeValidation(args)
-      case 'list_Belrog_workflows':
+      case 'list_velorn_workflows':
       case 'list_comfystudio_workflows':
         return this.listComfyStudioWorkflowsTool(args)
-      case 'inspect_Belrog_workflow':
+      case 'inspect_velorn_workflow':
       case 'inspect_comfystudio_workflow':
         return this.inspectComfyStudioWorkflowTool(args)
       case 'check_export_readiness':
@@ -10885,6 +11232,8 @@ class ComfyStudioMcpServer {
         return this.queueTimelineTemplateGeneration(snapshot, args)
       case 'import_comfyui_workflow':
         return this.importComfyUiWorkflowTool(args)
+      case 'open_comfyui_workflow':
+        return this.runRendererActionTool('open_comfyui_workflow', args, { bridgeName: 'MCP workflow opening bridge', suggestedTool: 'open_comfyui_workflow', defaultPreviewOnly: true })
       case 'install_workflow_setup':
         return this.runRendererActionTool('install_workflow_setup', args, { bridgeName: 'MCP workflow install bridge', suggestedTool: 'install_workflow_setup', defaultPreviewOnly: true })
       case 'get_workflow_install_status':
@@ -10899,6 +11248,10 @@ class ComfyStudioMcpServer {
         return this.runRendererActionTool('generate_music', args, { bridgeName: 'MCP music generation bridge', suggestedTool: 'generate_music', defaultPreviewOnly: true })
       case 'get_music_generation_status':
         return this.runRendererActionTool('get_music_generation_status', args, { bridgeName: 'MCP music status bridge', suggestedTool: 'get_music_generation_status' })
+      case 'generate_local_voice':
+        return this.runRendererActionTool('generate_local_voice', args, { bridgeName: 'MCP local voice bridge', suggestedTool: 'generate_local_voice', defaultPreviewOnly: true })
+      case 'get_local_voice_status':
+        return this.runRendererActionTool('get_local_voice_status', args, { bridgeName: 'MCP local voice status bridge', suggestedTool: 'get_local_voice_status' })
       case 'get_audio_analysis':
         return this.runRendererActionTool('get_audio_analysis', args, { bridgeName: 'MCP audio analysis bridge', suggestedTool: 'get_audio_analysis' })
       case 'inspect_timeline_range':
@@ -10906,7 +11259,8 @@ class ComfyStudioMcpServer {
       case 'inspect_visible_shots':
         return this.inspectVisibleShots(snapshot, args)
       case 'get_generation_status':
-        return textResult(summarizeGenerationAssets(snapshot.assets || []))
+        return textResult({ ...summarizeGenerationAssets(snapshot.assets || []),
+          generationSpending: await this.readGenerationSpendingStatus() })
       case 'split_clip':
         return this.runRendererActionTool('split_clip', args, { bridgeName: 'MCP clip edit bridge', suggestedTool: 'split_clip', defaultPreviewOnly: true })
       case 'extract_range':
@@ -10960,7 +11314,7 @@ class ComfyStudioMcpServer {
       case 'inspect_music_video_video':
         return this.inspectMusicVideoVideoTool(snapshot, args)
       case 'regenerate_music_video_video':
-        return this.runRendererActionTool('regenerate_music_video_video', args, { bridgeName: 'MCP Music Video Step 5 bridge', suggestedTool: 'regenerate_music_video_video', defaultPreviewOnly: true })
+        return this.runRendererActionTool('regenerate_music_video_video', args, { bridgeName: 'MCP Music Video Videos step bridge', suggestedTool: 'regenerate_music_video_video', defaultPreviewOnly: true })
       case 'analyze_timeline':
         return textResult(analyzeTimeline(snapshot, args))
       case 'analyze_music_video_workflow':
@@ -11084,7 +11438,7 @@ class ComfyStudioMcpServer {
 
   async runComfyUIConnectionDiagnosis(args = {}) {
     if (!this.diagnoseComfyUIConnection) {
-      return errorResult('ComfyUI connection diagnostics are not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI connection diagnostics are not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.diagnoseComfyUIConnection(args || {})
@@ -11096,9 +11450,9 @@ class ComfyStudioMcpServer {
 
   async setComfyUIConnectionTool(args = {}) {
     if (!this.setComfyUIConnection) {
-      return errorResult('ComfyUI connection setting is not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI connection setting is not available. Restart Velorn and try again.')
     }
-    const port = normalizeLocalPort(args?.port)
+    const { port } = comfySetupPortOptions({ port: args?.port })
     if (!port) {
       return errorResult('Invalid ComfyUI port. Use a number from 1 to 65535.')
     }
@@ -11121,12 +11475,14 @@ class ComfyStudioMcpServer {
 
   async repairComfyUIConnection(args = {}) {
     if (!this.diagnoseComfyUIConnection || !this.setComfyUIConnection) {
-      return errorResult('ComfyUI connection repair is not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI connection repair is not available. Restart Velorn and try again.')
     }
 
-    const timeoutMs = getNumberArg(args, 'timeoutMs', 4500, 1000, 30000)
+    const options = comfySetupPortOptions(args)
+    if (options.error) return errorResult(options.error)
+    const timeoutMs = getNumberArg(args, 'timeoutMs', 4500, 1000, COMFY_SETUP_MAX_TIMEOUT_MS)
     const configured = await this.diagnoseComfyUIConnection({ timeoutMs })
-    if (configured?.connection?.ok) {
+    if (configured?.connection?.ok && (!options.port || options.port === configured.connection.port)) {
       return textResult({
         action: 'repair_comfyui_connection',
         previewOnly: args.previewOnly !== false,
@@ -11137,34 +11493,30 @@ class ComfyStudioMcpServer {
     }
 
     const configuredPort = normalizeLocalPort(configured?.connection?.port)
-    const requestedCandidates = Array.isArray(args.candidatePorts) ? args.candidatePorts : []
-    const defaultCandidates = [
-      configuredPort,
-      8188,
-      8189,
-      8190,
-      8191,
-      7860,
-    ]
-    const candidatePorts = [...new Set([...requestedCandidates, ...defaultCandidates]
-      .map(normalizeLocalPort)
-      .filter(Boolean))]
+    const candidatePorts = [...new Set([options.port, configuredPort, ...options.candidates, ...COMFY_SETUP_DEFAULT_PORTS].filter(Boolean))]
 
     const probes = []
-    let reachable = null
-    for (const port of candidatePorts) {
-      const diagnosis = port === configuredPort
-        ? configured
-        : await this.diagnoseComfyUIConnection({ port, timeoutMs })
+    const diagnoses = await probeComfySetupCandidates(this.diagnoseComfyUIConnection, configured, candidatePorts, timeoutMs)
+    for (const [index, diagnosis] of diagnoses.entries()) {
       probes.push({
-        port,
+        port: candidatePorts[index],
         ok: Boolean(diagnosis?.connection?.ok),
         summary: diagnosis?.summary || '',
         nodeClassCount: diagnosis?.api?.objectInfo?.nodeClassCount || 0,
       })
-      if (!reachable && diagnosis?.connection?.ok) {
-        reachable = diagnosis
-      }
+    }
+    const selection = selectComfySetupConnection(configured, diagnoses, options.port)
+    const { reachable } = selection
+    if (selection.ambiguous || selection.requestedPortUnavailable) {
+      const summary = selection.ambiguous
+        ? 'Multiple local ComfyUI servers were found. Choose which port to use; no settings were changed.'
+        : `The requested ComfyUI server on port ${options.port} is unavailable. No other server was substituted and no settings were changed.`
+      return textResult({
+        action: 'repair_comfyui_connection', previewOnly: args.previewOnly !== false,
+        needed: true, repaired: false, selectionRequired: true, summary, configured, probes,
+        candidates: selection.available.map(value => value.connection),
+        recommendations: ['Ask the user which running ComfyUI server to connect, then pass its exact port to repair_comfyui_connection.'],
+      })
     }
 
     if (!reachable) {
@@ -11173,7 +11525,7 @@ class ComfyStudioMcpServer {
         previewOnly: args.previewOnly !== false,
         needed: true,
         repaired: false,
-        summary: 'Belrog is pointed at an unreachable ComfyUI port, and no reachable ComfyUI server was found on the probed local ports.',
+        summary: 'Velorn is pointed at an unreachable ComfyUI port, and no reachable ComfyUI server was found on the probed local ports.',
         configured,
         probes,
         recommendations: [
@@ -11189,18 +11541,24 @@ class ComfyStudioMcpServer {
       port: reachablePort,
       previewOnly,
     })
-    if (update?.success === false) {
-      return errorResult(update.error || 'Could not apply ComfyUI connection repair.')
+    if (update?.success !== true) {
+      return errorResult(update?.error || 'Could not apply ComfyUI connection repair.')
     }
+    const settingsApplied = !previewOnly
+    const syncFailed = settingsApplied && update.rendererSync?.success === false
+    const warning = syncFailed ? (update.warning || 'The connection setting was saved, but the open Velorn window did not synchronize. Refresh or reopen Velorn and check the connection; do not repeat the settings change.') : undefined
 
     return textResult({
       action: 'repair_comfyui_connection',
       previewOnly,
       needed: true,
-      repaired: !previewOnly,
-      summary: previewOnly
-        ? `Belrog is pointed at ${configured?.connection?.httpBase}, but ComfyUI is reachable at ${reachable?.connection?.httpBase}. This repair would switch Belrog to port ${reachablePort}.`
-        : `Belrog was switched to the reachable ComfyUI port ${reachablePort}.`,
+      settingsApplied,
+      repaired: settingsApplied && !syncFailed,
+      connected: settingsApplied && !syncFailed,
+      ...(warning ? { warning } : {}),
+      summary: syncFailed ? warning : previewOnly
+        ? `Velorn is pointed at ${configured?.connection?.httpBase}, but ComfyUI is reachable at ${reachable?.connection?.httpBase}. This repair would switch Velorn to port ${reachablePort}.`
+        : `Velorn was switched to the reachable ComfyUI port ${reachablePort}.`,
       configured,
       reachable,
       probes,
@@ -11209,7 +11567,7 @@ class ComfyStudioMcpServer {
         to: reachable?.connection?.httpBase || null,
       },
       update,
-      recommendations: previewOnly
+      recommendations: syncFailed ? [warning] : previewOnly
         ? [`Ask the user for approval, then call repair_comfyui_connection with previewOnly=false or set_comfyui_connection with port ${reachablePort}.`]
         : ['Re-run diagnose_comfyui_connection to confirm the configured connection is now healthy.'],
     })
@@ -11218,7 +11576,7 @@ class ComfyStudioMcpServer {
   getComfySetupInstallSteps(installType = 'unknown', diagnosis = null) {
     const configuredPort = normalizeLocalPort(diagnosis?.connection?.port) || 8188
     const mode = String(installType || 'unknown').toLowerCase()
-    const commonFirstStep = `Belrog connects to ComfyUI by local URL, usually http://127.0.0.1:${configuredPort}. The important thing is that the port ComfyUI prints must match Settings > ComfyUI Connection in Belrog.`
+    const commonFirstStep = `Velorn connects to ComfyUI by local URL, usually http://127.0.0.1:${configuredPort}. The important thing is that the port ComfyUI prints must match Settings > ComfyUI Connection in Velorn.`
 
     if (mode === 'portable') {
       return [
@@ -11226,8 +11584,8 @@ class ComfyStudioMcpServer {
         'Open your ComfyUI_windows_portable folder.',
         'Run run_nvidia_gpu.bat if you have an NVIDIA GPU, or run_cpu.bat only if you must use CPU.',
         'Wait until the terminal says something like "To see the GUI go to: http://127.0.0.1:8188".',
-        'Use that port in Belrog Settings > ComfyUI Connection, or ask the MCP agent to apply the suggested port fix.',
-        'If Belrog launches ComfyUI for you, configure Settings > ComfyUI Launcher to point at that same .bat file.',
+        'Use that port in Velorn Settings > ComfyUI Connection, or ask the MCP agent to apply the suggested port fix.',
+        'If Velorn launches ComfyUI for you, configure Settings > ComfyUI Launcher to point at that same .bat file.',
       ]
     }
 
@@ -11236,7 +11594,7 @@ class ComfyStudioMcpServer {
         commonFirstStep,
         'Open ComfyUI Desktop first and wait until it is fully running.',
         'Find the local URL or port shown by ComfyUI Desktop.',
-        'Set the same port in Belrog Settings > ComfyUI Connection.',
+        'Set the same port in Velorn Settings > ComfyUI Connection.',
         'If ComfyUI Desktop uses a different port after updates/restarts, run this setup guide again and let it repair the port mismatch.',
       ]
     }
@@ -11246,18 +11604,18 @@ class ComfyStudioMcpServer {
         commonFirstStep,
         'Make sure the Docker container publishes ComfyUI to the host, for example -p 8188:8188.',
         'Inside Docker, ComfyUI often needs to listen on 0.0.0.0 so the host can reach it.',
-        'From Windows/macOS, Belrog should still connect to localhost/127.0.0.1 on the published host port, not the container internal IP.',
-        'If ComfyUI returns HTTP 403, relaunch it with a permissive CORS/header setup or use the Belrog launcher path when possible.',
+        'From Windows/macOS, Velorn should still connect to localhost/127.0.0.1 on the published host port, not the container internal IP.',
+        'If ComfyUI returns HTTP 403, relaunch it with a permissive CORS/header setup or use the Velorn launcher path when possible.',
       ]
     }
 
     if (mode === 'manual') {
       return [
         commonFirstStep,
-        'Start ComfyUI manually from your terminal before opening or using Belrog generation features.',
+        'Start ComfyUI manually from your terminal before opening or using Velorn generation features.',
         'Look for the URL ComfyUI prints, usually http://127.0.0.1:8188.',
-        'If you deliberately use another port, set that exact port in Belrog Settings > ComfyUI Connection.',
-        'If Belrog can see /system_stats but not /object_info, update ComfyUI and check custom-node import errors in the ComfyUI terminal.',
+        'If you deliberately use another port, set that exact port in Velorn Settings > ComfyUI Connection.',
+        'If Velorn can see /system_stats but not /object_info, update ComfyUI and check custom-node import errors in the ComfyUI terminal.',
       ]
     }
 
@@ -11265,37 +11623,39 @@ class ComfyStudioMcpServer {
       commonFirstStep,
       'First start ComfyUI using whichever install you have: Desktop app, Windows portable .bat file, Docker container, or manual python main.py launch.',
       'Copy the port from the local URL ComfyUI prints.',
-      'If Belrog is on the wrong port, the MCP guide can propose the exact port change and apply it only after approval.',
+      'If Velorn is on the wrong port, the MCP guide can propose the exact port change and apply it only after approval.',
       'If you are not sure which install you have, tell the agent "I use portable", "I use desktop", "I use Docker", or "I started it manually" and run this guide again.',
     ]
   }
 
-  buildComfySetupUserMessage({ configured, reachable, probes, installType, previewOnly, appliedFix, validation }) {
+  buildComfySetupUserMessage({ configured, reachable, probes, installType, previewOnly, appliedFix, validation, warning }) {
     const configuredBase = configured?.connection?.httpBase || 'the configured ComfyUI URL'
     const reachableBase = reachable?.connection?.httpBase || ''
     const portList = probes.map((probe) => `${probe.port}${probe.ok ? ' OK' : ''}`).join(', ')
 
-    if (configured?.connection?.ok) {
+    if (warning) return [warning]
+
+    if (configured?.connection?.ok && configured.connection.port === reachable?.connection?.port) {
       const nodeCount = configured?.api?.objectInfo?.nodeClassCount || 0
       return [
-        `Good news: Belrog is already connected to ComfyUI at ${configuredBase}.`,
+        `Good news: Velorn is already connected to ComfyUI at ${configuredBase}.`,
         nodeCount ? `ComfyUI returned ${nodeCount} node classes, so the API is responding correctly.` : 'The ComfyUI API is responding.',
         validation?.validation?.checkedCount ? (
           validation.validation.ok
             ? 'The requested workflow nodes are available too.'
             : `The connection works, but these requested nodes are missing: ${(validation.validation.missing || []).join(', ')}.`
         ) : '',
-        'You can now use local ComfyUI workflows from Belrog.',
+        'You can now use local ComfyUI workflows from Velorn.',
       ].filter(Boolean)
     }
 
     if (reachable) {
       return [
-        `I found ComfyUI running at ${reachableBase}, but Belrog is currently pointed at ${configuredBase}.`,
+        `I found ComfyUI running at ${reachableBase}, but Velorn is currently pointed at ${configuredBase}.`,
         previewOnly
-          ? `No settings were changed. The safe fix is to set Belrog's ComfyUI port to ${reachable.connection.port}.`
+          ? `No settings were changed. The safe fix is to set Velorn's ComfyUI port to ${reachable.connection.port}.`
           : appliedFix
-            ? `I updated Belrog to use ${reachableBase}.`
+            ? `I updated Velorn to use ${reachableBase}.`
             : `No settings were changed because applyFix was not requested.`,
         `Ports checked: ${portList}.`,
         previewOnly
@@ -11314,33 +11674,22 @@ class ComfyStudioMcpServer {
 
   async guideComfyUISetup(args = {}) {
     if (!this.diagnoseComfyUIConnection) {
-      return errorResult('ComfyUI setup guidance is not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI setup guidance is not available. Restart Velorn and try again.')
     }
 
-    const timeoutMs = getNumberArg(args, 'timeoutMs', 4500, 1000, 30000)
+    const options = comfySetupPortOptions(args)
+    if (options.error) return errorResult(options.error)
+    const timeoutMs = getNumberArg(args, 'timeoutMs', 4500, 1000, COMFY_SETUP_MAX_TIMEOUT_MS)
     const previewOnly = args.previewOnly !== false
     const applyFix = args.applyFix === true
-    const requestedPort = normalizeLocalPort(args.port)
     const configured = await this.diagnoseComfyUIConnection({ timeoutMs })
     const configuredPort = normalizeLocalPort(configured?.connection?.port)
-    const requestedCandidates = Array.isArray(args.candidatePorts) ? args.candidatePorts : []
-    const candidatePorts = [...new Set([
-      requestedPort,
-      configuredPort,
-      ...requestedCandidates,
-      8188,
-      8189,
-      8190,
-      8191,
-      7860,
-    ].map(normalizeLocalPort).filter(Boolean))]
+    const candidatePorts = [...new Set([options.port, configuredPort, ...options.candidates, ...COMFY_SETUP_DEFAULT_PORTS].filter(Boolean))]
 
     const probes = []
-    let reachable = configured?.connection?.ok ? configured : null
-    for (const port of candidatePorts) {
-      const diagnosis = port === configuredPort
-        ? configured
-        : await this.diagnoseComfyUIConnection({ port, timeoutMs })
+    const diagnoses = await probeComfySetupCandidates(this.diagnoseComfyUIConnection, configured, candidatePorts, timeoutMs)
+    for (const [index, diagnosis] of diagnoses.entries()) {
+      const port = candidatePorts[index]
       const probe = {
         port,
         ok: Boolean(diagnosis?.connection?.ok),
@@ -11352,18 +11701,30 @@ class ComfyStudioMcpServer {
         error: diagnosis?.api?.objectInfo?.error || diagnosis?.api?.systemStats?.error || '',
       }
       probes.push(probe)
-      if (!reachable && diagnosis?.connection?.ok) {
-        reachable = diagnosis
-      }
     }
+    const selection = selectComfySetupConnection(configured, diagnoses, options.port)
+    const { reachable } = selection
 
     const installTypeArg = String(args.installType || 'auto').trim().toLowerCase()
     const detectedMode = configured?.installMode?.mode || reachable?.installMode?.mode || 'unknown'
     const installType = installTypeArg && installTypeArg !== 'auto' ? installTypeArg : detectedMode
     const setupSteps = this.getComfySetupInstallSteps(installType, configured)
+    if (selection.ambiguous || selection.requestedPortUnavailable) {
+      const summary = selection.ambiguous
+        ? 'Multiple local ComfyUI servers were found. Choose which port to use; no settings were changed.'
+        : `The requested ComfyUI server on port ${options.port} is unavailable. No other server was substituted and no settings were changed.`
+      return textResult({
+        action: 'guide_comfyui_setup', previewOnly, connected: false, needsPortFix: false,
+        appliedFix: false, selectionRequired: true, summary, installType, configured, probes, setupSteps,
+        candidates: selection.available.map(value => value.connection), assistantMessage: [summary],
+        nextActions: ['Ask the user which running ComfyUI server to connect, then pass its exact port to guide_comfyui_setup.'],
+      })
+    }
 
     let update = null
     let appliedFix = false
+    let settingsApplied = false
+    let warning
     const reachablePort = normalizeLocalPort(reachable?.connection?.port)
     const needsPortFix = Boolean(reachable?.connection?.ok && reachablePort && configuredPort && reachablePort !== configuredPort)
     if (needsPortFix && this.setComfyUIConnection) {
@@ -11371,7 +11732,11 @@ class ComfyStudioMcpServer {
         port: reachablePort,
         previewOnly: previewOnly || !applyFix,
       })
-      appliedFix = applyFix && previewOnly === false && update?.success !== false
+      if (update?.success !== true) return errorResult(update?.error || 'Could not apply the ComfyUI connection change.')
+      settingsApplied = applyFix && previewOnly === false
+      const syncFailed = settingsApplied && update.rendererSync?.success === false
+      appliedFix = settingsApplied && !syncFailed
+      if (syncFailed) warning = update.warning || 'The connection setting was saved, but the open Velorn window did not synchronize. Refresh or reopen Velorn and check the connection; do not repeat the settings change.'
     }
 
     let validation = null
@@ -11387,11 +11752,11 @@ class ComfyStudioMcpServer {
     }
 
     const connected = Boolean((!needsPortFix && configured?.connection?.ok) || appliedFix)
-    const summary = connected
-      ? 'Belrog is connected to ComfyUI.'
+    const summary = warning || (connected
+      ? 'Velorn is connected to ComfyUI.'
       : reachable
-        ? 'ComfyUI is running, but Belrog needs a port-setting fix.'
-        : 'ComfyUI was not found on the checked local ports.'
+        ? 'ComfyUI is running, but Velorn needs a port-setting fix.'
+        : 'ComfyUI was not found on the checked local ports.')
 
     const result = {
       action: 'guide_comfyui_setup',
@@ -11400,6 +11765,8 @@ class ComfyStudioMcpServer {
       connected,
       needsPortFix,
       appliedFix,
+      settingsApplied,
+      ...(warning ? { warning } : {}),
       installType,
       configured: {
         summary: configured?.summary || '',
@@ -11431,11 +11798,12 @@ class ComfyStudioMcpServer {
         previewOnly,
         appliedFix,
         validation,
+        warning,
       }),
-      nextActions: connected
+      nextActions: warning ? [warning] : connected
         ? [
           'Open Generate and run a small local workflow test.',
-          'If a workflow fails, inspect that workflow with inspect_Belrog_workflow or validate_comfyui_nodes for missing custom nodes.',
+          'If a workflow fails, inspect that workflow with inspect_velorn_workflow or validate_comfyui_nodes for missing custom nodes.',
         ]
         : reachable
           ? [
@@ -11454,7 +11822,7 @@ class ComfyStudioMcpServer {
 
   async controlComfyUILauncherTool(args = {}) {
     if (!this.controlComfyLauncher) {
-      return errorResult('ComfyUI launcher control is not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI launcher control is not available. Restart Velorn and try again.')
     }
     const action = String(args?.action || '').trim().toLowerCase()
     if (!['start', 'stop', 'restart'].includes(action)) {
@@ -11476,7 +11844,7 @@ class ComfyStudioMcpServer {
 
   async getComfyUILauncherLogsTool(args = {}) {
     if (!this.getComfyLauncherLogs) {
-      return errorResult('ComfyUI launcher logs are not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI launcher logs are not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.getComfyLauncherLogs({
@@ -11492,7 +11860,7 @@ class ComfyStudioMcpServer {
 
   async runComfyUINodeValidation(args = {}) {
     if (!this.validateComfyUINodes) {
-      return errorResult('ComfyUI node validation is not available. Restart Belrog and try again.')
+      return errorResult('ComfyUI node validation is not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.validateComfyUINodes(args || {})
@@ -11504,7 +11872,7 @@ class ComfyStudioMcpServer {
 
   async listComfyStudioWorkflowsTool(args = {}) {
     if (!this.listComfyStudioWorkflows) {
-      return errorResult('Belrog workflow discovery is not available. Restart Belrog and try again.')
+      return errorResult('Velorn workflow discovery is not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.listComfyStudioWorkflows({
@@ -11514,16 +11882,16 @@ class ComfyStudioMcpServer {
         query: args.query,
         refresh: args.refresh === true,
       })
-      if (result?.success === false) return errorResult(result.error || 'Could not list Belrog workflows.')
+      if (result?.success === false) return errorResult(result.error || 'Could not list Velorn workflows.')
       return textResult(result)
     } catch (error) {
-      return errorResult(`Could not list Belrog workflows: ${error?.message || String(error)}`)
+      return errorResult(`Could not list Velorn workflows: ${error?.message || String(error)}`)
     }
   }
 
   async inspectComfyStudioWorkflowTool(args = {}) {
     if (!this.inspectComfyStudioWorkflow) {
-      return errorResult('Belrog workflow inspection is not available. Restart Belrog and try again.')
+      return errorResult('Velorn workflow inspection is not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.inspectComfyStudioWorkflow({
@@ -11532,22 +11900,54 @@ class ComfyStudioMcpServer {
         workflowPath: args.workflowPath,
         includeValidation: args.includeValidation !== false,
         includeNodeClasses: args.includeNodeClasses !== false,
+        includeGraph: args.includeGraph === true,
         port: args.port,
         timeoutMs: args.timeoutMs,
         refresh: args.refresh === true,
       })
-      if (result?.success === false) return errorResult(result.error || 'Could not inspect Belrog workflow.')
-      return textResult(result)
+      if (result?.success === false) return errorResult(result.error || 'Could not inspect Velorn workflow.')
+      return args.includeGraph === true ? boundedWorkflowTextResult(result) : textResult(result)
     } catch (error) {
-      return errorResult(`Could not inspect Belrog workflow: ${error?.message || String(error)}`)
+      return errorResult(`Could not inspect Velorn workflow: ${error?.message || String(error)}`)
     }
+  }
+
+  async runGenerationRunTool(name, args = {}) {
+    const result = await mcpGenerationRunTools.dispatchGenerationRunTool({
+      generationRuns: this.generationRuns,
+      name,
+      args,
+    })
+    const response = textResult(result)
+    // Keep the native structured RUNS_* error code available to MCP clients
+    // and the Connected Agent rather than flattening it into an opaque string.
+    // Normal failures are returned by the manager (rather than thrown) so an
+    // agent can distinguish a refused preview from an uncertain apply.
+    if (result?.success === false) response.isError = true
+    return response
+  }
+
+  async readGenerationSpendingStatus() {
+    try {
+      const value = await this.getGenerationSpendingStatus?.()
+      if (value?.success === true && value.scope === 'velorn-managed' && ['local-only', 'ask-cloud'].includes(value.policy)) {
+        return { available: true, policy: value.policy, scope: 'velorn-managed',
+          coversDirectComputerActions: false,
+          approvalTrigger: value.policy === 'ask-cloud' ? 'managed-submit' : null,
+          note: value.policy === 'ask-cloud'
+            ? 'Under ask-cloud, separate native human consent is requested automatically during a managed submission when needed. For an authorized generation, apply queue_comfyui_workflow with previewOnly:false and the reviewed inputs/fingerprints to open that dialog. Do not wait for pre-recorded approval: status checks and previews cannot open it. This status is not a workflow assessment or a denial. Do not bypass an actual refusal.'
+            : 'Local-only blocks paid or unverified app-managed submissions; separate native human consent is available only under ask-cloud. Only the user can change policy in Agent settings. This status is not a workflow-specific assessment. No global spending cap.' }
+      }
+    } catch { /* Missing native policy is never permission to spend. */ }
+    return { available: false, policy: 'unavailable', scope: 'velorn-managed',
+      coversDirectComputerActions: false, note: 'Spending protection is unavailable. Restart Velorn; do not bypass the native generation gate.' }
   }
 
   async runRendererActionTool(action, args = {}, options = {}) {
     const bridgeName = options.bridgeName || 'MCP action bridge'
     const suggestedTool = options.suggestedTool || action
     if (!this.performAction) {
-      return errorResult(`${bridgeName} is not available. Restart Belrog and try again.`)
+      return errorResult(`${bridgeName} is not available. Restart Velorn and try again.`)
     }
     const payload = { ...(args || {}) }
     if (typeof options.defaultPreviewOnly === 'boolean' && typeof payload.previewOnly !== 'boolean') {
@@ -11557,22 +11957,38 @@ class ComfyStudioMcpServer {
     try {
       const result = await this.performAction({ action, payload })
       const previewOnly = result?.previewOnly === true || payload.previewOnly === true
-      return textResult({
+      const images = []
+      const stripFrameImage = (value) => {
+        if (!value || typeof value !== 'object') return value
+        if (Array.isArray(value)) return value.map(stripFrameImage)
+        const { dataUrl, ...rest } = value
+        if (typeof dataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(dataUrl)) {
+          const match = /^data:(image\/(?:jpeg|png));base64,(.+)$/.exec(dataUrl)
+          if (match && match[2].length <= 12 * 1024 * 1024) {
+            rest.imageContentIndex = images.length + 1
+            images.push({ type: 'image', mimeType: match[1], data: match[2] })
+          }
+        }
+        return Object.fromEntries(Object.entries(rest).map(([key, item]) => [key, stripFrameImage(item)]))
+      }
+      const reportedResult = ['inspect_source_frame', 'inspect_edit_point'].includes(action) ? stripFrameImage(result) : result
+      return mixedResult({
         success: previewOnly ? undefined : result?.success !== false,
         previewOnly,
         action,
         message: result?.message || (previewOnly
-          ? `${suggestedTool} plan returned by Belrog.`
-          : `${suggestedTool} applied through Belrog.`),
-        result,
+          ? `${suggestedTool} plan returned by Velorn.`
+          : `${suggestedTool} applied through Velorn.`),
+        result: reportedResult,
         suggestedApplyCall: previewOnly ? {
           tool: suggestedTool,
           arguments: {
             ...payload,
+            ...(result?.suggestedApplyPayload || {}),
             previewOnly: false,
           },
         } : undefined,
-      })
+      }, images)
     } catch (error) {
       return errorResult(`${suggestedTool} failed: ${error?.message || String(error)}`)
     }
@@ -11580,7 +11996,7 @@ class ComfyStudioMcpServer {
 
   async inspectMusicVideoKeyframeTool(args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP Music Video keyframe inspection is not available. Restart Belrog and try again.')
+      return errorResult('MCP Music Video keyframe inspection is not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.performAction({
@@ -11604,7 +12020,7 @@ class ComfyStudioMcpServer {
       return mixedResult({
         success: result?.success !== false,
         action: 'inspect_music_video_keyframe',
-        message: result?.message || 'Inspected the Music Video Step 4 keyframe.',
+        message: result?.message || 'Inspected the Music Video keyframe.',
         result,
         previewImage: {
           assetId: latestAsset?.id || null,
@@ -11621,7 +12037,7 @@ class ComfyStudioMcpServer {
 
   async inspectMusicVideoVideoTool(snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP Music Video Step 5 inspection is not available. Restart Belrog and try again.')
+      return errorResult('MCP Music Video Videos step inspection is not available. Restart Velorn and try again.')
     }
     try {
       const result = await this.performAction({
@@ -11645,12 +12061,12 @@ class ComfyStudioMcpServer {
       } else if (includeImage && latestAsset) {
         imageWarning = 'The latest video does not have a generated poster image yet.'
       } else if (includeImage) {
-        imageWarning = 'No generated Step 5 video is available for this shot yet.'
+        imageWarning = 'No generated video is available for this shot yet.'
       }
       return mixedResult({
         success: result?.success !== false,
         action: 'inspect_music_video_video',
-        message: result?.message || 'Inspected the Music Video Step 5 video.',
+        message: result?.message || 'Inspected the Music Video video.',
         result,
         previewImage: {
           assetId: latestAsset?.id || null,
@@ -11667,7 +12083,7 @@ class ComfyStudioMcpServer {
 
   async importComfyUiWorkflowTool(args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP workflow import bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP workflow import bridge is not available. Restart Velorn and try again.')
     }
 
     let source
@@ -11695,9 +12111,28 @@ class ComfyStudioMcpServer {
     const sourceArgs = {}
     if (source.sourceKind === 'url') sourceArgs.url = source.sourceUrl
     else if (source.sourceKind === 'file') sourceArgs.filePath = String(args.filePath || '').trim()
-    else sourceArgs.workflowJson = args.workflowJson
+    else sourceArgs.workflowJson = source.apiWorkflow || args.workflowJson
 
     try {
+      if (source.apiWorkflow) {
+        if (!this.importManagedApiWorkflow) throw new Error('Managed API workflow import is unavailable. Restart Velorn to load the native workflow support.')
+        const result = await this.importManagedApiWorkflow({ ...args, workflowJson: source.apiWorkflow, previewOnly })
+        const { entry, ...publicResult } = result
+        if (!previewOnly && entry) {
+          try {
+            const registration = await this.performAction({ action: 'import_comfyui_workflow', payload: { registerManagedApiEntry: entry, previewOnly: false } })
+            if (registration?.success === false) throw new Error('Renderer could not register the saved workflow.')
+            publicResult.registered = true
+          } catch {
+            publicResult.registered = false
+            publicResult.warning = 'The workflow is saved on disk, but this renderer could not refresh its catalog. Do not retry the import blindly; inspect the managed workflow and reopen Velorn before queueing.'
+          }
+        }
+        return boundedWorkflowTextResult({ ...publicResult, action: 'import_comfyui_workflow', suggestedApplyCall: previewOnly ? {
+          tool: 'import_comfyui_workflow', arguments: { ...sourceArgs, name: args.name, title: args.title, outputType: args.outputType,
+            modelUrls: args.modelUrls, overwrite: args.overwrite === true, ...result.suggestedApplyPayload },
+        } : undefined })
+      }
       const result = await this.performAction({ action: 'import_comfyui_workflow', payload })
       return textResult({
         success: previewOnly ? undefined : result?.success !== false,
@@ -11705,7 +12140,7 @@ class ComfyStudioMcpServer {
         action: 'import_comfyui_workflow',
         message: result?.message || (previewOnly
           ? 'Workflow analyzed — nothing imported yet. Review the dependency plan with the user, then apply with previewOnly:false.'
-          : 'Workflow imported into Belrog.'),
+          : 'Workflow imported into Velorn.'),
         result,
         suggestedApplyCall: previewOnly ? {
           tool: 'import_comfyui_workflow',
@@ -11762,6 +12197,7 @@ class ComfyStudioMcpServer {
     if (plan.steps.length === 0) {
       return errorResult('Provide at least one action-plan step.')
     }
+    if (plan.truncated) return errorResult(`Action plans may contain at most ${MCP_ACTION_PLAN_MAX_STEPS} steps. Nothing was run.`)
     if (plan.invalidSteps.length > 0) {
       return textResult({
         success: false,
@@ -11774,11 +12210,19 @@ class ComfyStudioMcpServer {
       })
     }
 
+    let planContext = snapshot.context
+    if (this.performAction) {
+      try {
+        const live = await this.performAction({ action: 'get_transport_state', payload: { expectedContext: args.expectedContext } })
+        planContext = live?.context || planContext
+      } catch (error) { return errorResult(`Action-plan context check failed: ${error?.message || String(error)}`) }
+    }
     if (previewOnly) {
       return textResult({
         previewOnly: true,
         action: 'run_mcp_action_plan',
-        message: `Action plan validated. ${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'} would run after approval.`,
+        message: `Tool names validated for ${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'}. Preview individual tools for edit-specific validation. No actions were run.`,
+        context: planContext,
         label,
         stepCount: plan.steps.length,
         rawStepCount: plan.rawCount,
@@ -11791,13 +12235,14 @@ class ComfyStudioMcpServer {
           arguments: {
             ...args,
             previewOnly: false,
+            expectedContext: planContext,
           },
         },
       })
     }
 
     if (!this.performAction) {
-      return errorResult('MCP action-plan bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP action-plan bridge is not available. Restart Velorn and try again.')
     }
 
     const results = []
@@ -11820,7 +12265,7 @@ class ComfyStudioMcpServer {
         success: !checkpointResult?.isError && parsedCheckpoint?.success !== false,
         result: checkpoint,
       })
-      if (checkpointResult?.isError && args.stopOnError !== false) {
+      if (checkpointResult?.isError || parsedCheckpoint?.success === false) {
         return textResult({
           success: false,
           action: 'run_mcp_action_plan',
@@ -11832,7 +12277,18 @@ class ComfyStudioMcpServer {
     }
 
     const stopOnError = args.stopOnError !== false
+    let awaitingAsyncCompletion = null
+    let executionContext = planContext
+    const contextNavigation = new Set(['open_project', 'create_project', 'duplicate_project', 'switch_timeline',
+      'create_timeline', 'duplicate_timeline', 'delete_timeline', 'open_compound', 'close_compound', 'restore_project_checkpoint'])
     for (const step of plan.steps) {
+      try {
+        await this.performAction({ action: 'get_transport_state', payload: { expectedContext: executionContext } })
+      } catch (error) {
+        results.push({ index: step.index, tool: step.tool, success: false,
+          result: { error: `Action plan stopped before this step: ${error?.message || String(error)}` } })
+        break
+      }
       const stepArgs = {
         ...(step.arguments || {}),
         previewOnly: step.arguments?.previewOnly === true ? true : false,
@@ -11853,18 +12309,42 @@ class ComfyStudioMcpServer {
         result: parsed || response,
       })
       if (!success && stopOnError) break
+      try {
+        const after = await this.performAction({ action: 'get_transport_state', payload: {} })
+        if (!contextNavigation.has(step.tool) && executionContext && after?.context
+          && ['session', 'projectKey', 'timelineId', 'timelineSessionId', 'compoundClipId'].some(key => executionContext[key] !== after.context[key])) {
+          throw new Error('The active project or timeline changed while a step was running.')
+        }
+        executionContext = after?.context
+      } catch (error) {
+        results[results.length - 1].success = false
+        results[results.length - 1].contextError = String(error?.message || error)
+        break
+      }
+      const detail = parsed?.result || parsed
+      if (success && !stepArgs.previewOnly && (detail?.batchId || detail?.jobId
+        || detail?.job?.id || detail?.job?.jobId || detail?.promptIds?.length || detail?.promptId)
+        && !['completed', 'failed', 'canceled', 'cancelled'].includes(detail?.status || detail?.job?.status)) {
+        awaitingAsyncCompletion = { stepIndex: step.index, tool: step.tool,
+          jobId: detail?.jobId || detail?.job?.id || detail?.job?.jobId || null,
+          batchId: detail?.batchId || null, promptIds: detail?.promptIds || (detail?.promptId ? [detail.promptId] : []),
+          nextStepIndex: step.index + 1 < plan.steps.length ? step.index + 1 : null }
+        break
+      }
     }
 
     const failedCount = results.filter((result) => result.index >= 0 && result.success === false).length
     return textResult({
       success: failedCount === 0,
       action: 'run_mcp_action_plan',
-      message: failedCount === 0
+      message: awaitingAsyncCompletion ? 'An asynchronous job was started, not completed. Inspect its status before submitting the remaining steps.' : failedCount === 0
         ? `Ran ${plan.steps.length} action-plan step${plan.steps.length === 1 ? '' : 's'}.`
         : `Action plan ran with ${failedCount} failed step${failedCount === 1 ? '' : 's'}.`,
       label,
       checkpoint,
       stepCount: plan.steps.length,
+      executedStepCount: results.filter(result => result.index >= 0).length,
+      awaitingAsyncCompletion,
       failedCount,
       results,
     })
@@ -11873,6 +12353,16 @@ class ComfyStudioMcpServer {
   async prepareGenerationFromTimelineContext(snapshot, args = {}) {
     const plan = resolveGenerateFromTimelinePlan(snapshot, args)
     if (plan.error) return errorResult(plan.error)
+    try {
+      const { buildStagedGenerationSettings } = await import('./generationHandoff.mjs')
+      const staged = buildStagedGenerationSettings({ ...args, workflowId: plan.workflowId,
+        resolution: plan.generationSettings.resolution }, snapshot.assets || [])
+      plan.generationSettings = { ...plan.generationSettings, ...staged }
+      plan.conditioningAudio = staged.audio || null
+      plan.audioNote = staged.audio
+        ? 'Explicit audio asset and source range only; timeline audio was not automatically matched.'
+        : 'No conditioning audio was selected by this picture capture.'
+    } catch (error) { return errorResult(error.message) }
 
     if (args.previewOnly !== false) {
       return textResult({
@@ -11891,7 +12381,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP Generate preparation bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP Generate preparation bridge is not available. Restart Velorn and try again.')
     }
 
     const payload = {
@@ -11905,6 +12395,8 @@ class ComfyStudioMcpServer {
       ...(plan.generationSettings.durationSeconds !== null ? { durationSeconds: plan.generationSettings.durationSeconds } : {}),
       ...(plan.generationSettings.fps !== null ? { fps: plan.generationSettings.fps } : {}),
       ...(plan.generationSettings.resolution ? { resolution: plan.generationSettings.resolution } : {}),
+      ...(plan.generationSettings.audio ? { audioAssetId: plan.generationSettings.audio.assetId,
+        audioStartSeconds: plan.generationSettings.audio.startSeconds } : {}),
     }
 
     const result = await this.performAction({
@@ -11915,7 +12407,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'prepare_generation_from_timeline_context',
-      message: 'Timeline frame captured and sent to Generate. Review settings in Belrog, then click Generate manually when ready.',
+      message: 'Timeline frame captured and sent to Generate. Review settings in Velorn, then click Generate manually when ready.',
       plan: {
         ...plan,
         previewOnly: false,
@@ -11926,16 +12418,19 @@ class ComfyStudioMcpServer {
 
   async queuePreparedGeneration(_snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP Generate queue bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP Generate queue bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
+    if (!previewOnly && (!args.previewToken || args.expectedContext === undefined)) return errorResult('Preview the prepared generation first, then apply its exact previewToken and expectedContext. Nothing was queued.')
     const result = await this.performAction({
       action: 'queue_prepared_generation',
       payload: {
         previewOnly,
         requireTimelineFrame: args.requireTimelineFrame !== false,
         timeoutMs: args.timeoutMs,
+        previewToken: args.previewToken,
+        expectedContext: args.expectedContext,
       },
     })
 
@@ -11945,8 +12440,11 @@ class ComfyStudioMcpServer {
       action: 'queue_prepared_generation',
       message: previewOnly
         ? 'Prepared Generate state inspected. No generation was queued.'
-        : 'Prepared Generate request queued through Belrog.',
+        : 'Prepared Generate request queued through Velorn.',
       result,
+      ...(previewOnly && result?.suggestedApplyPayload ? { suggestedApplyCall: {
+        tool: 'queue_prepared_generation', arguments: result.suggestedApplyPayload,
+      } } : {}),
     })
   }
 
@@ -11968,7 +12466,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP timeline generation batch bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP timeline generation batch bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -11984,7 +12482,7 @@ class ComfyStudioMcpServer {
       success: true,
       previewOnly: false,
       action: 'queue_timeline_generation_batch',
-      message: `Queued ${plan.totalJobs} timeline generation job${plan.totalJobs === 1 ? '' : 's'} through Belrog.`,
+      message: `Queued ${plan.totalJobs} timeline generation job${plan.totalJobs === 1 ? '' : 's'} through Velorn.`,
       plan,
       result,
     })
@@ -12036,6 +12534,14 @@ class ComfyStudioMcpServer {
     }
     if (plan.error) return errorResult(plan.error)
 
+    if (plan.importedWorkflowId) {
+      // The renderer owns imported bindings. Managed API graphs require exact
+      // inspected field IDs, so do not invent width/aspect parameter aliases.
+      // Legacy UI imports still derive their aliases from resolution there.
+      plan = { ...plan, generationSettings: { ...plan.generationSettings,
+        templateParameters: normalizeMcpTemplateParameterOverrides(args) } }
+    }
+
     const buildRendererPayload = (previewOnly) => ({
       ...buildTimelineTemplateApplyArguments(args, plan),
       template: plan.importedWorkflowId ? undefined : plan.template,
@@ -12053,14 +12559,28 @@ class ComfyStudioMcpServer {
       timeoutMs: args.timeoutMs,
     })
 
+    const publicPlan = (rendererResult) => {
+      const renderer = rendererResult?.plan
+      const semantics = renderer?.apiParameterSemantics
+      if (semantics) return { ...plan, renderer, apiParameterSemantics: semantics, warnings: semantics.warnings,
+        generationSettings: { ...plan.generationSettings, durationSeconds: null, fps: null, resolution: null,
+          requestedMetadata: semantics.requestedMetadata, effectiveOutput: semantics.effectiveOutput,
+          controlsMeaning: 'requested-metadata-only' } }
+      if (plan.importedWorkflowId && !renderer) return { ...plan,
+        warnings: ['Imported graph controls could not be inspected. These requested values do not verify output duration, FPS or resolution; inspect exact graph bindings before applying.'],
+        generationSettings: { ...plan.generationSettings, durationSeconds: null, fps: null, resolution: null,
+          requestedMetadata: { durationSeconds: plan.generationSettings.durationSeconds, fps: plan.generationSettings.fps, resolution: plan.generationSettings.resolution },
+          controlsMeaning: 'unverified-requested-metadata' } }
+      return renderer ? { ...plan, renderer } : plan
+    }
+
     if (args.previewOnly !== false) {
-      // Imported workflows: round-trip the preview through the renderer so the
-      // agent sees the manifest (required asset fields, parameters) that only
-      // the registry knows. Fall back to the main-only plan if the bridge is
-      // unavailable rather than failing the preview.
+      // The renderer knows whether even a catalog-named template is already
+      // imported, and can inspect its real readiness without import/queue.
+      // Fall back to the main-only plan if the bridge is unavailable.
       let rendererPlan = null
       let rendererPlanError = ''
-      if (plan.importedWorkflowId && this.performAction) {
+      if (this.performAction) {
         try {
           rendererPlan = await this.performAction({
             action: 'queue_timeline_template_generation',
@@ -12074,7 +12594,7 @@ class ComfyStudioMcpServer {
         previewOnly: true,
         action: 'queue_timeline_template_generation',
         message: 'Timeline template generation plan only. No template was imported and no generation was queued.',
-        plan: rendererPlan?.plan ? { ...plan, renderer: rendererPlan.plan } : plan,
+        plan: publicPlan(rendererPlan),
         rendererPlanError: rendererPlanError || undefined,
         suggestedApplyCall: {
           tool: 'queue_timeline_template_generation',
@@ -12084,7 +12604,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP template generation bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP template generation bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12092,12 +12612,17 @@ class ComfyStudioMcpServer {
       payload: buildRendererPayload(false),
     })
 
+    // A confirmed dependency refusal is not a queued job. Preserve its
+    // renderer-owned outcome after the native bridge refreshes the snapshot;
+    // no request argument is allowed to supply this execution receipt.
+    if (result?.success === false) return { ...textResult(result), isError: true }
+
     return textResult({
       success: true,
       previewOnly: false,
       action: 'queue_timeline_template_generation',
-      message: `Queued "${plan.template?.title || plan.template?.name || 'ComfyUI template'}" from the timeline source clip through Belrog.`,
-      plan,
+      message: `Queued "${plan.template?.title || plan.template?.name || 'ComfyUI template'}" from the timeline source clip through Velorn.`,
+      plan: publicPlan(result),
       result,
     })
   }
@@ -12113,8 +12638,8 @@ class ComfyStudioMcpServer {
     const assetById = new Map((snapshot.assets || []).map((asset) => [String(asset?.id || ''), asset]))
     const imageAsset = assetById.get(imageAssetId)
     const audioAsset = assetById.get(audioAssetId)
-    if (!imageAsset) return errorResult(`Unknown Belrog image asset ID: ${imageAssetId}`)
-    if (!audioAsset) return errorResult(`Unknown Belrog audio asset ID: ${audioAssetId}`)
+    if (!imageAsset) return errorResult(`Unknown Velorn image asset ID: ${imageAssetId}`)
+    if (!audioAsset) return errorResult(`Unknown Velorn audio asset ID: ${audioAssetId}`)
     if (String(imageAsset.type || '').toLowerCase() !== 'image') {
       return errorResult(`imageAssetId must reference an image; ${imageAssetId} is ${imageAsset.type || 'unknown'}.`)
     }
@@ -12166,7 +12691,7 @@ class ComfyStudioMcpServer {
     const workflowInfos = new Map()
     if (requestedIds.length === 0) return { workflowInfos }
     if (!this.listComfyStudioWorkflows) {
-      return { error: 'My Workflows discovery is unavailable. Restart Belrog and try again.' }
+      return { error: 'My Workflows discovery is unavailable. Restart Velorn and try again.' }
     }
 
     let catalog
@@ -12183,11 +12708,11 @@ class ComfyStudioMcpServer {
     for (const workflowId of requestedIds) {
       const entry = byId.get(workflowId)
       if (!entry) {
-        return { error: `Saved workflow "${workflowId}" was not found. Run list_Belrog_workflows with source "my-workflows" and use the returned id.` }
+        return { error: `Saved workflow "${workflowId}" was not found. Run list_velorn_workflows with source "my-workflows" and use the returned id.` }
       }
       if (entry.mcpRunnable !== true) {
         return {
-          error: `Saved workflow "${entry.label || workflowId}" is visible but not agent-ready. ${entry.readinessMessage || 'Add the required Belrog marker nodes and save it again.'}`,
+          error: `Saved workflow "${entry.label || workflowId}" is visible but not agent-ready. ${entry.readinessMessage || 'Add the required Velorn marker nodes and save it again.'}`,
         }
       }
       const outputType = entry.outputType === 'video' ? 'video' : 'image'
@@ -12228,7 +12753,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP prompt generation batch bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP prompt generation batch bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12244,7 +12769,7 @@ class ComfyStudioMcpServer {
       success: true,
       previewOnly: false,
       action: 'queue_prompt_generation_batch',
-      message: `Queued ${plan.totalJobs} prompt generation job${plan.totalJobs === 1 ? '' : 's'} through Belrog.`,
+      message: `Queued ${plan.totalJobs} prompt generation job${plan.totalJobs === 1 ? '' : 's'} through Velorn.`,
       plan,
       result,
     })
@@ -12263,7 +12788,7 @@ class ComfyStudioMcpServer {
 
     if (includeImage) {
       if (!this.performAction) {
-        warning = 'MCP frame capture bridge is not available. Restart Belrog and try again.'
+        warning = 'MCP frame capture bridge is not available. Restart Velorn and try again.'
       } else {
         try {
           capture = await this.performAction({
@@ -12340,7 +12865,7 @@ class ComfyStudioMcpServer {
 
     if (includeImage) {
       if (!this.performAction) {
-        warning = 'MCP frame capture bridge is not available. Restart Belrog and try again.'
+        warning = 'MCP frame capture bridge is not available. Restart Velorn and try again.'
       } else {
         try {
           capture = await this.performAction({
@@ -12438,7 +12963,7 @@ class ComfyStudioMcpServer {
         : 'The requested offset is beyond the visible shot list.'
     } else if (includeImage) {
       if (!this.performAction) {
-        warning = 'MCP frame capture bridge is not available. Restart Belrog and try again.'
+        warning = 'MCP frame capture bridge is not available. Restart Velorn and try again.'
       } else {
         try {
           capture = await this.performAction({
@@ -12565,6 +13090,7 @@ class ComfyStudioMcpServer {
 
     const metadata = {
       clip: {
+        ...clip,
         ...clipRef(clip),
         enabled: clip.enabled !== false,
         labelColor: clip.labelColor || '',
@@ -12582,7 +13108,10 @@ class ComfyStudioMcpServer {
         metadata: clip.metadata || null,
         text: clip.text || '',
       },
+      context: snapshot.context,
+      editingContext: snapshot.editingContext,
       track: track ? {
+        ...track,
         id: track.id,
         name: track.name,
         type: track.type,
@@ -12602,6 +13131,7 @@ class ComfyStudioMcpServer {
         prompt: asset.prompt || '',
         workflowName: asset.workflowName || '',
         model: asset.model || '',
+        generatedMusic: asset.generatedMusic || null,
         generationStatus: asset.generationStatus || 'none',
         yolo: asset.yolo || null,
       } : null,
@@ -12672,7 +13202,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP write bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP write bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12681,6 +13211,16 @@ class ComfyStudioMcpServer {
         clipIds: clips.map((clip) => clip.id),
         color,
       },
+    })
+
+    const appliedClipsById = new Map(
+      (Array.isArray(result?.clips) ? result.clips : []).map((clip) => [clip.id, clip]),
+    )
+    const appliedClipSummaries = clipSummaries.map((clip) => {
+      const applied = appliedClipsById.get(clip.id)
+      return applied
+        ? { ...clip, labelColor: applied.labelColor || '' }
+        : clip
     })
 
     return textResult({
@@ -12692,7 +13232,7 @@ class ComfyStudioMcpServer {
       filter: target.filter,
       clipCount: clips.length,
       missingClipIds: target.missingClipIds || [],
-      clips: clipSummaries,
+      clips: appliedClipSummaries,
       result,
     })
   }
@@ -12749,7 +13289,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP write bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP write bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12801,7 +13341,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP write bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP write bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12854,7 +13394,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP write bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP write bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12908,7 +13448,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP write bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP write bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -12936,7 +13476,7 @@ class ComfyStudioMcpServer {
 
   async createProject(snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP project bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP project bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
@@ -12964,7 +13504,7 @@ class ComfyStudioMcpServer {
 
   async duplicateProject(snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP project bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP project bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
@@ -13014,7 +13554,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP track bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP track bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -13079,7 +13619,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP track bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP track bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'update_track',
       payload: { ...args, previewOnly: false },
@@ -13122,7 +13662,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP track bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP track bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'remove_track',
       payload: { trackId, previewOnly: false },
@@ -13155,7 +13695,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'switch_timeline',
       payload: { timelineId, previewOnly: false },
@@ -13193,7 +13733,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'rename_timeline',
       payload: { timelineId, name, previewOnly: false },
@@ -13231,7 +13771,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'duplicate_timeline',
       payload: { ...args, timelineId, previewOnly: false },
@@ -13267,7 +13807,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP timeline bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'delete_timeline',
       payload: { timelineId, previewOnly: false },
@@ -13348,7 +13888,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'add_transition',
       payload: { ...args, transitionType, durationSeconds, settings, previewOnly: false },
@@ -13412,7 +13952,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'update_transition',
       payload: { ...args, previewOnly: false },
@@ -13453,7 +13993,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP transition bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'remove_transitions',
       payload: { transitionIds, previewOnly: false },
@@ -13509,7 +14049,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'move_clips',
       payload: { ...args, previewOnly: false },
@@ -13572,7 +14112,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'trim_clips',
       payload: { ...args, previewOnly: false },
@@ -13630,7 +14170,7 @@ class ComfyStudioMcpServer {
       })
     }
 
-    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Belrog and try again.')
+    if (!this.performAction) return errorResult('MCP clip edit bridge is not available. Restart Velorn and try again.')
     const result = await this.performAction({
       action: 'delete_clips',
       payload: { ...args, clipIds, previewOnly: false },
@@ -13675,7 +14215,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP sequence creation bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP sequence creation bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -13687,7 +14227,7 @@ class ComfyStudioMcpServer {
       success: true,
       action: 'create_timeline',
       message: plan.switchToTimeline
-        ? 'Sequence created and Belrog switched to it.'
+        ? 'Sequence created and Velorn switched to it.'
         : 'Sequence created.',
       plan,
       result,
@@ -13725,7 +14265,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP asset folder bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP asset folder bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -13775,7 +14315,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP asset move bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP asset move bridge is not available. Restart Velorn and try again.')
     }
 
     if (plan.moveCount === 0) {
@@ -13803,7 +14343,7 @@ class ComfyStudioMcpServer {
 
   async moveUnusedAssetsToFolder(_snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP unused asset cleanup bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP unused asset cleanup bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
@@ -13820,8 +14360,8 @@ class ComfyStudioMcpServer {
         previewOnly,
         action: 'move_unused_assets_to_folder',
         message: result?.message || (previewOnly
-          ? 'Unused asset cleanup plan returned by Belrog.'
-          : 'Unused assets moved by Belrog.'),
+          ? 'Unused asset cleanup plan returned by Velorn.'
+          : 'Unused assets moved by Velorn.'),
         result,
         suggestedApplyCall: previewOnly ? {
           tool: 'move_unused_assets_to_folder',
@@ -13865,7 +14405,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP asset placement bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP asset placement bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -13876,7 +14416,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'add_asset_to_timeline',
-      message: 'Asset placed on the timeline through Belrog.',
+      message: 'Asset placed on the timeline through Velorn.',
       plan,
       result,
     })
@@ -13884,7 +14424,7 @@ class ComfyStudioMcpServer {
 
   async replaceClipWithAsset(_snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP clip replacement bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP clip replacement bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
@@ -13901,8 +14441,8 @@ class ComfyStudioMcpServer {
         previewOnly,
         action: 'replace_clip_with_asset',
         message: result?.message || (previewOnly
-          ? 'Clip replacement plan returned by Belrog.'
-          : 'Clip replaced through Belrog.'),
+          ? 'Clip replacement plan returned by Velorn.'
+          : 'Clip replaced through Velorn.'),
         result,
         suggestedApplyCall: previewOnly ? {
           tool: 'replace_clip_with_asset',
@@ -13954,7 +14494,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP solid color bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP solid color bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -13965,7 +14505,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'add_solid_color',
-      message: 'Solid color asset created through Belrog.',
+      message: 'Solid color asset created through Velorn.',
       plan,
       result,
     })
@@ -14008,7 +14548,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP batch asset placement bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP batch asset placement bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14019,7 +14559,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'add_assets_to_timeline',
-      message: 'Assets placed on the timeline through Belrog.',
+      message: 'Assets placed on the timeline through Velorn.',
       plan,
       result,
     })
@@ -14058,7 +14598,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP adjustment clip bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP adjustment clip bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14069,7 +14609,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'add_adjustment_clip',
-      message: 'Adjustment clip created through Belrog.',
+      message: 'Adjustment clip created through Velorn.',
       plan,
       result,
     })
@@ -14140,7 +14680,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP duplicate bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP duplicate bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14189,7 +14729,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP text bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP text bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14219,7 +14759,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP text bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP text bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14282,7 +14822,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP shape bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP shape bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14320,7 +14860,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP shape bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP shape bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14351,7 +14891,7 @@ class ComfyStudioMcpServer {
     }
 
     return textResult({
-      warning: 'Renderer effect registry is not available. Restart Belrog for full parameter details.',
+      warning: 'Renderer effect registry is not available. Restart Velorn for full parameter details.',
       effectIds: MCP_GLSL_EFFECT_IDS,
     })
   }
@@ -14361,7 +14901,7 @@ class ComfyStudioMcpServer {
     if (resolved.error) return errorResult(resolved.error)
 
     if (!this.performAction) {
-      return errorResult('MCP effect bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP effect bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14386,7 +14926,7 @@ class ComfyStudioMcpServer {
     if (resolved.error) return errorResult(resolved.error)
 
     if (!this.performAction) {
-      return errorResult('MCP effect bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP effect bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14411,7 +14951,7 @@ class ComfyStudioMcpServer {
     if (resolved.error) return errorResult(resolved.error)
 
     if (!this.performAction) {
-      return errorResult('MCP effect bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP effect bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14489,7 +15029,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP clip keyframe bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP clip keyframe bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14500,7 +15040,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'set_clip_keyframes',
-      message: 'Clip keyframes updated through Belrog.',
+      message: 'Clip keyframes updated through Velorn.',
       plan,
       result,
     })
@@ -14508,7 +15048,7 @@ class ComfyStudioMcpServer {
 
   async addDipToBlack(_snapshot, args = {}) {
     if (!this.performAction) {
-      return errorResult('MCP dip-to-black bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP dip-to-black bridge is not available. Restart Velorn and try again.')
     }
 
     const previewOnly = args.previewOnly !== false
@@ -14526,8 +15066,8 @@ class ComfyStudioMcpServer {
         previewOnly,
         action: 'add_dip_to_black',
         message: result?.message || (previewOnly
-          ? 'Dip-to-black opacity keyframe plan returned by Belrog.'
-          : 'Dip-to-black opacity keyframes applied through Belrog.'),
+          ? 'Dip-to-black opacity keyframe plan returned by Velorn.'
+          : 'Dip-to-black opacity keyframes applied through Velorn.'),
         result,
         suggestedApplyCall: previewOnly ? {
           tool: 'add_dip_to_black',
@@ -14577,7 +15117,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP export bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP export bridge is not available. Restart Velorn and try again.')
     }
 
     const result = await this.performAction({
@@ -14591,7 +15131,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'export_timeline',
-      message: 'Export started in the Belrog export worker.',
+      message: 'Export started in the Velorn export worker.',
       ...exportPlan,
       result,
     })
@@ -14630,7 +15170,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult('MCP batch export bridge is not available. Restart Belrog and try again.')
+      return errorResult('MCP batch export bridge is not available. Restart Velorn and try again.')
     }
 
     const stopOnError = args.stopOnError !== false
@@ -14661,7 +15201,7 @@ class ComfyStudioMcpServer {
       success: failedCount === 0,
       action: 'export_delivery_batch',
       message: failedCount === 0
-        ? `Started ${results.length} delivery export${results.length === 1 ? '' : 's'} through Belrog.`
+        ? `Started ${results.length} delivery export${results.length === 1 ? '' : 's'} through Velorn.`
         : `Started ${results.length} delivery export${results.length === 1 ? '' : 's'}, with ${failedCount} failure${failedCount === 1 ? '' : 's'}.`,
       plan: batchPlan,
       results,
@@ -14698,12 +15238,12 @@ class ComfyStudioMcpServer {
       return errorResult(`No media clips with project file paths are available for ${formatLabel} export.`)
     }
 
-    const filename = String(args.filename || `${snapshot.project?.name || 'Belrog'}_${timeline.name || 'Timeline'}`).trim()
+    const filename = String(args.filename || `${snapshot.project?.name || 'Velorn'}_${timeline.name || 'Timeline'}`).trim()
     const outputPath = String(args.outputPath || '').trim()
     const plan = {
       projectPath,
       outputPath: outputPath || 'project renders folder',
-      filename: filename || `${snapshot.project?.name || 'Belrog'}_${timeline.name || 'Timeline'}`,
+      filename: filename || `${snapshot.project?.name || 'Velorn'}_${timeline.name || 'Timeline'}`,
       format: normalizedFormat,
       xmlDialect,
       extension,
@@ -14741,7 +15281,7 @@ class ComfyStudioMcpServer {
     }
 
     if (!this.performAction) {
-      return errorResult(`MCP ${formatLabel} export bridge is not available. Restart Belrog and try again.`)
+      return errorResult(`MCP ${formatLabel} export bridge is not available. Restart Velorn and try again.`)
     }
 
     const result = await this.performAction({
@@ -14757,7 +15297,7 @@ class ComfyStudioMcpServer {
     return textResult({
       success: true,
       action: 'export_fcpxml',
-      message: `${formatLabel} exported through Belrog.`,
+      message: `${formatLabel} exported through Velorn.`,
       plan,
       result,
     })
@@ -14780,13 +15320,9 @@ class ComfyStudioMcpServer {
   }
 
   writeCorsHeaders(res) {
-    const reqOrigin = res.req?.headers?.origin
-    const allowOrigin = this.bindHost === '0.0.0.0' && typeof reqOrigin === 'string' && reqOrigin.startsWith('http')
-      ? reqOrigin
-      : 'http://127.0.0.1'
-    res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+    res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1')
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Protocol-Version, Authorization, X-Belrog-Mcp-Token')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, MCP-Protocol-Version')
   }
 
   writeJson(res, statusCode, payload) {
