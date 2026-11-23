@@ -98,82 +98,152 @@
       "glslCameraShake": {
         "label": "Camera Shake",
         "description": "GPU UV camera shake with procedural position, rotation, zoom, and shutter blur.",
-        "presets": { "handheld": "Handheld", "runAndGun": "Run & Gun", "impact": "Impact" }
+        "presets": {
+          "handheld": "Handheld",
+          "runAndGun": "Run & Gun",
+          "impact": "Impact"
+        }
       },
       "gaussianBlur": {
         "label": "Gaussian Blur",
         "description": "Soft, even blur for dreamy focus pulls, privacy blur, or background defocus.",
-        "presets": { "soft": "Soft", "dream": "Dreamy", "heavy": "Heavy" }
+        "presets": {
+          "soft": "Soft",
+          "dream": "Dreamy",
+          "heavy": "Heavy"
+        }
       },
       "glslDirectionalBlur": {
         "label": "Directional Blur",
         "description": "GPU directional blur for motion streaks and speed-ramp accents.",
-        "presets": { "horizontal": "Horizontal", "vertical": "Vertical", "speedLine": "Speed Line" }
+        "presets": {
+          "horizontal": "Horizontal",
+          "vertical": "Vertical",
+          "speedLine": "Speed Line"
+        }
       },
       "glslLensBlur": {
         "label": "Lens Blur",
         "description": "GPU polygon bokeh blur with highlight bloom and subtle chromatic spread.",
-        "presets": { "soft": "Soft", "cinematic": "Cinematic", "dream": "Dream Bokeh" }
+        "presets": {
+          "soft": "Soft",
+          "cinematic": "Cinematic",
+          "dream": "Dream Bokeh"
+        }
       },
       "glslSharpen": {
         "label": "Sharpen",
         "description": "GPU shader sharpen for comparing against the standard Sharpen effect.",
-        "presets": { "subtle": "Subtle", "crisp": "Crisp", "strong": "Strong" }
+        "presets": {
+          "subtle": "Subtle",
+          "crisp": "Crisp",
+          "strong": "Strong"
+        }
       },
       "glslFisheye": {
         "label": "Fisheye",
         "description": "GPU barrel and anti-barrel lens distortion.",
-        "presets": { "subtle": "Subtle", "fisheye": "Fisheye", "wide": "Wide Lens" }
+        "presets": {
+          "subtle": "Subtle",
+          "fisheye": "Fisheye",
+          "wide": "Wide Lens"
+        }
       },
       "glslChromaWarp": {
         "label": "Chroma Warp",
         "description": "Radial spectrum-style chromatic aberration with optional barrel warp.",
-        "presets": { "subtle": "Subtle", "prism": "Prism", "warp": "Warped" }
+        "presets": {
+          "subtle": "Subtle",
+          "prism": "Prism",
+          "warp": "Warped"
+        }
       },
       "glslFilmGrain": {
         "label": "Film Grain",
         "description": "GPU procedural film grain inspired by film-stock re-grain shaders.",
-        "presets": { "fine5245": "Fine 5245", "vision500t": "5218 500T", "bw": "B&W", "push": "Pushed" }
+        "presets": {
+          "fine5245": "Fine 5245",
+          "vision500t": "5218 500T",
+          "bw": "B&W",
+          "push": "Pushed"
+        }
       },
       "glslFilmLook": {
         "label": "Film Look",
         "description": "GPU film print style color looks adapted from Flame film-look presets.",
-        "presets": { "kodak2395": "Kodak 2395", "agfa1978": "Agfa 1978", "polaroid": "Polaroid", "bw": "B&W" }
+        "presets": {
+          "kodak2395": "Kodak 2395",
+          "agfa1978": "Agfa 1978",
+          "polaroid": "Polaroid",
+          "bw": "B&W"
+        }
       },
       "glslFlicker": {
         "label": "Flicker",
         "description": "Animated exposure, saturation, and contrast flicker.",
-        "presets": { "projector": "Projector", "fluorescent": "Fluorescent", "unstable": "Unstable" }
+        "presets": {
+          "projector": "Projector",
+          "fluorescent": "Fluorescent",
+          "unstable": "Unstable"
+        }
       },
       "halation": {
         "label": "Halation",
         "description": "Warm red-orange glow around bright highlights, like film halation.",
-        "presets": { "subtle": "Subtle Film", "print": "Print Glow", "neonBleed": "Neon Bleed" }
+        "presets": {
+          "subtle": "Subtle Film",
+          "print": "Print Glow",
+          "neonBleed": "Neon Bleed"
+        }
       },
       "glow": {
         "label": "Glow",
         "description": "Soft diffusion / bloom. Threshold controls which brightness levels glow.",
-        "presets": { "dreamy": "Dreamy Diffusion", "soft": "Soft Glow", "bloom": "Bloom", "neon": "Neon" }
+        "presets": {
+          "dreamy": "Dreamy Diffusion",
+          "soft": "Soft Glow",
+          "bloom": "Bloom",
+          "neon": "Neon"
+        }
       },
       "glslVhsLook": {
         "label": "VHS Look",
         "description": "GPU VHS-style tape wave, scanlines, color bleed, and analog tint.",
-        "presets": { "clean": "Clean Tape", "analog": "Analog", "damaged": "Damaged" }
+        "presets": {
+          "clean": "Clean Tape",
+          "analog": "Analog",
+          "damaged": "Damaged"
+        }
       },
       "glslDigitalGlitch": {
         "label": "Digital Glitch",
         "description": "GPU digital glitch with horizontal slices, RGB split, block noise, and scanline bursts.",
-        "presets": { "signalHit": "Signal Hit", "datamosh": "Datamosh", "corrupt": "Corrupt" }
+        "presets": {
+          "signalHit": "Signal Hit",
+          "datamosh": "Datamosh",
+          "corrupt": "Corrupt"
+        }
       },
       "letterbox": {
         "label": "Letterbox",
         "description": "Crops to a target cinematic aspect ratio with black bars.",
-        "presets": { "cinemascope": "Cinemascope 2.39", "anamorphic": "Anamorphic 2.35", "widescreen": "Widescreen 1.85", "academy": "Academy 1.37", "square": "Square 1:1", "vertical": "Vertical 9:16" }
+        "presets": {
+          "cinemascope": "Cinemascope 2.39",
+          "anamorphic": "Anamorphic 2.35",
+          "widescreen": "Widescreen 1.85",
+          "academy": "Academy 1.37",
+          "square": "Square 1:1",
+          "vertical": "Vertical 9:16"
+        }
       },
       "glslVignette": {
         "label": "Vignette",
         "description": "GPU shader vignette with the same basic controls as the standard version.",
-        "presets": { "soft": "Soft", "cinematic": "Cinematic", "tunnel": "Tunnel" }
+        "presets": {
+          "soft": "Soft",
+          "cinematic": "Cinematic",
+          "tunnel": "Tunnel"
+        }
       }
     }
   },
@@ -365,7 +435,7 @@
     "presets": "Export presets",
     "presetsHelp": "Presets change render settings only. Filename and range stay as-is.",
     "reset": "Reset defaults",
-    "resetHelp": "Reset export settings to the default Velorn export setup",
+    "resetHelp": "Reset export settings to the default Belrog export setup",
     "presetSummaries": {
       "balanced-mp4": "Clean everyday export, project size, H.264.",
       "fast-nvenc": "Fast H.264 delivery for NVIDIA systems.",
@@ -382,7 +452,7 @@
     "rangeFull": "Full Timeline",
     "rangeInOut": "In/Out Range",
     "outputLocationHelp": "Output location will be chosen when export starts.",
-    "pngOutputLocationHelp": "Choose a parent location when export starts. Velorn will create {{name}}_png with frames named {{name}}_000001.png and onward.",
+    "pngOutputLocationHelp": "Choose a parent location when export starts. Belrog will create {{name}}_png with frames named {{name}}_000001.png and onward.",
     "render": "Render",
     "singleClip": "Single clip",
     "individualClips": "Individual clips",
@@ -504,12 +574,12 @@
     "navigation": "Workspace modes",
     "storyboard": "Storyboard",
     "editor": "Editor",
-    "generate": "Director",
+    "generate": "Generate",
     "agent": "Agent",
     "flow-ai": "Flow AI",
     "mog": "MoGraph",
     "stock": "Stock",
-    "discover": "Tutorials",
+    "discover": "Discover",
     "export": "Export"
   },
   "bottomBar": {
@@ -543,9 +613,9 @@
   },
   "welcome": {
     "browserUnsupported": "Browser Not Supported",
-    "browserUnsupportedHelp": "Velorn requires the File System Access API. Please use Google Chrome or Microsoft Edge.",
+    "browserUnsupportedHelp": "Belrog requires the File System Access API. Please use Google Chrome or Microsoft Edge.",
     "setupWorkspace": "Set Up Your Workspace",
-    "setupWorkspaceHelp": "Choose a folder where your Velorn projects and media will be stored. Each project will have its own subfolder with all assets and imported media organized inside.",
+    "setupWorkspaceHelp": "Choose a folder where your Belrog projects and media will be stored. Each project will have its own subfolder with all assets and imported media organized inside.",
     "currentLocation": "Current location:",
     "chooseProjectsFolder": "Choose Projects Folder",
     "changeLater": "You can change this later in Settings",
@@ -553,9 +623,9 @@
     "openLatestAutosaveFor": "Open latest autosave for {{project}}",
     "openProject": "Open Project",
     "newProject": "New Project",
-    "discover": "Tutorials",
-    "discoverHelp": "Short videos that teach Velorn.",
-    "discoverLoading": "Loading tutorials...",
+    "discover": "Discover",
+    "discoverHelp": "Explore videos made with Belrog and learn from tutorials.",
+    "discoverLoading": "Loading Discover...",
     "selectProject": "Select a project",
     "noRecentProjects": "No recent projects",
     "createFirstProject": "Create your first project to get started",
@@ -565,9 +635,9 @@
     "dismiss": "Dismiss"
   },
   "discover": {
-    "title": "Tutorials",
-    "subtitle": "Short videos that teach Velorn, one part at a time.",
-    "visibilityHint": "You can hide the Tutorials tab anytime in Settings → Appearance.",
+    "title": "Discover",
+    "subtitle": "See what creators make with Belrog and learn the workflows behind it.",
+    "visibilityHint": "You can hide the Discover tab anytime in Settings → Appearance.",
     "groups": {
       "start": "Getting started",
       "tabs": "The tabs",
@@ -577,11 +647,70 @@
     "actions": {
       "watch": "Watch {{title}}",
       "openYouTube": "Open on YouTube",
-      "close": "Close"
+      "close": "Close",
+      "submit": "Submit a YouTube video",
+      "retry": "Retry"
     },
     "player": {
       "title": "YouTube video: {{title}}",
-      "privacy": "Thumbnails are provided by YouTube. Velorn loads the player only after you choose to watch a video."
+      "privacy": "Thumbnails are provided by YouTube. Belrog loads the player only after you choose to watch a video."
+    },
+    "tabs": {
+      "featured": "Featured",
+      "showcase": "Made with Belrog",
+      "tutorials": "Tutorials"
+    },
+    "sections": {
+      "featured": "Featured",
+      "featuredDescription": "A curated mix of standout community work and practical lessons.",
+      "showcase": "Made with Belrog",
+      "showcaseDescription": "Videos created or edited by the Belrog community.",
+      "tutorials": "Tutorials",
+      "tutorialsDescription": "Learn Belrog through focused, practical walkthroughs."
+    },
+    "labels": {
+      "by": "By {{creator}}"
+    },
+    "states": {
+      "loading": "Loading Discover...",
+      "offline": "Showing saved Discover content. New videos may appear when you are back online.",
+      "error": "Could not load Discover right now.",
+      "empty": "There is nothing in this section yet."
+    },
+    "submit": {
+      "title": "Submit your work",
+      "body": "Share a YouTube video made with Belrog. Every submission is reviewed before anything is featured.",
+      "youtubeUrl": "YouTube URL",
+      "youtubePlaceholder": "https://www.youtube.com/watch?v=...",
+      "creator": "Creator or display name",
+      "creatorPlaceholder": "How should we credit you?",
+      "category": "Category",
+      "categories": {
+        "musicVideo": "Music video",
+        "podcast": "Podcast",
+        "shortFilm": "Short film",
+        "social": "Social video",
+        "ad": "Advertisement",
+        "animation": "Animation",
+        "other": "Other"
+      },
+      "description": "How did you use Belrog?",
+      "descriptionPlaceholder": "Tell us briefly which parts of the project you made or edited in Belrog.",
+      "email": "Contact email",
+      "emailPlaceholder": "you@example.com",
+      "rights": "I own this work or have the authorization required to submit and share it.",
+      "featurePermission": "Belrog may feature the video title, thumbnail, link, description, and creator attribution.",
+      "reviewNote": "Submissions go to a private moderation queue and are never published automatically.",
+      "requiredFields": "Complete the video, creator, description, and contact fields.",
+      "permissionsRequired": "Confirm both permissions before submitting.",
+      "invalidYouTube": "Enter a valid YouTube video URL.",
+      "tooLong": "Please shorten the description and try again.",
+      "sendFailed": "Could not send the submission. Try again later.",
+      "submitting": "Submitting...",
+      "submit": "Submit for review",
+      "successTitle": "Submitted for review",
+      "successBody": "Thank you. The Belrog team will review your submission; it will not be published automatically.",
+      "submitAnother": "Submit another"
     }
   },
   "settings": {
@@ -592,22 +721,61 @@
     "saveHelp": "Some settings save as you edit. Use Save Settings to persist shared preferences and shortcuts.",
     "saveHelpWorkflow": "Workflow installs happen in the panel above. Save Settings only persists shared preferences and shortcuts.",
     "languageLabel": "Display language",
-    "languageHelp": "Choose the language used by Velorn. The change applies immediately.",
+    "languageHelp": "Choose the language used by Belrog. The change applies immediately.",
     "fallbackHelp": "Missing translations automatically fall back to English.",
     "sections": {
-      "storage": { "title": "Projects & Storage", "description": "Choose where projects live and control auto-save behavior." },
-      "stock": { "title": "Stock (Pexels)", "description": "Manage stock-media search credentials." },
-      "connection": { "title": "ComfyUI Connection", "description": "Configure the local ComfyUI endpoint, partner API key, and advanced tab visibility." },
-      "agents": { "title": "Agents (MCP)", "description": "Connect Claude, Codex, Cursor, or other MCP clients to the open project." },
-      "launcher": { "title": "ComfyUI Launcher", "description": "Let Velorn start, stop, and restart your local ComfyUI process." },
-      "paths": { "title": "File Paths", "description": "Review output and workflow path settings." },
-      "workflow-setup": { "title": "Workflow Setup", "description": "Scan workflows, review missing dependencies, and install curated models or node packs." },
-      "language": { "title": "Language", "description": "Choose the language used in the Velorn interface." },
-      "appearance": { "title": "Appearance", "description": "Customize Velorn's theme and workspace navigation." },
-      "notifications": { "title": "Notifications", "description": "Control completion sounds and lightweight app alerts." },
-      "hotkeys": { "title": "Hotkeys", "description": "Customize editor shortcuts and apply familiar keymap presets." },
-      "project": { "title": "New Project Defaults", "description": "Set default resolution and frame rate for new projects." },
-      "feedback": { "title": "Send Feedback", "description": "Report a bug or share an idea — it lands directly with the team." }
+      "storage": {
+        "title": "Projects & Storage",
+        "description": "Choose where projects live and control auto-save behavior."
+      },
+      "stock": {
+        "title": "Stock (Pexels)",
+        "description": "Manage stock-media search credentials."
+      },
+      "connection": {
+        "title": "ComfyUI Connection",
+        "description": "Configure the local ComfyUI endpoint, partner API key, and advanced tab visibility."
+      },
+      "agents": {
+        "title": "Agents (MCP)",
+        "description": "Connect Claude, Codex, Cursor, or other MCP clients to the open project."
+      },
+      "launcher": {
+        "title": "ComfyUI Launcher",
+        "description": "Let Belrog start, stop, and restart your local ComfyUI process."
+      },
+      "paths": {
+        "title": "File Paths",
+        "description": "Review output and workflow path settings."
+      },
+      "workflow-setup": {
+        "title": "Workflow Setup",
+        "description": "Scan workflows, review missing dependencies, and install curated models or node packs."
+      },
+      "language": {
+        "title": "Language",
+        "description": "Choose the language used in the Belrog interface."
+      },
+      "appearance": {
+        "title": "Appearance",
+        "description": "Customize Belrog's theme and workspace navigation."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Control completion sounds and lightweight app alerts."
+      },
+      "hotkeys": {
+        "title": "Hotkeys",
+        "description": "Customize editor shortcuts and apply familiar keymap presets."
+      },
+      "project": {
+        "title": "New Project Defaults",
+        "description": "Set default resolution and frame rate for new projects."
+      },
+      "feedback": {
+        "title": "Send Feedback",
+        "description": "Report a bug or share an idea — it lands directly with the team."
+      }
     },
     "storage": {
       "projectsLocation": "Projects Location",
@@ -618,7 +786,7 @@
       "autoSave": "Auto-save",
       "autoSaveHelp": "Save every 30 sec",
       "reopenLastProject": "Reopen last project on startup",
-      "reopenLastProjectHelp": "When off, Velorn opens to the project picker.",
+      "reopenLastProjectHelp": "When off, Belrog opens to the project picker.",
       "showHero": "Show hero background on project picker",
       "showHeroHelp": "Cinematic image at the top of the project picker. Turn off for a minimal look.",
       "cache": {
@@ -682,7 +850,7 @@
         "invalidPort": "Invalid local ComfyUI port. Enter a number from 1 to 65535.",
         "testing": "Testing {{endpoint}}...",
         "connected": "Connected to {{endpoint}}",
-        "http403": "ComfyUI returned HTTP 403. Enable CORS or use Velorn's built-in launcher.",
+        "http403": "ComfyUI returned HTTP 403. Enable CORS or use Belrog's built-in launcher.",
         "httpError": "ComfyUI returned HTTP {{status}}.",
         "connectFailed": "Could not connect to {{endpoint}}.",
         "resetFailed": "Could not reset local ComfyUI port.",
@@ -727,43 +895,43 @@
       "stop": "Stop",
       "restart": "Restart",
       "refresh": "Re-probe ComfyUI",
-      "externalHelp": "ComfyUI is already running, but Velorn did not start it. Stop it from the window where you launched it, then select Start to let Velorn manage it. This enables automatic restarts after node-pack installs.",
+      "externalHelp": "ComfyUI is already running, but Belrog did not start it. Stop it from the window where you launched it, then select Start to let Belrog manage it. This enables automatic restarts after node-pack installs.",
       "mode": "Launcher mode",
       "macAppHelp": "Open the official Mac app and connect when it is ready.",
       "script": "Script",
       "scriptHelp": "Run a custom .sh launcher or standalone ComfyUI installation.",
       "useDefault": "Use default",
       "browse": "Browse...",
-      "noApp": "No app configured. Select ComfyUI.app to let Velorn open it for you.",
-      "macBehaviorHelp": "Velorn opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.",
+      "noApp": "No app configured. Select ComfyUI.app to let Belrog open it for you.",
+      "macBehaviorHelp": "Belrog opens the Mac app, waits for the configured ComfyUI endpoint, and can ask macOS to quit or reopen it.",
       "background": "Launch in background",
       "backgroundHelp": "Open ComfyUI.app hidden so the embedded ComfyUI tab stays front and center.",
       "backgroundToggle": "Toggle background launch for ComfyUI.app",
       "launcherScript": "Launcher script",
-      "noLauncher": "No launcher configured. Pick your run_nvidia_gpu.bat (or equivalent) to let Velorn start ComfyUI for you.",
+      "noLauncher": "No launcher configured. Pick your run_nvidia_gpu.bat (or equivalent) to let Belrog start ComfyUI for you.",
       "detectedNearby": "Detected near your ComfyUI folder",
       "behavior": "Behavior",
-      "autoStart": "Auto-start ComfyUI when Velorn launches",
-      "autoStartHelp": "Off by default. When enabled, Velorn starts ComfyUI automatically as soon as the app opens.",
+      "autoStart": "Auto-start ComfyUI when Belrog launches",
+      "autoStartHelp": "Off by default. When enabled, Belrog starts ComfyUI automatically as soon as the app opens.",
       "autoStartToggle": "Toggle auto-start",
-      "keepRunning": "Keep ComfyUI running after Velorn quits",
-      "keepRunningHelp": "When enabled, closing Velorn leaves ComfyUI open in the background without asking.",
+      "keepRunning": "Keep ComfyUI running after Belrog quits",
+      "keepRunningHelp": "When enabled, closing Belrog leaves ComfyUI open in the background without asking.",
       "keepRunningToggle": "Toggle keeping ComfyUI running after quit",
       "noBrowser": "Do not open ComfyUI in a browser tab on start",
-      "noBrowserHelpBefore": "On by default. Velorn passes",
+      "noBrowserHelpBefore": "On by default. Belrog passes",
       "noBrowserHelpAfter": "so the classic ComfyUI tab does not steal focus each time it boots.",
       "noBrowserToggle": "Toggle disabling auto-launch",
       "advanced": "Advanced",
       "timeout": "Startup timeout (seconds)",
       "timeoutHelpBefore": "If ComfyUI has not responded on",
-      "timeoutHelpAfter": "within this many seconds after launch, Velorn will give up and stop the process.",
+      "timeoutHelpAfter": "within this many seconds after launch, Belrog will give up and stop the process.",
       "extraArgs": "Extra arguments",
       "extraArgsHelp": "Appended to the launcher script. Quoted strings are kept together.",
       "logs": "Logs",
       "openLogViewer": "Open log viewer",
       "openLogFile": "Open log file",
       "noLog": "No log file written this session yet.",
-      "connectionHelpBefore": "Velorn talks to ComfyUI on",
+      "connectionHelpBefore": "Belrog talks to ComfyUI on",
       "connectionHelpMiddle": ". Change the port in",
       "connectionHelpAfter": "if you need a different one.",
       "working": "Working..."
@@ -789,7 +957,7 @@
         "failed": "Could not connect to {{endpoint}}{{detail}}"
       },
       "comfyFolder": "ComfyUI Folder",
-      "comfyFolderHelp": "Auto-install needs the root of your local ComfyUI install so Velorn knows where to place custom nodes and models.",
+      "comfyFolderHelp": "Auto-install needs the root of your local ComfyUI install so Belrog knows where to place custom nodes and models.",
       "choose": "Choose",
       "clear": "Clear",
       "folderValid": "ComfyUI folder looks valid.",
@@ -836,22 +1004,23 @@
         "soft-dark": "Softer contrast with a subtle cool-purple tint",
         "high-contrast": "Maximum readability with vivid blue accent",
         "arctic": "Cool blue-grey palette inspired by Nordic editors",
-        "ember": "Warm dark tones with an amber accent"
+        "ember": "Warm dark tones with an amber accent",
+        "Belrog": "Default brand theme with deep blues, violet, and readable old-gold accents"
       },
       "timelineThumbnails": "Timeline clip thumbnails",
       "timelineThumbnailsHelp": "Turn off for heavy edits so clips draw as lightweight colored blocks.",
-      "discoverTab": "Show Tutorials tab",
+      "discoverTab": "Show Discover tab",
       "generateTab": "Show Director tab",
       "generateTabHelp": "Hide the tab for an agent-first layout. ComfyUI, agent tools and the generation queue remain available. You can show it again anytime.",
-      "discoverTabHelp": "Keep the tutorial videos one click away in the top tab bar.",
-      "hideDiscoverTab": "Hide the Tutorials tab",
-      "showDiscoverTab": "Show the Tutorials tab",
+      "discoverTabHelp": "Keep a shortcut to community work and tutorials in the top tab bar.",
+      "hideDiscoverTab": "Hide the Discover tab",
+      "showDiscoverTab": "Show the Discover tab",
       "otherTabs": "Other tabs",
       "otherTabsHelp": "Switch off the tabs you do not use. Editor and Export always stay."
     },
     "notifications": {
       "completionSound": "Generation complete sound",
-      "completionSoundHelp": "Play a short sound when the generation queue finishes.",
+      "completionSoundHelp": "Play a short sound when the Generate queue finishes.",
       "volume": "Volume",
       "volumeHelp": "0 is muted, 10 is loudest.",
       "off": "Off",
@@ -860,9 +1029,18 @@
       "preview": "Preview",
       "active": "Active",
       "sounds": {
-        "soft-chime": { "label": "Soft chime", "description": "A gentle three-note finish sound." },
-        "clean-ding": { "label": "Clean ding", "description": "A brighter two-note alert." },
-        "subtle-beep": { "label": "Subtle beep", "description": "A short, minimal notification." }
+        "soft-chime": {
+          "label": "Soft chime",
+          "description": "A gentle three-note finish sound."
+        },
+        "clean-ding": {
+          "label": "Clean ding",
+          "description": "A brighter two-note alert."
+        },
+        "subtle-beep": {
+          "label": "Subtle beep",
+          "description": "A short, minimal notification."
+        }
       }
     },
     "hotkeys": {
@@ -1000,11 +1178,26 @@
       "ImagetoImage": "Image to Image"
     },
     "items": {
-      "wan22-i2v": { "name": "WAN 2.2 Image to Video", "description": "High quality image-to-video generation" },
-      "cinematic-txt2img": { "name": "Cinematic Text to Image", "description": "Film-like storyboard frames" },
-      "anime-style": { "name": "Anime Style Frames", "description": "Japanese animation aesthetic" },
-      "sketch-to-render": { "name": "Sketch to Render", "description": "Transform sketches to frames" },
-      "motion-test": { "name": "Motion Test", "description": "Short motion tests" }
+      "wan22-i2v": {
+        "name": "WAN 2.2 Image to Video",
+        "description": "High quality image-to-video generation"
+      },
+      "cinematic-txt2img": {
+        "name": "Cinematic Text to Image",
+        "description": "Film-like storyboard frames"
+      },
+      "anime-style": {
+        "name": "Anime Style Frames",
+        "description": "Japanese animation aesthetic"
+      },
+      "sketch-to-render": {
+        "name": "Sketch to Render",
+        "description": "Transform sketches to frames"
+      },
+      "motion-test": {
+        "name": "Motion Test",
+        "description": "Short motion tests"
+      }
     }
   },
   "fontPicker": {
@@ -1042,16 +1235,33 @@
     "noVideoTrack": "Add a video track to place text on the timeline",
     "presets": "Presets",
     "weights": {
-      "normal": "Normal", "bold": "Bold", "thin": "Thin", "light": "Light",
-      "medium": "Medium", "semiBold": "Semi Bold", "extraBold": "Extra Bold", "black": "Black"
+      "normal": "Normal",
+      "bold": "Bold",
+      "thin": "Thin",
+      "light": "Light",
+      "medium": "Medium",
+      "semiBold": "Semi Bold",
+      "extraBold": "Extra Bold",
+      "black": "Black"
     },
-    "animationModes": { "in": "In", "out": "Out", "inOut": "In + Out" },
+    "animationModes": {
+      "in": "In",
+      "out": "Out",
+      "inOut": "In + Out"
+    },
     "animationPresets": {
-      "fade": "Fade", "slideUp": "Slide Up", "slideDown": "Slide Down",
-      "slideLeft": "Slide Left", "pop": "Pop", "spinIn": "Spin In"
+      "fade": "Fade",
+      "slideUp": "Slide Up",
+      "slideDown": "Slide Down",
+      "slideLeft": "Slide Left",
+      "pop": "Pop",
+      "spinIn": "Spin In"
     },
     "stylePresets": {
-      "Title": "Title", "Subtitle": "Subtitle", "LowerThird": "Lower Third", "Caption": "Caption"
+      "Title": "Title",
+      "Subtitle": "Subtitle",
+      "LowerThird": "Lower Third",
+      "Caption": "Caption"
     }
   },
   "feedback": {
@@ -1073,10 +1283,18 @@
     "unknown": "unknown",
     "yes": "yes",
     "no": "no",
-    "categories": { "bug": "Bug", "idea": "Idea", "other": "Other" },
+    "categories": {
+      "bug": "Bug",
+      "idea": "Idea",
+      "other": "Other"
+    },
     "diagnostics": {
-      "appVersion": "Velorn version", "platform": "Platform", "os": "OS",
-      "gpu": "GPU", "comfyConnected": "ComfyUI connected", "screen": "Screen"
+      "appVersion": "Belrog version",
+      "platform": "Platform",
+      "os": "OS",
+      "gpu": "GPU",
+      "comfyConnected": "ComfyUI connected",
+      "screen": "Screen"
     }
   },
   "logViewer": {
@@ -1112,43 +1330,194 @@
     "noScriptOptional": "No launch script selected. Open ComfyUI yourself and connect, or browse for the .bat or .sh script you normally use.",
     "detectedInstallations": "Detected installations",
     "troubleshootingLogs": "Troubleshooting and logs",
-    "states": { "unknown": "ComfyUI", "idle": "offline", "starting": "Starting…", "running": "Running", "external": "External", "stopping": "Stopping…", "stopped": "Stopped", "crashed": "Crashed" },
-    "summary": { "unavailable": "Launcher unavailable (not Electron).", "running": "Running • pid {{pid}}{{uptime}}", "up": "up", "external": "External process detected at {{endpoint}}", "notRunning": "ComfyUI is not running.", "unknown": "ComfyUI status unknown.", "managedApp": "Connected · ComfyUI.app managed by Velorn{{uptime}}", "managed": "Connected · managed by Velorn{{uptime}}", "connectedExternal": "Connected at {{endpoint}} · startup managed outside Velorn" },
-    "reprobeHelp": "Re-probe ComfyUI", "start": "Start", "stop": "Stop", "restart": "Restart", "script": "Launcher script", "pickScript": "Pick a .bat / .sh launcher script", "browse": "Browse", "logTail": "Log tail", "openViewerHelp": "Open the full log viewer with search and filters", "openViewer": "Open log viewer", "noLogFile": "No log file written yet", "openLogFile": "Open log file", "noLogs": "No log output yet. Logs appear when ComfyUI starts.", "manage": "Manage in Settings → ComfyUI Launcher", "apiKeySet": "API key set", "apiKeyNeeded": "API key needed", "apiKeySetHelp": "Cloud API key is set. Click to manage.", "apiKeyNeededHelp": "Set up your Comfy.org API key to unlock cloud workflows."
+    "states": {
+      "unknown": "ComfyUI",
+      "idle": "offline",
+      "starting": "Starting…",
+      "running": "Running",
+      "external": "External",
+      "stopping": "Stopping…",
+      "stopped": "Stopped",
+      "crashed": "Crashed"
+    },
+    "summary": {
+      "unavailable": "Launcher unavailable (not Electron).",
+      "running": "Running • pid {{pid}}{{uptime}}",
+      "up": "up",
+      "external": "External process detected at {{endpoint}}",
+      "notRunning": "ComfyUI is not running.",
+      "unknown": "ComfyUI status unknown.",
+      "managedApp": "Connected · ComfyUI.app managed by Velorn{{uptime}}",
+      "managed": "Connected · managed by Velorn{{uptime}}",
+      "connectedExternal": "Connected at {{endpoint}} · startup managed outside Velorn"
+    },
+    "reprobeHelp": "Re-probe ComfyUI",
+    "start": "Start",
+    "stop": "Stop",
+    "restart": "Restart",
+    "script": "Launcher script",
+    "pickScript": "Pick a .bat / .sh launcher script",
+    "browse": "Browse",
+    "logTail": "Log tail",
+    "openViewerHelp": "Open the full log viewer with search and filters",
+    "openViewer": "Open log viewer",
+    "noLogFile": "No log file written yet",
+    "openLogFile": "Open log file",
+    "noLogs": "No log output yet. Logs appear when ComfyUI starts.",
+    "manage": "Manage in Settings → ComfyUI Launcher",
+    "apiKeySet": "API key set",
+    "apiKeyNeeded": "API key needed",
+    "apiKeySetHelp": "Cloud API key is set. Click to manage.",
+    "apiKeyNeededHelp": "Set up your Comfy.org API key to unlock cloud workflows."
   },
   "preview": {
-    "title": "Preview", "escExit": "(Press ESC to exit)", "captureHelp": "Capture a still frame from the preview into project assets", "savingStill": "Saving Still...", "stillSaved": "Still Saved", "still": "Still", "hideInfo": "Hide Info Overlay", "showInfo": "Show Info Overlay", "info": "Info", "guides": "Guides", "guidesHelp": "Safe Guides & Letterbox", "safeGuides": "Safe Guides", "letterbox": "Letterbox Preview", "noLetterbox": "No Letterbox", "clear": "Clear preview", "hideTransform": "Hide transform handles", "showTransform": "Show transform handles", "selectVisual": "Select an active visual clip to toggle transform controls", "closePopout": "Close detached preview window", "openPopout": "Pop out preview to a separate window (drag it to another monitor; double-click it for fullscreen)", "exitFullscreen": "Exit Fullscreen (ESC)", "fullscreen": "Fullscreen", "emptyTitle": "No Preview Selected", "emptyHelp": "Generate a video or select from Assets", "previewTimeline": "Preview Timeline", "resetView": "Reset View (Home)", "zoomOut": "Zoom Out", "zoomIn": "Zoom In", "fit": "Fit",
+    "title": "Preview",
+    "escExit": "(Press ESC to exit)",
+    "captureHelp": "Capture a still frame from the preview into project assets",
+    "savingStill": "Saving Still...",
+    "stillSaved": "Still Saved",
+    "still": "Still",
+    "hideInfo": "Hide Info Overlay",
+    "showInfo": "Show Info Overlay",
+    "info": "Info",
+    "guides": "Guides",
+    "guidesHelp": "Safe Guides & Letterbox",
+    "safeGuides": "Safe Guides",
+    "letterbox": "Letterbox Preview",
+    "noLetterbox": "No Letterbox",
+    "clear": "Clear preview",
+    "hideTransform": "Hide transform handles",
+    "showTransform": "Show transform handles",
+    "selectVisual": "Select an active visual clip to toggle transform controls",
+    "closePopout": "Close detached preview window",
+    "openPopout": "Pop out preview to a separate window (drag it to another monitor; double-click it for fullscreen)",
+    "exitFullscreen": "Exit Fullscreen (ESC)",
+    "fullscreen": "Fullscreen",
+    "emptyTitle": "No Preview Selected",
+    "emptyHelp": "Generate a video or select from Assets",
+    "previewTimeline": "Preview Timeline",
+    "resetView": "Reset View (Home)",
+    "zoomOut": "Zoom Out",
+    "zoomIn": "Zoom In",
+    "fit": "Fit",
     "guide": {
-      "none": { "label": "No Guides", "description": "Hide all guides" },
-      "title-safe": { "label": "Title Safe", "description": "90% - Keep text inside" },
-      "action-safe": { "label": "Action Safe", "description": "93% - Keep action inside" },
-      "rule-of-thirds": { "label": "Rule of Thirds", "description": "3x3 grid overlay" },
-      "center": { "label": "Center Crosshair", "description": "Center point marker" },
-      "all-safe": { "label": "Title + Action Safe", "description": "Both safe zones" }
+      "none": {
+        "label": "No Guides",
+        "description": "Hide all guides"
+      },
+      "title-safe": {
+        "label": "Title Safe",
+        "description": "90% - Keep text inside"
+      },
+      "action-safe": {
+        "label": "Action Safe",
+        "description": "93% - Keep action inside"
+      },
+      "rule-of-thirds": {
+        "label": "Rule of Thirds",
+        "description": "3x3 grid overlay"
+      },
+      "center": {
+        "label": "Center Crosshair",
+        "description": "Center point marker"
+      },
+      "all-safe": {
+        "label": "Title + Action Safe",
+        "description": "Both safe zones"
+      }
     }
   },
   "generate": {
-    "mode": { "generate": "Generate", "director": "Director", "backToDirector": "Back to Director" },
+    "mode": {
+      "generate": "Generate",
+      "director": "Director",
+      "backToDirector": "Back to Director"
+    },
     "browser": {
-      "tabs": { "featured": "Featured", "custom": "My Workflows", "templates": "Templates" },
+      "tabs": {
+        "featured": "Featured",
+        "custom": "My Workflows",
+        "templates": "Templates"
+      },
       "searchTemplates": "Search ComfyUI templates, models, tags...",
       "searchWorkflows": "Search workflows, providers, tags...",
-      "filters": { "all": "All", "image": "Image", "video": "Video", "image-to-video": "Image to Video", "text-to-video": "Text to Video", "text-to-image": "Text to Image", "image-edit": "Image Edit", "video-tools": "Video Tools", "audio": "Audio", "utility": "Utility" },
-      "sources": { "all": "All", "local": "Local", "cloud": "Cloud" },
-      "sort": { "popular": "Most used", "newest": "Newest" },
+      "filters": {
+        "all": "All",
+        "image": "Image",
+        "video": "Video",
+        "image-to-video": "Image to Video",
+        "text-to-video": "Text to Video",
+        "text-to-image": "Text to Image",
+        "image-edit": "Image Edit",
+        "video-tools": "Video Tools",
+        "audio": "Audio",
+        "utility": "Utility"
+      },
+      "sources": {
+        "all": "All",
+        "local": "Local",
+        "cloud": "Cloud"
+      },
+      "sort": {
+        "popular": "Most used",
+        "newest": "Newest"
+      },
       "showingWorkflows": "Showing {{count}} {{tab}} workflows"
     },
     "assets": {
-      "inputSource": "Input Source", "search": "Search assets...", "assets": "Assets", "searchingAll": "Searching all folders", "assignTo": "Assign selected asset to", "nothingSelected": "Nothing selected", "noMatches": "No matching assets", "noneHere": "No {{type}} assets here", "tryDifferent": "Try a different search or folder name", "importHelp": "Open another folder or import media in the Assets tab", "selectInput": "Select an input asset or use a timeline frame (right-click preview → Extend with AI)"
+      "inputSource": "Input Source",
+      "search": "Search assets...",
+      "assets": "Assets",
+      "searchingAll": "Searching all folders",
+      "assignTo": "Assign selected asset to",
+      "nothingSelected": "Nothing selected",
+      "noMatches": "No matching assets",
+      "noneHere": "No {{type}} assets here",
+      "tryDifferent": "Try a different search or folder name",
+      "importHelp": "Open another folder or import media in the Assets tab",
+      "selectInput": "Select an input asset or use a timeline frame (right-click preview → Extend with AI)"
     },
     "queue": {
-      "title": "Queue", "expand": "Expand queue panel", "collapse": "Collapse panel", "clear": "Clear Queue", "video": "Queue Video", "image": "Queue Image", "audio": "Queue Audio", "keyframes": "Queue {{mode}} Keyframes"
+      "title": "Queue",
+      "expand": "Expand queue panel",
+      "collapse": "Collapse panel",
+      "clear": "Clear Queue",
+      "video": "Queue Video",
+      "image": "Queue Image",
+      "audio": "Queue Audio",
+      "keyframes": "Queue {{mode}} Keyframes"
     },
     "dependencies": {
-      "title": "Workflow Dependencies", "recheck": "Re-check", "recheckHelp": "Re-check required nodes/models", "offline": "ComfyUI is offline. Start ComfyUI to run dependency checks.", "checking": "Checking installed nodes and models...", "missing": "Missing required dependencies. Queueing is blocked until these are installed.", "missingNodes": "Missing nodes:", "missingModels": "Missing models:", "cloudKey": "This workflow runs on Comfy.org's API. Add your key to unlock it.", "setUpKey": "Set up key", "copyReport": "Copy report", "loadComfy": "Load in ComfyUI", "workflowSetup": "Workflow Setup", "openRegistry": "Open node registry", "notRunning": "ComfyUI is not running. Start it to generate."
+      "title": "Workflow Dependencies",
+      "recheck": "Re-check",
+      "recheckHelp": "Re-check required nodes/models",
+      "offline": "ComfyUI is offline. Start ComfyUI to run dependency checks.",
+      "checking": "Checking installed nodes and models...",
+      "missing": "Missing required dependencies. Queueing is blocked until these are installed.",
+      "missingNodes": "Missing nodes:",
+      "missingModels": "Missing models:",
+      "cloudKey": "This workflow runs on Comfy.org's API. Add your key to unlock it.",
+      "setUpKey": "Set up key",
+      "copyReport": "Copy report",
+      "loadComfy": "Load in ComfyUI",
+      "workflowSetup": "Workflow Setup",
+      "openRegistry": "Open node registry",
+      "notRunning": "ComfyUI is not running. Start it to generate."
     },
     "info": {
-      "title": "Workflow Info", "category": "Category", "workflow": "Workflow", "hardware": "Hardware tier", "unknown": "Unknown", "runtime": "Runtime", "cloudEstimate": "Cloud estimate / run", "needsInput": "Needs input", "yesImage": "Yes (image)", "no": "No", "output": "Output", "resolution": "Resolution", "seed": "Seed"
+      "title": "Workflow Info",
+      "category": "Category",
+      "workflow": "Workflow",
+      "hardware": "Hardware tier",
+      "unknown": "Unknown",
+      "runtime": "Runtime",
+      "cloudEstimate": "Cloud estimate / run",
+      "needsInput": "Needs input",
+      "yesImage": "Yes (image)",
+      "no": "No",
+      "output": "Output",
+      "resolution": "Resolution",
+      "seed": "Seed"
     }
   },
   "stock": {
@@ -1189,7 +1558,7 @@
   "gettingStarted": {
     "badge": "Getting Started",
     "title": "Get from install to first generation",
-    "intro": "Velorn can run local, cloud, and hybrid AI workflows. This guide keeps the first-run path simple: choose how you want to connect, prepare the workflows you need, then start creating.",
+    "intro": "Belrog can run local, cloud, and hybrid AI workflows. This guide keeps the first-run path simple: choose how you want to connect, prepare the workflows you need, then start creating.",
     "closeAria": "Close getting started",
     "project": "Project",
     "untitled": "Untitled",
@@ -1198,7 +1567,7 @@
     "setupChecklist": "Setup Checklist",
     "quickTour": "Quick Tour",
     "choosePath": "Choose your setup path",
-    "choosePathHelp": "Use Quick Start if you want Velorn to guide you through a starter kit. Use Bring Your Own ComfyUI if you already have a custom ComfyUI install and just need Velorn pointed at it.",
+    "choosePathHelp": "Use Quick Start if you want Belrog to guide you through a starter kit. Use Bring Your Own ComfyUI if you already have a custom ComfyUI install and just need Belrog pointed at it.",
     "quickStartSetup": "Quick Start Setup",
     "bringComfy": "Bring Your Own ComfyUI",
     "status": {
@@ -1227,7 +1596,7 @@
     },
     "connection": {
       "title": "Local ComfyUI connection",
-      "description": "Velorn talks to a local ComfyUI server on localhost only. If generations fail immediately, check the saved port first.",
+      "description": "Belrog talks to a local ComfyUI server on localhost only. If generations fail immediately, check the saved port first.",
       "savedEndpoint": "Saved endpoint: {{endpoint}}",
       "portHelp": "If your ComfyUI window uses a different port, update it in Settings before generating."
     },
@@ -1236,7 +1605,7 @@
       "description": "Each workflow can require custom nodes, models, or a partner API key even though the workflow file is already bundled in the app.",
       "status": "Use Workflow Setup",
       "help1": "Open Settings > Workflow Setup to scan every built-in workflow at once.",
-      "help2": "Scan again after you install models or nodes.",
+      "help2": "Use Generate for workflow-specific fallback tools such as Load in ComfyUI and per-workflow Re-check.",
       "help3": "This is the fastest way to find why a workflow works on one machine but not another.",
       "action": "Workflow Setup"
     },
@@ -1265,12 +1634,32 @@
     },
     "tour": {
       "intro": "This quick orientation answers where to go next. Detailed editing and prompting techniques can be learned from the videos.",
-      "editorTitle": "Editor workspace", "editorDescription": "This is the day-to-day editing view once media is inside the project.",
-      "editor1": "Assets panel: import videos, audio, and images, then drag them to the timeline.", "editor2": "Preview: review media and use a frame as a starting keyframe for AI.", "editor3": "Timeline: trim, ripple, snap, markers, and arrange your cut.", "editor4": "Inspector: transform, crop, timing, effects, text, and adjustments for the selected item.", "openEditor": "Open Editor",
-      "generateTitle": "Director", "generateDescription": "Make ads, music videos, and short films step by step.", "generate1": "Pick what to make: an ad, a music video, or a short film.", "generate2": "Director walks through Setup, Script, Keyframes, and Videos.", "generate3": "If models or nodes are missing, open Settings > Workflow Setup.",
-      "stockTitle": "Stock", "stockDescription": "Search Pexels and import footage or stills directly into the current project.", "stock1": "Best used when you need quick placeholder footage, inspiration, or background plates.", "stock2": "Requires a Pexels API key in Settings.", "openStock": "Open Stock",
-      "exportTitle": "Export", "exportDescription": "Render the current timeline to a deliverable file and manage the export queue.", "export1": "Choose format, codec, render range, resolution, FPS, and audio settings.", "export2": "Queue multiple exports if you want a few output variants.", "openExport": "Open Export",
-      "settingsTitle": "Settings", "settingsDescription": "Return here whenever the machine-specific setup changes.", "settings1": "Projects folder, ComfyUI port, Comfy account API key, Pexels key, and new-project defaults all live here.", "settings2": "If something works on one machine and not another, this is the first place to compare."
+      "editorTitle": "Editor workspace",
+      "editorDescription": "This is the day-to-day editing view once media is inside the project.",
+      "editor1": "Assets panel: import videos, audio, and images, then drag them to the timeline.",
+      "editor2": "Preview: review media and send a frame to Generate as a starting keyframe.",
+      "editor3": "Timeline: trim, ripple, snap, markers, and arrange your cut.",
+      "editor4": "Inspector: transform, crop, timing, effects, text, and adjustments for the selected item.",
+      "openEditor": "Open Editor",
+      "generateTitle": "Generate",
+      "generateDescription": "Create images, videos, or audio with local or cloud workflows.",
+      "generate1": "Single mode is for one-off image, video, or audio jobs.",
+      "generate2": "Director mode walks through Setup, Script, Keyframes, and Videos.",
+      "generate3": "If a workflow is missing models or nodes, use Re-check before you queue anything.",
+      "stockTitle": "Stock",
+      "stockDescription": "Search Pexels and import footage or stills directly into the current project.",
+      "stock1": "Best used when you need quick placeholder footage, inspiration, or background plates.",
+      "stock2": "Requires a Pexels API key in Settings.",
+      "openStock": "Open Stock",
+      "exportTitle": "Export",
+      "exportDescription": "Render the current timeline to a deliverable file and manage the export queue.",
+      "export1": "Choose format, codec, render range, resolution, FPS, and audio settings.",
+      "export2": "Queue multiple exports if you want a few output variants.",
+      "openExport": "Open Export",
+      "settingsTitle": "Settings",
+      "settingsDescription": "Return here whenever the machine-specific setup changes.",
+      "settings1": "Projects folder, ComfyUI port, Comfy account API key, Pexels key, and new-project defaults all live here.",
+      "settings2": "If something works on one machine and not another, this is the first place to compare."
     },
     "footer": "This in-app guide covers the essentials. See the videos for detailed editing and prompting techniques.",
     "actions": {
@@ -1278,7 +1667,7 @@
       "testing": "Testing...",
       "testConnection": "Test Connection",
       "connectionSettings": "Connection Settings",
-      "openGenerate": "Open Director"
+      "openGenerate": "Open Generate"
     }
   },
   "timelineEditor": {
@@ -1339,7 +1728,7 @@
   },
   "apiKey": {
     "title": "Cloud Workflows · Comfy.org API key",
-    "subtitle": "Unlocks the cloud-rendered workflows that ship with Velorn.",
+    "subtitle": "Unlocks the cloud-rendered workflows that ship with Belrog.",
     "unlocks": "Unlocks",
     "coverage": "One key covers all of them. You pay Comfy.org per generation (usually a few cents).",
     "alreadySaved": "A key is already saved",
@@ -1360,7 +1749,7 @@
     "saveFailed": "Could not save the key.",
     "removeFailed": "Could not remove the key.",
     "openFailed": "Could not open your browser. Visit platform.comfy.org manually.",
-    "storagePrefix": "Your key is stored locally on this machine in Velorn's settings. Velorn attaches it as",
+    "storagePrefix": "Your key is stored locally on this machine in Belrog's settings. Belrog attaches it as",
     "storageSuffix": "when it queues a cloud-workflow prompt — it never leaves your computer except to reach Comfy.org.",
     "replace": "Replace key",
     "save": "Save key"
