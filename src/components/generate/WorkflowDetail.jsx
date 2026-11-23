@@ -139,8 +139,11 @@ export default function WorkflowDetail({
             ) : canPreviewAsset && previewAsset.type === 'image' ? (
               <img src={previewAsset.url} alt={previewAsset.name || ''} className="h-full w-full object-contain" />
             ) : canPreviewAsset && previewAsset.type === 'audio' ? (
-              <div className="flex h-full items-center justify-center p-6">
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
                 <audio src={previewAsset.url} controls className="w-full max-w-md" />
+                {previewAsset.generatedMusic?.completion?.warning && <p role="status" className="max-w-md text-xs text-amber-300">
+                  {previewAsset.generatedMusic.completion.warning}
+                </p>}
               </div>
             ) : workflow.cover && coverIsVideo ? (
               <video
@@ -232,6 +235,20 @@ export default function WorkflowDetail({
             />
           ))}
         </div>
+
+        {(workflow.runtimeNote || workflow.licenseNotice) && (
+          <div className="mt-4 space-y-2 rounded-lg border border-sf-dark-700 bg-sf-dark-800/50 p-3 text-[11px] leading-relaxed text-sf-text-muted">
+            {workflow.runtimeNote && <p>{workflow.runtimeNote}</p>}
+            {workflow.licenseNotice && (
+              <p>
+                {workflow.licenseNotice}{' '}
+                {workflow.licenseUrl && (
+                  <a href={workflow.licenseUrl} target="_blank" rel="noreferrer" className="text-sf-accent hover:underline">Model license</a>
+                )}
+              </p>
+            )}
+          </div>
+        )}
 
         {!workflow.runnable && (
           <div className="mt-4 rounded-lg border border-yellow-400/25 bg-yellow-400/10 p-3 text-xs text-yellow-200">
@@ -329,26 +346,17 @@ export default function WorkflowDetail({
 
             {setupMode === 'choose-root' && (
               <>
-                {setup.remoteContext?.remote && setup.remoteContext?.misconfigured ? (
-                  <div className="mt-2 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3 text-[11px] text-amber-100">
-                    <div className="mb-1 font-semibold">Remote ComfyUI paths not set</div>
-                    {setup.rootValidation?.error || 'Set the Remote Models Root Path in Settings → Remote Server → Remote ComfyUI Paths, then reconnect the tunnel.'}
-                  </div>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => { void setup.chooseComfyFolder() }}
-                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sf-accent-hover"
-                    >
-                      <FolderSearch className="h-4 w-4" />
-                      Choose your ComfyUI folder
-                    </button>
-                    <div className="mt-1.5 text-center text-[10px] text-sf-text-muted">
-                      {setup.rootValidation?.error || 'Point Belrog at your ComfyUI install so it can download the missing files for you.'}
-                    </div>
-                  </>
-                )}
+                <button
+                  type="button"
+                  onClick={() => { void setup.chooseComfyFolder() }}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-sf-accent-hover"
+                >
+                  <FolderSearch className="h-4 w-4" />
+                  Choose your ComfyUI folder
+                </button>
+                <div className="mt-1.5 text-center text-[10px] text-sf-text-muted">
+                  {setup.rootValidation?.error || 'Point Velorn at your ComfyUI install so it can download the missing files for you.'}
+                </div>
               </>
             )}
 

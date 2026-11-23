@@ -3,11 +3,11 @@ const fs = require('fs')
 const path = require('path')
 const { spawnSync } = require('child_process')
 
-const RIFE_RUNTIME_ENV_KEY = 'Belrog_RIFE_RUNTIME_DIR'
+const RIFE_RUNTIME_ENV_KEY = 'VELORN_RIFE_RUNTIME_DIR'
 const RIFE_MODEL_NAME = 'rife-v4.6'
 const RIFE_PROVENANCE_SCHEMA_VERSION = 1
 const RIFE_WRAPPER_SOURCE_COMMIT = 'a7532fc3f9f8f008cd6eecd6f2ffe2a9698e0cf7'
-const RIFE_SOURCE_PATCH_SHA256 = 'b38c21ba1ed6a89c154d2d77a53f69a0c571dc53ec6a854bf46ab66b1765e15e'
+const RIFE_SOURCE_PATCH_SHA256 = 'e1ae09c53f199d2675b9c58a9b470bdb493ab065b2768c7192d566e6acbcebb4'
 const RIFE_TRUSTED_SOURCE_COMMITS = Object.freeze({
   wrapper: RIFE_WRAPPER_SOURCE_COMMIT,
   ncnn: 'b4ba207c18d3103d6df890c0e3a97b469b196b26',
@@ -296,9 +296,9 @@ function readWindowsSigningIdentities(targetPath, hostExecutablePath) {
     '    issuer = [string]$signature.SignerCertificate.Issuer',
     '  }',
     '}',
-    '$result = [pscustomobject]@{ target = Read-Signature $env:Belrog_RIFE_SIGNATURE_TARGET }',
-    'if ($env:Belrog_RIFE_SIGNATURE_HOST) {',
-    '  $result | Add-Member -NotePropertyName host -NotePropertyValue (Read-Signature $env:Belrog_RIFE_SIGNATURE_HOST)',
+    '$result = [pscustomobject]@{ target = Read-Signature $env:VELORN_RIFE_SIGNATURE_TARGET }',
+    'if ($env:VELORN_RIFE_SIGNATURE_HOST) {',
+    '  $result | Add-Member -NotePropertyName host -NotePropertyValue (Read-Signature $env:VELORN_RIFE_SIGNATURE_HOST)',
     '}',
     '$result | ConvertTo-Json -Compress -Depth 4',
   ].join('\n')
@@ -311,8 +311,8 @@ function readWindowsSigningIdentities(targetPath, hostExecutablePath) {
   ], {
     env: {
       ...windowsSignatureEnvironment(),
-      Belrog_RIFE_SIGNATURE_TARGET: targetPath,
-      Belrog_RIFE_SIGNATURE_HOST: hostExecutablePath || '',
+      VELORN_RIFE_SIGNATURE_TARGET: targetPath,
+      VELORN_RIFE_SIGNATURE_HOST: hostExecutablePath || '',
     },
   })
   try {
@@ -331,7 +331,7 @@ function verifyPlatformSignature(options = {}) {
     if (hostExecutablePath) {
       const host = readMacSigningIdentity(hostExecutablePath)
       if (target.teamIdentifier !== host.teamIdentifier) {
-        throw new Error('RIFE Apple team identifier does not match the signed Belrog application')
+        throw new Error('RIFE Apple team identifier does not match the signed Velorn application')
       }
     }
     return target
@@ -342,9 +342,9 @@ function verifyPlatformSignature(options = {}) {
       throw new Error('RIFE Authenticode signature is not valid')
     }
     if (hostExecutablePath) {
-      if (identities.host?.status !== 'Valid') throw new Error('Belrog host Authenticode signature is not valid')
+      if (identities.host?.status !== 'Valid') throw new Error('Velorn host Authenticode signature is not valid')
       if (identities.target.subject !== identities.host.subject || identities.target.issuer !== identities.host.issuer) {
-        throw new Error('RIFE Authenticode signer does not match the signed Belrog application')
+        throw new Error('RIFE Authenticode signer does not match the signed Velorn application')
       }
     }
     return identities.target
@@ -649,8 +649,8 @@ function resolveRifeRuntime(options = {}) {
     error: available
       ? null
       : packaged || validationErrors.length > 0
-        ? 'Belrog\'s smooth-motion engine failed its integrity check. Reinstall Belrog to restore it.'
-        : 'Belrog\'s smooth-motion engine is missing. Reinstall Belrog to restore it.',
+        ? 'Velorn\'s smooth-motion engine failed its integrity check. Reinstall Velorn to restore it.'
+        : 'Velorn\'s smooth-motion engine is missing. Reinstall Velorn to restore it.',
   }
 }
 

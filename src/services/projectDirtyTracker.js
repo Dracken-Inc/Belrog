@@ -70,6 +70,19 @@ function anyKeyChanged(state, previousState, keys) {
 
 export function watchStoreForProjectChanges(store, keys) {
   return store.subscribe((state, previousState) => {
+    // Compound Open/Back swaps the editor's visible document. Pure navigation
+    // is not a project edit; an edited Back explicitly opts into dirtying.
+    if (keys === TIMELINE_PROJECT_KEYS && previousState
+      && state.compoundNavigationRevision !== previousState.compoundNavigationRevision
+      && !state.compoundNavigationChangedDocument) return
+    // Temporary selection-focus navigation changes only the visible zoom.
+    // Never clear existing dirty state or hide other simultaneous authored edits.
+    if (keys === TIMELINE_PROJECT_KEYS && previousState
+      && state.viewportNavigationRevision !== previousState.viewportNavigationRevision
+      && state.viewportNavigation?.zoom === state.zoom) {
+      if (anyKeyChanged(state, previousState, keys.filter(key => key !== 'zoom'))) markProjectDirty()
+      return
+    }
     if (anyKeyChanged(state, previousState, keys)) markProjectDirty()
   })
 }

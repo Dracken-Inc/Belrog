@@ -285,7 +285,7 @@ function collectExportTracks(clips, tracks, assetsById) {
       let track = tracksById.get(clip.trackId)
       if (!track) {
         const fallbackType = clip.type === 'audio' ? 'audio' : 'video'
-        const fallbackId = `Belrog-orphan-${fallbackType}`
+        const fallbackId = `velorn-orphan-${fallbackType}`
         if (!orphanTracks.has(fallbackId)) {
           orphanTracks.set(fallbackId, {
             id: fallbackId,
@@ -366,7 +366,7 @@ function buildTrackElements({
 }
 
 export function buildPremiereXml({
-  projectName = 'Belrog Project',
+  projectName = 'Velorn Project',
   timelineName = 'Timeline',
   timelineSettings = {},
   timeline = {},
@@ -377,6 +377,9 @@ export function buildPremiereXml({
   const height = Math.max(1, Math.round(safeNumber(timelineSettings.height, 1080)))
   const normalizedTimelineSettings = { width, height, fps: sequenceRate.fps }
   const clips = Array.isArray(timeline.clips) ? timeline.clips : []
+  if (clips.some(clip => clip?.type === 'compound' || clip?.compound || clip?.compoundParentId)) {
+    throw new Error('Editable compound clips are not supported by Premiere XML export yet. Export a rendered video instead.')
+  }
   const tracks = applyVideoSoloAsHidden(applySoloAsMute(Array.isArray(timeline.tracks) ? timeline.tracks : []))
   const assetsById = new Map((Array.isArray(assets) ? assets : []).map((asset) => [asset.id, asset]))
   const { videoTracks, audioTracks, items } = collectExportTracks(clips, tracks, assetsById)
@@ -419,7 +422,7 @@ export function buildPremiereXml({
   })
 
   const sequenceId = sanitizeId(`sequence-${timelineName}`, 'sequence-1')
-  const projectLabel = sanitizeName(projectName, 'Belrog Project')
+  const projectLabel = sanitizeName(projectName, 'Velorn Project')
   const sequenceLabel = sanitizeName(timelineName, 'Timeline')
 
   return [
@@ -456,7 +459,7 @@ export function buildPremiereXml({
     ...audioTrackElements,
     `      </audio>`,
     `    </media>`,
-    `    <description>Exported from Belrog project: ${escapeXml(projectLabel)}</description>`,
+    `    <description>Exported from Velorn project: ${escapeXml(projectLabel)}</description>`,
     `  </sequence>`,
     `</xmeml>`,
     '',

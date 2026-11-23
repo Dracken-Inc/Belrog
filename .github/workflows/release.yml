@@ -10,22 +10,6 @@ on:
         description: Release tag to build or rebuild (for example v0.1.11)
         required: true
         type: string
-      sign:
-        description: Code-sign Windows artifacts (Azure Trusted Signing). Set false for unsigned test builds.
-        required: true
-        type: choice
-        options:
-          - "true"
-          - "false"
-        default: "true"
-      build:
-        description: Which platforms to build (all for normal releases, windows-only for test builds)
-        required: true
-        type: choice
-        options:
-          - all
-          - windows-only
-        default: all
 
 permissions:
   contents: write
@@ -37,32 +21,13 @@ concurrency:
 env:
   NODE_VERSION: "20"
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # onnxruntime-node's install step downloads optional CUDA files on Linux x64.
+  # Velorn runs it on the CPU, and the archive the older nested copy asks for
+  # (onnxruntime v1.21.0) no longer exists, which fails `npm ci`.
+  ONNXRUNTIME_NODE_INSTALL: skip
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
-  secrets-probe:
-    name: Probe Signing Secrets
-    runs-on: ubuntu-latest
-    env:
-      CSC_LINK: ${{ secrets.CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-    steps:
-      - name: Apple signing secrets present?
-        id: apple
-        run: |
-          ok=true
-          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
-            if [ -z "${!v}" ]; then ok=false; break; fi
-          done
-          echo "apple=$ok" >> "$GITHUB_OUTPUT"
-          if [ "$ok" = "true" ]; then
-            echo "Apple signing secrets present - macOS build eligible."
-          else
-            echo "Apple signing secrets absent - macOS build will be skipped (unsigned mac apps cannot run)."
-          fi
-
   preflight:
     name: Release Preflight
     runs-on: ubuntu-latest
@@ -82,6 +47,19 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Verify export scheduling
+        run: npm run test:export-scheduler
+
+      - name: Verify media preparation and native CPU recovery
+        run: |
+          npm run test:media-preparation
+          npm run check:media-preparation
+
+      - name: Verify timeline hotfixes and native audio analysis
+        run: |
+          npm run test:timeline-hotfixes
+          npm run test:audio-analysis
 
       - name: Verify RIFE source and package hardening
         run: npm run test:rife-hardening
@@ -108,17 +86,15 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --draft \
               --verify-tag \
-              --title "Belrog $RELEASE_TAG" \
+              --title "Velorn $RELEASE_TAG" \
               --notes-file docs/RELEASE_DRAFT_TEMPLATE.md
           fi
 
   build-windows:
     name: Build Windows
-    if: ${{ github.event_name == 'push' || inputs.build == 'all' || inputs.build == 'windows-only' }}
     needs: [ensure-release, preflight]
     runs-on: windows-2022
     env:
-      WIN_SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign == 'true' }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -135,29 +111,21 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      - name: Resolve Windows signing mode
-        id: signing_mode
+      - name: Assert Windows signing secrets
         shell: pwsh
         run: |
-          $requested = ('${{ env.WIN_SIGN }}' -eq 'true')
-          $tenant = (Get-Item "env:AZURE_TENANT_ID" -ErrorAction SilentlyContinue).Value
-          $client = (Get-Item "env:AZURE_CLIENT_ID" -ErrorAction SilentlyContinue).Value
-          $secret = (Get-Item "env:AZURE_CLIENT_SECRET" -ErrorAction SilentlyContinue).Value
-          $have = [bool]$tenant -and [bool]$client -and [bool]$secret
-          $signed = ($requested -and $have) ? 'true' : 'false'
-          if ($requested -and -not $have) {
-            Write-Warning "Windows code-signing requested but Azure signing secrets (AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET) are missing - producing UNSIGNED test artifacts."
+          $missing = @()
+          foreach ($name in 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET') {
+            if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value) {
+              $missing += $name
+            }
           }
-          elseif ($signed -eq 'true') {
-            Write-Host "Windows code-signing enabled (Azure Trusted Signing)."
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required GitHub secrets: $($missing -join ', ')"
+            exit 1
           }
-          else {
-            Write-Host "Windows code-signing disabled - producing unsigned test artifacts."
-          }
-          "signed=$signed" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Azure signing PowerShell module
-        if: ${{ steps.signing_mode.outputs.signed == 'true' }}
         shell: pwsh
         run: |
           Install-PSResource -Name TrustedSigning -Scope CurrentUser -TrustRepository
@@ -214,54 +182,30 @@ jobs:
           $version = node -p "require('./package.json').version"
           "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Disable code signing for unsigned test build
-        if: ${{ steps.signing_mode.outputs.signed != 'true' }}
-        run: |
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            if (pkg.build && pkg.build.win && pkg.build.win.azureSignOptions) {
-              delete pkg.build.win.azureSignOptions;
-              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-              console.log('Removed azureSignOptions - building unsigned test artifacts');
-            } else {
-              console.log('azureSignOptions already absent - nothing to strip');
-            }
-          "
-
       - name: Build Windows artifacts
         run: npm run build && npx electron-builder --win --x64 --publish never
 
       - name: Verify packaged Windows runtime and signatures
         shell: pwsh
         run: |
-          $signCheck = '${{ steps.signing_mode.outputs.signed }}'
           $resources = Join-Path $PWD 'release\win-unpacked\resources'
-          if ($signCheck -eq 'true') {
-            foreach ($executable in @(
-              (Join-Path $PWD 'release\win-unpacked\Belrog.exe'),
-              (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
-              (Join-Path $resources 'bin\ffmpeg.exe'),
-              (Join-Path $resources 'bin\ffprobe.exe')
-            )) {
-              $signature = Get-AuthenticodeSignature $executable
-              if ($signature.Status -ne 'Valid') {
-                throw "Invalid Authenticode signature for $executable`: $($signature.Status)"
-              }
+          foreach ($executable in @(
+            (Join-Path $PWD 'release\win-unpacked\Velorn.exe'),
+            (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
+            (Join-Path $resources 'bin\ffmpeg.exe'),
+            (Join-Path $resources 'bin\ffprobe.exe')
+          )) {
+            $signature = Get-AuthenticodeSignature $executable
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature for $executable`: $($signature.Status)"
             }
-            node scripts/runtime-package-gate.cjs packaged `
-              --resources $resources `
-              --platform win32 `
-              --arch x64 `
-              --signed-package `
-              --host-executable (Join-Path $PWD 'release\win-unpacked\Belrog.exe')
-          } else {
-            Write-Host "Unsigned test build - skipping Authenticode verification"
-            node scripts/runtime-package-gate.cjs packaged `
-              --resources $resources `
-              --platform win32 `
-              --arch x64
           }
+          node scripts/runtime-package-gate.cjs packaged `
+            --resources $resources `
+            --platform win32 `
+            --arch x64 `
+            --signed-package `
+            --host-executable (Join-Path $PWD 'release\win-unpacked\Velorn.exe')
 
       - name: Upload Windows release assets
         shell: pwsh
@@ -270,24 +214,12 @@ jobs:
         run: |
           $version = "${{ steps.app_version.outputs.app_version }}"
           gh release upload $env:RELEASE_TAG `
-            "release/belrog-$version-windows-installer-x64.exe#Windows Installer" `
-            "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
+            "release/Velorn-$version-windows-installer-x64.exe#Windows Installer" `
+            "release/Velorn-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
-
-      - name: Keep Windows artifacts as job artifacts (fallback)
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: belrog-windows-x64
-          path: |
-            release/belrog-*-windows-installer-x64.exe
-            release/belrog-*-windows-portable-x64.exe
-          if-no-files-found: error
-          retention-days: 30
 
   build-linux:
     name: Build Linux
-    if: ${{ github.event_name == 'push' || inputs.build == 'all' }}
     needs: [ensure-release, preflight]
     runs-on: ubuntu-latest
     env:
@@ -386,30 +318,13 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
-            "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
+            "release/Velorn-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
+            "release/Velorn-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
-
-      - name: Keep Linux artifacts as job artifacts (fallback)
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: belrog-linux-x64
-          path: |
-            release/belrog-*-linux-x86_64.AppImage
-            release/belrog-*-linux-amd64.deb
-          if-no-files-found: error
-          retention-days: 30
 
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    # macOS signing/notarization credentials are a hard requirement (an
-    # unsigned mac app won't run), so the job skips when they're absent
-    # instead of failing the run. The secrets context is not available in
-    # job-level `if:`, so presence is resolved by the secrets-probe job.
-    if: ${{ (github.event_name == 'push' || inputs.build == 'all')
-      && needs.secrets-probe.outputs.apple == 'true' }}
-    needs: [ensure-release, preflight, secrets-probe]
+    needs: [ensure-release, preflight]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -506,9 +421,9 @@ jobs:
 
       - name: Verify packaged macOS runtime and signatures
         run: |
-          APP_PATH=$(find release -type d -name 'Belrog.app' -print -quit)
+          APP_PATH=$(find release -type d -name 'Velorn.app' -print -quit)
           if [ -z "$APP_PATH" ]; then
-            echo "Packaged Belrog.app was not found" >&2
+            echo "Packaged Velorn.app was not found" >&2
             exit 1
           fi
           RESOURCES="$APP_PATH/Contents/Resources"
@@ -524,7 +439,7 @@ jobs:
             --platform darwin \
             --arch "${{ matrix.arch }}" \
             --signed-package \
-            --host-executable "$APP_PATH/Contents/MacOS/Belrog"
+            --host-executable "$APP_PATH/Contents/MacOS/Velorn"
 
       - name: Upload macOS release assets
         env:
@@ -532,5 +447,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-                      "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
+            "release/Velorn-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
             --clobber

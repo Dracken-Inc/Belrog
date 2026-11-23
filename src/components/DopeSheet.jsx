@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { ChevronDown, ChevronRight, ClipboardPaste, Clock3, Copy, Diamond, Magnet, Repeat, Spline, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ClipboardPaste, Clock3, Copy, Diamond, Magnet, Repeat, Spline, Trash2, ZoomIn, ZoomOut } from 'lucide-react'
 import useTimelineStore from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
 import { KEYFRAMEABLE_PROPERTIES, EASING_OPTIONS, getAnimatedTransform, getAnimatedAdjustmentSettings, getAnimatedShapeMask, quantizeTimeToFrame, getAllKeyframeTimes, getKeyframeTimeTolerance, parseCubicBezierEasing, getValueAtTime } from '../utils/keyframes'
 import { normalizeShapeMask } from '../utils/shapeMask'
 import BezierEasingEditor from './BezierEasingEditor'
 import { getSpriteFramePosition } from '../services/thumbnailSprites'
+import { anchoredKeyframeScroll, keyframeZoomBounds } from '../utils/keyframeViewport'
+import { isNativeTextKeyboardEvent } from '../utils/transportKeyboardGuards.mjs'
 
 const LEFT_COLUMN_WIDTH = 148
+const END_PADDING = 10 // Keep the last diamond accessible at the clip boundary.
 const RULER_HEIGHT = 32
 
 const formatSeconds = (seconds) => {
@@ -33,7 +36,6 @@ const DOPE_SHEET_STORE_KEYS = [
   'copyKeyframesToClipboard',
   'pasteKeyframesFromClipboard',
   'timelineFps',
-  'zoom',
   'undo',
   'redo',
 ]
@@ -153,7 +155,6 @@ function DopeSheet() {
     copyKeyframesToClipboard,
     pasteKeyframesFromClipboard,
     timelineFps,
-    zoom,
     undo,
     redo,
   } = useTimelineStore(useShallow(pickDopeSheetStoreSlice))
@@ -173,6 +174,9 @@ function DopeSheet() {
   const [isScrubbing, setIsScrubbing] = useState(false)
   const dragHistorySavedRef = useRef(false)
   const lanesScrollRef = useRef(null)
+  const [viewportWidth, setViewportWidth] = useState(1)
+  const [manualScale, setManualScale] = useState(null) // null follows Fit clip on resize
+  const pendingZoomScrollRef = useRef(null)
   const getAssetById = useAssetsStore((state) => state.getAssetById)
   const getAssetSprite = useAssetsStore((state) => state.getAssetSprite)
 
@@ -183,11 +187,67 @@ function DopeSheet() {
   const selectedAsset = selectedClip?.assetId ? getAssetById(selectedClip.assetId) : null
   const selectedSprite = selectedClip?.assetId ? getAssetSprite(selectedClip.assetId) : null
 
-  const pixelsPerSecond = zoom / 5
   const clipDuration = Math.max(0.001, Number(selectedClip?.duration) || 0.001)
-  const laneWidth = Math.max(1, clipDuration * pixelsPerSecond)
-
   const safeFps = Number.isFinite(Number(timelineFps)) && Number(timelineFps) > 0 ? Number(timelineFps) : 24
+  const zoomBounds = keyframeZoomBounds(clipDuration, viewportWidth, safeFps)
+  const pixelsPerSecond = manualScale === null ? zoomBounds.min : Math.max(zoomBounds.min, Math.min(zoomBounds.max, manualScale))
+  const laneWidth = Math.max(1, clipDuration * pixelsPerSecond)
+  const zoomBusy = Boolean(dragState || marqueeState || isScrubbing)
+
+  useLayoutEffect(() => {
+    setManualScale(null)
+    pendingZoomScrollRef.current = null
+    const element = lanesScrollRef.current
+    if (!element) return undefined
+    element.scrollLeft = 0
+    const measure = () => setViewportWidth(Math.max(1, element.clientWidth - LEFT_COLUMN_WIDTH - END_PADDING))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [selectedClip?.id])
+
+  useLayoutEffect(() => {
+    if (pendingZoomScrollRef.current !== null && lanesScrollRef.current) {
+      lanesScrollRef.current.scrollLeft = pendingZoomScrollRef.current
+      pendingZoomScrollRef.current = null
+    }
+  }, [pixelsPerSecond])
+
+  const changeKeyframeZoom = useCallback((scale, pointerX = null) => {
+    const element = lanesScrollRef.current
+    if (!element || zoomBusy) return
+    const next = Math.max(zoomBounds.min, Math.min(zoomBounds.max, scale))
+    // Toolbar zoom follows the visible playhead, otherwise the viewport center.
+    const localTime = (useTimelineStore.getState().playheadPosition || 0) - (selectedClip?.startTime || 0)
+    const playheadX = localTime * pixelsPerSecond - element.scrollLeft
+    const anchorX = pointerX ?? (playheadX >= 0 && playheadX <= viewportWidth ? playheadX : viewportWidth / 2)
+    pendingZoomScrollRef.current = anchoredKeyframeScroll({
+      scrollLeft: element.scrollLeft, anchorX, oldScale: pixelsPerSecond,
+      newScale: next, duration: clipDuration, viewportWidth,
+    })
+    if (next === pixelsPerSecond) {
+      element.scrollLeft = pendingZoomScrollRef.current
+      pendingZoomScrollRef.current = null
+    }
+    setManualScale(next <= zoomBounds.min ? null : next)
+  }, [clipDuration, pixelsPerSecond, selectedClip?.startTime, viewportWidth, zoomBounds.min, zoomBounds.max, zoomBusy])
+
+  useEffect(() => {
+    const element = lanesScrollRef.current
+    if (!element) return undefined
+    const wheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault() // Non-passive listener prevents browser page zoom.
+      if (zoomBusy) return
+      const rect = element.getBoundingClientRect()
+      const pointerX = Math.max(0, Math.min(viewportWidth, event.clientX - rect.left - LEFT_COLUMN_WIDTH))
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewportWidth : 1)
+      changeKeyframeZoom(pixelsPerSecond * Math.exp(-Math.max(-150, Math.min(150, delta)) * 0.006), pointerX)
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    return () => element.removeEventListener('wheel', wheel)
+  }, [selectedClip?.id, changeKeyframeZoom, pixelsPerSecond, viewportWidth, zoomBusy])
 
   // Live playhead in clip-local time, read at call time so interaction
   // handlers stay accurate without a per-frame reactive subscription.
@@ -1074,6 +1134,7 @@ function DopeSheet() {
     if (!selectedClip || dragState || marqueeState) return undefined
 
     const handleKeyDown = (event) => {
+      if (isNativeTextKeyboardEvent(event)) return
       const target = event.target
       const isTypingField = target instanceof HTMLElement
         && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
@@ -1208,7 +1269,7 @@ function DopeSheet() {
 
   const referenceStripTiles = useMemo(() => {
     if (!selectedClip) return []
-    const tileCount = Math.max(1, Math.ceil(laneWidth / 96))
+    const tileCount = Math.max(1, Math.min(256, Math.ceil(laneWidth / 96)))
     const tileWidth = laneWidth / tileCount
     return Array.from({ length: tileCount }).map((_, index) => {
       const time = tileCount === 1 ? clipDuration / 2 : (index / Math.max(1, tileCount - 1)) * clipDuration
@@ -1310,8 +1371,8 @@ function DopeSheet() {
 
   return (
     <div className="h-full bg-sf-dark-900 border-t border-sf-dark-700 flex flex-col min-h-0">
-      <div className="h-8 px-3 border-b border-sf-dark-700 bg-sf-dark-800 flex items-center justify-between text-[11px]">
-        <div className="text-sf-text-secondary flex items-center gap-3">
+      <div className="min-h-8 px-3 py-1 border-b border-sf-dark-700 bg-sf-dark-800 flex flex-wrap items-center justify-between gap-2 text-[11px]">
+        <div className="text-sf-text-secondary flex flex-wrap items-center gap-3">
           <span>
             Clip: <span className="text-sf-text-primary">{selectedClip.name}</span>
           </span>
@@ -1462,8 +1523,18 @@ function DopeSheet() {
         />
       </div>
 
-      <div ref={lanesScrollRef} className="flex-1 min-h-0 overflow-auto">
-        <div className="relative" style={{ minWidth: `${LEFT_COLUMN_WIDTH + laneWidth}px` }}>
+      <div className="px-3 py-1 flex flex-wrap items-center gap-2 border-b border-sf-dark-700 text-[10px] text-sf-text-secondary">
+        <span>Keyframe zoom</span>
+        <button aria-label="Zoom out keyframes" title="Zoom out keyframes" disabled={zoomBusy || pixelsPerSecond <= zoomBounds.min} onClick={() => changeKeyframeZoom(pixelsPerSecond / 1.5)} className="p-1 rounded hover:bg-sf-dark-700 disabled:opacity-30"><ZoomOut className="w-3.5 h-3.5" /></button>
+        <input aria-label="Keyframe zoom" type="range" min="0" max={Math.log2(zoomBounds.max / zoomBounds.min)} step="0.01" value={Math.log2(pixelsPerSecond / zoomBounds.min)} disabled={zoomBusy} onChange={(event) => changeKeyframeZoom(zoomBounds.min * 2 ** Number(event.target.value))} className="w-28 accent-sf-accent" />
+        <button aria-label="Zoom in keyframes" title="Zoom in keyframes" disabled={zoomBusy || pixelsPerSecond >= zoomBounds.max} onClick={() => changeKeyframeZoom(pixelsPerSecond * 1.5)} className="p-1 rounded hover:bg-sf-dark-700 disabled:opacity-30"><ZoomIn className="w-3.5 h-3.5" /></button>
+        <span className="w-12 tabular-nums">{Math.round(pixelsPerSecond / zoomBounds.min * 100)}%</span>
+        <button title="Fit the whole clip in the keyframe editor" disabled={zoomBusy} onClick={() => changeKeyframeZoom(zoomBounds.min)} className="px-2 py-0.5 rounded border border-sf-dark-600 hover:bg-sf-dark-700 disabled:opacity-30">Fit clip</button>
+        <span className="text-sf-text-muted">Ctrl/Cmd + wheel to zoom · Scroll horizontally to pan</span>
+      </div>
+
+      <div ref={lanesScrollRef} data-testid="keyframe-viewport" className="flex-1 min-h-0 overflow-auto">
+        <div className="relative" style={{ minWidth: `${LEFT_COLUMN_WIDTH + laneWidth + END_PADDING}px` }}>
           <div className="flex h-8 border-b border-sf-dark-700 bg-sf-dark-800">
             <div
               className="sticky left-0 z-20 flex items-center px-3 text-[10px] uppercase tracking-wide text-sf-text-muted border-r border-sf-dark-700 bg-sf-dark-800"
@@ -1490,7 +1561,7 @@ function DopeSheet() {
                   style={{ left: `${time * pixelsPerSecond}px` }}
                 >
                   <div className="w-px h-full bg-sf-dark-600" />
-                  <span className="absolute top-0.5 left-1 text-[9px] text-sf-text-muted font-mono">
+                  <span className={`absolute top-0.5 text-[9px] text-sf-text-muted font-mono ${laneWidth - time * pixelsPerSecond < 54 ? 'right-1' : 'left-1'}`}>
                     {formatSeconds(time)}
                   </span>
                 </div>

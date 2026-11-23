@@ -22,12 +22,24 @@ export const collectAudioMixClips = (clips = [], tracks = []) => {
   ))
 }
 
+// Shared with compound preview/export. Keep the authored start/duration for
+// source, fade and envelope clocks; intersect only the audible/visible window.
+export const getClipPlaybackWindow = (clip) => {
+  const origin = Number(clip?.startTime) || 0
+  const duration = Math.max(0, Number(clip?.duration) || 0)
+  const lower = clip?.playbackWindowStart
+  const upper = clip?.playbackWindowEnd
+  return {
+    start: Math.max(origin, typeof lower === 'number' && Number.isFinite(lower) ? lower : origin),
+    end: Math.min(origin + duration, typeof upper === 'number' && Number.isFinite(upper) ? upper : origin + duration),
+  }
+}
+
 export const countExpectedAudioMixClips = (clips, rangeStart, rangeEnd) => (
   (clips || []).filter((clip) => {
     if (clip?.reverse) return false // Reverse audio is intentionally silent.
-    const clipStart = Number(clip?.startTime) || 0
-    const clipDuration = Math.max(0, Number(clip?.duration) || 0)
-    return clipDuration > 0 && clipStart < rangeEnd && clipStart + clipDuration > rangeStart
+    const { start, end } = getClipPlaybackWindow(clip)
+    return end > start && start < rangeEnd && end > rangeStart
   }).length
 )
 

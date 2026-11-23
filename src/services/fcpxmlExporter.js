@@ -1,5 +1,5 @@
-import { applySoloAsMute } from '../utils/audioTrackAudibility'
-import { applyVideoSoloAsHidden } from '../utils/videoTrackVisibility'
+import { applySoloAsMute } from '../utils/audioTrackAudibility.js'
+import { applyVideoSoloAsHidden } from '../utils/videoTrackVisibility.js'
 
 const FCPXML_VERSION = '1.10'
 const DEFAULT_FPS = 24
@@ -232,7 +232,7 @@ function buildClipElement(item, timebase, timelineHeight) {
 }
 
 export function buildFcpXml({
-  projectName = 'Belrog Project',
+  projectName = 'Velorn Project',
   timelineName = 'Timeline',
   timelineSettings = {},
   timeline = {},
@@ -242,6 +242,9 @@ export function buildFcpXml({
   const width = Math.max(1, Math.round(safeNumber(timelineSettings.width, 1920)))
   const height = Math.max(1, Math.round(safeNumber(timelineSettings.height, 1080)))
   const clips = Array.isArray(timeline.clips) ? timeline.clips : []
+  if (clips.some(clip => clip?.type === 'compound' || clip?.compound || clip?.compoundParentId)) {
+    throw new Error('Editable compound clips are not supported by FCPXML export yet. Export a rendered video instead.')
+  }
   // Fold solo into muted so the mute checks below export what the mixer plays.
   const tracks = applyVideoSoloAsHidden(applySoloAsMute(Array.isArray(timeline.tracks) ? timeline.tracks : []))
   const assetsById = new Map((Array.isArray(assets) ? assets : []).map((asset) => [asset.id, asset]))
@@ -272,7 +275,7 @@ export function buildFcpXml({
   const sequenceDurationFrames = Math.max(secondsToFrames(computedEnd || 1, timebase), 1)
   const formatId = 'r1'
   const resourceEntries = [
-    `    <format id="${formatId}" name="Belrog ${width}x${height} ${timebase.fps}fps" frameDuration="${timebase.frameDuration}" width="${width}" height="${height}" colorSpace="1-1-1 (Rec. 709)"/>`,
+    `    <format id="${formatId}" name="Velorn ${width}x${height} ${timebase.fps}fps" frameDuration="${timebase.frameDuration}" width="${width}" height="${height}" colorSpace="1-1-1 (Rec. 709)"/>`,
     ...buildResourceEntries(exportClips, timebase, formatId),
   ]
   const clipElements = exportClips.map((item) => buildClipElement(item, timebase, height))
@@ -286,11 +289,11 @@ export function buildFcpXml({
     ...resourceEntries,
     '  </resources>',
     '  <library>',
-    `    <event name="${escapeXml(sanitizeName(projectName, 'Belrog Project'))}">`,
+    `    <event name="${escapeXml(sanitizeName(projectName, 'Velorn Project'))}">`,
     `      <project name="${escapeXml(sanitizeName(timelineName, 'Timeline'))}" uid="${escapeXml(safeProjectId)}">`,
     `        <sequence format="${formatId}" duration="${formatFrames(sequenceDurationFrames, timebase)}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">`,
     '          <spine>',
-    `            <gap name="Belrog Timeline" offset="0s" start="0s" duration="${formatFrames(sequenceDurationFrames, timebase)}">`,
+    `            <gap name="Velorn Timeline" offset="0s" start="0s" duration="${formatFrames(sequenceDurationFrames, timebase)}">`,
     ...clipElements,
     '            </gap>',
     '          </spine>',

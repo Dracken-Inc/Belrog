@@ -1,8 +1,8 @@
 const DISCOVER_TAB_VISIBILITY_SETTING_KEY = 'showDiscoverTab'
-const DISCOVER_TAB_VISIBILITY_STORAGE_KEY = 'Belrog-show-discover-tab'
+const DISCOVER_TAB_VISIBILITY_STORAGE_KEY = 'velorn-show-discover-tab'
 let visibilityMutationVersion = 0
 
-export const DISCOVER_TAB_VISIBILITY_CHANGED_EVENT = 'Belrog-discover-tab-visibility-changed'
+export const DISCOVER_TAB_VISIBILITY_CHANGED_EVENT = 'velorn-discover-tab-visibility-changed'
 
 function normalizeStoredVisibility(value) {
   if (value === true || value === 'true' || value === 1 || value === '1') return true
@@ -64,7 +64,7 @@ export async function setShowDiscoverTab(show) {
   try {
     if (typeof window !== 'undefined' && window.electronAPI?.setSetting) {
       const result = await window.electronAPI.setSetting(DISCOVER_TAB_VISIBILITY_SETTING_KEY, next)
-      if (result?.success === false) throw new Error(result.error || 'Could not save the Discover tab setting.')
+      if (result?.success === false) throw new Error(result.error || 'Could not save the Tutorials tab setting.')
     }
   } catch (_) {
     // localStorage remains a durable fallback if the Electron settings write

@@ -1,4 +1,51 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen, session } = require('electron')
+const { createSetupHelper, registerSetupHelperIpc, captureSetupHelperEnvironment } = require('./setupHelper.cjs')
+const setupHelperEnvironment = captureSetupHelperEnvironment(process.env)
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen, session, clipboard, Menu, crashReporter, safeStorage, nativeImage, webFrameMain } = require('electron')
+// Private desktop preview uses the normal Velorn profile and revocable account
+// lease; only its bundled engine has separate native state.
+const engineCandidate = require('./veloDesktopEngine.cjs').initializeDesktopEngine(app)
+// Builds made without the engine's runtime folder (the public installers) use the
+// account service route instead of an engine that cannot start.
+const veloEngineBundled = require('node:fs').existsSync(require('node:path').join(
+  app.isPackaged ? require('node:path').join(process.resourcesPath, 'velo-codex-runtime') : require('node:path').resolve(__dirname, '../../runtime'),
+  'manifest.json'))
+ipcMain.on('engine-candidate:info', event => { event.returnValue = engineCandidate.info })
+const { createCrashRecovery } = require('./crashRecovery.cjs')
+const crashRecovery = createCrashRecovery({ app, crashReporter, dialog, shell })
+const { registerTextClipboardIpc } = require('./textClipboard.cjs')
+const { registerGenerationSpendingIpc, STATUS_SETTING_KEY: GENERATION_SPENDING_SETTING_KEY } = require('./generationSpending.cjs')
+const { approvalOnPhoneAndDesktop } = require('./approvalOnPhoneAndDesktop.cjs')
+const { createComfyModelDownloads, isLocalComfyFrameUrl, FRAME_HOOK: COMFY_MODEL_DOWNLOAD_HOOK } = require('./comfyModelDownload.cjs')
+const { createLocalWorkflowTrustStore, GENERATION_LOCAL_TRUST_SETTING_KEY } = require('./generationLocalWorkflowTrust.cjs')
+const { createGenerationRuns } = require('./generationRuns.cjs')
+const { registerGenerationRunsIpc } = require('./generationRunsIpc.cjs')
+const { createComfyRouter } = require('./comfyRouter.cjs')
+const { createComfyRouterKeyStore } = require('./comfyRouterKeyStore.cjs')
+const { registerComfyRouterIpc } = require('./comfyRouterIpc.cjs')
+const { registerLocalVoiceIpc } = require('./localVoice.cjs')
+// The built-in voice model runs on several processor threads, which needs shared memory in the
+// window. Velorn's window only loads Velorn's own pages. Must be set before the app is ready.
+app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer')
+const { createSavedWorkflowLibrary, registerSavedWorkflowLibraryIpc } = require('./savedWorkflowLibrary.cjs')
+const { createComfySetup } = require('./comfySetup.cjs')
+const comfySetup = createComfySetup()
+const { createAssetTrash } = require('./assetTrash.cjs')
+const { registerConnectedAgentIpc } = require('./connectedAgent.cjs')
+const { createOptionalSetup, registerOptionalSetupIpc } = require('./optionalSetup.cjs')
+const { createSetupInstalledApps } = require('./setupInstalledApps.cjs')
+const { registerLmStudioAppIpc } = require('./lmStudioAppIpc.cjs')
+const { createToolSetupController } = require('./toolSetupIpc.cjs')
+const { registerCodexSetupInstallerIpc } = require('./codexSetupInstallerIpc.cjs')
+const { createLmStudioSetupController } = require('./lmStudioSetupIpc.cjs')
+const { createComfyCloudSetup, fingerprint: cloudKeyFingerprint } = require('./comfyCloudSetup.cjs')
+const { createComfyHostedSetup } = require('./comfyHostedSetup.cjs')
+const { createFullAccessPreference } = require('./connectedAgentAccessPreference.cjs')
+const { confirmDesktopFullAccess, SUMMARY: FULL_ACCESS_SUMMARY, BUNDLE: FULL_ACCESS_BUNDLE } = require('./connectedAgentAccessDialog.cjs')
+const { registerMobileCompanionIpc } = require('./mobileCompanion.cjs')
+const { createCodexExecutableAccess } = require('./connectedAgentExecutableSettings.cjs')
+const { createAgentDispatchScope } = require('./connectedAgentDispatch.cjs')
+const { createManagedApiWorkflowStore, loadManagedWorkflowCatalog, readBounded: readBoundedWorkflowFile } = require('./managedApiWorkflows.cjs')
+const assetTrash = createAssetTrash({ trashItem: (filePath) => shell.trashItem(filePath) })
 const crypto = require('crypto')
 const path = require('path')
 const os = require('os')
@@ -11,6 +58,21 @@ const { fileURLToPath } = require('url')
 const yaml = require('js-yaml')
 const ffmpegStaticPath = require('ffmpeg-static')
 const ffprobeStaticPath = require('@derhuerst/ffprobe-static')
+const { ExportJobRegistry } = require('./exportJobRegistry.cjs')
+const { trackFramePipeOwner } = require('./framePipeOwnership.cjs')
+const { createViewerPresentation, registerViewerPresentationIpc } = require('./viewerPresentation.cjs')
+const { inspectExportFileNative } = require('./exportFileInspection.cjs')
+const { resolveExportWorkerUrl } = require('./exportWorkerUrl.cjs')
+const { prepareExportOutputDirectories, reserveExportOutputs, releaseEmptyExportOutputs } = require('./exportOutputReservation.cjs')
+const agentReviewMediaStore = require('./agentReviewMediaStore.cjs').createAgentReviewMediaStore({externalKeyPath:path.join(app.getPath('userData'),'agent-review-media-key')})
+let agentReviewMediaIpc
+let comfyCloudSetup
+let comfyHostedSetup
+const exportJobs = new ExportJobRegistry({ onChange: broadcastExportActivity, onCompleted: async job => {
+  if (!['.mp4','.mov','.webm'].includes(path.extname(job.outputPath || '').toLowerCase())) return
+  try { await agentReviewMediaStore.saveExport(job); agentReviewMediaIpc?.changed({chatId:job.origin?.chatId}) }
+  catch { agentReviewMediaIpc?.changed({error:'The video was exported, but its review history could not be saved. Check project write access and free space.'}) }
+} })
 const {
   appendAlphaCacheEncoderArgs,
   HARDWARE_EXPORT_FFMPEG_ENV_KEY,
@@ -28,6 +90,9 @@ const {
   probeStreamHasAlpha,
 } = require('./mediaAlpha')
 const { registerCaptionWhisperHandlers } = require('./captionWhisper')
+const { registerSongMapHandlers } = require('./songMapEngine.cjs')
+const { createCaptionEngineSetup } = require('./captionEngineSetup.cjs')
+const { registerAudioAnalysisHandlers } = require('./audioAnalysisNative.cjs')
 const {
   cancelRtxVideoUpscale,
   checkRtxRuntime,
@@ -57,8 +122,6 @@ const {
   getAdaptiveMainWindowMinimum,
   sanitizeWindowBounds,
 } = require('./mainWindowBounds')
-const { createRifeInterpolationCache } = require('./rifeInterpolation')
-const { resolveRifeRuntime } = require('./rifeRuntime')
 const {
   DEFAULT_REMOTE_SERVER_SETTINGS,
   REMOTE_SERVER_SETTING_KEY,
@@ -74,7 +137,9 @@ const {
   installRemoteNode,
   execRemoteCommand,
 } = require('./sshTunnelManager')
-const remoteModelInstall = require('./remoteModelInstall')
+const { createRifeInterpolationCache } = require('./rifeInterpolation')
+const { resolveRifeRuntime } = require('./rifeRuntime')
+const { createMediaPreparationService } = require('./mediaPreparation')
 
 const isDev = !app.isPackaged
 
@@ -91,10 +156,12 @@ const MAIN_WINDOW_STATE_SETTING_KEY = 'mainWindowState'
 const COMFYSTUDIO_BRIDGE_DIR_NAME = 'comfystudio_bridge'
 const COMFYSTUDIO_BRIDGE_VERSION = '0.1.0'
 const EXTRA_MODEL_PATH_CONFIG_NAMES = Object.freeze(['extra_model_paths.yaml', 'extra_model_paths.yml'])
+const { chooseModelDownloadFolder } = require('./modelDownloadTarget.cjs')
 const COMMON_MODEL_SEARCH_KEYS = Object.freeze([
   'checkpoints',
   'text_encoders',
   'loras',
+  'latent_upscale_models',
   'upscale_models',
   'vae',
   'diffusion_models',
@@ -108,6 +175,518 @@ const MODEL_SEARCH_KEY_ALIASES = Object.freeze({
 })
 
 let mainWindow = null
+registerTextClipboardIpc({ ipcMain, getMainWindow: () => mainWindow, clipboard, Menu })
+const agentDispatchScope = createAgentDispatchScope()
+// Local agent models are managed by the user in their provider. Do not attach
+// the experimental GPU coordinator: generation must not unload/reload those
+// models, and agent replies must not free ComfyUI's models or wait for its queue.
+let generationRuns = null
+const resultFetch = require('./resultFetch.cjs').createResultFetch(net)
+let comfyRouter = null
+function getComfyRouter() {
+  if (!comfyRouter) comfyRouter = createComfyRouter({
+    // Developer run only: also offer models and voices that are still waiting for their first real request
+    // (createModels.json `pending` / `verified`). Never in an installed Velorn.
+    allowPending: !app.isPackaged && process.env.VELORN_CREATE_PENDING === '1',
+    storageDir: path.join(app.getPath('userData'), 'comfy-router-jobs'),
+    // Remembers the Router key between launches, encrypted by the OS password store.
+    // Native-owned: there is no IPC or agent call that returns the key.
+    keyStore: createComfyRouterKeyStore({ safeStorage, file: path.join(app.getPath('userData'), 'comfy-router-key.bin') }),
+    // Comfy's own service goes through net.fetch. A finished result at any other address goes through
+    // resultFetch, which survives the odd response headers some storage services send (see resultFetch.cjs).
+    fetchImpl: (url, options) => String(url).startsWith('https://api.comfy.org/')
+      ? net.fetch(url, { ...options, credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
+      : resultFetch(url, options),
+    validateImage: bytes => {
+      const image = nativeImage.createFromBuffer(Buffer.from(bytes))
+      return image.isEmpty() ? null : image.getSize()
+    },
+    getPolicy: () => generationSpending.getStatus(),
+    getContext: async () => {
+      const window = mainWindow
+      const frame = window?.webContents?.mainFrame
+      if (!window || window.isDestroyed()) throw new Error('Open Velorn first.')
+      const result = await performMcpRendererAction({ action: 'get_transport_state' })
+      const context = result?.agentContext?.context
+      if (mainWindow !== window || window.isDestroyed() || frame !== window.webContents.mainFrame || !context?.session) throw new Error('Open Velorn first.')
+      return { ...context, projectKey: path.isAbsolute(context.projectKey || '') ? context.projectKey : null }
+    },
+    // The person's own spending confirmation for one Router plan. A click on the
+    // Create tab's priced button is approved before this is reached; this is for
+    // larger or unpriced clicks, and for everything an agent or MCP client asks for.
+    confirmSpend: async ({ model, modelLabel, kind, create, estimate, prompt, refusalCharged, submissionCount, fromPerson, signal }) => {
+      const window = mainWindow
+      if (!window || window.isDestroyed() || signal?.aborted || exportJobs.activeId) return false
+      const frame = window.webContents.mainFrame
+      const one = create ? ({ image: 'picture', video: 'video clip', voice: 'voice recording', sound: 'sound effect' }[kind] || 'result') : 'image'
+      const count = create && Number.isInteger(submissionCount) && submissionCount > 1 ? submissionCount : 1
+      const what = count > 1 ? `${count} ${one}s` : `one ${one}`
+      const priced = estimate && Number.isFinite(Number(estimate.amount))
+      const options = {
+        type: 'warning', title: create ? `Approve ${what}?` : 'Approve one Router image?',
+        message: create ? `Make ${what} in the cloud using your Comfy credits?` : 'Generate one paid cloud image using your Comfy credits?',
+        detail: [`Model: ${modelLabel || (typeof model === 'string' ? model : model?.label || model?.id)}`,
+          !priced ? 'Cost: this request has no set price. Your Comfy usage page shows what it costs.'
+            : create && typeof estimate.label === 'string' ? estimate.label
+            : `Estimated cost: ${estimate.credits} credits (US$${Number(estimate.amount).toFixed(2)}). Published ${estimate.asOf || '2026-10-01'}.`,
+          'This is an estimate, not a hard spending cap. Comfy workspace usage is authoritative. No Velorn fee is added.',
+          ...(create && refusalCharged === 'yes' ? ['This model charges for a request even when it refuses it.'] : []),
+          `${kind === 'voice' ? 'Words to say' : 'Prompt'}:\n${prompt}`,
+          `Your prompt${create ? ' and any input picture are' : ' is'} sent to Comfy Router and the model provider. Only ${create ? what : 'this single image'} is approved. No automatic retry, timeline edit or purchase of credits is authorized.`,
+          'Cancellation is best-effort; work already accepted by the provider may finish and be charged.'].join('\n\n'),
+        buttons: ['Cancel', create ? `Approve ${what}` : 'Approve one image'], defaultId: 0, cancelId: 0, noLink: true,
+        checkboxLabel: create ? `I approve spending my Comfy credits for ${count > 1 ? 'these' : 'this'}.` : 'I approve spending my Comfy credits for this image.', checkboxChecked: false,
+        ...(signal ? { signal } : {}),
+      }
+      const still = () => !signal?.aborted && mainWindow === window && !window.isDestroyed() && frame === window.webContents.mainFrame && !exportJobs.activeId
+      // An agent waiting on the person is not a stuck tool call.
+      const scope = agentDispatchScope.current()
+      scope?.onWaiting?.(true)
+      try {
+        // A request from an agent or MCP client is answered on the paired phone when
+        // one is connected, like other paid generation: nobody may be at the computer.
+        // A click in the Create tab is always answered where it was made.
+        const mobile = fromPerson === true ? null : mobileCompanion?.confirm({ window, signal, kind: 'generation-spending', title: options.title,
+          detail: `${options.message}\n\n${options.detail}`, requiresRiskAcknowledgement: true })
+        if (mobile) return (await mobile).approved === true && still()
+        const result = await dialog.showMessageBox(window, options)
+        return still() && result.response === 1 && result.checkboxChecked === true
+      } finally { scope?.onWaiting?.(false) }
+    },
+    notify: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('comfy-router:changed')
+    },
+  })
+  return comfyRouter
+}
+// Velorn network: this computer's own sharing choices, what it could run for
+// someone else, and the connection to the queue. Sharing is off by default.
+// The owner's own added workflows (created further down, once the saved workflow library exists).
+let gpuShareOwn = null
+const gpuShareRunner = require('./gpuShareHostRunner.cjs').createGpuShareHostRunner({
+  resolveOwn: id => (gpuShareOwn ? gpuShareOwn.resolve(id) : null),
+  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
+  readWorkflow: async file => JSON.parse(await fs.readFile(path.join(await resolveBundledWorkflowDir(), file), 'utf8')),
+})
+const gpuShareHost = require('./gpuShareHost.cjs').createGpuShareHost({
+  settingsPath: path.join(app.getPath('userData'), 'gpu-share.json'), runner: gpuShareRunner,
+  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`, isExportBusy: () => Boolean(exportJobs.activeId),
+  getOwn: () => gpuShareOwn,
+})
+// The picture and clip of the last few jobs other people ran here, for the owner to look at.
+const gpuShareJobLog = require('./gpuShareJobLog.cjs').createGpuShareJobLog({ dir: path.join(app.getPath('userData'), 'gpu-share-jobs') })
+const gpuShareClient = require('./gpuShareClient.cjs').createGpuShareClient({ host: gpuShareHost, runner: gpuShareRunner, jobLog: gpuShareJobLog,
+  getNetwork: () => mobileCompanion?.gpuNetwork || null, getOwn: () => gpuShareOwn,
+  getComputerName: () => mobileCompanion?.gpuNetwork?.computerName?.() || 'A Velorn computer',
+  onChange: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gpu-share:changed') },
+  // Shown on this computer before someone else's job runs here, when the person asked to be asked.
+  confirmJob: async ({ from, workflowName, prompt, seconds, size, shape }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false
+    const result = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Run it', 'Decline'], defaultId: 1, cancelId: 1, noLink: true,
+      title: 'Velorn network', message: `${from} wants to use this computer's GPU`,
+      detail: `${workflowName}\n${[seconds ? `${seconds} seconds` : '', size, shape].filter(Boolean).join(', ') || 'One picture'}\n\nDescription:\n${String(prompt).slice(0, 600)}\n\nNothing is charged. You can stop sharing at any time.` })
+    return result.response === 0
+  },
+})
+let stopGpuShareBeat = null
+app.whenReady().then(() => { stopGpuShareBeat = gpuShareClient.start(5000) })
+const gpuShareIpc = require('./gpuShareHost.cjs').registerGpuShareIpc({ ipcMain, getMainWindow: () => mainWindow, host: gpuShareHost,
+  getNetworkState: () => gpuShareClient.hostState(), onUpdated: () => gpuShareClient.beat(), report: jobId => gpuShareClient.report(jobId),
+  openJob: async jobId => { const folder = await gpuShareJobLog.folder(jobId); if (!folder) return false; return (await shell.openPath(folder)) === '' } })
+// The one job this account has on the network: sent and followed by the main window, and by the paired phone.
+const gpuNetworkJobs = require('./gpuNetworkIpc.cjs').createGpuNetworkJobs({ client: gpuShareClient, jobPath: path.join(app.getPath('userData'), 'gpu-network-job.json') })
+const gpuNetworkIpc = require('./gpuNetworkIpc.cjs').registerGpuNetworkIpc({ ipcMain, getMainWindow: () => mainWindow, client: gpuShareClient,
+  jobPath: path.join(app.getPath('userData'), 'gpu-network-job.json'), jobs: gpuNetworkJobs })
+// GPU sharing for the paired phone: free jobs on other creators' GPUs, and "Yours", the workflows the owner added
+// on this computer, which run right here. A finished local result is handed to the window to save into the project.
+let phoneLocalIpc = null
+const phoneSharedGpu = require('./mobileCompanionSharedGpu.cjs').createPhoneSharedGpu({ jobs: gpuNetworkJobs, cacheDir: path.join(app.getPath('userData'), 'phone-shared-cache'),
+  onLocalResult: () => phoneLocalIpc?.changed(),
+  local: {
+    // Only what was tested here and still runs.
+    list: async () => gpuShareOwn ? (await gpuShareOwn.list()).workflows.filter(item => item.testedAt && !item.trouble) : [],
+    run: async ({ jobId, id, prompt, image, signal, onStatus }) => gpuShareRunner.run({ jobId, workflowId: id, own: await gpuShareOwn.resolve(id), choices: { prompt }, image, signal, onStatus }),
+  } })
+phoneLocalIpc = require('./mobileCompanionSharedGpu.cjs').registerPhoneLocalIpc({ ipcMain, getMainWindow: () => mainWindow, getShared: () => phoneSharedGpu })
+// The Sound tab's built-in local voice model: its files live in Velorn's own data folder.
+registerLocalVoiceIpc({ ipcMain, getMainWindow: () => mainWindow, dir: path.join(app.getPath('userData'), 'local-voice', 'kokoro-82m-v1.0') })
+const comfyRouterIpc = registerComfyRouterIpc({ ipcMain, getMainWindow: () => mainWindow, getManager: getComfyRouter,
+  isBusy: () => Boolean(exportJobs.activeId), openExternal: url => shell.openExternal(url) })
+const { createGenerationMemoryCleanup, SETTING_KEY: GENERATION_MEMORY_SETTING_KEY } = require('./generationMemoryCleanup.cjs')
+const generationMemoryCleanup = createGenerationMemoryCleanup({
+  getEnabled: async () => (await readSettingsRaw())?.[GENERATION_MEMORY_SETTING_KEY] === true,
+  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
+  isBusy: async () => Boolean(exportJobs.activeId) || (await generationSpending.getStatus()).busy,
+  onError: message => console.warn('[generation-memory]', message),
+})
+const workflowAssetInputs = require('./workflowAssetInputs.cjs').createWorkflowAssetInputs({
+  getSnapshot: async () => {
+    await performMcpRendererAction({ action: 'get_transport_state' })
+    return mcpServer?.lastSnapshot
+  },
+})
+const savedWorkflowLibrary = createSavedWorkflowLibrary({ getUserData: () => app.getPath('userData'), resolveAsset: workflowAssetInputs.resolveAsset })
+registerSavedWorkflowLibraryIpc({ ipcMain, getMainWindow: () => mainWindow, getLibrary: () => savedWorkflowLibrary })
+{
+  const { createGpuShareOwnWorkflows, registerGpuShareOwnIpc } = require('./gpuShareOwnWorkflows.cjs')
+  gpuShareOwn = createGpuShareOwnWorkflows({ dir: path.join(app.getPath('userData'), 'gpu-share-own'), library: savedWorkflowLibrary, runner: gpuShareRunner,
+    // A small picture of the example for the reviewer: at most 512 pixels wide, as a JPEG.
+    makeThumbnail: async bytes => { const image = nativeImage.createFromBuffer(bytes); if (image.isEmpty()) return null
+      const { width } = image.getSize(); return (width > 512 ? image.resize({ width: 512, quality: 'good' }) : image).toJPEG(78) } })
+  registerGpuShareOwnIpc({ ipcMain, getMainWindow: () => mainWindow, own: gpuShareOwn, onChanged: () => { void gpuShareClient.refresh() },
+    network: gpuShareClient, getMaker: async () => (await gpuShareHost.getSettings()).displayName })
+}
+function getGenerationRuns() {
+  if (!generationRuns) {
+    generationRuns = createGenerationRuns({
+    storageDir: path.join(app.getPath('userData'), 'generation-runs'),
+    getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
+    getContext: async () => {
+      const result = await performMcpRendererAction({ action: 'get_transport_state' })
+      const context = result.agentContext?.context
+      if (!context?.session) throw new Error('The current project could not be verified.')
+      return context
+    },
+    submitManaged: payload => generationSpending.queueFromMain(payload),
+    resolveSavedWorkflow: payload => savedWorkflowLibrary.prepare(payload),
+    uploadSavedAssets: workflowAssetInputs.upload,
+    onGenerationFinished: detail => generationMemoryCleanup.schedule(detail),
+    assertAvailable: () => {
+      if (exportJobs.activeId) throw new Error('Export has priority. Wait for export to finish before changing generation runs.')
+    },
+    notify: snapshot => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+      mainWindow.webContents.send('generation-runs:changed', snapshot)
+    },
+    })
+    // Loading the ledger and reconciling known jobs must not depend on the
+    // Generate workspace mounting or on an agent repeatedly polling a tool.
+    void generationRuns.start()
+  }
+  return generationRuns
+}
+registerGenerationRunsIpc({ ipcMain, getMainWindow: () => mainWindow, getManager: getGenerationRuns })
+let mobileCompanion = null, connectedAgent = null
+const generationSpending = registerGenerationSpendingIpc({
+  ipcMain, getMainWindow: () => mainWindow,
+  resolveSavedWorkflow: ({ workflowId }) => savedWorkflowLibrary.prepare({ workflowId }),
+  localWorkflowTrust: createLocalWorkflowTrustStore({
+    readStore: async () => (await readSettingsRaw())?.[GENERATION_LOCAL_TRUST_SETTING_KEY],
+    writeStore: async (value, { signal, isCurrent }) => writeSettingsRaw(settings => {
+      if (signal?.aborted || isCurrent?.() !== true) throw new Error('The local-workflow choice was cancelled.')
+      return { ...settings, [GENERATION_LOCAL_TRUST_SETTING_KEY]: value }
+    }),
+  }),
+  beforeSubmit: request => getGenerationRuns().beforeSubmit(request),
+  afterSubmit: receipt => getGenerationRuns().afterSubmit(receipt),
+  // There is no "Local only" switch any more (decided 2026-11-17): Velorn always shows the
+  // price and asks before anything is spent, whatever an older settings file says.
+  readPolicy: async () => 'ask-cloud',
+  writePolicy: async (policy, { signal, isCurrent }) => writeSettingsRaw(settings => {
+    if (signal?.aborted || isCurrent?.() !== true) throw new Error('The spending-policy change was cancelled.')
+    return { ...settings, [GENERATION_SPENDING_SETTING_KEY]: policy }
+  }),
+  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
+  getApiKey: async () => String((await readSettingsRaw())?.comfyApiKeyComfyOrg || '').trim(),
+  getContext: async () => {
+    const result = await performMcpRendererAction({ action: 'get_transport_state' })
+    const context = result.agentContext?.context
+    if (!context?.session) throw new Error('The current project could not be verified. Nothing was queued.')
+    return { session: context.session, projectKey: context.projectKey, timelineId: context.timelineId }
+  },
+  assertAvailable: () => {
+    if (exportJobs.activeId) throw new Error('Export has priority. Wait for export to finish before generating.')
+  },
+  confirmPolicyChange: async ({ window, signal }) => {
+    const options = {
+      type: 'warning', title: 'Ask before cloud generation?',
+      message: 'Allow Velorn to ask before paid or unverified generations?',
+      detail: 'This does not approve any spending. Each paid or unverified workflow submission will need its own confirmation. Existing credits are money too.\n\nThis protects Velorn-managed submissions only. Unrestricted computer access, embedded ComfyUI, and other apps can call services directly. No global spending cap is enforced.',
+      buttons: ['Keep Local only', 'Ask before cloud'], defaultId: 0, cancelId: 0, noLink: true,
+    }
+    const asked = await approvalOnPhoneAndDesktop({ signal,
+      askPhone: stop => mobileCompanion?.confirm({ window, signal: stop, kind: 'spending-policy', title: options.title,
+        detail: `${options.message}\n\n${options.detail}`, requiresRiskAcknowledgement: true }) || null,
+      askDesktop: stop => dialog.showMessageBox(window, { ...options, signal: stop }) })
+    return asked.from === 'phone' ? asked.answer.approved === true : asked.answer.response === 1
+  },
+  confirmSpend: async ({ window, assessment, endpoint, fingerprint, signal, localTrust, policy, batchCount = 0 }) => {
+    const unknown = assessment.risk !== 'paid'
+    const allowLocalTrust = assessment.risk === 'unknown' && localTrust?.eligible === true
+    const localOnly = policy === 'local-only'
+    if (localOnly && !allowLocalTrust) return false
+    // Several pictures waiting with the same paid model and settings can be approved together.
+    const offerBatch = !unknown && !localOnly && !allowLocalTrust && Number.isInteger(batchCount) && batchCount >= 2
+    const unknownNodes = [...new Set((assessment.unknownNodes || []).map(node => node.classType))].join(', ') || 'Node information unavailable'
+    const options = {
+      type: 'warning', title: unknown ? 'Review unfamiliar workflow' : 'Approve cloud generation spending?',
+      message: unknown ? 'Velorn does not recognize every node in this workflow.' : 'This generation can spend cloud credits.',
+      detail: [
+        unknown ? `Unrecognized nodes: ${unknownNodes}.\nUnrecognized does not mean paid. Velorn could not verify whether these nodes use only your computer.` : '',
+        localOnly ? 'Local only stays on. Choose Trust as local and run only if you recognize this as a local workflow. This review cannot approve cloud spending.'
+          : allowLocalTrust ? 'Approve this submission once, or remember this saved workflow as local.' : 'Approve ONE submission of this exact workflow. Reruns and additional submissions need new approval.',
+        `Server: ${endpoint}`,
+        unknown ? '' : `Provider: ${assessment.providers?.join(', ') || 'Unverified / unknown'}`,
+        `Model: ${assessment.models?.join(', ') || 'Not reliably identified'}`,
+        `Workflow nodes: ${assessment.nodeCount}. This can include multiple outputs or billable operations.`,
+        unknown ? 'Custom nodes may contact external services or spend credits using their own credentials. Trusting a workflow does not restrict its network access. Velorn does not supply its saved cloud API key to trusted-local runs.'
+          : 'Cost: unknown. Velorn cannot guarantee an upper price. Existing service credits may be consumed, and inputs may be sent to cloud services.',
+        unknown && !localOnly ? 'Approve this submission may use your cloud API key and spend credits at an unknown cost.' : '',
+        allowLocalTrust ? `Trust “${localTrust.title}” as local on this computer only. This is your choice, not independent verification. Future runs of this saved workflow will not ask again unless its configuration changes. Known paid nodes still follow Generation spending. Remove this choice in Assistant settings → Generation and performance → Remembered local workflows.` : '',
+        unknown && !allowLocalTrust ? localTrust?.reason : '',
+        offerBatch ? `${batchCount} generations with this same model and settings are waiting. "Approve all ${batchCount}" approves this one and the next ${batchCount - 1}, each at an unknown cost, for up to one hour in this project. A different model or setting asks again.` : '',
+        `Workflow reference: ${String(fingerprint).slice(0, 16)}`,
+        localOnly ? 'Trust as local remembers your choice for this saved workflow. It does not authorize buying credits or automatic retries.'
+          : allowLocalTrust ? 'Approve this submission covers only this run. Trust as local remembers your choice for this saved workflow. Neither choice authorizes buying credits or automatic retries.' : 'This does not authorize buying more credits, retries, or future generations.',
+      ].filter(Boolean).join('\n\n'),
+      buttons: localOnly ? ['Cancel', 'Trust as local and run'] : ['Cancel', 'Approve this submission', ...(allowLocalTrust ? ['Trust as local and run'] : []), ...(offerBatch ? [`Approve all ${batchCount}`] : [])], defaultId: 0, cancelId: 0, noLink: true,
+      checkboxLabel: unknown ? 'I understand that unrecognized nodes may contact services or spend credits.' : 'I accept that this submission may spend credits at an unknown cost.', checkboxChecked: false,
+    }
+    // The job card says "Waiting for your approval" while this question is open.
+    const tellCard = asking => { try { if (!window.isDestroyed()) window.webContents.send('generation-spending:asking', asking) } catch { /* window gone */ } }
+    tellCard(true)
+    // A paired phone and this computer are both asked; the first answer decides.
+    const asked = await approvalOnPhoneAndDesktop({ signal,
+      askPhone: stop => mobileCompanion?.confirm({ window, signal: stop, kind: 'generation-spending', title: options.title,
+        detail: `${options.message}\n\n${options.detail}`, requiresRiskAcknowledgement: true,
+        allowLocalTrust, workflowTitle: allowLocalTrust ? localTrust.title : undefined }) || null,
+      askDesktop: stop => dialog.showMessageBox(window, { ...options, signal: stop }) }).finally(() => tellCard(false))
+    if (asked.from === 'phone') {
+      return asked.answer.approved === true && asked.answer.trustLocal === true && allowLocalTrust
+        ? { approved: true, trustLocal: true } : !localOnly && asked.answer.approved === true
+    }
+    const result = asked.answer
+    if (allowLocalTrust && result.response === (localOnly ? 1 : 2) && result.checkboxChecked === true) return { approved: true, trustLocal: true }
+    if (offerBatch && result.response === 2 && result.checkboxChecked === true) return { approved: true, batchCount }
+    return !localOnly && result.response === 1 && result.checkboxChecked === true
+  },
+})
+// Only the main Velorn renderer can request this scoped editor connection.
+// Packaged builds use the hosted phone UI and an outbound encrypted connection;
+// private development phone files are never a packaged dependency.
+// This never changes the MCP listener or exposes native agent IPC to a browser.
+const phoneRuntime = require('./mobileCompanionRuntime.cjs').desktopPhoneRuntime({
+  isPackaged: app.isPackaged, userData: app.getPath('userData'), electronRoot: __dirname,
+})
+mobileCompanion = registerMobileCompanionIpc({ ipcMain, app, dialog, getMainWindow: () => mainWindow,
+  createServer: options => require('./remoteCompanionGuided.cjs').createGuidedCompanion(options, {
+    ...phoneRuntime.guided,
+    openBrowser: url => shell.openExternal(url),
+  }),
+  getExportJobs: () => exportJobs.list(),
+  getAudioAssets: async projectPath => {
+    await performMcpRendererAction({ action: 'get_transport_state' })
+    const snapshot = mcpServer?.lastSnapshot
+    return snapshot?.context?.projectKey === projectPath ? snapshot.assets || [] : []
+  },
+  reviewMediaStore: agentReviewMediaStore,
+  getProjectPath: async () => (await performMcpRendererAction({ action: 'get_transport_state' })).agentContext?.context?.projectKey || null,
+  onRevokeAccess: () => connectedAgent?.revokeMobileFullAccess(),
+  clientRoot: phoneRuntime.clientRoot, apiOnly: phoneRuntime.apiOnly,
+  deviceStorePath: phoneRuntime.deviceStorePath, preferencePath: phoneRuntime.preferencePath,
+  // Create (pictures and video) from the paired phone, through the same native
+  // Router manager as the Create tab. See mobileCompanionCreate.cjs for its fences.
+  createBridge: require('./mobileCompanionCreate.cjs').createMobileCreateBridge({ getManager: getComfyRouter,
+    isBusy: () => Boolean(exportJobs.activeId), cacheDir: path.join(app.getPath('userData'), 'phone-create-cache'),
+    // Free jobs on other creators' GPUs, from the phone: the same job the GPU sharing tab would send.
+    shared: phoneSharedGpu }),
+})
+async function getReviewAssets(projectPath) {
+  await performMcpRendererAction({action:'get_transport_state'})
+  if (mcpServer?.lastSnapshot?.context?.projectKey !== projectPath) throw Error('Review project changed.')
+  return mcpServer.lastSnapshot.assets || []
+}
+agentReviewMediaIpc = require('./agentReviewMediaIpc.cjs').registerAgentReviewMediaIpc({ipcMain,getMainWindow:()=>mainWindow,
+  getProjectPath:async()=>(await performMcpRendererAction({action:'get_transport_state'})).agentContext?.context?.projectKey || null,
+  getAssets:getReviewAssets,
+  store:agentReviewMediaStore})
+connectedAgent = registerConnectedAgentIpc({ ipcMain, app, getMainWindow: () => mainWindow,
+  fundedLuna: mobileCompanion.fundedLuna,
+  // The bundled Velo engine exists for Linux x64 only, and only where its runtime folder
+  // was packaged. Everywhere else Velo uses the account service route (the default
+  // inside registerConnectedAgentIpc).
+  sendVelo: process.platform === 'linux' && process.arch === 'x64' && veloEngineBundled ? engineCandidate.sendVelo : undefined,
+  claimMobileMessageConsent: options => mobileCompanion.claimMessageConsent(options),
+  fullAccessPreference: createFullAccessPreference({ filePath: path.join(app.getPath('userData'), 'agent-full-access-consent.json') }),
+  getMediaRuntime: ({ signal }) => require('./connectedAgentMediaRuntime.cjs').discoverConnectedAgentMediaRuntime({ ffmpegPath, ffprobePath, signal }),
+  getGenerationSpendingStatus: () => generationSpending.getStatus(),
+  onConversationEnd: () => {
+    generationSpending.cancelPending('The agent response ended or was stopped. Any pending generation approval was cancelled.')
+    comfyRouter?.cancelPending()
+  },
+  executableAccess: createCodexExecutableAccess({
+    readCustomPath: async () => (await readSettingsRaw())?.connectedAgentCodexExecutable || '',
+    writeCustomPath: async (selected, { signal, isCurrent }) => writeSettingsRaw(settings => {
+      if (signal?.aborted || isCurrent?.() !== true) throw Object.assign(new Error('Codex installation selection was cancelled.'), { code: 'CANCELLED' })
+      return { ...settings, connectedAgentCodexExecutable: selected }
+    }),
+    choosePath: async window => {
+      const result = await dialog.showOpenDialog(window, {
+        title: 'Choose a trusted Codex executable', buttonLabel: 'Use Codex',
+        properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
+        ...(process.platform === 'win32' ? { filters: [{ name: 'Codex executable or npm launcher', extensions: ['exe', 'cmd'] }] } : {}),
+      })
+      return result.canceled ? null : result.filePaths[0] || null
+    },
+    // Packaged apps may start with cwd=/ or the user's home. Never exclude
+    // those broad roots: only Velorn's own app tree is a project-code source.
+    resolutionOptions: { excludedRoots: [app.getAppPath()] },
+  }),
+  getMcpServer: () => mcpServer,
+  assertFullAccessAvailable: async () => {
+    if (exportJobs.activeId) throw Object.assign(new Error('Export has priority. Wait for export to finish before enabling or using full computer access.'), { code: 'BUSY' })
+  },
+  confirmFullAccess: async ({ window, isCurrent, fromPhone, remembered, provider = 'codex' }) => {
+    if (fromPhone) {
+      const consent = mobileCompanion?.claimFullAccess?.({ window, provider })
+      if (consent) {
+        const current = () => isCurrent?.() === true && consent.mobileBinding?.isCurrent() === true
+        if (!current()) return { approved: false, shareImagesAndView: false, remember: false }
+        const spending = await generationSpending.enableAskCloudFromConsent({ window, isCurrent: current })
+        if (!spending?.success || spending.policy !== 'ask-cloud' || !current()) {
+          throw new Error(spending?.error?.message || 'Full access setup could not finish. Check Generation spending and try again.')
+        }
+        return consent
+      }
+      const mobile = mobileCompanion?.confirm({ window, kind: 'full-access', title: provider !== 'codex' ? 'Allow full access to Velorn tools?' : 'Allow full computer access?',
+        detail: `${provider !== 'codex' ? 'The agent can change your project and use Velorn tools automatically. Mistakes can cause data loss.' : FULL_ACCESS_SUMMARY}\n\n${FULL_ACCESS_BUNDLE}`, requiresRiskAcknowledgement: false })
+      if (!mobile) return { approved: false, shareImagesAndView: false, remember: false }
+      const result = await mobile
+      return { ...result, shareImagesAndView: result.approved === true, remember: false }
+    }
+    return confirmDesktopFullAccess({ window, dialog, isCurrent, remembered, provider })
+  },
+  getComfyRoot: async () => String((await readSettingsRaw())?.comfyRootPath || ''),
+  assertResearchAvailable: async (name) => {
+    if (exportJobs.activeId && !['get_agent_download_status', 'cancel_agent_download'].includes(name)) {
+      throw new Error('Export has priority. Wait for export to finish before research or model downloads.')
+    }
+  },
+  getToolContext: async () => {
+    const result = await performMcpRendererAction({ action: 'get_transport_state' })
+    if (!result.agentContext?.context) throw new Error('The editor has not loaded its agent context yet.')
+    return result.agentContext
+  },
+  executeTool: (name, args, guard, signal, origin) => agentDispatchScope.runTool(guard, signal, async () => {
+    // Host-only callback: user credential entry is not active model execution.
+    const cloudScope = agentDispatchScope.current()
+    if (cloudScope && ['request_comfy_cloud_setup', 'download_lmstudio_model', 'load_lmstudio_model', 'generate_comfy_router_image', 'generate_create_media'].includes(name)) cloudScope.onWaiting = origin?.onWaiting
+    const result = await mcpServer.callTool(name, args)
+    exportJobs.associateAgentResult(name, result, origin)
+    // Installer jobs outlive an agent reply. Bind only the native-approved
+    // receipt to its originating conversation so the desktop can show progress
+    // without sending another model prompt or persisting installer authority.
+    try {
+      toolSetupController.associateAgentResult(name, result, origin, guard?.context?.projectKey || guard?.projectKey)
+    } catch { console.warn('[tool-setup] Could not attach installer progress to the conversation.') }
+    try {
+      lmStudioSetupController.associateAgentResult(name, result, origin, guard?.context?.projectKey || guard?.projectKey)
+    } catch { console.warn('[lm-studio-setup] Could not attach model progress to the conversation.') }
+    try {
+      await require('./agentAudioReview.cjs').recordAudioReview({ name, result, origin,
+        projectPath: guard?.context?.projectKey || guard?.projectKey, store: agentReviewMediaStore })
+      // A picture the agent imported, or was asked to show, appears in its reply as a still.
+      await require('./agentPictureReview.cjs').recordPictureReview({ name, result, origin,
+        projectPath: guard?.context?.projectKey || guard?.projectKey, store: agentReviewMediaStore,
+        readPicture: input => workflowAssetInputs.readPicture(input),
+        toJpeg: require('./agentPictureReview.cjs').createStillMaker(nativeImage) })
+      agentReviewMediaIpc?.changed({chatId:origin?.chatId})
+    } catch (error) { console.warn('[audio-review] Could not save conversation attachment:', error.message) }
+    return result
+  }, { trustedFullAccess: origin?.trustedFullAccess === true }),
+})
+const optionalSetup = createOptionalSetup({
+  inspectProvider: payload => connectedAgent.inspectProvider(payload),
+  comfySetup,
+  getConfiguredPort: () => resolveLocalComfyPort(),
+})
+registerOptionalSetupIpc({ ipcMain, app, getMainWindow: () => mainWindow, setup: optionalSetup })
+registerCodexSetupInstallerIpc({ ipcMain, app, dialog, getMainWindow: () => mainWindow,
+  isBusy: () => Boolean(exportJobs.activeId),
+  inspectExisting: async () => {
+    // Even a broken explicit selection is intentional; never erase or bypass it.
+    if ((await readSettingsRaw())?.connectedAgentCodexExecutable) return true
+    try {
+      await require('./connectedAgentExecutable.cjs').resolveCodexExecutable({ excludedRoots: [app.getAppPath()] })
+      return true
+    } catch (error) {
+      if (error.code === 'CODEX_NOT_FOUND') return false
+      throw error
+    }
+  },
+})
+const setupInstalledApps = createSetupInstalledApps({
+  app,
+  confirmOpen: async ({ path: executablePath }) => {
+    const window = mainWindow
+    if (!window || window.isDestroyed()) return false
+    const frame = window.webContents.mainFrame
+    const choice = await dialog.showMessageBox(window, {
+      type: 'question', title: 'Open LM Studio', message: 'Open your installed LM Studio app?',
+      detail: `${executablePath}\n\nOnly open an installation you trust; Velorn has not verified the publisher. LM Studio may restore its own saved server or model preferences when it opens. Velorn will not request a model download or load, change your editing assistant, or send a model prompt.`,
+      buttons: ['Cancel', 'Open LM Studio'], defaultId: 0, cancelId: 0, noLink: true,
+    })
+    return mainWindow === window && !window.isDestroyed() && window.webContents.mainFrame === frame && choice.response === 1
+  },
+  chooseExecutable: async () => {
+    const window = mainWindow
+    if (!window || window.isDestroyed()) return null
+    const frame = window.webContents.mainFrame
+    const choice = await dialog.showOpenDialog(window, {
+      title: 'Locate your existing LM Studio app', buttonLabel: 'Use this LM Studio app',
+      properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
+      ...(process.platform === 'win32' ? { filters: [{ name: 'LM Studio executable', extensions: ['exe'] }] } : {}),
+    })
+    return mainWindow === window && !window.isDestroyed() && window.webContents.mainFrame === frame && !choice.canceled && choice.filePaths.length === 1 ? choice.filePaths[0] : null
+  },
+})
+registerLmStudioAppIpc({ ipcMain, app, getMainWindow: () => mainWindow, installedApps: setupInstalledApps })
+registerSetupHelperIpc({ ipcMain, app, getMainWindow: () => mainWindow,
+  helper: createSetupHelper({ app, optionalSetup, installedApps: setupInstalledApps, env: setupHelperEnvironment,
+    getHostedStatus: options => comfyHostedSetup.readStatus(options),
+    openGuide: async (url, { isCurrent }) => {
+      if (!isCurrent()) throw new Error('Setup window changed')
+      await shell.openExternal(url)
+    },
+  }) })
+const toolSetupController = createToolSetupController({
+  ipcMain, app, dialog, shell, optionalSetup, getMainWindow: () => mainWindow,
+  isExportBusy: () => Boolean(exportJobs.activeId),
+  getAgentScope: () => agentDispatchScope.current(),
+  assertAgentCurrent: async scope => {
+    if (scope?.signal?.aborted) throw Object.assign(new Error('Setup request cancelled.'), { code: 'CANCELLED' })
+    if (scope) await performMcpRendererAction({ action: 'get_transport_state' })
+    if (scope?.signal?.aborted) throw Object.assign(new Error('Setup request cancelled.'), { code: 'CANCELLED' })
+  },
+})
+const lmStudioSetupController = createLmStudioSetupController({
+  ipcMain, app, dialog, getMainWindow: () => mainWindow,
+  isExportBusy: () => Boolean(exportJobs.activeId),
+  getAgentScope: () => agentDispatchScope.current(),
+  assertAgentCurrent: scope => agentDispatchScope.runTool(scope.current, scope.signal,
+    () => performMcpRendererAction({ action: 'get_transport_state' }), { trustedFullAccess: scope.trustedFullAccess === true }),
+})
+comfyCloudSetup = createComfyCloudSetup({
+  ipcMain, app, getMainWindow: () => mainWindow,
+  readKey: async () => (await readSettingsRaw())?.comfyApiKeyComfyOrg || '',
+  writeKey: (key, { assertCurrent, expectedDigest, onCommitted }) => writeSettingsRaw(settings => {
+    assertCurrent()
+    if (cloudKeyFingerprint(settings.comfyApiKeyComfyOrg) !== expectedDigest) throw new Error('Cloud key changed before commit.')
+    return { ...settings, comfyApiKeyComfyOrg: key }
+  }, assertCurrent, onCommitted),
+  isExportBusy: () => Boolean(exportJobs.activeId),
+  getAgentScope: () => agentDispatchScope.current(),
+  assertAgentCurrent: scope => agentDispatchScope.runTool(scope.current, scope.signal,
+    () => performMcpRendererAction({ action: 'get_transport_state' }), { trustedFullAccess: scope.trustedFullAccess === true }),
+})
+// Hosted account credentials are separate from Partner/API-node settings and
+// are never exposed to the renderer, model tools or generic settings reads.
+comfyHostedSetup = createComfyHostedSetup({
+  ipcMain, app, safeStorage, getMainWindow: () => mainWindow,
+  fetchImpl: (url, options) => net.fetch(url, { ...options, credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true }),
+  openExternal: url => shell.openExternal(url),
+})
+let viewerPresentation = null
 let splashWindow = null
 let exportWorkerWindow = null
 let mcpServer = null
@@ -121,25 +700,58 @@ let mainWindowStateSaveTimer = null
 const settingsPath = path.join(app.getPath('userData'), 'settings.json')
 let settingsWriteQueue = Promise.resolve()
 
-function performMcpRendererAction(request = {}) {
+function broadcastExportActivity(activity) {
+  // Export may begin while Router consent, ledger persistence or a download is
+  // awaiting a response. Revoke that pending operation before it can dispatch
+  // or publish more work; already accepted provider jobs are not cancelled.
+  if (activity?.activeJob) {
+    try { comfyRouter?.cancelPending() } catch { /* Router may not be initialized yet. */ }
+  }
+  // Resolve and revoke an open credential handoff before any late Save.
+  try { comfyCloudSetup?.exportChanged() }
+  catch { console.warn('[cloud-setup] Could not close setup after an export transition.') }
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  try { mainWindow.webContents.send('export:activity', activity) }
+  catch (error) { console.warn('[Export] Could not publish activity:', error?.message || error) }
+}
+
+async function performMcpRendererAction(request = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    return Promise.reject(new Error('No Belrog window is available.'))
+    return Promise.reject(new Error('No Velorn window is available.'))
   }
 
+  // Recheck native authority immediately before dispatch. The renderer also
+  // guards its bridge, but may not have received the activity event yet.
+  const { assertMcpActionAllowedDuringExport } = await import('./exportPriorityPolicy.mjs')
+  assertMcpActionAllowedDuringExport(request.action, request.payload || {}, Boolean(exportJobs.activeId))
+  if (!mainWindow || mainWindow.isDestroyed()) throw new Error('No Velorn window is available.')
+
   const id = `mcp-action-${crypto.randomUUID()}`
+  const agentScope = agentDispatchScope.current()
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingMcpActionRequests.delete(id)
-      reject(new Error('Timed out waiting for Belrog to apply MCP action.'))
+      reject(new Error('Timed out waiting for Velorn to apply MCP action.'))
     }, 60000)
 
-    pendingMcpActionRequests.set(id, { resolve, reject, timeout })
+    pendingMcpActionRequests.set(id, { resolve, reject, timeout, agentScope, action: request.action })
     mainWindow.webContents.send('mcp:action', {
       id,
       action: request.action,
       payload: request.payload || {},
+      ...(agentScope && !agentScope.trustedFullAccess ? { agentGuard: agentScope.current } : {}),
     })
   })
+}
+
+function guardAgentNativeAction(callback) {
+  return async (...args) => {
+    // Some MCP tools diagnose asynchronously before changing native settings or
+    // launching ComfyUI. Recheck after that wait, not just at tools/call entry.
+    if (agentDispatchScope.current()) await performMcpRendererAction({ action: 'get_transport_state' })
+    agentDispatchScope.current()
+    return callback(...args)
+  }
 }
 
 function resolvePackagedBinaryPath(binaryPath) {
@@ -183,7 +795,7 @@ function getFfmpegUnavailableError(binaryPath = ffmpegPath) {
   if (!binaryPath) return 'FFmpeg binary not available.'
   if (!fsSync.existsSync(binaryPath)) {
     const recovery = binaryPath === ffmpegPath
-      ? 'Reinstall Belrog (or run npm install in a dev checkout) to restore it.'
+      ? 'Reinstall Velorn (or run npm install in a dev checkout) to restore it.'
       : 'Choose another hardware-export FFmpeg path or restore the selected file.'
     return `FFmpeg binary is missing at ${binaryPath}. ${recovery}`
   }
@@ -211,7 +823,7 @@ async function resolveHardwareExportFfmpegSelection() {
     ...selection,
     path: ffmpegPath,
     source: 'bundled',
-    warning: `${sourceLabel} is not a usable FFmpeg executable: ${versionProbe.error} Belrog will use its bundled FFmpeg.`,
+    warning: `${sourceLabel} is not a usable FFmpeg executable: ${versionProbe.error} Velorn will use its bundled FFmpeg.`,
   }
 }
 
@@ -284,9 +896,17 @@ async function probeVideoInfo(filePath) {
   }
 
   return await new Promise((resolve) => {
+    let settled = false
+    let timer = null
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      resolve(result)
+    }
     const args = [
       '-v', 'error',
-      '-show_entries', 'stream=codec_type,codec_name,profile,pix_fmt,avg_frame_rate,r_frame_rate:stream_tags=alpha_mode',
+      '-show_entries', 'stream=codec_type,codec_name,profile,pix_fmt,avg_frame_rate,r_frame_rate,width,height,duration:stream_tags=alpha_mode:format=duration',
       '-of', 'json',
       filePath
     ]
@@ -294,19 +914,23 @@ async function probeVideoInfo(filePath) {
     const proc = spawn(ffprobePath, args, { windowsHide: true })
     let stdout = ''
     let stderr = ''
+    timer = setTimeout(() => {
+      try { proc.kill('SIGKILL') } catch { /* already stopped */ }
+      finish({ success: false, error: 'Media probe timed out.' })
+    }, 30000)
 
     proc.stdout.on('data', (data) => {
       stdout += data.toString()
     })
     proc.stderr.on('data', (data) => {
-      stderr += data.toString()
+      stderr = appendLimitedStderr(stderr, data)
     })
     proc.on('error', (err) => {
-      resolve({ success: false, error: err.message })
+      finish({ success: false, error: err.message })
     })
     proc.on('close', (code) => {
       if (code !== 0) {
-        resolve({ success: false, error: stderr || `FFprobe exited with code ${code}` })
+        finish({ success: false, error: stderr || `FFprobe exited with code ${code}` })
         return
       }
       try {
@@ -315,7 +939,7 @@ async function probeVideoInfo(filePath) {
         const videoStream = streams.find((stream) => stream?.codec_type === 'video') || null
         const audioStream = streams.find((stream) => stream?.codec_type === 'audio') || null
         const fps = parseFpsRatio(videoStream?.avg_frame_rate) || parseFpsRatio(videoStream?.r_frame_rate)
-        resolve({
+        finish({
           success: true,
           hasVideo: Boolean(videoStream),
           fps: fps || null,
@@ -325,9 +949,12 @@ async function probeVideoInfo(filePath) {
           pixelFormat: videoStream?.pix_fmt || null,
           videoProfile: videoStream?.profile || null,
           hasAlpha: probeStreamHasAlpha(videoStream),
+          width: Number(videoStream?.width) || null,
+          height: Number(videoStream?.height) || null,
+          duration: Number(videoStream?.duration) || Number(parsed?.format?.duration) || null,
         })
       } catch (err) {
-        resolve({ success: false, error: err.message })
+        finish({ success: false, error: err.message })
       }
     })
   })
@@ -362,7 +989,11 @@ async function probeAudioDurationSeconds(filePath) {
   })
 }
 
-async function writeFileAtomic(filePath, data, options) {
+async function writeFileAtomic(filePath, data, options, beforeCommit, onCommitted) {
+  if ((beforeCommit !== undefined && typeof beforeCommit !== 'function')
+    || (onCommitted !== undefined && (typeof onCommitted !== 'function' || typeof beforeCommit !== 'function'))) {
+    throw new TypeError('Atomic commit callbacks must be native functions.')
+  }
   const dir = path.dirname(filePath)
   await fs.mkdir(dir, { recursive: true })
 
@@ -373,7 +1004,13 @@ async function writeFileAtomic(filePath, data, options) {
 
   try {
     await fs.writeFile(tempPath, data, options)
-    await fs.rename(tempPath, filePath)
+    if (beforeCommit) {
+      // Narrow credential writes recheck native request authority immediately
+      // before the atomic commit, without yielding across that final boundary.
+      beforeCommit()
+      fsSync.renameSync(tempPath, filePath)
+      onCommitted?.()
+    } else await fs.rename(tempPath, filePath)
   } catch (error) {
     try {
       await fs.unlink(tempPath)
@@ -475,15 +1112,16 @@ async function saveMainWindowStateNow() {
   if (mainWindow.isMinimized()) return
 
   try {
-    const currentBounds = mainWindow.getBounds()
-    const normalBounds = sanitizeWindowBounds(mainWindow.getNormalBounds?.() || currentBounds)
+    const presentationState = viewerPresentation?.getPersistentWindowState()
+    const currentBounds = presentationState?.bounds || mainWindow.getBounds()
+    const normalBounds = sanitizeWindowBounds(presentationState?.bounds || mainWindow.getNormalBounds?.() || currentBounds)
     const display = screen.getDisplayMatching(currentBounds)
     await writeSettingsRaw((settings) => ({
       ...settings,
       [MAIN_WINDOW_STATE_SETTING_KEY]: {
         bounds: normalBounds || sanitizeWindowBounds(currentBounds),
         displayId: display?.id ?? null,
-        isMaximized: mainWindow.isMaximized(),
+        isMaximized: presentationState?.isMaximized ?? mainWindow.isMaximized(),
         updatedAt: new Date().toISOString(),
       },
     }))
@@ -799,6 +1437,8 @@ async function loadExtraModelPathConfigForComfyRoot(rootPath) {
   if (!configPath) return empty
 
   const pathsByKey = new Map()
+  // Folders from a section marked `is_default: true`: ComfyUI saves there first.
+  const defaultPathsByKey = new Map()
   const warnings = []
 
   try {
@@ -839,6 +1479,7 @@ async function loadExtraModelPathConfigForComfyRoot(rootPath) {
             resolvedPath = path.resolve(yamlDir, resolvedPath)
           }
           addExtraModelSearchPath(pathsByKey, key, resolvedPath)
+          if (section.is_default === true || String(section.is_default).trim().toLowerCase() === 'true') addExtraModelSearchPath(defaultPathsByKey, key, resolvedPath)
         }
       }
     }
@@ -850,9 +1491,24 @@ async function loadExtraModelPathConfigForComfyRoot(rootPath) {
   return {
     configPath,
     pathsByKey,
+    defaultPathsByKey,
     pathCount,
     warnings,
   }
+}
+
+// The type itself and the other names ComfyUI accepts for it (text_encoders / clip, ...).
+function modelDownloadKeys(targetSubdir = '') {
+  const key = normalizeModelSearchKey(targetSubdir)
+  return [...new Set([key, ...(MODEL_SEARCH_KEY_ALIASES[key] || []).map(normalizeModelSearchKey)])].filter(Boolean)
+}
+// Where one model file will be downloaded, following extra_model_paths.yaml.
+// A folder named there must already exist: a missing one usually means a drive
+// that is not connected, and creating it would quietly fill the wrong disk.
+async function resolveModelDownloadFolder(validation, targetSubdir, extraModelPaths) {
+  const choice = chooseModelDownloadFolder({ modelsPath: validation.modelsPath, targetSubdir, extra: extraModelPaths, keysFor: modelDownloadKeys })
+  const available = choice.source === 'comfyui' ? true : await isDirectoryPath(choice.folder)
+  return { ...choice, available }
 }
 
 function getModelSearchKeys(targetSubdir = '') {
@@ -1216,8 +1872,8 @@ async function getComfyStudioBridgeStatusInternal() {
     comfyRootPath: root.normalizedPath,
     customNodesPath: root.customNodesPath,
     message: installed
-      ? 'Belrog Bridge is installed. Restart ComfyUI if the Send button is not visible yet.'
-      : 'Belrog Bridge is not installed yet.',
+      ? 'Velorn Bridge is installed. Restart ComfyUI if the Send button is not visible yet.'
+      : 'Velorn Bridge is not installed yet.',
   }
 }
 
@@ -1238,7 +1894,7 @@ async function installComfyStudioBridgeInternal() {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: `Bundled Belrog Bridge files are missing: ${sourceDir}`,
+      error: `Bundled Velorn Bridge files are missing: ${sourceDir}`,
     }
   }
 
@@ -1251,8 +1907,8 @@ async function installComfyStudioBridgeInternal() {
     copied,
     restartRequired: true,
     message: copied > 0
-      ? `Installed Belrog Bridge (${copied} file${copied === 1 ? '' : 's'} updated). Restart ComfyUI to load it.`
-      : 'Belrog Bridge is already up to date. Restart ComfyUI if the Send button is not visible.',
+      ? `Installed Velorn Bridge (${copied} file${copied === 1 ? '' : 's'} updated). Restart ComfyUI to load it.`
+      : 'Velorn Bridge is already up to date. Restart ComfyUI if the Send button is not visible.',
   }
 }
 
@@ -1942,130 +2598,104 @@ async function getComfyCloudCreditBalanceFromEmbeddedComfy() {
   }
 }
 
-async function loadWorkflowGraphInEmbeddedComfy({ workflowGraph, comfyBaseUrl, waitForMs = 12000 }) {
+async function loadWorkflowGraphInEmbeddedComfy({ workflowGraph, comfyBaseUrl, waitForMs = 12000, beforeLoad }) {
   const frame = await findEmbeddedComfyFrame(comfyBaseUrl, waitForMs)
   if (!frame) {
     throw new Error('Could not locate the embedded ComfyUI tab. Enable the ComfyUI tab and make sure the local server is running.')
   }
 
-  const expectedNodeCount = workflowGraph && Array.isArray(workflowGraph.nodes) ? workflowGraph.nodes.length : 0
+  const preparationKey = beforeLoad ? '__velornPreparedWorkflow_' + crypto.randomUUID().replace(/-/g, '') : null
   const script = `
     (async () => {
       const graphData = ${JSON.stringify(workflowGraph)};
-      const expectedNodeCount = ${Number.isFinite(expectedNodeCount) ? expectedNodeCount : 0};
+      const preparationKey = ${JSON.stringify(preparationKey)};
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-      const resolveApp = () => {
-        try {
-          return globalThis.app
-            || globalThis.__COMFYUI_APP__
-            || (globalThis.comfyAPI && globalThis.comfyAPI.app ? globalThis.comfyAPI.app.app : null)
-            || null;
-        } catch (_) { return null }
+      const ensureCanvasVisible = async (appInstance) => {
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          const canvasEl = appInstance?.canvasEl || appInstance?.canvas?.canvas || document.querySelector('canvas');
+          const rect = canvasEl?.getBoundingClientRect?.();
+          if (rect && rect.width > 0 && rect.height > 0) {
+            return true;
+          }
+          await sleep(100);
+        }
+        return false;
       };
-      const readNodeCount = (appInstance) => {
-        try {
-          return appInstance && appInstance.graph && Array.isArray(appInstance.graph.nodes)
-            ? appInstance.graph.nodes.length
-            : null;
-        } catch (_) { return null }
-      };
-      const isUsable = (appInstance) => Boolean(
-        appInstance
-        && typeof appInstance.loadGraphData === 'function'
-        && appInstance.canvas
-        && readNodeCount(appInstance) !== null
-      );
 
-      // Phase 1: wait for the frontend to be usable AND for its boot-time
-      // graph load to SETTLE (node count stable across two samples ~250ms
-      // apart). ComfyUI v0.34+ loads its default/persisted workflow roughly
-      // 1.5s+ after boot; injecting before that lands gets silently replaced
-      // by the boot load - the "tab opens with the default workflow" bug.
-      let settled = false;
-      let lastCount = null;
-      const settleDeadline = Date.now() + 15000;
-      while (Date.now() < settleDeadline) {
-        let comfyApp = resolveApp();
+      let comfyApp = globalThis.app || globalThis.__COMFYUI_APP__ || null;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
         if (!comfyApp) {
           try {
             const appModule = await import('/scripts/app.js');
-            comfyApp = (appModule && appModule.app) || resolveApp();
+            comfyApp = appModule?.app || globalThis.app || globalThis.__COMFYUI_APP__ || null;
           } catch (_) {
-            // Frontend still booting; keep polling.
+            // Ignore temporary frontend boot timing failures and keep polling.
           }
         }
-        if (isUsable(comfyApp)) {
-          const count = readNodeCount(comfyApp);
-          if (count !== null && count === lastCount) {
-            settled = true;
-            break;
-          }
-          lastCount = count;
-        }
+
+        if (comfyApp?.loadGraphData) break;
         await sleep(250);
+        comfyApp = comfyApp || globalThis.app || globalThis.__COMFYUI_APP__ || null;
       }
 
-      let comfyApp = resolveApp();
-      if (!comfyApp) {
-        try {
-          const appModule = await import('/scripts/app.js');
-          comfyApp = (appModule && appModule.app) || null;
-        } catch (_) {
-          // Ignore; the load loop below keeps polling.
-        }
-      }
-      if (!comfyApp || typeof comfyApp.loadGraphData !== 'function' || !comfyApp.canvas) {
-        return { success: false, error: 'ComfyUI frontend graph is not ready yet.' };
+      if (!comfyApp?.loadGraphData) {
+        return { success: false, error: 'ComfyUI frontend app is not ready yet.' };
       }
 
-      // Phase 2: load with post-load verification. If the node count we read
-      // back doesn't match what we sent, the load was lost (or clobbered) -
-      // retry instead of reporting success.
-      let lastError = '';
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        try {
-          if (!comfyApp || typeof comfyApp.loadGraphData !== 'function') {
-            comfyApp = resolveApp();
-            if (!comfyApp || typeof comfyApp.loadGraphData !== 'function') {
-              lastError = 'ComfyUI frontend app is not ready yet.';
-              await sleep(400);
-              continue;
-            }
-          }
-          await comfyApp.loadGraphData(graphData);
-          await sleep(30);
-          if (comfyApp.canvas && typeof comfyApp.canvas.resize === 'function') {
-            comfyApp.canvas.resize();
-          }
-          if (comfyApp.canvas && typeof comfyApp.canvas.setDirty === 'function') {
-            comfyApp.canvas.setDirty(true, true);
-          }
-          if (comfyApp.canvas && typeof comfyApp.canvas.draw === 'function') {
-            comfyApp.canvas.draw(true, true);
-          }
-          const loaded = readNodeCount(comfyApp);
-          if (expectedNodeCount > 0 && loaded !== expectedNodeCount) {
-            lastError = 'Verification failed: expected ' + expectedNodeCount + ' nodes after load, found ' + loaded + '.';
-            await sleep(500);
-            continue;
-          }
-          return { success: true, nodeCount: loaded, bootSettled: settled };
-        } catch (error) {
-          lastError = error && error.message ? error.message : String(error);
-          comfyApp = resolveApp();
-          await sleep(500);
+      try {
+        const canvasVisible = await ensureCanvasVisible(comfyApp);
+        if (!canvasVisible) {
+          return { success: false, error: 'ComfyUI canvas is still hidden, so the workflow could not be loaded safely yet.' };
         }
+
+        if (preparationKey) {
+          globalThis[preparationKey] = { app: comfyApp, graphData };
+          return { success: true, prepared: true };
+        }
+        await comfyApp.loadGraphData(graphData);
+        await sleep(0);
+        if (comfyApp.canvas?.resize) {
+          comfyApp.canvas.resize();
+        }
+        if (comfyApp.canvas?.setDirty) {
+          comfyApp.canvas.setDirty(true, true);
+        }
+        if (comfyApp.canvas?.draw) {
+          comfyApp.canvas.draw(true, true);
+        }
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error?.message || String(error) };
       }
-      return { success: false, error: lastError || 'ComfyUI refused to load the workflow graph.' };
     })()
   `
 
-  const result = await frame.executeJavaScript(script, true)
+  let result = await frame.executeJavaScript(script, true)
   if (!result?.success) {
     throw new Error(result?.error || 'ComfyUI refused to load the workflow graph.')
   }
 
+  if (beforeLoad) {
+    try {
+      // The frontend's boot/canvas wait is read-only. Recheck the library
+      // caller's window/project/export boundary after that wait, then load
+      // immediately instead of leaving a pending load on a stale project.
+      await beforeLoad()
+      result = await frame.executeJavaScript(`(async () => {
+        const key = ${JSON.stringify(preparationKey)};
+        const prepared = globalThis[key]; delete globalThis[key];
+        if (!prepared?.app?.loadGraphData) return { success: false, error: 'ComfyUI changed before loading. Try again.' };
+        try {
+          await prepared.app.loadGraphData(prepared.graphData);
+          prepared.app.canvas?.resize?.(); prepared.app.canvas?.setDirty?.(true, true); prepared.app.canvas?.draw?.(true, true);
+          return { success: true };
+        } catch (error) { return { success: false, error: error?.message || String(error) }; }
+      })()`, true)
+      if (!result?.success) throw new Error(result?.error || 'ComfyUI refused to load the workflow graph.')
+    } finally {
+      try { await frame.executeJavaScript(`delete globalThis[${JSON.stringify(preparationKey)}]`, false) } catch { /* Frame may have closed. */ }
+    }
+  }
   return result
 }
 
@@ -2361,31 +2991,31 @@ function buildComfyConnectionRecommendations(diagnosis) {
   if (systemOk && objectInfoOk) {
     recommendations.push('ComfyUI is reachable and its node registry is available. If generation fails, check the specific workflow/custom node error next.')
   } else if (systemOk) {
-    recommendations.push('Something is answering on the configured ComfyUI port, but Belrog could not read /object_info. Confirm this URL is actually ComfyUI and not another local web app or proxy.')
+    recommendations.push('Something is answering on the configured ComfyUI port, but Velorn could not read /object_info. Confirm this URL is actually ComfyUI and not another local web app or proxy.')
   } else {
-    recommendations.push(`Start ComfyUI and confirm its browser URL is http://127.0.0.1:${connection.port || DEFAULT_LOCAL_COMFY_PORT}. If it uses another port, set that port in Belrog Settings > ComfyUI Connection.`)
+    recommendations.push(`Start ComfyUI and confirm its browser URL is http://127.0.0.1:${connection.port || DEFAULT_LOCAL_COMFY_PORT}. If it uses another port, set that port in Velorn Settings > ComfyUI Connection.`)
   }
 
   if (!systemOk && mode === 'docker') {
-    recommendations.push('For Docker, publish the ComfyUI container port to the host, for example -p 8188:8188, and make sure ComfyUI listens inside the container. Belrog connects to localhost on the Windows/macOS host.')
+    recommendations.push('For Docker, publish the ComfyUI container port to the host, for example -p 8188:8188, and make sure ComfyUI listens inside the container. Velorn connects to localhost on the Windows/macOS host.')
   } else if (!systemOk && mode === 'portable') {
     recommendations.push('For Windows portable ComfyUI, pick run_nvidia_gpu.bat or run_cpu.bat in Settings > ComfyUI Launcher, then use the same port ComfyUI prints in its terminal.')
   } else if (!systemOk && mode === 'desktop') {
-    recommendations.push('For ComfyUI Desktop, open the desktop app first and confirm its local server URL/port. Then set that same local port in Belrog.')
+    recommendations.push('For ComfyUI Desktop, open the desktop app first and confirm its local server URL/port. Then set that same local port in Velorn.')
   } else if (!systemOk && !launcher.hasLauncherTarget) {
-    recommendations.push('No launcher target is configured. Either start ComfyUI yourself before using Belrog, or configure Belrog Launcher so it can start ComfyUI for you.')
+    recommendations.push('No launcher target is configured. Either start ComfyUI yourself before using Velorn, or configure Velorn Launcher so it can start ComfyUI for you.')
   }
 
   if (launcher.configuredPortHint && launcher.configuredPortHint !== connection.port) {
-    recommendations.push(`The launcher extra args mention port ${launcher.configuredPortHint}, but Belrog is configured for port ${connection.port}. Make those match.`)
+    recommendations.push(`The launcher extra args mention port ${launcher.configuredPortHint}, but Velorn is configured for port ${connection.port}. Make those match.`)
   }
 
   if (diagnosis?.api?.systemStats?.status === 403 || diagnosis?.api?.objectInfo?.status === 403) {
-    recommendations.push('ComfyUI returned HTTP 403. If you started ComfyUI manually, relaunch with --enable-cors-header * or use Belrog’s built-in launcher.')
+    recommendations.push('ComfyUI returned HTTP 403. If you started ComfyUI manually, relaunch with --enable-cors-header * or use Velorn’s built-in launcher.')
   }
 
   if (diagnosis?.portOwner?.pid && !systemOk) {
-    recommendations.push(`Port ${connection.port} is held by ${diagnosis.portOwner.name || `pid ${diagnosis.portOwner.pid}`}. If that is not ComfyUI, stop it or change the Belrog port.`)
+    recommendations.push(`Port ${connection.port} is held by ${diagnosis.portOwner.name || `pid ${diagnosis.portOwner.pid}`}. If that is not ComfyUI, stop it or change the Velorn port.`)
   }
 
   return recommendations
@@ -2489,7 +3119,27 @@ async function diagnoseComfyUIConnectionInternal(options = {}) {
   return diagnosis
 }
 
+function assertCanSwitchComfyConnection(port) {
+  const state = comfyLauncher.getState()
+  if (!state) throw new Error('Could not check the current launcher. Refresh its status before switching connections.')
+  if (!['ours', 'app'].includes(state.ownership) || !['running', 'starting', 'stopping'].includes(state.state)) return
+  let currentPort
+  try { currentPort = Number(new URL(state.httpBase).port) } catch { /* fail closed below */ }
+  if (currentPort !== port) {
+    throw new Error('Velorn is managing another ComfyUI connection. Stop it before switching ports, or keep the current connection.')
+  }
+}
+
+function assertComfyConnectionWriteAllowed(port) {
+  agentDispatchScope.current()
+  if (exportJobs.activeId) throw new Error('Cannot change the ComfyUI connection while an export is running.')
+  assertCanSwitchComfyConnection(port)
+}
+
 async function setComfyUIConnectionInternal(options = {}) {
+  if (!['number', 'string'].includes(typeof options?.port)) {
+    return { success: false, error: 'Invalid local ComfyUI port. Use a number from 1 to 65535.' }
+  }
   const port = sanitizeLocalComfyPort(options?.port)
   if (!port) {
     return { success: false, error: 'Invalid local ComfyUI port. Use a number from 1 to 65535.' }
@@ -2514,23 +3164,41 @@ async function setComfyUIConnectionInternal(options = {}) {
     before,
     after,
     recommendations: [
-      `Set Belrog's local ComfyUI connection to ${after.httpBase}.`,
-      'This changes Belrog settings only; it does not restart ComfyUI or edit launcher scripts.',
+      `Set Velorn's local ComfyUI connection to ${after.httpBase}.`,
+      'Applying first verifies that ComfyUI is still responding on this port.',
+      'This changes Velorn settings only; it does not install software, restart ComfyUI, edit launcher scripts or generate media.',
     ],
   }
 
   if (previewOnly) return result
 
-  await writeSettingsRaw((settings) => ({
-    ...settings,
-    [COMFY_CONNECTION_SETTING_KEY]: {
-      host: after.host,
-      port: after.port,
-    },
-  }))
-  await refreshSettingsDependentCaches()
-
   try {
+    assertComfyConnectionWriteAllowed(port)
+    // Use the same bounded, shape-checked loopback probe as desktop Connect.
+    // A prior diagnosis is not permission to save an endpoint that has since
+    // stopped, moved, or been replaced by a different local service.
+    const connection = await comfySetup.probeConnection(port)
+    if (!connection || connection.port !== port) {
+      return { success: false, error: `No ComfyUI server responded on port ${port}. Open ComfyUI, start your local instance, and try again. No settings were changed.` }
+    }
+    if (agentDispatchScope.current()) await performMcpRendererAction({ action: 'get_transport_state' })
+    assertComfyConnectionWriteAllowed(port)
+    await writeSettingsRaw((settings) => {
+      // The settings write queue can yield after the probe; recheck native
+      // ownership, export and cancellation immediately before committing.
+      assertComfyConnectionWriteAllowed(port)
+      return {
+        ...settings,
+        [COMFY_CONNECTION_SETTING_KEY]: { host: after.host, port: after.port },
+      }
+    })
+    result.connection = connection
+    result.settingsApplied = true
+  } catch (error) {
+    return { success: false, error: error?.message || 'Could not connect to ComfyUI.' }
+  }
+  try {
+    await refreshSettingsDependentCaches()
     if (mainWindow && !mainWindow.isDestroyed()) {
       result.rendererSync = await performMcpRendererAction({
         action: 'set_comfyui_connection',
@@ -2544,7 +3212,22 @@ async function setComfyUIConnectionInternal(options = {}) {
     }
   }
 
+  result.connected = result.rendererSync?.success !== false
+  if (!result.connected) {
+    result.warning = 'The verified connection setting was saved, but the open Velorn window did not synchronize. Refresh or reopen Velorn, then check the connection; do not repeat the settings change.'
+  }
+
   return result
+}
+
+async function readComfyNodeCatalogInternal() {
+  // Resolve Settings each time: never inspect one server and submit to another
+  // because a CLI default, cached port, or model installation changed.
+  await refreshLauncherConfigCache()
+  const port = await resolveLocalComfyPort()
+  const probe = await requestLocalComfyJson(port, '/object_info', 10_000)
+  if (!probe.ok || probe.parseError) throw new Error(`Could not read ComfyUI node schemas at ${probe.url}: ${probe.error || probe.parseError || `HTTP ${probe.status}`}`)
+  return { info: probe.json, endpoint: `http://127.0.0.1:${port}` }
 }
 
 async function validateComfyUINodesInternal(options = {}) {
@@ -2633,6 +3316,7 @@ function deriveWorkflowIdFromFile(filename = '') {
     image_z_image_turbo: 'z-image-turbo',
     mask_generation_text_prompt: 'mask-gen',
     music_generation: 'music-gen',
+    music_generation_yue2: 'music-gen-yue2',
     music_video_shot_ltx2_3_i2v_audio: 'music-video-shot-ltx23',
     short_film_dialogue_ltx2_3_ia2v: 'short-film-dialogue-ltx23-ia2v',
     video_frame_interpolation: 'frame-interpolation',
@@ -2721,7 +3405,8 @@ async function loadBundledMcpWorkflowCatalog({ refresh = false } = {}) {
   const entries = []
   try {
     const files = await fs.readdir(workflowsDir)
-    for (const file of files.filter((entry) => entry.toLowerCase().endsWith('.json')).sort()) {
+    // network_*.json are the Velorn network's own slim files (gpuShareWorkflows.cjs), not workflows to browse or hand to an agent.
+    for (const file of files.filter((entry) => entry.toLowerCase().endsWith('.json') && !entry.toLowerCase().startsWith('network_')).sort()) {
       const registryEntry = byFile.get(file.toLowerCase()) || null
       const id = registryEntry?.id || deriveWorkflowIdFromFile(file)
       const entry = {
@@ -2757,18 +3442,34 @@ async function loadBundledMcpWorkflowCatalog({ refresh = false } = {}) {
   return cachedMcpWorkflowCatalog
 }
 
+let managedApiWorkflowStore = null
+async function importManagedApiWorkflowInternal(args = {}) {
+  managedApiWorkflowStore ||= createManagedApiWorkflowStore({
+    getUserData: () => app.getPath('userData'), validateNodes: validateComfyUINodesInternal,
+    beforeCommit: async () => {
+      if (agentDispatchScope.current()) await performMcpRendererAction({ action: 'get_transport_state' })
+      agentDispatchScope.current()
+      const { assertMcpActionAllowedDuringExport } = await import('./exportPriorityPolicy.mjs')
+      assertMcpActionAllowedDuringExport('import_comfyui_workflow', { previewOnly: false }, Boolean(exportJobs.activeId))
+    },
+  })
+  return managedApiWorkflowStore.importWorkflow(args)
+}
+
 async function loadMcpWorkflowCatalog({ refresh = false } = {}) {
-  const [bundledCatalog, myWorkflowCatalog] = await Promise.all([
+  const [bundledCatalog, myWorkflowCatalog, managedCatalog] = await Promise.all([
     loadBundledMcpWorkflowCatalog({ refresh }),
     loadMyWorkflowCatalog(app.getPath('userData')),
+    loadManagedWorkflowCatalog(app.getPath('userData')),
   ])
   const bundledWorkflows = bundledCatalog?.success ? bundledCatalog.workflows : []
   const myWorkflows = myWorkflowCatalog?.success ? myWorkflowCatalog.workflows : []
+  const managedWorkflows = managedCatalog?.success ? managedCatalog.workflows : []
 
-  if (!bundledCatalog?.success && !myWorkflowCatalog?.success) {
+  if (!bundledCatalog?.success && !myWorkflowCatalog?.success && !managedCatalog?.success) {
     return {
       success: false,
-      error: bundledCatalog?.error || 'Could not read Belrog workflows.',
+      error: bundledCatalog?.error || 'Could not read Velorn workflows.',
       workflowsDir: bundledCatalog?.workflowsDir || null,
       myWorkflowsDir: myWorkflowCatalog?.workflowsDir || null,
       workflows: [],
@@ -2779,17 +3480,19 @@ async function loadMcpWorkflowCatalog({ refresh = false } = {}) {
     success: true,
     workflowsDir: bundledCatalog?.workflowsDir || null,
     myWorkflowsDir: myWorkflowCatalog?.workflowsDir || null,
-    count: bundledWorkflows.length + myWorkflows.length,
+    count: bundledWorkflows.length + myWorkflows.length + managedWorkflows.length,
     bundledCount: bundledWorkflows.length,
     myWorkflowsCount: myWorkflows.length,
     sourceCounts: {
       bundled: bundledWorkflows.length,
       'my-workflows': myWorkflows.length,
+      imported: managedWorkflows.length,
     },
-    workflows: [...bundledWorkflows, ...myWorkflows],
+    workflows: [...bundledWorkflows, ...myWorkflows, ...managedWorkflows],
     warnings: [
       ...(!bundledCatalog?.success && bundledCatalog?.error ? [bundledCatalog.error] : []),
       ...(myWorkflowCatalog?.errors || []),
+      ...(managedCatalog?.errors || []),
     ],
     generatedAt: new Date().toISOString(),
   }
@@ -2937,7 +3640,7 @@ async function listComfyStudioWorkflowsInternal(options = {}) {
   }
 
   return {
-    action: 'list_Belrog_workflows',
+    action: 'list_velorn_workflows',
     success: true,
     workflowsDir: catalog.workflowsDir,
     myWorkflowsDir: catalog.myWorkflowsDir,
@@ -2970,6 +3673,7 @@ async function listComfyStudioWorkflowsInternal(options = {}) {
       markerStatus,
       requiredAssetFields,
       optionalAssetFields,
+      hasApiWorkflow,
     }) => ({
       id,
       libraryId,
@@ -2990,6 +3694,10 @@ async function listComfyStudioWorkflowsInternal(options = {}) {
       markerStatus,
       requiredAssetFields,
       optionalAssetFields,
+      savedRunsReady: workflowSource === 'imported' || hasApiWorkflow === true,
+      savedRunsMessage: workflowSource === 'my-workflows' && !hasApiWorkflow
+        ? 'Open in ComfyUI and save to Velorn again to capture an API copy for Runs.'
+        : ['my-workflows', 'imported'].includes(workflowSource) ? 'Inspect includeGraph:true before queue_comfyui_workflow; marker readiness applies only to older guided routes.' : undefined,
     })),
     warnings: catalog.warnings || [],
     generatedAt: new Date().toISOString(),
@@ -3002,7 +3710,9 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
 
   let raw
   try {
-    raw = await fs.readFile(resolved.workflow.path, 'utf8')
+    raw = options.includeGraph === true || resolved.workflow.source === 'imported'
+      ? await readBoundedWorkflowFile(resolved.workflow.path, resolved.workflow.source === 'my-workflows' ? 4 * 1024 * 1024 : 96 * 1024)
+      : await fs.readFile(resolved.workflow.path, 'utf8')
   } catch (error) {
     return {
       success: false,
@@ -3023,7 +3733,7 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   }
 
   const inspectedWorkflowJson = resolved.workflow.source === 'my-workflows'
-    ? workflowJson?.uiWorkflow
+    ? workflowJson?.apiWorkflow || workflowJson?.uiWorkflow
     : workflowJson
   if (!inspectedWorkflowJson || typeof inspectedWorkflowJson !== 'object') {
     return {
@@ -3033,6 +3743,29 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
     }
   }
 
+  let graphDetail = {}
+  if (options.includeGraph === true) {
+    if (['my-workflows', 'imported'].includes(resolved.workflow.source)) {
+      const prepared = await savedWorkflowLibrary.prepare({ workflowId: resolved.workflow.id })
+      graphDetail = prepared.success ? { workflowJson: prepared.workflow, bindings: prepared.bindings, queueInputs: prepared.queueInputs,
+        graphFingerprint: prepared.graphFingerprint, targetFingerprint: resolved.workflow.targetFingerprint || null,
+        savedRunsReady: true, copyOnly: resolved.workflow.source !== 'imported',
+        editing: 'For reuse, preview queue_comfyui_workflow with this workflowId, exact inputOverrides, and graphFingerprint; applying preserves the saved original. To remember an edited copy, preview import_comfyui_workflow with an explicit managed name.' }
+        : { savedRunsReady: false, graphUnavailable: prepared.error }
+    }
+    else if (Array.isArray(inspectedWorkflowJson.nodes)) graphDetail = { graphUnavailable: 'This is a UI-format graph. API graph inspection requires an API/prompt-format workflow.' }
+    else {
+      const { validateApiWorkflow, buildApiWorkflowMetadata, stableWorkflowJson } = await import('./workflowApiGraph.mjs')
+      const apiWorkflow = validateApiWorkflow(inspectedWorkflowJson)
+      const detected = buildApiWorkflowMetadata(apiWorkflow, { name: 'inspection', outputType: resolved.workflow.outputType, inspectOnly: true })
+      graphDetail = { workflowJson: apiWorkflow, bindings: detected.bindings,
+        graphFingerprint: crypto.createHash('sha256').update(stableWorkflowJson(apiWorkflow)).digest('hex'),
+        targetFingerprint: resolved.workflow.targetFingerprint || null,
+        copyOnly: resolved.workflow.source !== 'imported',
+        editing: 'Edit this API graph as data, then preview import_comfyui_workflow with an explicit name. Only managed copies can be replaced; source files are never overwritten.' }
+    }
+    if (Buffer.byteLength(JSON.stringify(graphDetail)) > 112 * 1024) throw new Error('Graph plus bindings exceeds the bounded inspection limit. Use a smaller workflow.')
+  }
   const classTypes = Array.from(collectWorkflowClassTypes(inspectedWorkflowJson)).sort()
   const hintManifest = await loadMcpNodeHintManifest()
   const includeValidation = options?.includeValidation !== false
@@ -3048,8 +3781,10 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   const missing = validation?.validation?.missing || []
   const installHints = buildWorkflowNodeHints(missing, hintManifest)
   const recommendations = []
-  if (resolved.workflow.source === 'my-workflows' && resolved.workflow.mcpRunnable === false) {
-    recommendations.push(resolved.workflow.readinessMessage || 'Add the missing Belrog marker nodes and save the workflow again.')
+  if (resolved.workflow.source === 'my-workflows' && resolved.workflow.hasApiWorkflow === true) {
+    recommendations.push('Use the saved API copy with queue_comfyui_workflow; Velorn markers are not required for this shared Runs route. Preview and review exact overrides before applying.')
+  } else if (resolved.workflow.source === 'my-workflows' && resolved.workflow.mcpRunnable === false) {
+    recommendations.push(resolved.workflow.readinessMessage || 'Add the missing Velorn marker nodes and save the workflow again.')
   }
   if (includeValidation && validation?.validation?.ok) {
     recommendations.push('All workflow node classes are available in the configured local ComfyUI.')
@@ -3068,8 +3803,9 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
   }
 
   return {
-    action: 'inspect_Belrog_workflow',
+    action: 'inspect_velorn_workflow',
     success: true,
+    ...graphDetail,
     workflow: {
       id: resolved.workflow.id,
       libraryId: resolved.workflow.libraryId,
@@ -3084,6 +3820,7 @@ async function inspectComfyStudioWorkflowInternal(options = {}) {
       source: resolved.workflow.source,
       outputType: resolved.workflow.outputType,
       mcpRunnable: resolved.workflow.mcpRunnable,
+      savedRunsReady: graphDetail.savedRunsReady ?? (resolved.workflow.source === 'imported' || resolved.workflow.hasApiWorkflow === true),
       readiness: resolved.workflow.readiness,
       readinessMessage: resolved.workflow.readinessMessage,
       blockers: resolved.workflow.blockers,
@@ -3231,7 +3968,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       blocked: false,
       needed: true,
       risk: 'medium',
-      summary: 'Belrog will start ComfyUI using the configured launcher.',
+      summary: 'Velorn will start ComfyUI using the configured launcher.',
     }
   }
 
@@ -3249,7 +3986,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
         blocked: true,
         needed: true,
         risk: 'high',
-        summary: 'Belrog cannot safely stop this ComfyUI process because it was started outside Belrog.',
+        summary: 'Velorn cannot safely stop this ComfyUI process because it was started outside Velorn.',
         recommendations: ['Stop ComfyUI from the terminal, Docker, or desktop app that launched it.'],
       }
     }
@@ -3257,7 +3994,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       blocked: false,
       needed: true,
       risk: 'high',
-      summary: 'Belrog will stop the ComfyUI process it owns. This can interrupt queued or running generations.',
+      summary: 'Velorn will stop the ComfyUI process it owns. This can interrupt queued or running generations.',
     }
   }
 
@@ -3267,7 +4004,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
         blocked: true,
         needed: true,
         risk: 'high',
-        summary: 'Belrog cannot safely restart an external ComfyUI process.',
+        summary: 'Velorn cannot safely restart an external ComfyUI process.',
         recommendations: ['Restart ComfyUI from the terminal, Docker, or desktop app that launched it.'],
       }
     }
@@ -3285,7 +4022,7 @@ function getComfyLauncherControlPlan(action, before, launcherConfig) {
       needed: true,
       risk: alreadyActive ? 'high' : 'medium',
       summary: alreadyActive
-        ? 'Belrog will stop and start the ComfyUI process it owns. This can interrupt queued or running generations.'
+        ? 'Velorn will stop and start the ComfyUI process it owns. This can interrupt queued or running generations.'
         : 'ComfyUI is not running, so restart will behave like start.',
     }
   }
@@ -3365,7 +4102,7 @@ const COMFY_ROOT_SETTING_KEY = 'comfyRootPath'
 const launcherLogDir = path.join(app.getPath('userData'), 'logs')
 let cachedLauncherConfig = safeCloneLauncherConfig(DEFAULT_LAUNCHER_CONFIG)
 let cachedHttpBase = `http://127.0.0.1:${DEFAULT_LOCAL_COMFY_PORT}`
-let launcherQuitConfirmed = false
+let desktopClose
 
 function getOwnedRunningComfyLauncherState() {
   const state = comfyLauncher.getState()
@@ -3382,14 +4119,20 @@ async function readSettingsRaw() {
   }
 }
 
-async function writeSettingsRaw(mutator) {
+async function writeSettingsRaw(mutator, beforeCommit, onCommitted) {
   const writeOperation = settingsWriteQueue
     .catch(() => {})
     .then(async () => {
       const current = await readSettingsRaw()
       const mutated = typeof mutator === 'function' ? mutator(current) : current
       const next = mutated && typeof mutated === 'object' && !Array.isArray(mutated) ? mutated : {}
-      await writeFileAtomic(settingsPath, JSON.stringify(next, null, 2), 'utf8')
+      const connectionChanged = JSON.stringify(current?.[COMFY_CONNECTION_SETTING_KEY]) !== JSON.stringify(next?.[COMFY_CONNECTION_SETTING_KEY])
+      // All native connection-setting paths converge here (including MCP and
+      // generic settings). Invalidate consent across the asynchronous write,
+      // including requests started while that write was in flight.
+      if (connectionChanged) generationSpending.cancelPending('connection-changed')
+      try { await writeFileAtomic(settingsPath, JSON.stringify(next, null, 2), 'utf8', beforeCommit, onCommitted) }
+      finally { if (connectionChanged) generationSpending.cancelPending('connection-changed') }
       return next
     })
   settingsWriteQueue = writeOperation.then(() => {}, () => {})
@@ -3504,8 +4247,19 @@ async function runStartupChecks() {
 // Window Controls
 // ============================================
 
-ipcMain.handle('window:minimize', () => {
-  if (!mainWindow || mainWindow.isDestroyed()) return false
+registerViewerPresentationIpc(ipcMain, () => viewerPresentation)
+
+async function finishViewerPresentationForWindowControl() {
+  const window = mainWindow
+  if (!window || window.isDestroyed()) return null
+  // Viewer presentation must not become ordinary app fullscreen when the
+  // window is minimized/restored or another window control arrives mid-entry.
+  await viewerPresentation?.setEnabled(false, 'window-control')
+  return mainWindow === window && !window.isDestroyed() ? window : null
+}
+
+ipcMain.handle('window:minimize', async () => {
+  if (!await finishViewerPresentationForWindowControl()) return false
 
   restoreFullscreenAfterMinimize = mainWindow.isFullScreen()
   if (!restoreFullscreenAfterMinimize) {
@@ -3524,8 +4278,8 @@ ipcMain.handle('window:minimize', () => {
   return true
 })
 
-ipcMain.handle('window:toggleMaximize', () => {
-  if (!mainWindow) return false
+ipcMain.handle('window:toggleMaximize', async () => {
+  if (!await finishViewerPresentationForWindowControl()) return false
   if (mainWindow.isFullScreen()) {
     mainWindow.setFullScreen(false)
   } else if (mainWindow.isMaximized()) {
@@ -3551,8 +4305,8 @@ ipcMain.handle('window:getState', () => {
   return getWindowState()
 })
 
-ipcMain.handle('window:toggleFullScreen', () => {
-  if (!mainWindow) return false
+ipcMain.handle('window:toggleFullScreen', async () => {
+  if (!await finishViewerPresentationForWindowControl()) return false
   mainWindow.setFullScreen(!mainWindow.isFullScreen())
   return true
 })
@@ -3625,14 +4379,28 @@ async function createWindow(restoredWindowState = null) {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      // The viewer controls native presentation separately (simple fullscreen
+      // on macOS), so HTML fullscreen must not create a macOS fullscreen Space.
+      disableHtmlFullscreenWindowResize: true,
       // In dev mode, disable web security to allow file:// URLs from localhost
       // In production, the app loads from file:// so this isn't an issue
       webSecurity: !isDev,
     }
   })
   const mainWindowContentsId = mainWindow.webContents.id
+  viewerPresentation = createViewerPresentation({
+    window: mainWindow,
+    onChange: (state) => {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send('viewer:presentationChanged', state)
+      }
+    },
+    onRestored: scheduleSaveMainWindowState,
+    onError: (error) => console.warn('[Viewer presentation]', error?.message || error),
+  })
 
   // Mirror the main window's console and crash events to userData/app.log
+  crashRecovery.attach(mainWindow)
   // (same append+cap pattern as export-worker.log). Failures before the
   // export worker spawns — project open, export click, job assembly — are
   // otherwise invisible in support logs.
@@ -3651,7 +4419,7 @@ async function createWindow(restoredWindowState = null) {
       appLog('!!! MAIN WINDOW UNRESPONSIVE')
     })
   } else {
-    console.error(`[Belrog] Could not write ${appLogPath}; main-window console mirroring disabled for this session.`)
+    console.error(`[Velorn] Could not write ${appLogPath}; main-window console mirroring disabled for this session.`)
   }
   mainWindow.webContents.on('render-process-gone', () => {
     abortOpticalFlowJobsForOwner(mainWindowContentsId)
@@ -3858,15 +4626,29 @@ async function createWindow(restoredWindowState = null) {
       }
     })
 
+    // ComfyUI's own Download button for a missing model hands the file to
+    // Velorn (see comfyModelDownload.cjs). The hook goes into every local
+    // ComfyUI frame each time it loads.
+    mainWindow.webContents.on('did-frame-finish-load', (_event, isMainFrame, frameProcessId, frameRoutingId) => {
+      if (isMainFrame) return
+      try {
+        const frame = webFrameMain.fromId(frameProcessId, frameRoutingId)
+        if (!frame || !isLocalComfyFrameUrl(frame.url)) return
+        frame.executeJavaScript(COMFY_MODEL_DOWNLOAD_HOOK).catch(() => {})
+      } catch (_) {
+        // The frame went away while loading; the next load gets the hook.
+      }
+    })
+
     mainWindow.webContents.setWindowOpenHandler(({ url, frameName }) => {
       // Detached preview ("clean feed") window — an about:blank child the
       // renderer scripts directly (see src/hooks/usePreviewPopout.js). No
       // parent option: it must be free to sit on any display independently.
-      if (frameName === 'Belrog-preview-popout') {
+      if (frameName === 'velorn-preview-popout') {
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            title: 'Belrog Preview',
+            title: 'Velorn Preview',
             autoHideMenuBar: true,
             backgroundColor: '#000000',
             minWidth: 240,
@@ -3931,56 +4713,7 @@ async function createWindow(restoredWindowState = null) {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
   
-  mainWindow.on('close', async (event) => {
-    if (launcherQuitConfirmed) return
-    if (!getOwnedRunningComfyLauncherState()) return
-
-    event.preventDefault()
-    try {
-      if (!safeCloneLauncherConfig(cachedLauncherConfig).stopOnQuit) {
-        launcherQuitConfirmed = true
-        try {
-          await comfyLauncher.detach()
-        } catch (error) {
-          console.warn('[comfyLauncher] detach during close failed:', error?.message || error)
-        }
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.close()
-        } else {
-          app.quit()
-        }
-        return
-      }
-
-      const choice = await dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['Stop ComfyUI & quit', 'Leave ComfyUI running', 'Cancel'],
-        defaultId: 0,
-        cancelId: 2,
-        title: 'Quit Belrog?',
-        message: 'ComfyUI is still running.',
-        detail: 'Belrog started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Belrog will quit but ComfyUI stays up. Handy when you\'re just relaunching Belrog and don\'t want to wait for ComfyUI to boot again.',
-      })
-      if (choice.response === 2) return
-      launcherQuitConfirmed = true
-      try {
-        if (choice.response === 1) {
-          await comfyLauncher.detach()
-        } else {
-          await comfyLauncher.shutdown({ confirmStop: true })
-        }
-      } catch (error) {
-        console.warn('[comfyLauncher] shutdown/detach during close failed:', error?.message || error)
-      }
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.close()
-      } else {
-        app.quit()
-      }
-    } catch (error) {
-      console.warn('[comfyLauncher] close handler error:', error?.message || error)
-    }
-  })
+  desktopClose.attach(mainWindow)
 
   mainWindow.on('closed', () => {
     abortOpticalFlowJobsForOwner(mainWindowContentsId)
@@ -3989,6 +4722,7 @@ async function createWindow(restoredWindowState = null) {
       mainWindowStateSaveTimer = null
     }
     mainWindow = null
+    viewerPresentation = null
   })
 
   mainWindow.on('restore', () => {
@@ -4164,6 +4898,19 @@ ipcMain.handle('fs:writeFileFromArrayBuffer', async (event, filePath, arrayBuffe
     return { success: true }
   } catch (err) {
     return { success: false, error: err.message }
+  }
+})
+
+// User-media removal is deliberately separate from permanent cache cleanup.
+ipcMain.handle('fs:trashAssetFiles', async (event, payload) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents
+    || !event.senderFrame || event.senderFrame !== mainWindow.webContents.mainFrame) {
+    return { success: false, results: [], error: 'Only the Velorn editor may move asset files to Trash.' }
+  }
+  try {
+    return await mediaPreparation.runExclusiveWhenIdle(() => assetTrash.trashAssetFiles(payload))
+  } catch (error) {
+    return { success: false, results: [], error: error?.message || 'Could not safely move asset files to Trash.' }
   }
 })
 
@@ -4366,6 +5113,9 @@ ipcMain.handle('media:getVideoFps', async (event, filePath) => {
   if (!result.success) return result
   return {
     success: true,
+    duration: result.duration || null,
+    width: result.width || null,
+    height: result.height || null,
     fps: result.fps || null,
     hasAudio: result.hasAudio,
     videoCodec: result.videoCodec || null,
@@ -4377,6 +5127,8 @@ ipcMain.handle('media:getVideoFps', async (event, filePath) => {
 })
 
 const audioWaveformCache = new Map()
+
+registerAudioAnalysisHandlers({ ipcMain, app, ffmpegPath, ffprobePath })
 
 function resolveMediaInputPath(mediaInput) {
   if (!mediaInput || typeof mediaInput !== 'string') return null
@@ -4700,14 +5452,40 @@ ipcMain.handle('media:extractVideoPoster', async (event, inputPath, outputPath, 
 //      mp4 files reliably OOMs Chromium (renderer goes black). FFmpeg demuxes
 //      the audio stream without decoding video, so memory stays flat.
 // Local caption engine (whisper.cpp): status / install / transcribe handlers.
-registerCaptionWhisperHandlers({
+const captionWhisperService = registerCaptionWhisperHandlers({
   app,
   ipcMain,
   ffmpegPath,
   getMainWindow: () => mainWindow,
 })
 
+// Song listening for the music video: timed lyrics from a song file. It
+// shares whisper-cli and its speech model with captions.
+registerSongMapHandlers({ ipcMain, app, ffmpegPath, captionService: captionWhisperService })
+
+const captionEngineSetup = createCaptionEngineSetup({
+  service: captionWhisperService,
+  assertCurrent: guardAgentNativeAction(async () => {
+    if (exportJobs.activeId) throw new Error('Export has priority.')
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('The Velorn window is unavailable.')
+  }),
+  confirmInstall: async plan => {
+    const window = mainWindow
+    if (!window || window.isDestroyed()) return false
+    if (agentDispatchScope.current()?.trustedFullAccess) return true
+    const result = await dialog.showMessageBox(window, {
+      type: 'question', title: 'Install local caption engine?',
+      message: `Install ${plan.label} for local transcription?`,
+      detail: `Estimated download: ${(plan.knownApproxDownloadBytes / 1000000).toFixed(1)} MB${plan.hasUnknownDownloadSize ? ', plus the optional speech detector (size unavailable)' : ''}. Unpacked disk usage may be larger.\n\nSources:\n${plan.downloads.map(item => item.url).join('\n')}\n\nFiles are stored in Velorn application data, not ComfyUI. This does not start transcription or change the timeline. Timeline Undo cannot remove installed files.`,
+      buttons: ['Cancel', 'Install'], defaultId: 0, cancelId: 0, noLink: true,
+    })
+    return result.response === 1 && mainWindow === window && !window.isDestroyed()
+  },
+})
+
 ipcMain.handle('captions:mixTimelineAudio', async (event, options = {}) => {
+  const { buildAudioVolumeEnvelopeFilter } = await import('./audioVolumeEnvelope.mjs')
+  const { buildAudioEqFilters } = await import('./audioEq.mjs')
   if (!ffmpegPath) {
     return { success: false, error: 'FFmpeg binary not available.' }
   }
@@ -4792,8 +5570,10 @@ ipcMain.handle('captions:mixTimelineAudio', async (event, options = {}) => {
     if (clipDuration <= 0.001) { skip(clip, 'clipDuration<=0'); continue }
     const clipEnd = clipStart + clipDuration
 
-    const visibleStart = Math.max(0, clipStart)
-    const visibleEnd = Math.min(programDuration, clipEnd)
+    const windowStart = Number.isFinite(clip.playbackWindowStart) ? clip.playbackWindowStart : clipStart
+    const windowEnd = Number.isFinite(clip.playbackWindowEnd) ? clip.playbackWindowEnd : clipEnd
+    const visibleStart = Math.max(0, clipStart, windowStart)
+    const visibleEnd = Math.min(programDuration, clipEnd, windowEnd)
     if (visibleEnd <= visibleStart) { skip(clip, 'off-program'); continue }
 
     const clipOffsetOnTimeline = visibleStart - clipStart
@@ -4813,6 +5593,8 @@ ipcMain.handle('captions:mixTimelineAudio', async (event, options = {}) => {
       sourceDurationSec,
       delayMs,
       timeScale,
+      volumeEnvelopeFilter: buildAudioVolumeEnvelopeFilter(clip, clipOffsetOnTimeline),
+      audioEq: clip.audioEq,
     })
     decisions.push({
       clipId: clip.id,
@@ -4871,6 +5653,8 @@ ipcMain.handle('captions:mixTimelineAudio', async (event, options = {}) => {
       // layouts combine cleanly.
       'aformat=channel_layouts=mono',
     ]
+    filters.push(...buildAudioEqFilters(entry.audioEq, normalizedSampleRate))
+    if (entry.volumeEnvelopeFilter) filters.push(entry.volumeEnvelopeFilter)
     if (entry.delayMs > 0) {
       filters.push(`adelay=${entry.delayMs}:all=1`)
     }
@@ -4968,6 +5752,14 @@ ipcMain.handle('settings:set', async (event, key, value) => {
     if (!key || typeof key !== 'string') {
       return { success: false, error: 'Missing setting key.' }
     }
+    // This command-bearing preference is native-picker owned. Generic settings
+    // must not bypass executable validation, idle checks or grant revocation.
+    if (key === 'connectedAgentCodexExecutable') {
+      return { success: false, error: 'Choose the Codex installation in Agent settings.' }
+    }
+    if (key === GENERATION_SPENDING_SETTING_KEY || key === GENERATION_LOCAL_TRUST_SETTING_KEY) {
+      return { success: false, error: 'Change Generation spending through its native confirmation in Agent settings.' }
+    }
 
     await writeSettingsRaw((settings) => ({
       ...settings,
@@ -4985,6 +5777,12 @@ ipcMain.handle('settings:delete', async (event, key) => {
     if (!key || typeof key !== 'string') {
       return { success: false, error: 'Missing setting key.' }
     }
+    if (key === 'connectedAgentCodexExecutable') {
+      return { success: false, error: 'Use automatic Codex detection in Agent settings.' }
+    }
+    if (key === GENERATION_SPENDING_SETTING_KEY || key === GENERATION_LOCAL_TRUST_SETTING_KEY) {
+      return { success: false, error: 'Change Generation spending in Agent settings.' }
+    }
 
     await writeSettingsRaw((settings) => {
       const next = { ...settings }
@@ -4995,150 +5793,6 @@ ipcMain.handle('settings:delete', async (event, key) => {
     return { success: true }
   } catch (err) {
     return { success: false, error: err.message }
-  }
-})
-
-// ============================================
-// Belrog Remote Server / SSH Tunnel
-// ============================================
-
-ipcMain.handle('belrog:getRemoteServerSettings', async () => {
-  try {
-    return await getRemoteServerSettings(readSettingsRaw)
-  } catch (error) {
-    return { ...DEFAULT_REMOTE_SERVER_SETTINGS }
-  }
-})
-const MCP_EXPOSURE_SETTING_KEY = 'mcpExposure'
-const DEFAULT_MCP_EXPOSURE_SETTINGS = { enabled: false, host: '0.0.0.0', token: '' }
-
-async function getMcpExposureSettings() {
-  try {
-    const raw = await readSettingsRaw()
-    const v = raw?.[MCP_EXPOSURE_SETTING_KEY]
-    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(v && typeof v === 'object' ? v : {}) }
-  } catch {
-    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
-  }
-}
-
-ipcMain.handle('belrog:getMcpExposure', async () => {
-  try {
-    return await getMcpExposureSettings()
-  } catch (error) {
-    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
-  }
-})
-
-ipcMain.handle('belrog:saveMcpExposure', async (event, settings) => {
-  try {
-    const next = { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(settings || {}) }
-    if (next.enabled && (next.host || '0.0.0.0') === '0.0.0.0' && !next.token) {
-      return { success: false, error: 'A token is required when binding 0.0.0.0.' }
-    }
-    await writeSettingsRaw((current) => ({ ...(current || {}), [MCP_EXPOSURE_SETTING_KEY]: next }))
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:saveRemoteServerSettings', async (event, settings) => {
-  try {
-    return await saveRemoteServerSettings(writeSettingsRaw, settings)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:connect', async () => {
-  try {
-    const settings = await getRemoteServerSettings(readSettingsRaw)
-    if (!settings.enabled) {
-      return { success: false, error: 'Remote server is not enabled' }
-    }
-    if (!settings.sshHost || !settings.sshUsername || !settings.sshKeyPath) {
-      return { success: false, error: 'SSH host, username, and key path are required' }
-    }
-    const result = await establishTunnel({
-      sshHost: settings.sshHost,
-      sshPort: settings.sshPort || 22,
-      sshUsername: settings.sshUsername,
-      sshKeyPath: settings.sshKeyPath,
-      tunnelLocalPort: settings.tunnelLocalPort || 8188,
-      tunnelRemotePort: settings.tunnelRemotePort || 8188,
-    })
-    if (result.success) {
-      // Verify ComfyUI is reachable
-      const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
-      if (!comfyCheck.ok) {
-        closeTunnel()
-        return { success: false, error: `Connected to SSH but ComfyUI not reachable: ${comfyCheck.message}` }
-      }
-    }
-    return result
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:disconnect', async () => {
-  try {
-    return closeTunnel()
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:getTunnelStatus', async () => {
-  return getTunnelStatus()
-})
-
-ipcMain.handle('belrog:checkRemoteComfyUI', async (event, port = 8188) => {
-  return await checkRemoteComfyUI(port)
-})
-
-ipcMain.handle('belrog:listRemoteModels', async () => {
-  try {
-    const settings = await getRemoteServerSettings(readSettingsRaw)
-    return await listRemoteModels(settings.comfyModelRoot)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:listRemoteNodes', async () => {
-  try {
-    const settings = await getRemoteServerSettings(readSettingsRaw)
-    return await listRemoteNodes(settings.comfyNodesRoot)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:checkRemoteModel', async (event, modelName) => {
-  try {
-    const settings = await getRemoteServerSettings(readSettingsRaw)
-    return await checkRemoteModel(settings.comfyModelRoot, modelName)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:installRemoteNode', async (event, gitUrl, nodeName = null) => {
-  try {
-    const settings = await getRemoteServerSettings(readSettingsRaw)
-    return await installRemoteNode(settings.comfyNodesRoot, gitUrl, nodeName)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
-  }
-})
-
-ipcMain.handle('belrog:execRemoteCommand', async (event, command) => {
-  try {
-    return await execRemoteCommand(command)
-  } catch (error) {
-    return { success: false, error: error?.message || String(error) }
   }
 })
 
@@ -5219,7 +5873,9 @@ ipcMain.handle('mcp:getStatus', async () => {
   }
 })
 
-ipcMain.handle('mcp:updateSnapshot', async (_event, snapshot = null) => {
+ipcMain.handle('mcp:updateSnapshot', async (event, snapshot = null) => {
+  // Export/pop-out windows must not replace the active editor's document.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return { success: false }
   try {
     const ok = mcpServer?.updateSnapshot?.(snapshot)
     return { success: Boolean(ok) }
@@ -5229,13 +5885,28 @@ ipcMain.handle('mcp:updateSnapshot', async (_event, snapshot = null) => {
 })
 
 ipcMain.on('mcp:actionResult', (event, response = {}) => {
-  if (mainWindow && event.sender !== mainWindow.webContents) return
+  if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) return
   const id = response?.id
   const pending = id ? pendingMcpActionRequests.get(id) : null
   if (!pending) return
 
   clearTimeout(pending.timeout)
   pendingMcpActionRequests.delete(id)
+
+  // Publish before resolving/rejecting: the next RPC must see the document
+  // produced by this action, not the snapshot from up to 350 ms earlier.
+  try {
+    if (response.snapshotError || !mcpServer?.updateSnapshot?.(response.snapshot)) {
+      throw new Error(response.snapshotError || 'No fresh editor snapshot was received.')
+    }
+    agentDispatchScope.complete(pending.agentScope, response, pending.action)
+  } catch (error) {
+    const outcome = response.success === false
+      ? `reported an action error (${response.error || 'unknown error'})`
+      : 'completed the action'
+    pending.reject(new Error(`Velorn ${outcome}, but its MCP snapshot could not be refreshed. Do not automatically repeat the action; inspect the project before continuing. ${error?.message || String(error)}`))
+    return
+  }
 
   if (response.success === false) {
     pending.reject(new Error(response.error || 'MCP action failed.'))
@@ -5386,12 +6057,40 @@ ipcMain.handle('comfyLauncher:openLogFile', async () => {
 
 ipcMain.handle('comfyLauncher:detectLaunchers', async (_event, payload = {}) => {
   const explicitRoot = String(payload?.comfyRootPath || '').trim()
-  const rootPath = explicitRoot || (await readSettingsRaw())?.[COMFY_ROOT_SETTING_KEY] || ''
   try {
-    const candidates = await detectLaunchersForComfyRoot(rootPath)
+    const settings = await readSettingsRaw()
+    const rootPath = explicitRoot || settings?.[COMFY_ROOT_SETTING_KEY] || ''
+    const config = safeCloneLauncherConfig(settings?.[LAUNCHER_SETTING_KEY])
+    const candidates = await comfySetup.discoverInstallations({ comfyRootPath: rootPath, ...config })
     return { success: true, comfyRootPath: rootPath, candidates }
   } catch (error) {
     return { success: false, error: error?.message || String(error), candidates: [] }
+  }
+})
+
+// Read-only, bounded local discovery. Finding an endpoint never starts a
+// process, adopts it, changes settings or queues generation.
+ipcMain.handle('comfyLauncher:discoverConnections', async () => {
+  try {
+    const configuredPort = await resolveLocalComfyPort()
+    const connections = await comfySetup.discoverRunning({ configuredPort })
+    return { success: true, connections }
+  } catch (error) {
+    return { success: false, connections: [], error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('comfyLauncher:probeConnection', async (_event, payload = {}) => {
+  const port = sanitizeLocalComfyPort(payload?.port)
+  if (!port) return { success: false, error: 'Enter a valid local ComfyUI port (1–65535).' }
+  try {
+    const connection = await comfySetup.probeConnection(port)
+    return connection ? { success: true, connection } : {
+      success: false,
+      error: `No ComfyUI server responded on port ${port}. Open ComfyUI, start your local instance, and check its port.`,
+    }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
   }
 })
 
@@ -5447,7 +6146,7 @@ ipcMain.handle('comfyLauncher:pickMacApp', async () => {
 })
 
 // ============================================
-// Belrog Bridge IPC
+// Velorn Bridge IPC
 // ============================================
 
 ipcMain.handle('comfyBridge:getStatus', async () => {
@@ -5458,7 +6157,7 @@ ipcMain.handle('comfyBridge:getStatus', async () => {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: error?.message || 'Could not check the Belrog Bridge.',
+      error: error?.message || 'Could not check the Velorn Bridge.',
     }
   }
 })
@@ -5471,7 +6170,7 @@ ipcMain.handle('comfyBridge:install', async () => {
       success: false,
       state: 'unavailable',
       installed: false,
-      error: error?.message || 'Could not install the Belrog Bridge.',
+      error: error?.message || 'Could not install the Velorn Bridge.',
     }
   }
 })
@@ -5490,10 +6189,33 @@ ipcMain.handle('comfyui:loadWorkflowGraph', async (event, payload = {}) => {
       return { success: false, error: 'Missing ComfyUI workflow graph payload.' }
     }
 
+    let beforeLoad
+    if (payload.expectedContext !== undefined) {
+      const window = mainWindow
+      const expected = payload.expectedContext
+      const assertWindow = () => {
+        if (!window || window !== mainWindow || window.isDestroyed() || window.webContents.isDestroyed()
+          || event?.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
+          throw new Error('Saved workflows can only be opened from the current main Velorn window.')
+        }
+        if (exportJobs.activeId) throw new Error('Export has priority. Open the saved workflow after export finishes.')
+      }
+      beforeLoad = async () => {
+        assertWindow()
+        const current = (await performMcpRendererAction({ action: 'get_transport_state' })).agentContext?.context
+        assertWindow()
+        if (!expected || !current?.session || ['session', 'projectKey', 'timelineId'].some(key => expected[key] !== current[key])) {
+          throw new Error('The project or timeline changed. Open the saved workflow again from the current project.')
+        }
+      }
+      await beforeLoad()
+    }
+
     await loadWorkflowGraphInEmbeddedComfy({
       workflowGraph: payload.workflowGraph,
       comfyBaseUrl: payload.comfyBaseUrl || 'http://127.0.0.1:8188',
       waitForMs: payload.waitForMs,
+      beforeLoad,
     })
 
     return { success: true }
@@ -5605,104 +6327,9 @@ ipcMain.handle('workflowSetup:validateRoot', async (event, rootPath) => {
   }
 })
 
-/**
- * Remote-ComfyUI context (plan C3). Mode is explicit: remote mode is ON
- * only when belrogRemoteServer.enabled is true AND the tunnel is currently
- * active AND the remote model root is configured. No probing.
- */
-async function resolveRemoteComfyContext() {
-  const [tunnelStatus, remoteSettings] = await Promise.all([
-    getTunnelStatus(),
-    getRemoteServerSettings(readSettingsRaw),
-  ])
-  if (!remoteSettings?.enabled || !tunnelStatus?.active) {
-    return { remote: false }
-  }
-  const modelsRoot = String(remoteSettings.comfyModelRoot || '').trim()
-  const nodesRoot = String(remoteSettings.comfyNodesRoot || '').trim()
-  if (!modelsRoot) {
-    return {
-      remote: false,
-      remoteMisconfigured: true,
-      remoteError: 'Remote mode is on but the remote models folder is not set (Settings → Remote Server → comfyModelRoot).',
-    }
-  }
-  return {
-    remote: true,
-    modelsRoot,
-    nodesRoot,
-    sshHost: String(remoteSettings.sshHost || ''),
-    tunnelLocalPort: Number(remoteSettings.tunnelLocalPort) || 8188,
-  }
-}
-
-/** Validate the remote ComfyUI target over the tunnel (replaces the local folder validation). */
-async function validateRemoteComfyRootForSetup(context) {
-  const comfyCheck = await checkRemoteComfyUI(context.tunnelLocalPort)
-  if (!comfyCheck.ok) {
-    return {
-      success: false,
-      isValid: false,
-      error: `Remote ComfyUI not reachable through the tunnel: ${comfyCheck.message}`,
-      warnings: [],
-      remote: true,
-      normalizedPath: '',
-      customNodesPath: context.nodesRoot || '',
-      modelsPath: context.modelsRoot || '',
-      pythonCommand: '',
-      python: null,
-    }
-  }
-  const nodesCheck = context.nodesRoot
-    ? await listRemoteNodes(context.nodesRoot)
-    : { success: false, error: 'not configured' }
-  return {
-    success: true,
-    isValid: true,
-    error: '',
-    warnings: nodesCheck.success ? [] : [`Remote custom_nodes folder not readable (${nodesCheck.error}) — node packs will need manual install.`],
-    remote: true,
-    normalizedPath: `remote:${context.sshHost}`,
-    customNodesPath: context.nodesRoot || '',
-    modelsPath: context.modelsRoot || '',
-    pythonCommand: '',
-    python: null,
-  }
-}
-
 ipcMain.handle('workflowSetup:checkFiles', async (_event, payload = {}) => {
   const results = []
   try {
-    // Remote mode: models live on the server; existence checks run over SSH.
-    const remoteCtx = await resolveRemoteComfyContext()
-    if (remoteCtx.remote) {
-      const remoteValidation = await validateRemoteComfyRootForSetup(remoteCtx)
-      if (!remoteValidation.isValid) {
-        return { success: false, error: remoteValidation.error || 'Remote ComfyUI not reachable.', results, remote: true }
-      }
-      const files = Array.isArray(payload?.files) ? payload.files : []
-      for (const file of files) {
-        const filename = String(file?.filename || '').trim()
-        const targetSubdir = String(file?.targetSubdir || '').trim()
-        if (!filename) {
-          results.push({ filename: '', targetSubdir, exists: false, remote: true })
-          continue
-        }
-        const rootDir = targetSubdir
-          ? `${remoteCtx.modelsRoot}/${targetSubdir}`
-          : remoteCtx.modelsRoot
-        const check = await checkRemoteModel(rootDir, filename)
-        results.push({
-          filename,
-          targetSubdir,
-          exists: Boolean(check?.exists),
-          resolvedPath: check?.exists ? check.path : '',
-          remote: true,
-        })
-      }
-      return { success: true, results, remote: true, modelsPath: remoteCtx.modelsRoot }
-    }
-
     const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
     if (!validation.isValid || !validation.modelsPath) {
       return {
@@ -5827,35 +6454,6 @@ ipcMain.handle('workflowSetup:checkFiles', async (_event, payload = {}) => {
 
 ipcMain.handle('workflowSetup:diskSpace', async (_event, payload = {}) => {
   try {
-    // Remote mode: disk space is checked ON THE SERVER (df over SSH), not on
-    // the local machine - that's the partition the models will land on.
-    const remoteCtx = await resolveRemoteComfyContext()
-    if (remoteCtx.remote) {
-      const probe = await execRemoteCommand(
-        `mkdir -p ${remoteModelInstall.quoteRemoteArg(remoteCtx.modelsRoot)} 2>/dev/null; df -P -B1 ${remoteCtx.modelsRoot} 2>/dev/null | tail -1`
-      )
-      if (!probe.success) {
-        return {
-          success: false,
-          error: `Could not check remote disk space: ${probe.stderr || probe.error}`,
-          freeBytes: null,
-          totalBytes: null,
-          remote: true,
-        }
-      }
-      // df -P -B1 output: Filesystem 1024-blocks Used Available Capacity Mounted
-      const parts = String(probe.stdout || '').trim().split(/\s+/)
-      const totalBlocks = Number(parts[1])
-      const availableBlocks = Number(parts[3])
-      return {
-        success: true,
-        freeBytes: Number.isFinite(availableBlocks) ? availableBlocks : null,
-        totalBytes: Number.isFinite(totalBlocks) ? totalBlocks : null,
-        modelsPath: remoteCtx.modelsRoot,
-        remote: true,
-      }
-    }
-
     const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
     if (!validation.isValid || !validation.modelsPath) {
       return {
@@ -5867,11 +6465,32 @@ ipcMain.handle('workflowSetup:diskSpace', async (_event, payload = {}) => {
     }
 
     const stats = await fs.statfs(validation.modelsPath)
+    const here = { freeBytes: Number(stats.bavail) * Number(stats.bsize), totalBytes: Number(stats.blocks) * Number(stats.bsize) }
+    // With `models` (each { targetSubdir }), also say where each would be downloaded and
+    // how much room that disk has. The smallest figure is reported as the free space.
+    const wanted = Array.isArray(payload?.models) ? payload.models.slice(0, 64) : []
+    const destinations = []
+    if (wanted.length) {
+      const extraModelPaths = await loadExtraModelPathConfigForComfyRoot(validation.normalizedPath)
+      const seen = new Map()
+      for (const entry of wanted) {
+        const targetSubdir = typeof entry?.targetSubdir === 'string' ? entry.targetSubdir : ''
+        const choice = await resolveModelDownloadFolder(validation, targetSubdir, extraModelPaths)
+        if (seen.has(choice.folder)) continue
+        let freeBytes = null
+        if (choice.source === 'comfyui') freeBytes = here.freeBytes
+        else if (choice.available) { try { const disk = await fs.statfs(choice.folder); freeBytes = Number(disk.bavail) * Number(disk.bsize) } catch { freeBytes = null } }
+        const destination = { folder: choice.folder, source: choice.source, available: choice.available, freeBytes }
+        seen.set(choice.folder, destination); destinations.push(destination)
+      }
+    }
+    const known = destinations.map(item => item.freeBytes).filter(Number.isFinite)
     return {
       success: true,
-      freeBytes: Number(stats.bavail) * Number(stats.bsize),
-      totalBytes: Number(stats.blocks) * Number(stats.bsize),
+      freeBytes: known.length ? Math.min(...known) : here.freeBytes,
+      totalBytes: here.totalBytes,
       modelsPath: validation.modelsPath,
+      destinations,
     }
   } catch (error) {
     return {
@@ -5883,42 +6502,33 @@ ipcMain.handle('workflowSetup:diskSpace', async (_event, payload = {}) => {
   }
 })
 
-ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
-  // Remote mode is resolved FIRST: when the tunnelled server is the target,
-  // there is no local ComfyUI folder to validate, so the local root gate is
-  // bypassed entirely and the remote root is validated over SSH instead.
-  const remoteCtx = await resolveRemoteComfyContext()
-  // Misconfigured remote mode (remote on + tunnel active + models root empty):
-  // fail loudly instead of silently falling back to the LOCAL install path —
-  // explicit remote intent must not install into a local folder.
-  if (!remoteCtx.remote && remoteCtx.remoteMisconfigured) {
-    const message = remoteCtx.remoteError || 'Remote mode is on but the remote models folder is not set.'
-    return {
-      success: false,
-      error: message,
-      validation: null,
-      nodePacks: [],
-      models: [],
-      errors: [message],
-      restartRecommended: false,
-      remote: true,
-    }
-  }
-  const remoteValidation = remoteCtx.remote ? await validateRemoteComfyRootForSetup(remoteCtx) : null
-  if (remoteCtx.remote && !remoteValidation?.isValid) {
-    return {
-      success: false,
-      error: remoteValidation?.error || 'Remote ComfyUI not reachable through the tunnel.',
-      validation: remoteValidation,
-      nodePacks: [],
-      models: [],
-      errors: [remoteValidation?.error || 'Remote ComfyUI not reachable.'],
-      restartRecommended: false,
-      remote: true,
-    }
-  }
+// A model ComfyUI asked for with its own Download button: saved straight into
+// the ComfyUI models folder it belongs in, following extra_model_paths.yaml.
+const comfyModelDownloads = createComfyModelDownloads({
+  resolveFolder: async (folder) => {
+    const root = String((await readSettingsRaw())?.[COMFY_ROOT_SETTING_KEY] || '').trim()
+    if (!root) return { folder: '' }
+    const validation = await validateWorkflowSetupRootInternal(root)
+    if (!validation.isValid) return { folder: '', error: validation.error || 'Velorn could not use your ComfyUI folder. Check it in Settings.' }
+    return resolveModelDownloadFolder(validation, folder, await loadExtraModelPathConfigForComfyRoot(validation.normalizedPath))
+  },
+  fetchImpl: (url) => net.fetch(url),
+  fs,
+  createWriteStream: fsSync.createWriteStream,
+  notify: (payload) => {
+    if (payload.done) activeDownloads.delete(payload.id)
+    else activeDownloads.set(payload.id, payload)
+    updateDownloadProgressBar()
+    sendDownloadProgress(payload)
+  },
+})
+ipcMain.handle('comfy-model:download', async (event, payload = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return { success: false, error: 'This request did not come from Velorn.' }
+  return comfyModelDownloads.start({ url: payload?.url, name: payload?.name, directory: payload?.directory })
+})
 
-  const validation = remoteCtx.remote ? null : await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
+ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
+  const validation = await validateWorkflowSetupRootInternal(payload?.comfyRootPath)
   if (!validation.isValid) {
     return {
       success: false,
@@ -5950,187 +6560,6 @@ ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
     message: 'Starting workflow setup install...',
   })
 
-  // Remote mode: node packs + model bytes land ON THE SERVER. Node packs go
-  // through the existing installRemoteNode (git clone + pip over SSH); models
-  // download server-side (aria2c/wget/curl, resumable) and are verified with
-  // a remote sha256sum against the recipe's pinned hash. Nothing local.
-  // (remoteCtx + remoteValidation were resolved at the top of this handler.)
-  if (remoteCtx.remote) {
-    for (const task of nodePacks) {
-      const currentTaskIndex = completedTasks + 1
-      const gitUrl = String(task?.repoUrl || '').trim()
-      const targetDir = String(task?.installDirName || '').trim()
-      try {
-        if (!gitUrl) {
-          nodePackResults.push({ skipped: false, success: false, error: 'Node pack has no repo URL.', remote: true })
-          errors.push(`No repo URL for ${task?.displayName || task?.id || 'node pack'}.`)
-        } else {
-          const res = await installRemoteNode(remoteCtx.nodesRoot || remoteValidation.customNodesPath, gitUrl, targetDir || undefined)
-          if (res?.success) {
-            nodePackResults.push({ skipped: false, success: true, path: res.path, remote: true })
-          } else if (String(res?.error || '').startsWith('Node already installed')) {
-            nodePackResults.push({ skipped: true, success: true, path: res.error.replace('Node already installed at ', '').replace(' already installed at ', ''), remote: true })
-          } else {
-            nodePackResults.push({ skipped: false, success: false, error: res?.error || 'Remote node install failed.', remote: true })
-            errors.push(`Remote node install failed (${task?.displayName || task?.id}): ${res?.error || 'unknown'}`)
-          }
-        }
-      } catch (error) {
-        const message = error?.message || `Failed to install ${task?.displayName || task?.id || 'node pack'} on the remote server.`
-        nodePackResults.push({ skipped: false, success: false, error: message, remote: true })
-        errors.push(message)
-      }
-      completedTasks += 1
-      emitWorkflowSetupProgress({
-        stage: 'node-pack',
-        status: 'active',
-        taskType: 'node-pack',
-        currentLabel: task?.displayName || task?.id || 'Custom node pack',
-        currentTaskIndex,
-        totalTasks,
-        completedTasks,
-        overallPercent: getWorkflowSetupOverallPercent({ completedTasks, totalTasks }),
-        message: `Installed remote node ${task?.displayName || task?.id || 'pack'} on ${remoteCtx.sshHost || 'server'}.`,
-        remote: true,
-      })
-    }
-
-    for (const task of models) {
-      const currentTaskIndex = completedTasks + 1
-      const filename = String(task?.filename || '').trim()
-      const targetSubdir = String(task?.targetSubdir || '').trim()
-      const downloadUrl = String(task?.downloadUrl || '').trim()
-      const targetDir = targetSubdir ? `${remoteCtx.modelsRoot}/${targetSubdir}` : remoteCtx.modelsRoot
-      const label = task?.displayName || filename || 'Model'
-      try {
-        if (!filename) {
-          modelResults.push({ success: false, error: 'Missing filename.', remote: true })
-          errors.push(`Model task has no filename (${task?.targetSubdir || 'models'}).`)
-          completedTasks += 1
-          continue
-        }
-        const existing = await checkRemoteModel(targetDir, filename)
-        if (existing?.exists) {
-          modelResults.push({ success: true, skipped: true, path: existing.path, remote: true })
-          emitWorkflowSetupProgress({
-            stage: 'download', status: 'active', taskType: 'model',
-            currentLabel: label, currentTaskIndex, totalTasks, completedTasks,
-            overallPercent: getWorkflowSetupOverallPercent({ completedTasks: completedTasks + 1, totalTasks }),
-            message: `${label}: already on ${remoteCtx.sshHost || 'server'}, skipping.`, remote: true,
-          })
-          completedTasks += 1
-          continue
-        }
-        if (!/^https?:\/\//i.test(downloadUrl)) {
-          modelResults.push({ success: false, error: 'No curated download URL.', remote: true })
-          errors.push(`No download URL for ${label} - install it manually on ${remoteCtx.sshHost || 'the server'}.`)
-          completedTasks += 1
-          continue
-        }
-        // 1) Disk preflight on the server (size + 10% headroom).
-        const disk = await remoteModelInstall.checkRemoteDiskSpace(
-          execRemoteCommand,
-          targetDir,
-          Number(task?.sizeBytes) > 0 ? Number(task.sizeBytes) : 0,
-        )
-        if (!disk.ok) {
-          modelResults.push({ success: false, error: disk.error, remote: true })
-          errors.push(disk.error)
-          completedTasks += 1
-          continue
-        }
-        // 2) Start the download DETACHED on the server.
-        const started = await remoteModelInstall.startRemoteDownload(execRemoteCommand, {
-          url: downloadUrl,
-          targetDir,
-          filename,
-        })
-        if (!started.ok) {
-          modelResults.push({ success: false, error: started.error, remote: true })
-          errors.push(started.error)
-          completedTasks += 1
-          continue
-        }
-        // 3) Poll the remote file size to completion, streaming progress.
-        let lastReported = -1
-        const expectedBytes = Number(task?.sizeBytes) > 0 ? Number(task.sizeBytes) : null
-        const poll = await remoteModelInstall.pollRemoteDownload(execRemoteCommand, {
-          targetDir,
-          filename,
-          expectedBytes,
-          onProgress: (size, total) => {
-            const pct = Number.isFinite(total) && total > 0 ? Math.min(100, Math.round((size / total) * 100)) : null
-            // Report at most every 5% to keep the progress channel quiet.
-            if (pct !== null && (pct - lastReported >= 5 || pct >= 100)) {
-              lastReported = pct
-              emitWorkflowSetupProgress({
-                stage: 'download', status: 'active', taskType: 'model',
-                currentLabel: label, currentTaskIndex, totalTasks, completedTasks: completedTasks + 1,
-                taskPercent: pct,
-                overallPercent: pct,
-                message: `Downloading ${label} on ${remoteCtx.sshHost || 'server'}: ${remoteModelInstall.formatBytes(size)}${total ? ` / ${remoteModelInstall.formatBytes(total)}` : ''}`,
-                remote: true,
-              })
-            }
-          },
-        })
-        if (!poll.ok) {
-          modelResults.push({ success: false, error: poll.error, remote: true })
-          errors.push(poll.error)
-          completedTasks += 1
-          continue
-        }
-        // 4) Verify the remote sha256 against the recipe's pinned hash.
-        const verify = await remoteModelInstall.verifyRemoteFile(execRemoteCommand, {
-          targetDir,
-          filename,
-          expectedSha256: String(task?.sha256 || ''),
-        })
-        if (!verify.ok) {
-          modelResults.push({ success: false, error: verify.error, remote: true })
-          errors.push(verify.error)
-          completedTasks += 1
-          continue
-        }
-        modelResults.push({ success: true, path: `${targetDir}/${filename}`, sha256: verify.hash, remote: true })
-        emitWorkflowSetupProgress({
-          stage: 'download', status: 'active', taskType: 'model',
-          currentLabel: label, currentTaskIndex, totalTasks, completedTasks: completedTasks + 1,
-          taskPercent: 100, overallPercent: getWorkflowSetupOverallPercent({ completedTasks: completedTasks + 1, totalTasks }),
-          message: `${label} verified on ${remoteCtx.sshHost || 'server'} (sha256 ${verify.hash.slice(0, 12)}…).`, remote: true,
-        })
-      } catch (error) {
-        const message = error?.message || `Failed to download ${label} on the remote server.`
-        modelResults.push({ success: false, error: message, remote: true })
-        errors.push(message)
-      }
-      completedTasks += 1
-    }
-
-    emitWorkflowSetupProgress({
-      stage: 'install',
-      status: 'finished',
-      level: errors.length === 0 ? 'success' : 'warning',
-      totalTasks,
-      completedTasks: totalTasks,
-      overallPercent: 100,
-      message: errors.length === 0
-        ? `Workflow setup install finished on ${remoteCtx.sshHost || 'remote server'}.`
-        : `Workflow setup install finished on the remote server with errors.`,
-      remote: true,
-    })
-
-    return {
-      success: errors.length === 0,
-      validation: remoteValidation,
-      nodePacks: nodePackResults,
-      models: modelResults,
-      errors,
-      restartRecommended: nodePackResults.some((entry) => !entry?.skipped),
-      remote: true,
-    }
-  }
-
   for (const task of nodePacks) {
     const currentTaskIndex = completedTasks + 1
     try {
@@ -6160,14 +6589,16 @@ ipcMain.handle('workflowSetup:install', async (event, payload = {}) => {
     completedTasks += 1
   }
 
+  // Downloads follow extra_model_paths.yaml when it names a folder for the model's type.
+  const downloadExtraPaths = models.length ? await loadExtraModelPathConfigForComfyRoot(validation.normalizedPath) : null
   for (const task of models) {
     const currentTaskIndex = completedTasks + 1
-    const targetFolder = task?.targetSubdir
-      ? path.join(validation.modelsPath, task.targetSubdir)
-      : validation.modelsPath
+    const destination = await resolveModelDownloadFolder(validation, task?.targetSubdir, downloadExtraPaths)
+    const targetFolder = destination.folder
     const targetPath = path.join(targetFolder, task.filename)
 
     try {
+      if (!destination.available) throw new Error(`Your extra_model_paths.yaml sends ${task?.targetSubdir || 'these'} models to ${targetFolder}, but that folder isn't there. Connect that drive or fix the path, then try again. Nothing was downloaded for ${task?.filename || 'this file'}.`)
       const result = await downloadFileWithProgress(task, targetPath, {
         currentTaskIndex,
         totalTasks,
@@ -6260,7 +6691,7 @@ const abortAllOpticalFlowJobs = () => {
 }
 
 ipcMain.handle('export:runInWorker', async (event, payload) => {
-  if (exportWorkerWindow && !exportWorkerWindow.isDestroyed()) {
+  if (exportJobs.activeId || (exportWorkerWindow && !exportWorkerWindow.isDestroyed())) {
     return { success: false, error: 'Export already in progress' }
   }
   const requestedJobId = typeof payload?.jobId === 'string' ? payload.jobId.trim() : ''
@@ -6268,10 +6699,43 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     ? requestedJobId
     : `export-${crypto.randomUUID()}`
   const jobPayload = { ...payload, jobId }
-  const workerUrl = isDev
-    ? `http://127.0.0.1:5173?export=worker`
-    : `file://${path.join(__dirname, '../dist/index.html')}?export=worker`
-  const workerWindow = new BrowserWindow({
+  // This receipt is issued only before a worker is created or receives a job.
+  // Directory creation/empty reservations may have occurred, but no render did.
+  const destinationRefusal = error => ({ success: false, code: 'EXPORT_NOT_STARTED',
+    outcome: 'not-started', workerStarted: false, phase: 'destination', jobId,
+    outputPath: payload?.postProcess?.outputPath || payload?.outputPath,
+    filesystemMayHaveChanged: true, error: error?.message || String(error) })
+  // MCP exports never overwrite an existing destination. UI's existing save
+  // dialog/overwrite behavior is intentionally unaffected.
+  if (payload?.owner === 'mcp') {
+    try {
+      if (!payload.outputPath) throw new Error('Export destination is required')
+      for (const destination of [payload.outputPath, payload.postProcess?.outputPath].filter(Boolean)) {
+        if (typeof destination !== 'string' || !path.isAbsolute(destination) || destination.includes('\0')) throw new Error('Export destination must be an absolute local path')
+        try { await fs.lstat(destination); throw new Error(`Export destination already exists: ${destination}`) }
+        catch (error) { if (error.code !== 'ENOENT') throw error }
+      }
+    } catch (error) { return destinationRefusal(error) }
+  }
+  // Recheck after asynchronous path inspection; another caller may have won.
+  if (exportJobs.activeId || (exportWorkerWindow && !exportWorkerWindow.isDestroyed())) return { success: false, error: 'Export already in progress' }
+  exportJobs.begin({ jobId, owner: payload?.owner, senderId: event.sender.id,
+    projectPath: payload?.projectPath, outputPath: payload?.postProcess?.outputPath || payload?.outputPath,
+    batchId: payload?.batchId || null })
+  let outputReservations = []
+  try {
+    if (payload?.owner === 'mcp') {
+      await prepareExportOutputDirectories([payload.outputPath, payload.postProcess?.outputPath].filter(Boolean))
+    }
+    if (payload?.owner === 'mcp' && payload?.options?.format !== 'png-seq') {
+      outputReservations = await reserveExportOutputs([payload.outputPath, payload.postProcess?.outputPath].filter(Boolean))
+    }
+  } catch (error) { exportJobs.finish(jobId, { error }); return destinationRefusal(error) }
+  let workerUrl
+  let workerWindow
+  try {
+    workerUrl = resolveExportWorkerUrl({ isDev, mainUrl: mainWindow?.webContents?.getURL?.(), electronDirectory: __dirname })
+    workerWindow = new BrowserWindow({
     width: 400,
     height: 200,
     show: false,
@@ -6285,7 +6749,11 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
       // Allow loading file:// URLs for video/image elements during export (otherwise "Media load rejected by URL safety check")
       webSecurity: false,
     },
-  })
+  }) } catch (error) {
+    exportJobs.finish(jobId, { error })
+    await releaseEmptyExportOutputs(outputReservations)
+    throw error
+  }
   exportWorkerWindow = workerWindow
   const workerContents = workerWindow.webContents
   const workerContentsId = workerContents.id
@@ -6297,7 +6765,7 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
   // temp directory and says so, instead of failing silently while crash
   // messages point at a log that never updates.
   const workerLogPrimaryPath = path.join(app.getPath('userData'), 'export-worker.log')
-  const workerLogFallbackPath = path.join(app.getPath('temp'), 'Belrog-export-worker.log')
+  const workerLogFallbackPath = path.join(app.getPath('temp'), 'velorn-export-worker.log')
   let workerLogActivePath = workerLogPrimaryPath
   let workerLogWarned = false
   const noteWorkerLogFailure = (err) => {
@@ -6329,12 +6797,16 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
   }
   const forwardToMain = (channel, data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(channel, data, { jobId })
+      // A main renderer reload/crash must not prevent worker cleanup or keep
+      // the next export blocked. Native activity remains available to reloads.
+      try { mainWindow.webContents.send(channel, data, { jobId }) }
+      catch (error) { workerLog(`Could not forward ${channel}: ${error?.message || error}`) }
     }
   }
   const finishWorker = (channel, data) => {
     if (terminalSent) return false
     terminalSent = true
+    exportJobs.finish(jobId, channel === 'export:complete' ? { result: data } : { error: data })
     forwardToMain(channel, data)
     clearActiveWorker()
     if (!workerWindow.isDestroyed()) {
@@ -6352,7 +6824,7 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     workerLog(`!!! RENDER PROCESS GONE: ${JSON.stringify(details)}`)
     abortGifExportsForOwner(workerContentsId)
     const pngSequenceRecoveryNote = jobPayload?.options?.format === 'png-seq' && jobPayload?.outputPath
-      ? ` An incomplete PNG sequence may remain at ${jobPayload.outputPath}; Belrog did not delete it because the worker could not confirm folder ownership after the crash.`
+      ? ` An incomplete PNG sequence may remain at ${jobPayload.outputPath}; Velorn did not delete it because the worker could not confirm folder ownership after the crash.`
       : ''
     finishWorker(
       'export:error',
@@ -6363,7 +6835,10 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     workerLog('!!! WORKER WINDOW UNRESPONSIVE')
   })
   const onProgress = (event, data) => {
-    if (event.sender === workerContents && !terminalSent) forwardToMain('export:progress', data)
+    if (event.sender === workerContents && !terminalSent) {
+      exportJobs.progress(jobId, data)
+      forwardToMain('export:progress', data)
+    }
   }
   const onComplete = (event, data) => {
     if (event.sender === workerContents) {
@@ -6382,6 +6857,9 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
   const sendJob = () => {
     if (!workerWindow.isDestroyed()) {
       workerWindow.webContents.send('export:job', jobPayload)
+      // A cancellation may precede React's worker-ready handshake. Replay it
+      // after the job so the worker's AbortController is already registered.
+      if (exportJobs.get(jobId)?.status === 'cancelling') workerWindow.webContents.send('export:cancel-job')
     }
   }
   const onWorkerReady = (event) => {
@@ -6398,6 +6876,7 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     ipcMain.removeListener('export:workerReady', onWorkerReady)
     if (!terminalSent) {
       terminalSent = true
+      exportJobs.finish(jobId, { error: 'Export worker closed before reporting completion.' })
       forwardToMain('export:error', 'Export worker closed before reporting completion.')
     }
     clearActiveWorker()
@@ -6406,12 +6885,26 @@ ipcMain.handle('export:runInWorker', async (event, payload) => {
     await workerWindow.loadURL(workerUrl)
   } catch (err) {
     terminalSent = true
+    exportJobs.finish(jobId, { error: err })
     clearActiveWorker()
     if (!workerWindow.isDestroyed()) workerWindow.close()
+    await releaseEmptyExportOutputs(outputReservations)
     throw err
   }
   return { started: true, jobId }
 })
+
+ipcMain.handle('export:getJobs', () => ({ activeJobId: exportJobs.activeId, jobs: exportJobs.list() }))
+ipcMain.handle('export:getActivity', () => exportJobs.activity())
+ipcMain.handle('export:cancelJob', (event, { jobId } = {}) => {
+  const result = exportJobs.requestCancel(jobId, event.sender.id)
+  if (result.cancelRequested && exportWorkerWindow && !exportWorkerWindow.isDestroyed()) {
+    abortGifExportsForOwner(exportWorkerWindow.webContents.id)
+    exportWorkerWindow.webContents.send('export:cancel-job')
+  }
+  return result
+})
+ipcMain.handle('export:inspectFile', (_event, args) => inspectExportFileNative(args, { ffprobePath }))
 
 const formatFilterNumber = (value, fallback = '0.000000') => {
   const num = Number(value)
@@ -6499,15 +6992,20 @@ const buildAudioFadeVolumeExpression = (clipDuration, fadeIn, fadeOut, clipOffse
 
 // Ask the running export worker to cancel its job. The worker aborts its
 // export signal and reports "Export cancelled" through the normal error
-// path; if the worker is already gone this is a no-op.
-ipcMain.handle('export:cancel', async () => {
-  if (!exportWorkerWindow || exportWorkerWindow.isDestroyed()) {
-    return { success: true, cancelled: false }
+// path. Mark the native job first, even before a window is constructed, so
+// cancellation during startup is replayed by the worker-ready handshake.
+ipcMain.handle('export:cancel', async (event) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+    throw new Error('Only the Velorn editor window may cancel the active export.')
   }
+  const result = exportJobs.requestCancelActive()
+  if (!result.cancelRequested) return { success: true, cancelled: false }
   try {
-    abortGifExportsForOwner(exportWorkerWindow.webContents.id)
-    exportWorkerWindow.webContents.send('export:cancel-job')
-    return { success: true, cancelled: true }
+    if (exportWorkerWindow && !exportWorkerWindow.isDestroyed()) {
+      abortGifExportsForOwner(exportWorkerWindow.webContents.id)
+      exportWorkerWindow.webContents.send('export:cancel-job')
+    }
+    return { success: true, cancelled: true, jobId: result.job.jobId }
   } catch (err) {
     return { success: false, error: err?.message || String(err) }
   }
@@ -6554,7 +7052,9 @@ ipcMain.handle('export:mixAudio', async (event, options = {}) => {
   const trackMap = new Map((tracks || []).map((track) => [track.id, track]))
   const assetMap = new Map((assets || []).map((asset) => [asset.id, asset]))
   const preparedInputs = []
-  const { getAudioMixDelayMilliseconds, isAudioMixClip } = await import('./audioMixEligibility.mjs')
+  const { getAudioMixDelayMilliseconds, isAudioMixClip, getClipPlaybackWindow } = await import('./audioMixEligibility.mjs')
+  const { buildAudioVolumeEnvelopeFilter } = await import('./audioVolumeEnvelope.mjs')
+  const { buildAudioEqFilters } = await import('./audioEq.mjs')
 
   // Skip ledger (the captions mixer's mold): every excluded clip gets a
   // reason. `problem: true` marks exclusions the exporter's strict
@@ -6592,6 +7092,13 @@ ipcMain.handle('export:mixAudio', async (event, options = {}) => {
     }
     if (clip.reverse) { skip(clip, 'reverse'); continue } // Matches timeline preview behavior (reverse audio is silent).
 
+    // Hidden child handles are not export inputs, even if their source is
+    // offline. Check the compound's playback window before resolving media.
+    const playbackWindow = getClipPlaybackWindow(clip)
+    const visibleStart = Math.max(rangeStartSec, playbackWindow.start)
+    const visibleEnd = Math.min(rangeEndSec, playbackWindow.end)
+    if (visibleEnd <= visibleStart) { skip(clip, 'outside-range'); continue }
+
     const asset = assetMap.get(clip.assetId)
     if (!asset) { skip(clip, 'missing-asset-record', true); continue }
 
@@ -6618,10 +7125,6 @@ ipcMain.handle('export:mixAudio', async (event, options = {}) => {
     if (clipDuration <= 0.000001) { skip(clip, 'zero-duration'); continue }
     const clipEnd = clipStart + clipDuration
 
-    const visibleStart = Math.max(rangeStartSec, clipStart)
-    const visibleEnd = Math.min(rangeEndSec, clipEnd)
-    if (visibleEnd <= visibleStart) { skip(clip, 'outside-range'); continue }
-
     const clipOffsetOnTimeline = visibleStart - clipStart
     const timeScale = getExportClipTimeScale(clip)
     if (!Number.isFinite(timeScale) || timeScale <= 0) { skip(clip, 'invalid-time-scale', true); continue }
@@ -6642,6 +7145,8 @@ ipcMain.handle('export:mixAudio', async (event, options = {}) => {
       clipDuration,
       clipOffsetOnTimeline,
       gainDb: normalizeAudioClipGainDb(clip.gainDb),
+      volumeEnvelopeFilter: buildAudioVolumeEnvelopeFilter(clip, clipOffsetOnTimeline),
+      audioEq: clip.audioEq,
       fadeIn: clampAudioFadeSeconds(clip.fadeIn, clipDuration),
       fadeOut: clampAudioFadeSeconds(clip.fadeOut, clipDuration),
       trackVolume: track.volume ?? 100,
@@ -6687,9 +7192,11 @@ ipcMain.handle('export:mixAudio', async (event, options = {}) => {
     if (entry.forceMono) {
       filters.push('aformat=channel_layouts=mono')
     }
+    filters.push(...buildAudioEqFilters(entry.audioEq, normalizedSampleRate))
     if (entry.fadeIn > 0 || entry.fadeOut > 0 || entry.gainDb !== 0 || entry.trackVolume !== 100) {
       filters.push(`volume='${buildAudioFadeVolumeExpression(entry.clipDuration, entry.fadeIn, entry.fadeOut, entry.clipOffsetOnTimeline, entry.gainDb, entry.trackVolume)}':eval=frame`)
     }
+    if (entry.volumeEnvelopeFilter) filters.push(entry.volumeEnvelopeFilter)
     if (entry.trackPan) {
       // Web Audio STEREO pan law (StereoPannerNode with stereo input); the
       // preview graph forces stereo into its panner, so upmix first to match.
@@ -7455,7 +7962,7 @@ ipcMain.handle('opticalFlow:generate', async (event, options = {}) => {
   const unavailable = getFfmpegUnavailableError()
   if (unavailable) return { success: false, error: unavailable }
   if (!ffprobePath || !fsSync.existsSync(ffprobePath)) {
-    return { success: false, error: 'FFprobe is unavailable. Reinstall Belrog to restore native media tools.' }
+    return { success: false, error: 'FFprobe is unavailable. Reinstall Velorn to restore native media tools.' }
   }
   const rifeRuntime = resolveRifeRuntime({
     packaged: app.isPackaged,
@@ -7753,6 +8260,12 @@ ipcMain.handle('export:startFramePipe', async (event, options = {}) => {
     })
   })
 
+  // Attach ownership before awaiting spawn. If the caller crashes while the
+  // process is starting, it must not leave an orphan waiting for raw frames.
+  const framePipeSession = trackFramePipeOwner({ sessions: activeFramePipeExports, sessionId, sender: event.sender,
+    session: { ffmpeg, closePromise, encoderUsed, getClosed: () => closed,
+      getCloseCode: () => closeCode, getError: () => spawnError, getStderr: () => stderr } })
+
   // Failed spawns (missing/blocked binary) emit 'error' + 'close' and never
   // 'spawn' — don't report the pipe live until one of them fires.
   const startup = await new Promise((resolve) => {
@@ -7770,6 +8283,7 @@ ipcMain.handle('export:startFramePipe', async (event, options = {}) => {
     ffmpeg.once('close', onClose)
   })
   if (!startup.ok) {
+    framePipeSession.release()
     console.error(`[Export] Frame pipe FFmpeg failed to start (${encodeFfmpegPath}): ${startup.reason}`)
     return {
       success: false,
@@ -7779,15 +8293,10 @@ ipcMain.handle('export:startFramePipe', async (event, options = {}) => {
     }
   }
 
-  activeFramePipeExports.set(sessionId, {
-    ffmpeg,
-    closePromise,
-    encoderUsed,
-    getClosed: () => closed,
-    getCloseCode: () => closeCode,
-    getError: () => spawnError,
-    getStderr: () => stderr,
-  })
+  if (event.sender.isDestroyed() || !activeFramePipeExports.has(sessionId)) {
+    framePipeSession.abort()
+    return { success: false, error: 'Export renderer closed while starting frame pipe.' }
+  }
 
   console.log(`[Export] Frame pipe started with ${encoderUsed} (${options.useHardwareEncoder ? 'hardware' : 'software'})`)
   return {
@@ -7805,11 +8314,48 @@ ipcMain.handle('export:startFramePipe', async (event, options = {}) => {
   }
 })
 
+// Faster frame route: the export window hands this process a message port
+// tied to one pipe session, and a background thread in that window posts
+// frames straight to it. That keeps the 8 MB-per-frame copying off the
+// thread that renders the export. Each frame gets an 'ack' once FFmpeg has
+// taken it. The invoke handler below stays as the fallback.
+ipcMain.on('export:attachFramePipePort', (event, sessionId) => {
+  const port = event.ports?.[0]
+  if (!port) return
+  const session = activeFramePipeExports.get(sessionId)
+  const refusal = !session ? 'Frame pipe session not found.'
+    : session.ownerId !== event.sender.id ? 'Frame pipe belongs to a different renderer.' : null
+  if (refusal) {
+    port.postMessage({ type: 'error', error: refusal })
+    port.close()
+    return
+  }
+  port.on('message', async (message) => {
+    const { id, buffer } = message?.data || {}
+    const result = activeFramePipeExports.get(sessionId) === session
+      ? await writeFrameBufferToPipeSession(session, buffer)
+      : { success: false, error: 'Frame pipe session not found.' }
+    try {
+      port.postMessage({ type: 'ack', id, ...result })
+    } catch { /* the export window is gone; its session is aborted elsewhere */ }
+  })
+  port.start()
+  port.postMessage({ type: 'ready' })
+})
+
 ipcMain.handle('export:writeFrameToPipe', async (event, sessionId, frameBuffer) => {
   const session = activeFramePipeExports.get(sessionId)
   if (!session) {
     return { success: false, error: 'Frame pipe session not found.' }
   }
+  if (session.ownerId !== event.sender.id) return { success: false, error: 'Frame pipe belongs to a different renderer.' }
+  return writeFrameBufferToPipeSession(session, frameBuffer)
+})
+
+// Write one raw frame to a session's FFmpeg stdin and wait until FFmpeg has
+// taken it. The write itself is queued synchronously, so frames reach FFmpeg
+// in the order this is called.
+async function writeFrameBufferToPipeSession(session, frameBuffer) {
   if (session.getClosed()) {
     const spawnErr = session.getError()
     return {
@@ -7831,6 +8377,7 @@ ipcMain.handle('export:writeFrameToPipe', async (event, sessionId, frameBuffer) 
         const cleanup = () => {
           stream.removeListener('drain', onDrain)
           stream.removeListener('error', onError)
+          stream.removeListener('close', onClose)
         }
         const onDrain = () => {
           cleanup()
@@ -7840,28 +8387,34 @@ ipcMain.handle('export:writeFrameToPipe', async (event, sessionId, frameBuffer) 
           cleanup()
           reject(err)
         }
+        const onClose = () => {
+          cleanup()
+          reject(new Error('Frame pipe closed before accepting frames.'))
+        }
         stream.once('drain', onDrain)
         stream.once('error', onError)
+        stream.once('close', onClose)
       })
     }
     return { success: true }
   } catch (err) {
     return { success: false, error: err.message || String(err) }
   }
-})
+}
 
 ipcMain.handle('export:finishFramePipe', async (event, sessionId) => {
   const session = activeFramePipeExports.get(sessionId)
   if (!session) {
     return { success: false, error: 'Frame pipe session not found.' }
   }
+  if (session.ownerId !== event.sender.id) return { success: false, error: 'Frame pipe belongs to a different renderer.' }
 
   try {
     if (!session.getClosed()) {
       session.ffmpeg.stdin.end()
     }
     await session.closePromise
-    activeFramePipeExports.delete(sessionId)
+    session.release()
     if (session.getError()) {
       return { success: false, error: session.getError().message || String(session.getError()), encoderUsed: session.encoderUsed }
     }
@@ -7874,7 +8427,7 @@ ipcMain.handle('export:finishFramePipe', async (event, sessionId) => {
     }
     return { success: true, encoderUsed: session.encoderUsed }
   } catch (err) {
-    activeFramePipeExports.delete(sessionId)
+    session.release()
     return { success: false, error: err.message || String(err), encoderUsed: session.encoderUsed }
   }
 })
@@ -7882,14 +8435,8 @@ ipcMain.handle('export:finishFramePipe', async (event, sessionId) => {
 ipcMain.handle('export:abortFramePipe', async (event, sessionId) => {
   const session = activeFramePipeExports.get(sessionId)
   if (!session) return { success: true }
-  activeFramePipeExports.delete(sessionId)
-  try {
-    if (!session.ffmpeg.killed) {
-      session.ffmpeg.kill('SIGKILL')
-    }
-  } catch {
-    // ignore abort errors
-  }
+  if (session.ownerId !== event.sender.id) return { success: false, error: 'Frame pipe belongs to a different renderer.' }
+  session.abort()
   return { success: true }
 })
 
@@ -7980,85 +8527,61 @@ ipcMain.handle('export:muxAudioVideo', async (event, options = {}) => {
 // ============================================
 // Playback cache (Flame-style: transcode for smooth playback)
 // ============================================
-ipcMain.handle('playback:transcode', async (event, { inputPath, outputPath }) => {
-  if (!ffmpegPath) {
-    return { success: false, error: 'FFmpeg binary not available.' }
-  }
-  if (!inputPath || !outputPath) {
-    return { success: false, error: 'Missing inputPath or outputPath.' }
-  }
-
-  const inputProbe = await probeVideoInfo(inputPath)
-  const targetFps = normalizePlaybackCacheFps(inputProbe?.fps)
-  const tempOutputPath = path.join(
-    path.dirname(outputPath),
-    `.${path.basename(outputPath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp.mp4`
-  )
-
-  // Same dimensions, H.264, CFR, keyframe every 6 frames, no B-frames = easy decode.
-  // Original media stays untouched; preview swaps to this cache file after validation.
-  const args = [
-    '-y',
-    '-i', inputPath,
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
-    ...(targetFps ? ['-vf', `fps=${targetFps}`] : []),
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '23',
-    '-g', '6',
-    '-keyint_min', '6',
-    '-bf', '0',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-ar', '48000',
-    '-ac', '2',
-    tempOutputPath
-  ]
-
-  return await new Promise((resolve) => {
-    const ffmpeg = spawn(ffmpegPath, args, { windowsHide: true })
-    let stderr = ''
-    let settled = false
-
-    const finish = async (payload) => {
-      if (settled) return
-      settled = true
-      if (!payload?.success) {
-        try { await fs.unlink(tempOutputPath) } catch (_) { /* ignore */ }
-      }
-      resolve(payload)
+// A single native queue covers every renderer/import/rebuild entry point and
+// both cache tiers. Export and alpha/GIF normalization stay separate.
+const mediaPreparationOwners = new Map()
+const mediaPreparation = createMediaPreparationService({
+  ffmpegPath,
+  resolveHardwareFfmpeg: resolveHardwareExportFfmpegSelection,
+  probeVideoInfo,
+  normalizeFps: normalizePlaybackCacheFps,
+  probeHardwareEncoder,
+  onStatus: () => {
+    for (const [ownerId, sender] of mediaPreparationOwners) {
+      if (sender.isDestroyed()) continue
+      try { sender.send('mediaPreparation:status', mediaPreparation.getStatus(ownerId)) } catch { /* window closing */ }
     }
-
-    ffmpeg.stderr.on('data', (data) => {
-      stderr = appendLimitedStderr(stderr, data)
-    })
-
-    ffmpeg.on('error', (err) => {
-      finish({ success: false, error: err.message })
-    })
-
-    ffmpeg.on('close', async (code) => {
-      if (code === 0) {
-        const outputProbe = await probeVideoInfo(tempOutputPath)
-        if (!outputProbe?.success || !outputProbe?.hasVideo) {
-          await finish({ success: false, error: outputProbe?.error || 'Playback cache validation failed.' })
-          return
-        }
-        try {
-          await fs.rename(tempOutputPath, outputPath)
-          await finish({ success: true, fps: outputProbe.fps || targetFps || null })
-        } catch (err) {
-          await finish({ success: false, error: err.message || 'Could not finalize playback cache file.' })
-        }
-      } else {
-        await finish({ success: false, error: stderr || `FFmpeg exited with code ${code}` })
-      }
-    })
-  })
+  },
 })
+
+function registerMediaPreparationOwner(sender) {
+  const ownerId = sender.id
+  if (!mediaPreparationOwners.has(ownerId)) {
+    mediaPreparationOwners.set(ownerId, sender)
+    sender.once('destroyed', () => {
+      mediaPreparationOwners.delete(ownerId)
+      mediaPreparation.cancelOwner(ownerId)
+    })
+    // A crashed renderer can keep its WebContents alive for a later reload.
+    // Cancel its work without dropping registration or duplicating listeners.
+    sender.on('render-process-gone', () => mediaPreparation.cancelOwner(ownerId))
+    sender.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) mediaPreparation.cancelOwner(ownerId)
+    })
+  }
+  return ownerId
+}
+
+function enqueueMediaPreparation(event, options, kind) {
+  const input = options && typeof options === 'object' ? options : {}
+  return mediaPreparation.enqueue({
+    kind,
+    inputPath: input.inputPath,
+    outputPath: input.outputPath,
+    targetHeight: input.targetHeight,
+    ownerId: registerMediaPreparationOwner(event.sender),
+    assetId: typeof input.assetId === 'string' ? input.assetId.slice(0, 120) : null,
+    label: typeof input.label === 'string'
+      ? input.label.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 160)
+      : (typeof input.inputPath === 'string' ? path.basename(input.inputPath) : ''),
+  })
+}
+
+ipcMain.handle('mediaPreparation:getStatus', (event) => (
+  mediaPreparation.getStatus(registerMediaPreparationOwner(event.sender))
+))
+ipcMain.handle('playback:transcode', (event, options) => enqueueMediaPreparation(event, options, 'playback'))
+app.on('will-quit', () => mediaPreparation.cancelAll())
 
 // ============================================
 // GIF import (static probe + animated editing intermediate)
@@ -8134,60 +8657,10 @@ ipcMain.handle('imageSequence:transcode', async (event, options = {}) => {
 // Separate from the playback cache above. The playback cache keeps source
 // resolution so single-layer preview is smooth; the proxy cache drops to
 // a short dimension (default 540px) so multi-layer timelines with heavy
-// effect stacks decode a fraction of the pixels. Export never uses these.
+// effect stacks decode a fraction of the pixels. Only explicit proxy-review
+// exports use them; normal full-quality delivery continues to use originals.
 // ============================================
-ipcMain.handle('proxy:transcode', async (event, { inputPath, outputPath, targetHeight = 540 }) => {
-  if (!ffmpegPath) {
-    return { success: false, error: 'FFmpeg binary not available.' }
-  }
-  if (!inputPath || !outputPath) {
-    return { success: false, error: 'Missing inputPath or outputPath.' }
-  }
-
-  // scale=-2:H → preserve aspect, force-even width (H.264 requirement).
-  // veryfast + crf 28 gives small files (~1/4 playback-cache size) and
-  // keeps ffmpeg fast enough to run in the background at import time.
-  // Keyframe every 6 frames matches the playback cache so scrubbing is
-  // identical across both tiers.
-  const scaleFilter = `scale=-2:${Math.max(180, Math.min(1080, Number(targetHeight) || 540))}`
-  const args = [
-    '-y',
-    '-i', inputPath,
-    '-vf', scaleFilter,
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-crf', '28',
-    '-g', '6',
-    '-keyint_min', '6',
-    '-bf', '0',
-    '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    outputPath
-  ]
-
-  return await new Promise((resolve) => {
-    const ffmpeg = spawn(ffmpegPath, args, { windowsHide: true })
-    let stderr = ''
-
-    ffmpeg.stderr.on('data', (data) => {
-      stderr += data.toString()
-    })
-
-    ffmpeg.on('error', (err) => {
-      resolve({ success: false, error: err.message })
-    })
-
-    ffmpeg.on('close', (code) => {
-      if (code === 0) {
-        resolve({ success: true })
-      } else {
-        resolve({ success: false, error: stderr || `FFmpeg exited with code ${code}` })
-      }
-    })
-  })
-})
+ipcMain.handle('proxy:transcode', (event, options) => enqueueMediaPreparation(event, options, 'proxy'))
 
 // Hardware-encoder availability check. Despite the historical channel name
 // this is platform-aware: NVENC on Windows/Linux, VideoToolbox on macOS.
@@ -8341,7 +8814,7 @@ ipcMain.handle('export:checkNvenc', async (event, options = {}) => {
 // version. Scoped to 127.0.0.1/localhost only (http and ws) — remote hosts
 // are untouched. Packaged file:// pages also have no HTTP Referer, while the
 // YouTube embedded-player contract requires desktop clients to identify
-// themselves with one. requestHeaderRewrite adds Belrog's installed app ID
+// themselves with one. requestHeaderRewrite adds Velorn's installed app ID
 // only to youtube.com/youtube-nocookie.com /embed/ document requests.
 function installRequestHeaderRewrite() {
   const filter = { urls: REQUEST_HEADER_REWRITE_URLS }
@@ -8353,77 +8826,65 @@ function installRequestHeaderRewrite() {
 app.whenReady().then(async () => {
   registerFileProtocol()
   installRequestHeaderRewrite()
-  // Allow the Director Script tab to embed perchance.org/belrog: strip
-  // frame-busting response headers for the planner origin only.
-  session.defaultSession.webRequest.onHeadersReceived(
-    { urls: ['*://perchance.org/*', '*://*.perchance.org/*'] },
-    (details, callback) => {
-      const headers = details.responseHeaders || {}
-      for (const key of Object.keys(headers)) {
-        if (key.toLowerCase() === 'x-frame-options') delete headers[key]
-        if (key.toLowerCase() === 'content-security-policy') {
-          const vals = Array.isArray(headers[key]) ? headers[key] : [headers[key]]
-          headers[key] = vals.map((v) => String(v).split(';').filter((d) => !/frame-ancestors/i.test(d)).join(';'))
-        }
-      }
-      callback({ responseHeaders: headers })
-    }
-  )
-  const mcpExposure = (await readSettingsRaw().catch(() => ({})))?.mcpExposure
-    || { enabled: false, host: '127.0.0.1', token: '' }
-  if (mcpExposure.enabled && (mcpExposure.host || '0.0.0.0') === '0.0.0.0' && !mcpExposure.token) {
-    console.error('[MCP] Refusing to expose MCP on 0.0.0.0 without a token — falling back to 127.0.0.1.')
-    mcpExposure.enabled = false
-  }
+  getGenerationRuns()
   mcpServer = createComfyStudioMcpServer({
+    optionalSetup,
+    toolSetup: toolSetupController.api,
+    lmStudioSetup: lmStudioSetupController.api,
+    comfyCloudSetup: comfyCloudSetup.api,
+    captionEngineSetup: {
+      status: args => captionEngineSetup.status(args),
+      install: guardAgentNativeAction(args => captionEngineSetup.install(args)),
+    },
+    getGenerationSpendingStatus: () => generationSpending.getStatus(),
+    generationRuns: {
+      list: args => getGenerationRuns().list(args),
+      observe: args => getGenerationRuns().observe(args),
+      recipe: args => getGenerationRuns().recipe(args),
+      submit: guardAgentNativeAction(args => getGenerationRuns().submit(args)),
+      adopt: guardAgentNativeAction(args => getGenerationRuns().adopt(args)),
+      control: guardAgentNativeAction(args => getGenerationRuns().control(args)),
+    },
+    comfyRouter: {
+      status: args => getComfyRouter().status(args),
+      list: args => getComfyRouter().list(args),
+      preview: args => getComfyRouter().preview(args),
+      inspectPlan: args => getComfyRouter().inspectPlan(args),
+      // Create models for agents. A preview may name one picture of the open
+      // project; it is read here, checked, and handed only to the Router manager.
+      models: args => getComfyRouter().models(args),
+      previewCreate: async ({ inputImageAssetId, ...args }) => {
+        if (inputImageAssetId === undefined) return getComfyRouter().previewCreate(args)
+        let picture
+        try { picture = await workflowAssetInputs.readPicture({ assetId: inputImageAssetId }) }
+        catch (error) { return { success: false, code: 'COMFY_ROUTER_INVALID', error: error?.publicMessage || 'The input picture could not be read. Choose an image asset of the open project.' } }
+        return getComfyRouter().previewCreate({ ...args, choices: { ...args.choices, picture } })
+      },
+      submit: guardAgentNativeAction(args => getComfyRouter().submit(args)),
+      refresh: guardAgentNativeAction(args => getComfyRouter().refresh(args)),
+      cancel: guardAgentNativeAction(args => getComfyRouter().cancel(args)),
+    },
     port: DEFAULT_MCP_PORT,
     version: app.getVersion(),
-    bindHost: mcpExposure.enabled ? (mcpExposure.host || '0.0.0.0') : '127.0.0.1',
-    authToken: mcpExposure.enabled ? (mcpExposure.token || null) : null,
     performAction: performMcpRendererAction,
+    isExportBusy: () => Boolean(exportJobs.activeId),
     diagnoseComfyUIConnection: diagnoseComfyUIConnectionInternal,
-    setComfyUIConnection: setComfyUIConnectionInternal,
-    controlComfyLauncher: controlComfyLauncherInternal,
+    setComfyUIConnection: guardAgentNativeAction(setComfyUIConnectionInternal),
+    controlComfyLauncher: guardAgentNativeAction(controlComfyLauncherInternal),
     getComfyLauncherLogs: getComfyLauncherLogsInternal,
     validateComfyUINodes: validateComfyUINodesInternal,
+    readComfyNodeCatalog: readComfyNodeCatalogInternal,
     listComfyStudioWorkflows: listComfyStudioWorkflowsInternal,
     inspectComfyStudioWorkflow: inspectComfyStudioWorkflowInternal,
+    importManagedApiWorkflow: importManagedApiWorkflowInternal,
   })
   mcpServer.start()
     .then((status) => {
-      console.log(`[MCP] Belrog MCP server running at ${status.url}`)
+      console.log(`[MCP] Velorn MCP server running at ${status.url}`)
     })
     .catch((error) => {
       console.warn('[MCP] server failed to start:', error?.message || error)
     })
-  // Auto-reconnect the remote ComfyUI SSH tunnel if the user enabled it.
-  ;(async () => {
-    try {
-      const settings = await getRemoteServerSettings(readSettingsRaw)
-      if (!settings?.enabled || !settings.sshHost) return
-      const result = await establishTunnel({
-        sshHost: settings.sshHost,
-        sshPort: settings.sshPort || 22,
-        sshUsername: settings.sshUsername,
-        sshKeyPath: settings.sshKeyPath,
-        tunnelLocalPort: settings.tunnelLocalPort || 8188,
-        tunnelRemotePort: settings.tunnelRemotePort || 8188,
-      })
-      if (result.success) {
-        const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
-        if (!comfyCheck.ok) {
-          closeTunnel()
-          console.warn('[sshTunnel] Auto-connect: SSH up but remote ComfyUI not reachable:', comfyCheck.message)
-        } else {
-          console.log(`[sshTunnel] Auto-reconnected ${settings.sshUsername}@${settings.sshHost} → local :${settings.tunnelLocalPort || 8188}`)
-        }
-      } else {
-        console.warn('[sshTunnel] Auto-connect failed:', result.error)
-      }
-    } catch (error) {
-      console.warn('[sshTunnel] Auto-connect error:', error?.message || String(error))
-    }
-  })()
   initComfyLauncher()
     .then(() => maybeAutoStartComfyLauncher())
     .catch((error) => {
@@ -8459,45 +8920,13 @@ app.whenReady().then(async () => {
   })
 })
 
-app.on('before-quit', async (event) => {
-  if (launcherQuitConfirmed) return
-  if (!getOwnedRunningComfyLauncherState()) return
-
-  event.preventDefault()
-  try {
-    if (!safeCloneLauncherConfig(cachedLauncherConfig).stopOnQuit) {
-      try {
-        await comfyLauncher.detach()
-      } catch (error) {
-        console.warn('[comfyLauncher] detach during before-quit failed:', error?.message || error)
-      }
-      launcherQuitConfirmed = true
-      app.quit()
-      return
-    }
-
-    const choice = await dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : null, {
-      type: 'question',
-      buttons: ['Stop ComfyUI & quit', 'Leave ComfyUI running', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      title: 'Quit Belrog?',
-      message: 'ComfyUI is still running.',
-      detail: 'Belrog started ComfyUI. Choose what happens to it when you quit.\n\n• Stop ComfyUI & quit — shuts down ComfyUI and cancels any in-flight generation jobs.\n• Leave ComfyUI running — Belrog will quit but ComfyUI stays up. Handy when you\'re just relaunching Belrog and don\'t want to wait for ComfyUI to boot again.',
-    })
-    if (choice.response === 2) {
-      return
-    }
-    if (choice.response === 1) {
-      await comfyLauncher.detach()
-    } else {
-      await comfyLauncher.shutdown({ confirmStop: true })
-    }
-  } catch (error) {
-    console.warn('[comfyLauncher] before-quit shutdown error:', error?.message || error)
-  }
-  launcherQuitConfirmed = true
-  app.quit()
+desktopClose = require('./desktopClose.cjs').createDesktopClose({
+  app, ipcMain, dialog, getWindow: () => mainWindow,
+  getOwnedLauncher: getOwnedRunningComfyLauncherState,
+  stopOnQuit: () => safeCloneLauncherConfig(cachedLauncherConfig).stopOnQuit,
+  detach: () => comfyLauncher.detach(),
+  shutdown: () => comfyLauncher.shutdown({ confirmStop: true }),
+  flush: () => agentReviewMediaStore.flush(),
 })
 
 app.on('window-all-closed', () => {
@@ -8507,6 +8936,13 @@ app.on('window-all-closed', () => {
 })
 
 app.on('will-quit', () => {
+  generationMemoryCleanup.dispose()
+  generationRuns?.dispose()
+  comfyRouter?.dispose()
+  comfyRouterIpc.dispose()
+  gpuShareIpc.dispose()
+  gpuNetworkIpc.dispose()
+  stopGpuShareBeat?.()
   abortAllOpticalFlowJobs()
   if (mcpServer) {
     mcpServer.stop().catch((error) => {
@@ -8519,20 +8955,176 @@ app.on('will-quit', () => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception:', error)
 })
-;/* BELROG_ADBLOCK_v1 - why: perchance iframe loads prebid/quantumdex ads that loop 400s
-   and, combined with allow-scripts+allow-same-origin sandbox escape, precede the
-   bad_message.cc renderer kill on image gen. Cancel those requests in Electron. */
-try {
-  const _eb = (typeof require !== "undefined") ? require("electron") : null;
-  const _app2 = _eb && (_eb.app || null);
-  const _sess = () => { try { return (_eb.session && _eb.session.defaultSession) || null; } catch(e){ return null; } };
-  const _install = () => {
+
+// ---- Belrog F11: remote ComfyUI server + SSH tunnel + MCP exposure (Belrog-only) ----
+ipcMain.handle('belrog:getRemoteServerSettings', async () => {
+  try {
+    return await getRemoteServerSettings(readSettingsRaw)
+  } catch (error) {
+    return { ...DEFAULT_REMOTE_SERVER_SETTINGS }
+  }
+})
+const MCP_EXPOSURE_SETTING_KEY = 'mcpExposure'
+const DEFAULT_MCP_EXPOSURE_SETTINGS = { enabled: false, host: '0.0.0.0', token: '' }
+
+async function getMcpExposureSettings() {
+  try {
+    const raw = await readSettingsRaw()
+    const v = raw?.[MCP_EXPOSURE_SETTING_KEY]
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(v && typeof v === 'object' ? v : {}) }
+  } catch {
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
+  }
+}
+
+ipcMain.handle('belrog:getMcpExposure', async () => {
+  try {
+    return await getMcpExposureSettings()
+  } catch (error) {
+    return { ...DEFAULT_MCP_EXPOSURE_SETTINGS }
+  }
+})
+
+ipcMain.handle('belrog:saveMcpExposure', async (event, settings) => {
+  try {
+    const next = { ...DEFAULT_MCP_EXPOSURE_SETTINGS, ...(settings || {}) }
+    if (next.enabled && (next.host || '0.0.0.0') === '0.0.0.0' && !next.token) {
+      return { success: false, error: 'A token is required when binding 0.0.0.0.' }
+    }
+    await writeSettingsRaw((current) => ({ ...(current || {}), [MCP_EXPOSURE_SETTING_KEY]: next }))
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:saveRemoteServerSettings', async (event, settings) => {
+  try {
+    return await saveRemoteServerSettings(writeSettingsRaw, settings)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:connect', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    if (!settings.enabled) {
+      return { success: false, error: 'Remote server is not enabled' }
+    }
+    if (!settings.sshHost || !settings.sshUsername || !settings.sshKeyPath) {
+      return { success: false, error: 'SSH host, username, and key path are required' }
+    }
+    const result = await establishTunnel({
+      sshHost: settings.sshHost,
+      sshPort: settings.sshPort || 22,
+      sshUsername: settings.sshUsername,
+      sshKeyPath: settings.sshKeyPath,
+      tunnelLocalPort: settings.tunnelLocalPort || 8188,
+      tunnelRemotePort: settings.tunnelRemotePort || 8188,
+    })
+    if (result.success) {
+      // Verify ComfyUI is reachable
+      const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
+      if (!comfyCheck.ok) {
+        closeTunnel()
+        return { success: false, error: `Connected to SSH but ComfyUI not reachable: ${comfyCheck.message}` }
+      }
+    }
+    return result
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:disconnect', async () => {
+  try {
+    return closeTunnel()
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:getTunnelStatus', async () => {
+  return getTunnelStatus()
+})
+
+ipcMain.handle('belrog:checkRemoteComfyUI', async (event, port = 8188) => {
+  return await checkRemoteComfyUI(port)
+})
+
+ipcMain.handle('belrog:listRemoteModels', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await listRemoteModels(settings.comfyModelRoot)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:listRemoteNodes', async () => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await listRemoteNodes(settings.comfyNodesRoot)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:checkRemoteModel', async (event, modelName) => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await checkRemoteModel(settings.comfyModelRoot, modelName)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:installRemoteNode', async (event, gitUrl, nodeName = null) => {
+  try {
+    const settings = await getRemoteServerSettings(readSettingsRaw)
+    return await installRemoteNode(settings.comfyNodesRoot, gitUrl, nodeName)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+ipcMain.handle('belrog:execRemoteCommand', async (event, command) => {
+  try {
+    return await execRemoteCommand(command)
+  } catch (error) {
+    return { success: false, error: error?.message || String(error) }
+  }
+})
+
+
+app.whenReady().then(async () => {
+  // Auto-reconnect the remote ComfyUI SSH tunnel if the user enabled it.
+  ;(async () => {
     try {
-      const s = _sess(); if (!s || !s.webRequest || !s.webRequest.onBeforeRequest) return;
-      s.webRequest.onBeforeRequest({ urls: ["*://*.quantumdex.io/*","*://*prebid*/*","*://*.doubleclick.net/*","*://*.googlesyndication.com/*","*://*.amazon-adsystem.com/*"] },
-        (d, cb) => cb({ cancel: true }));
-      console.log("[belrog] adblock installed");
-    } catch(e){ console.warn("[belrog] adblock failed: "+e.message); }
-  };
-  if (_app2 && _app2.whenReady) _app2.whenReady().then(_install); else _install();
-} catch(e) {}
+      const settings = await getRemoteServerSettings(readSettingsRaw)
+      if (!settings?.enabled || !settings.sshHost) return
+      const result = await establishTunnel({
+        sshHost: settings.sshHost,
+        sshPort: settings.sshPort || 22,
+        sshUsername: settings.sshUsername,
+        sshKeyPath: settings.sshKeyPath,
+        tunnelLocalPort: settings.tunnelLocalPort || 8188,
+        tunnelRemotePort: settings.tunnelRemotePort || 8188,
+      })
+      if (result.success) {
+        const comfyCheck = await checkRemoteComfyUI(settings.tunnelLocalPort || 8188)
+        if (!comfyCheck.ok) {
+          closeTunnel()
+          console.warn('[sshTunnel] Auto-connect: SSH up but remote ComfyUI not reachable:', comfyCheck.message)
+        } else {
+          console.log(`[sshTunnel] Auto-reconnected ${settings.sshUsername}@${settings.sshHost} → local :${settings.tunnelLocalPort || 8188}`)
+        }
+      } else {
+        console.warn('[sshTunnel] Auto-connect failed:', result.error)
+      }
+    } catch (error) {
+      console.warn('[sshTunnel] Auto-connect error:', error?.message || String(error))
+    }
+  })()
+})

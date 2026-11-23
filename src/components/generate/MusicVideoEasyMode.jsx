@@ -3550,7 +3550,7 @@ export default function MusicVideoEasyMode({
                   onClick={() => handleResolutionPresetChange(option.id)}
                   disabled={disabled}
                   title={customVideoWorkflowSelected
-                    ? 'Sent to your graph only when it uses Belrog_WIDTH and Belrog_HEIGHT.'
+                    ? 'Sent to your graph only when it uses VELORN_WIDTH and VELORN_HEIGHT.'
                     : disabled ? 'This video model is limited to 720p here.' : ''}
                   className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-semibold transition-colors ${
                     disabled
@@ -3606,12 +3606,12 @@ export default function MusicVideoEasyMode({
           : ` is used for new or regenerated videos at ${outputResolutionLabel} / ${videoFps} fps.`}
         {customVideoWorkflowSelected && (
           <span className="mt-1 block">
-            Resolution and FPS are controlled by Belrog only when your graph uses <span className="font-mono text-sf-text-primary">Belrog_WIDTH</span>, <span className="font-mono text-sf-text-primary">Belrog_HEIGHT</span>, and <span className="font-mono text-sf-text-primary">Belrog_FPS</span>; otherwise your graph controls the final output.
+            Resolution and FPS are controlled by Belrog only when your graph uses <span className="font-mono text-sf-text-primary">VELORN_WIDTH</span>, <span className="font-mono text-sf-text-primary">VELORN_HEIGHT</span>, and <span className="font-mono text-sf-text-primary">VELORN_FPS</span>; otherwise your graph controls the final output.
           </span>
         )}
         {customVideoWorkflowSelected ? (
           <span className="mt-1 block text-amber-200">
-            Lip-sync is not automatic. Belrog can pass song audio through <span className="font-mono text-amber-100">Belrog_AUDIO</span>, but your graph must use that audio in a lip-sync or audio-conditioned video workflow.
+            Lip-sync is not automatic. Belrog can pass song audio through <span className="font-mono text-amber-100">VELORN_AUDIO</span>, but your graph must use that audio in a lip-sync or audio-conditioned video workflow.
           </span>
         ) : selectedVideoWorkflowSupports1080 ? (
           <span className="mt-1 block text-sf-text-muted">

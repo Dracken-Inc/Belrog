@@ -13,6 +13,7 @@ import { normalizeAdjustmentSettings } from '../utils/adjustments'
 import { normalizeClipCompositeMode } from '../utils/layerCompositing'
 import { hasVideoSolo, isVideoTrackVisible } from '../utils/videoTrackVisibility'
 import { getFrameSamplingSignature } from '../utils/frameSampling'
+import { getCompoundRenderState } from '../utils/compoundPlayback.mjs'
 
 const CACHE_DIR = 'cache'
 // v2: frame-start sampling (sampleAtFrameCenter: false) — files rendered
@@ -172,6 +173,11 @@ function buildClipSignature(clip) {
     enabled: clip.enabled !== false,
     startTime: roundNumber(clip.startTime),
     duration: roundNumber(clip.duration),
+    ...(clip.compoundParentId ? {
+      compoundParentId: clip.compoundParentId,
+      playbackWindowStart: roundNumber(clip.playbackWindowStart),
+      playbackWindowEnd: roundNumber(clip.playbackWindowEnd),
+    } : {}),
     trimStart: roundNumber(clip.trimStart),
     trimEnd: roundNumber(clip.trimEnd),
     sourceDuration: roundNumber(clip.sourceDuration),
@@ -179,6 +185,10 @@ function buildClipSignature(clip) {
     sourceFps: roundNumber(clip.sourceFps),
     timelineFps: roundNumber(clip.timelineFps),
     speed: roundNumber(clip.speed),
+    // Legacy full proxies include sound. Edited EQ/envelopes must never reuse
+    // their old mix; current video-only chunks continue using live audio.
+    volumeEnvelope: clip.volumeEnvelope || null,
+    audioEq: clip.audioEq || null,
     reverse: Boolean(clip.reverse),
     frameSampling: getFrameSamplingSignature(clip),
     transform: {
@@ -406,6 +416,7 @@ async function cleanupOldTimelinePreviewProxies(projectHandle, timelineId, keepR
  */
 export function computePreviewSignature(timelineId, timelineState) {
   if (!timelineId || !timelineState) return ''
+  timelineState = getCompoundRenderState(timelineState)
   const clips = (timelineState.clips || [])
     .map((clip) => buildClipSignature(clip))
     .filter(Boolean)
@@ -445,6 +456,7 @@ export function computePreviewSignature(timelineId, timelineState) {
     tracks,
     transitions,
     assets,
+    ...(timelineState.compoundRenderErrors?.length ? { compoundRenderErrors: timelineState.compoundRenderErrors } : {}),
   })
   return hashString(payload)
 }

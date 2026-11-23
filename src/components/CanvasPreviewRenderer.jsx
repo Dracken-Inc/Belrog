@@ -1,6 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useTimelineStore from '../stores/timelineStore'
+import { useShallow } from 'zustand/react/shallow'
 import useAssetsStore from '../stores/assetsStore'
+import { getCompoundRenderState, isClipInPlaybackWindow } from '../utils/compoundPlayback.mjs'
 import videoCache from '../services/videoCache'
 import { hasUsablePlaybackCache } from '../services/playbackCache'
 import { hasUsableProxy } from '../services/proxyCache'
@@ -53,11 +55,17 @@ import {
   doesPresentedVideoFrameMatchTarget,
   getPreciseVideoSeekFps,
   getTargetVideoFrameIndex,
+  getVideoFrameSeekTime,
+  isSameVideoFrameSeekTime,
   isFrameStepSeekIntentAtTime,
   isSamePreciseVideoSeekTarget,
   shouldIssuePreciseVideoSeek,
 } from '../utils/previewVideoSeeking'
 import { registerLivePreviewCapture, unregisterLivePreviewCapture } from '../services/previewFrameBridge'
+import { createScrubVideoPresentation } from '../utils/scrubVideoPresentation.mjs'
+import { getClipPreviewPreloadPlan } from '../utils/previewPreloadPlan.mjs'
+import { getCurrentPlaybackJump } from '../utils/playbackJump.mjs'
+import { landPlaybackJumpVideo } from '../utils/playbackJumpVideo.mjs'
 import { applyVelocityMotionBlurToCanvas, buildVelocityBlurUniformValues, canUseVelocityMotionBlur } from '../utils/velocityMotionBlur'
 import {
   applyClipCrop,
@@ -77,16 +85,6 @@ const PRELOAD_LOOKAHEAD = 2.5
 const PLAYBACK_DIAG_KEY = 'comfystudio-playback-diag'
 const SCRUB_ACTIVE_WINDOW_MS = 220
 const SCRUB_SETTLE_DELAY_MS = SCRUB_ACTIVE_WINDOW_MS + 45
-// While scrubbing, chase the playhead whenever the presented frame is more
-// than ~one frame away. Completion-driven seeking (issueScrubSeek) already
-// caps this at one in-flight seek per video, so a tight tolerance costs no
-// extra concurrency — it just keeps the picture tracking the hand instead
-// of updating in multi-frame notches. (Was a fixed 0.18s, which read as a
-// ~4-frame dead zone at 24fps during slow cut-point hunting.)
-const getScrubReadyTolerance = (fps) => Math.max(0.04, 1 / Math.max(1, Number(fps) || 24))
-// If a scrub seek never presents a frame (element evicted, src cleared),
-// allow a replacement seek after this long instead of blocking the element.
-const SCRUB_SEEK_STALL_MS = 400
 const PRECISE_SEEK_STALL_MS = 750
 // How long playback may hold the previous frame while a visible clip's
 // media is not yet drawable (cold element at a cut, mid-seek decoder dip)
@@ -113,7 +111,7 @@ function logCanvasDiag(event, payload = {}) {
 }
 
 function getOpticalFlowContextOptions(clip) {
-  const timelineState = useTimelineStore.getState()
+  const timelineState = getCompoundRenderState(useTimelineStore.getState())
   return {
     handleSeconds: getRequiredOpticalFlowHandleSeconds(
       clip,
@@ -206,6 +204,30 @@ function applyManagedCanvasEffects(canvas, ctx, width, height, clip, clipTime, f
   }
 }
 
+// One off-screen composite surface per visible preview canvas, reused for
+// every frame. Allocating a fresh timeline-sized canvas on each draw (up to
+// the screen's refresh rate during playback) churned a full frame of memory
+// per draw. `reset()` returns the context to its initial state, including
+// any unbalanced save/clip a clip draw left behind, so a reused surface
+// starts each frame exactly as a new one would. Without `reset()` support a
+// fresh canvas is still created per frame.
+const stageCanvasByOutput = new WeakMap()
+
+function acquireStageCanvas(outputCanvas, width, height) {
+  let stageCanvas = stageCanvasByOutput.get(outputCanvas)
+  let stageCtx = stageCanvas ? stageCanvas.getContext('2d', { alpha: false }) : null
+  if (!stageCtx || typeof stageCtx.reset !== 'function') {
+    stageCanvas = document.createElement('canvas')
+    ensureCanvasSize(stageCanvas, width, height)
+    stageCtx = stageCanvas.getContext('2d', { alpha: false })
+    if (stageCtx && typeof stageCtx.reset === 'function') stageCanvasByOutput.set(outputCanvas, stageCanvas)
+    return { stageCanvas, stageCtx }
+  }
+  ensureCanvasSize(stageCanvas, width, height)
+  stageCtx.reset()
+  return { stageCanvas, stageCtx }
+}
+
 function ensureCanvasSize(canvas, width, height) {
   if (!canvas) return
   if (canvas.width !== width) canvas.width = width
@@ -215,7 +237,7 @@ function ensureCanvasSize(canvas, width, height) {
 function getVisualLayerClips(state, time) {
   const activeClips = state.getActiveClipsAtTime(time)
   return activeClips
-    .filter(({ track }) => track.type === 'video')
+    .filter(({ clip, track }) => track.type === 'video' && (!clip.compoundParentId || isClipInPlaybackWindow(clip, time)))
     .sort((a, b) => {
       const indexA = state.tracks.findIndex(t => t.id === a.track.id)
       const indexB = state.tracks.findIndex(t => t.id === b.track.id)
@@ -391,6 +413,22 @@ function isSeekDrivenPlayback(state, clip) {
   return timelineRate < 0 || Math.abs(timelineRate) >= 3.5 || !!clip.reverse
 }
 
+const selectCanvasPreviewSlice = (rawState) => {
+  const state = getCompoundRenderState(rawState)
+  return {
+    clips: state.clips,
+    tracks: state.tracks,
+    transitions: state.transitions,
+    isPlaying: state.isPlaying,
+    playheadPosition: state.isPlaying ? null : state.playheadPosition,
+    playheadSeekIntent: state.isPlaying ? null : state.playheadSeekIntent,
+    playbackRate: state.playbackRate,
+    useProxyPlaybackForAssets: state.useProxyPlaybackForAssets,
+    glslPreviewQuality: state.glslPreviewQuality,
+    compoundRenderErrors: state.compoundRenderErrors,
+  }
+}
+
 function CanvasPreviewRenderer({
   timelineWidth = 1920,
   timelineHeight = 1080,
@@ -412,14 +450,21 @@ function CanvasPreviewRenderer({
   const deferredDrawRafRef = useRef(0)
   const scrubSettleTimerRef = useRef(0)
   const scrubPreviewStateRef = useRef({ lastPlayhead: 0, activeUntil: 0 })
-  const scrubPendingSeeksRef = useRef(new WeakMap())
-  const preciseVideoSeeksRef = useRef(new WeakMap())
+  const scrubPresentationRef = useRef(null)
+  if (!scrubPresentationRef.current) {
+    scrubPresentationRef.current = createScrubVideoPresentation({ requestDraw: () => drawFrameRef.current?.() })
+  }
+  const scrubContextRef = useRef(null)
+  const preciseVideoSeeksRef = useRef(new Map())
   const preciseSeekSerialRef = useRef(0)
+  const playbackJumpVideosRef = useRef(new Map())
+  const playbackJumpTokenRef = useRef(null)
   const unreadyHoldUntilRef = useRef(0)
   const hasPaintedFrameRef = useRef(false)
   const lastPreloadTimeRef = useRef(0)
   const lastDrawTimeRef = useRef(null)
   const loopSeekHoldUntilRef = useRef(0)
+  const wasPlayingRef = useRef(false)
   const rasterSourceRevisionRef = useRef(0)
   const rasterSourceInputsRef = useRef({
     clips: null,
@@ -427,8 +472,13 @@ function CanvasPreviewRenderer({
     transitions: null,
     assets: null,
   })
-  const [, setAssetRevision] = useState(0)
+  const [assetRevision, setAssetRevision] = useState(0)
 
+  // Subscribe to exactly what this component's render and effects consume.
+  // During playback the animation-frame loop below reads the live store
+  // itself, so the playhead is left out of the slice while playing: React
+  // then has nothing to re-render on each playhead write. Paused, the exact
+  // playhead is included so scrubbing and stepping repaint as before.
   const {
     clips,
     tracks,
@@ -439,7 +489,8 @@ function CanvasPreviewRenderer({
     playbackRate,
     useProxyPlaybackForAssets,
     glslPreviewQuality,
-  } = useTimelineStore()
+    compoundRenderErrors,
+  } = useTimelineStore(useShallow(selectCanvasPreviewSlice))
   const assets = useAssetsStore(state => state.assets)
 
   const previousRasterInputs = rasterSourceInputsRef.current
@@ -579,6 +630,7 @@ function CanvasPreviewRenderer({
     if (!video || video.readyState < 1) return false
     const normalizedTarget = Math.max(0, Number(targetTime) || 0)
     const normalizedFps = Number(targetFps)
+    const seekTime = getVideoFrameSeekTime(normalizedTarget, normalizedFps, video.duration)
     const resolvedSourceKey = sourceKey || video.currentSrc || video.src || ''
     const pendingSeeks = preciseVideoSeeksRef.current
     let previous = pendingSeeks.get(video)
@@ -592,7 +644,7 @@ function CanvasPreviewRenderer({
       previous?.settledTargetTime != null
       && isSamePreciseVideoSeekTarget(previous.settledTargetTime, normalizedTarget)
       && previous.settledFrameIndex === getTargetVideoFrameIndex(normalizedTarget, normalizedFps)
-      && isSamePreciseVideoSeekTarget(video.currentTime, normalizedTarget)
+      && isSameVideoFrameSeekTime(video.currentTime, previous.settledSeekTime, normalizedFps)
       && !video.seeking
     ) {
       return true
@@ -614,12 +666,14 @@ function CanvasPreviewRenderer({
       && video.videoWidth
       && video.videoHeight
       && !video.seeking
-      && isSamePreciseVideoSeekTarget(video.currentTime, normalizedTarget)
+      && (isSameVideoFrameSeekTime(video.currentTime, seekTime, normalizedFps)
+        || (video.currentTime === 0 && getTargetVideoFrameIndex(normalizedTarget, normalizedFps) === 0))
     ) {
       pendingSeeks.set(video, {
         sourceKey: resolvedSourceKey,
         pendingTargetTime: null,
         settledTargetTime: normalizedTarget,
+        settledSeekTime: video.currentTime,
         settledFrameIndex: getTargetVideoFrameIndex(normalizedTarget, normalizedFps),
         presentedMediaTime: Number(video.currentTime) || 0,
         issuedAt: nowMs,
@@ -629,7 +683,7 @@ function CanvasPreviewRenderer({
 
     const settledTargetIsStillPresented = previous?.settledTargetTime != null
       && !video.seeking
-      && isSamePreciseVideoSeekTarget(video.currentTime, previous.settledTargetTime)
+      && isSameVideoFrameSeekTime(video.currentTime, previous.settledSeekTime, normalizedFps)
       && previous.settledFrameIndex === getTargetVideoFrameIndex(normalizedTarget, normalizedFps)
     if (!shouldIssuePreciseVideoSeek({
       targetTime: normalizedTarget,
@@ -649,6 +703,7 @@ function CanvasPreviewRenderer({
       pendingTargetTime: normalizedTarget,
       pendingFrameIndex: targetFrameIndex,
       settledTargetTime: previous?.settledTargetTime ?? null,
+      settledSeekTime: previous?.settledSeekTime ?? null,
       settledFrameIndex: previous?.settledFrameIndex ?? null,
       presentedMediaTime: previous?.presentedMediaTime ?? null,
       frameCallbackId: null,
@@ -673,6 +728,7 @@ function CanvasPreviewRenderer({
       request.pendingTargetTime = null
       request.pendingFrameIndex = null
       request.settledTargetTime = normalizedTarget
+      request.settledSeekTime = seekTime
       request.settledFrameIndex = targetFrameIndex
       request.presentedMediaTime = mediaTime != null && Number.isFinite(Number(mediaTime))
         ? Number(mediaTime)
@@ -719,7 +775,7 @@ function CanvasPreviewRenderer({
     video.addEventListener('seeked', request.seekedListener)
     armFrameCallback()
     try {
-      video.currentTime = normalizedTarget
+      video.currentTime = seekTime
     } catch (_) {
       clearPreciseVideoSeek(video)
       return false
@@ -727,33 +783,68 @@ function CanvasPreviewRenderer({
     return false
   }, [clearPreciseVideoSeek])
 
-  // Completion-driven scrub seeking: at most one in-flight seek per video
-  // element. Assigning currentTime restarts an in-flight seek, so a fixed
-  // throttle re-issued per mousemove starves frame presentation whenever
-  // per-seek decode latency exceeds the throttle interval — the preview
-  // freezes for the whole drag. Waiting for the seek to present, repainting,
-  // and letting the next drawFrame retarget tracks the playhead at whatever
-  // rate the decoder can actually sustain. 'seeked' fires on demux, not
-  // presentation, so prefer requestVideoFrameCallback (same pattern as
-  // exporter.js).
-  const issueScrubSeek = useCallback((video, targetTime) => {
-    clearPreciseVideoSeek(video)
-    const pendingSeeks = scrubPendingSeeksRef.current
-    const pending = pendingSeeks.get(video)
-    const nowMs = getNowMs()
-    if (pending && nowMs - pending.issuedAt < SCRUB_SEEK_STALL_MS) return
-    pendingSeeks.set(video, { issuedAt: nowMs })
-    const finish = () => {
-      pendingSeeks.delete(video)
-      drawFrameRef.current?.()
-    }
-    if (typeof video.requestVideoFrameCallback === 'function') {
-      video.requestVideoFrameCallback(() => finish())
-    } else {
-      video.addEventListener('seeked', finish, { once: true })
-    }
-    video.currentTime = targetTime
+  const clearAllPreciseVideoSeeks = useCallback(() => {
+    for (const video of preciseVideoSeeksRef.current.keys()) clearPreciseVideoSeek(video)
   }, [clearPreciseVideoSeek])
+
+  const clearPlaybackJumpVideos = useCallback(() => {
+    for (const record of playbackJumpVideosRef.current.values()) record.landing?.cancel()
+    playbackJumpVideosRef.current.clear()
+  }, [])
+
+  const ensurePlaybackJumpVideoReady = useCallback((video, targetTime, fps, sourceKey, jump) => {
+    const records = playbackJumpVideosRef.current
+    let record = records.get(video)
+    if (record && (record.token !== jump.token || record.sourceKey !== sourceKey
+      || record.targetTime !== targetTime || record.fps !== fps
+      || (record.presented && !record.landing.isReady()))) {
+      record.landing.cancel()
+      records.delete(video)
+      record = null
+    }
+    if (!record) {
+      record = { token: jump.token, sourceKey, targetTime, fps, presented: false, landing: null }
+      records.set(video, record)
+      record.landing = landPlaybackJumpVideo(video, { targetTime, fps,
+        onReady: () => {
+          if (records.get(video) !== record || getCurrentPlaybackJump(useTimelineStore.getState())?.token !== jump.token) return
+          record.presented = true
+          scheduleDeferredDraw('playback-jump-picture-ready')
+        },
+        onError: message => {
+          if (records.get(video) === record) useTimelineStore.getState().failPlaybackJump(jump.token, message)
+        },
+      })
+    }
+    return record.landing.isReady()
+  }, [scheduleDeferredDraw])
+
+  useEffect(() => useTimelineStore.subscribe((next, previous) => {
+    if (getCurrentPlaybackJump(next)?.token !== getCurrentPlaybackJump(previous)?.token) {
+      clearPlaybackJumpVideos()
+      if (getCurrentPlaybackJump(next)) {
+        videoCache.pauseAll()
+        clearAllPreciseVideoSeeks()
+      }
+    }
+  }), [clearPlaybackJumpVideos, clearAllPreciseVideoSeeks])
+
+  // A queued decoder callback must never outlive its timeline/compound or
+  // preempt explicit frame stepping. Subscription invalidation is synchronous,
+  // so it also covers a callback arriving before React runs the next effect.
+  useEffect(() => useTimelineStore.subscribe((next, previous) => {
+    const contextChanged = next.timelineSessionId !== previous.timelineSessionId
+      || next.compoundEditContext !== previous.compoundEditContext
+      || next.timelineFps !== previous.timelineFps
+    if (contextChanged || next.isPlaying || isFrameStepSeekIntentAtTime(next.playheadSeekIntent, next.playheadPosition)) {
+      scrubPresentationRef.current.cancelAll()
+      if (contextChanged) {
+        clearAllPreciseVideoSeeks()
+        scrubPreviewStateRef.current.lastPlayhead = next.playheadPosition
+        scrubPreviewStateRef.current.activeUntil = 0
+      }
+    }
+  }), [clearAllPreciseVideoSeeks])
 
   // Phase 4: the live preview composites through the same WebGL2 compositor
   // as export (previewCompositorMode 'gpu', the default; 'canvas' is the 2D
@@ -919,10 +1010,10 @@ function CanvasPreviewRenderer({
         }).time
         const timeDiff = Math.abs((video.currentTime || 0) - targetTime)
         const seekThreshold = state.isPlaying ? 0.16 : 0.025
-        if (!state.isScrubbingPreview && video.readyState >= 1 && timeDiff > seekThreshold) {
+        if (!state.isPlaybackJump && !state.isScrubbingPreview && !state.isPreciseFrameStep && video.readyState >= 1 && timeDiff > seekThreshold) {
           video.currentTime = targetTime
         }
-        if (state.isPlaying && video.readyState >= 2) {
+        if (state.isPlaying && !state.isPlaybackJump && video.readyState >= 2) {
           const baseScale = matteClip.sourceTimeScale || (matteClip.timelineFps && matteClip.sourceFps
             ? matteClip.timelineFps / matteClip.sourceFps
             : 1)
@@ -933,7 +1024,7 @@ function CanvasPreviewRenderer({
             video.playbackRate = playbackSpeed
           }
           if (video.paused) video.play().catch(() => {})
-        } else if (!state.isPlaying && !video.paused) {
+        } else if ((!state.isPlaying || state.isPlaybackJump) && !video.paused) {
           video.pause()
         }
         if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
@@ -1157,13 +1248,11 @@ function CanvasPreviewRenderer({
         const seekDriven = isSeekDrivenPlayback(state, clip)
         const isTransitionClip = !!transitionStyle
         const shouldHoldTransitionFrame = isTransitionClip && transitionPlayback.clamped
-        const seekThreshold = state.isScrubbingPreview
-          ? getScrubReadyTolerance(state.fps)
-          : (state.isPlaying ? (seekDriven ? 0.12 : (shouldHoldTransitionFrame ? 0.025 : 0.16)) : 0.025)
-        if (!state.isScrubbingPreview && video.readyState >= 1 && timeDiff > seekThreshold) {
+        const seekThreshold = state.isPlaying ? (seekDriven ? 0.12 : (shouldHoldTransitionFrame ? 0.025 : 0.16)) : 0.025
+        if (!state.isPlaybackJump && !state.isScrubbingPreview && !state.isPreciseFrameStep && video.readyState >= 1 && timeDiff > seekThreshold) {
           video.currentTime = targetTime
         }
-        if (state.isPlaying && !seekDriven && video.readyState >= 2 && !shouldHoldTransitionFrame) {
+        if (state.isPlaying && !state.isPlaybackJump && !seekDriven && video.readyState >= 2 && !shouldHoldTransitionFrame) {
           const baseScale = clip.sourceTimeScale || (clip.timelineFps && clip.sourceFps
             ? clip.timelineFps / clip.sourceFps
             : 1)
@@ -1478,29 +1567,23 @@ function CanvasPreviewRenderer({
     if (now - lastPreloadTimeRef.current < 250) return
     lastPreloadTimeRef.current = now
     const getAssetById = useAssetsStore.getState().getAssetById
-    const isForward = state.playbackRate >= 0
-    const lookaheadEnd = time + (isForward ? PRELOAD_LOOKAHEAD : -PRELOAD_LOOKAHEAD)
     const videoTrackIds = new Set(state.tracks.filter(t => t.type === 'video').map(t => t.id))
     state.clips.forEach((clip) => {
       if (!videoTrackIds.has(clip.trackId) || clip.type !== 'video' || clip.enabled === false) return
-      const clipStart = Number(clip.startTime) || 0
-      const clipDuration = Number(clip.duration) || 0
-      const clipEnd = clipStart + clipDuration
-      const isActive = time >= clipStart && time < clipEnd
-      const isUpcoming = isForward
-        ? clipStart > time && clipStart <= lookaheadEnd
-        : clipEnd < time && clipEnd >= lookaheadEnd
-      if (!isActive && !isUpcoming) return
+      const plan = getClipPreviewPreloadPlan({ ...state, clip, time, lookahead: PRELOAD_LOOKAHEAD })
+      if (!plan) return
       const url = resolvePreviewUrl(clip, getAssetById, state.useProxyPlaybackForAssets)
       if (!url) return
       const video = videoCache.getVideoElement({ ...clip, url }, true)
-      if (!video || isActive) return
-      const targetTimelineTime = isForward ? clipStart : clipEnd
+      // Transition handles are already visible outside the nominal clip bounds.
+      // Only the compositor may seek those elements. Scrubbing and exact paused
+      // stepping likewise own presentation; preloading may load, but never park.
+      if (!video || plan.active || state.isScrubbingPreview || state.isPreciseFrameStep || state.isPlaybackJump) return
       const targetTime = getClipPlaybackTimeAtTimeline(
         clip,
-        targetTimelineTime,
+        plan.targetTimelineTime,
         0.01,
-        getOpticalFlowContextOptions(clip)
+        { ...getOpticalFlowContextOptions(clip), allowHandles: plan.allowHandles }
       )
       if (video.readyState >= 1) {
         if (Math.abs((video.currentTime || 0) - targetTime) > 0.03) {
@@ -1513,8 +1596,31 @@ function CanvasPreviewRenderer({
         video.dataset.parkSeekPending = '1'
         video.addEventListener('loadedmetadata', () => {
           delete video.dataset.parkSeekPending
-          if (Math.abs((video.currentTime || 0) - targetTime) > 0.03) {
-            video.currentTime = targetTime
+          const current = getCompoundRenderState(useTimelineStore.getState())
+          const currentClip = current.clips.find(item => item.id === clip.id)
+          if (!canvasRef.current
+            || current.timelineSessionId !== state.timelineSessionId
+            || current.compoundEditContext !== state.compoundEditContext
+            || !currentClip
+            || resolvePreviewUrl(currentClip, getAssetById, current.useProxyPlaybackForAssets) !== url
+            || getCurrentPlaybackJump(current)
+            || (!current.isPlaying && isFrameStepSeekIntentAtTime(current.playheadSeekIntent, current.playheadPosition))
+            || getNowMs() < scrubPreviewStateRef.current.activeUntil
+            || scrubPresentationRef.current.hasPending()) return
+          // Metadata can arrive after the direction, trims or transition have
+          // changed. Recompute both decoder ownership and the source-time target.
+          const currentPlan = getClipPreviewPreloadPlan({
+            ...current, clip: currentClip, time: current.playheadPosition, lookahead: PRELOAD_LOOKAHEAD,
+          })
+          if (!currentPlan || currentPlan.active) return
+          const currentTargetTime = getClipPlaybackTimeAtTimeline(
+            currentClip,
+            currentPlan.targetTimelineTime,
+            0.01,
+            { ...getOpticalFlowContextOptions(currentClip), allowHandles: currentPlan.allowHandles }
+          )
+          if (Math.abs((video.currentTime || 0) - currentTargetTime) > 0.03) {
+            video.currentTime = currentTargetTime
           }
         }, { once: true })
       }
@@ -1527,12 +1633,27 @@ function CanvasPreviewRenderer({
     const drawStartMs = getNowMs()
     const state = {
       ...latestRef.current,
-      ...useTimelineStore.getState(),
+      ...getCompoundRenderState(useTimelineStore.getState()),
     }
     const width = latestRef.current.width || safeWidth
     const height = latestRef.current.height || safeHeight
     const fps = latestRef.current.fps || safeFps
     const time = state.playheadPosition || 0
+    const playbackJump = getCurrentPlaybackJump(state)
+    state.isPlaybackJump = Boolean(playbackJump)
+    if (playbackJumpTokenRef.current !== (playbackJump?.token ?? null)) {
+      clearPlaybackJumpVideos()
+      playbackJumpTokenRef.current = playbackJump?.token ?? null
+      if (playbackJump) videoCache.pauseAll()
+    }
+    const scrubPresentation = scrubPresentationRef.current
+    const previousContext = scrubContextRef.current
+    if (previousContext && (previousContext.session !== state.timelineSessionId
+      || previousContext.compound !== state.compoundEditContext || previousContext.fps !== fps)) {
+      scrubPresentation.cancelAll()
+      clearAllPreciseVideoSeeks()
+    }
+    scrubContextRef.current = { session: state.timelineSessionId, compound: state.compoundEditContext, fps }
     const nowMs = getNowMs()
     const previousDrawTime = lastDrawTimeRef.current
     const loopJumpThreshold = Math.max(0.08, 2 / Math.max(1, fps))
@@ -1540,7 +1661,7 @@ function CanvasPreviewRenderer({
       && Number.isFinite(previousDrawTime)
       && time < previousDrawTime - loopJumpThreshold
     lastDrawTimeRef.current = time
-    if (!state.isPlaying) {
+    if (!state.isPlaying || playbackJump) {
       loopSeekHoldUntilRef.current = 0
     } else if (loopedBackward) {
       loopSeekHoldUntilRef.current = nowMs + 500
@@ -1554,250 +1675,323 @@ function CanvasPreviewRenderer({
       && isFrameStepSeekIntentAtTime(state.playheadSeekIntent, time)
     const isScrubbingPreview = !state.isPlaying
       && !isPreciseFrameStep
-      && nowMs < (scrubPreviewStateRef.current.activeUntil || 0)
+      && (nowMs < (scrubPreviewStateRef.current.activeUntil || 0) || scrubPresentation.hasPending())
     state.isScrubbingPreview = isScrubbingPreview
     state.isPreciseFrameStep = isPreciseFrameStep
-    const transitionInfo = state.getTransitionAtTime(time)
-    const transitionClipIds = getTransitionClipIds(transitionInfo)
-    const frameIndex = Math.floor(time * fps)
-    const getAssetById = useAssetsStore.getState().getAssetById
-    // Track mattes: pair matted clips with the layer above and hide the
-    // consumed matte layers from normal output BEFORE culling, so a
-    // full-frame matte source can't obscure the layers beneath it.
-    const layeredEntries = getVisualLayerClips(state, time)
-    const { matteEntryByClipId, consumedClipIds } = resolveTrackMatteAssignments(layeredEntries)
-    const visibleEntries = consumedClipIds.size > 0
-      ? layeredEntries.filter((layerEntry) => !consumedClipIds.has(layerEntry.clip?.id))
-      : layeredEntries
-    const visualClips = cullVisualLayerEntries(visibleEntries, {
-      time,
-      getAssetById,
-      transitionClipIds,
-      timelineWidth: width,
-      timelineHeight: height,
-    })
+    if (isScrubbingPreview) scrubPresentation.beginPass()
+    else scrubPresentation.cancelAll()
+    let scrubPainted = false
+    try {
+      const transitionInfo = state.getTransitionAtTime(time)
+      const transitionClipIds = getTransitionClipIds(transitionInfo)
+      const frameIndex = Math.floor(time * fps)
+      const getAssetById = useAssetsStore.getState().getAssetById
+      // Track mattes: pair matted clips with the layer above and hide the
+      // consumed matte layers from normal output BEFORE culling, so a
+      // full-frame matte source can't obscure the layers beneath it.
+      const layeredEntries = getVisualLayerClips(state, time)
+      const { matteEntryByClipId, consumedClipIds } = resolveTrackMatteAssignments(layeredEntries)
+      const visibleEntries = consumedClipIds.size > 0
+        ? layeredEntries.filter((layerEntry) => !consumedClipIds.has(layerEntry.clip?.id))
+        : layeredEntries
+      const visualClips = cullVisualLayerEntries(visibleEntries, {
+        time,
+        getAssetById,
+        transitionClipIds,
+        timelineWidth: width,
+        timelineHeight: height,
+      })
 
-    preloadVideosAroundTime(state, time)
+      preloadVideosAroundTime(state, time)
 
-    const videoReadinessEntries = visualClips.map(({ clip }) => ({
-      clip,
-      allowHandles: transitionClipIds.has(clip?.id),
-      role: 'picture',
-    }))
-    const readinessClipIds = new Set(videoReadinessEntries.map(({ clip }) => clip?.id).filter(Boolean))
-    for (const { clip } of visualClips) {
-      const matteClip = matteEntryByClipId.get(clip?.id)?.clip
-      if (!matteClip?.id || readinessClipIds.has(matteClip.id)) continue
-      videoReadinessEntries.push({ clip: matteClip, allowHandles: false, role: 'track-matte' })
-      readinessClipIds.add(matteClip.id)
-    }
+      // Iterable exact-seek ownership enables cancellation on project changes,
+      // but must not keep evicted decoder elements alive during paused editing.
+      const cachedVideos = new Set([...videoCache.cache.values()].map((entry) => entry.videoElement))
+      for (const video of preciseVideoSeeksRef.current.keys()) {
+        if (!cachedVideos.has(video)) clearPreciseVideoSeek(video)
+      }
 
-    const shouldGateVideoReadiness = !state.isPlaying
-      || transitionClipIds.size > 0
-      || loopSeekHoldActive
-      || visualClips.some(({ clip }) => clip?.type === 'video' && isSeekDrivenPlayback(state, clip))
+      const videoReadinessEntries = visualClips.map(({ clip }) => ({
+        clip,
+        allowHandles: transitionClipIds.has(clip?.id),
+        role: 'picture',
+      }))
+      const readinessClipIds = new Set(videoReadinessEntries.map(({ clip }) => clip?.id).filter(Boolean))
+      for (const { clip } of visualClips) {
+        const matteClip = matteEntryByClipId.get(clip?.id)?.clip
+        if (!matteClip?.id || readinessClipIds.has(matteClip.id)) continue
+        videoReadinessEntries.push({ clip: matteClip, allowHandles: false, role: 'track-matte' })
+        readinessClipIds.add(matteClip.id)
+      }
 
-    if (shouldGateVideoReadiness) {
-      for (const { clip, allowHandles, role } of videoReadinessEntries) {
-        if (!clip || (clip.type !== 'video' && !isFullBakeFresh(clip))) continue
-        const seekDriven = isSeekDrivenPlayback(state, clip)
-        const isTransitionClip = role === 'picture' && !!allowHandles
-        if (state.isPlaying && !seekDriven && !isTransitionClip && !loopSeekHoldActive) continue
-        const clipUrl = resolvePreviewUrl(clip, getAssetById, state.useProxyPlaybackForAssets)
-        if (!clipUrl) continue
-        const video = videoCache.getVideoElement({ ...clip, url: clipUrl })
-        if (!video) {
-          scheduleDeferredDraw(seekDriven ? 'seek-video-missing' : 'paused-video-missing')
-          return
-        }
-        const isCachedRender = clip.cacheStatus === 'cached' && clip.cacheUrl && clipUrl === clip.cacheUrl
-        const clipTime = time - (clip.startTime || 0)
-        const transitionPlayback = getClipPlaybackTimingAtTimeline(clip, time, 0.01, {
-          allowHandles,
-          ...getOpticalFlowContextOptions(clip),
-        })
-        const targetTime = isCachedRender
-          ? clamp(clipTime, 0, Math.max(0, clip.duration - 0.01))
-          : transitionPlayback.time
+      const shouldGateVideoReadiness = !state.isPlaying
+        || playbackJump
+        || transitionClipIds.size > 0
+        || loopSeekHoldActive
+        || visualClips.some(({ clip }) => clip?.type === 'video' && isSeekDrivenPlayback(state, clip))
 
-        if (video.readyState < 1) {
-          scheduleDeferredDraw(seekDriven ? 'seek-video-metadata' : 'paused-video-metadata')
-          return
-        }
-
-        if (state.isPreciseFrameStep) {
-          const asset = clip.assetId ? getAssetById(clip.assetId) : null
-          const targetFps = getPreciseVideoSeekFps({
-            usingOpticalFlow: !isCachedRender && transitionPlayback.usingOpticalFlow,
-            opticalFlowFps: clip.opticalFlowCache?.targetFps,
-            isTimelineCache: isCachedRender,
-            timelineFps: fps,
-            clipSourceFps: clip.sourceFps,
-            assetFps: asset?.settings?.fps ?? asset?.fps ?? asset?.metadata?.fps,
+      let scrubPicturesReady = true
+      let jumpPicturesReady = true
+      const jumpVideos = new Set()
+      if (shouldGateVideoReadiness) {
+        for (const { clip, allowHandles, role } of videoReadinessEntries) {
+          if (!clip || (clip.type !== 'video' && !isFullBakeFresh(clip))) continue
+          const seekDriven = isSeekDrivenPlayback(state, clip)
+          const isTransitionClip = role === 'picture' && !!allowHandles
+          if (state.isPlaying && !playbackJump && !seekDriven && !isTransitionClip && !loopSeekHoldActive) continue
+          const clipUrl = resolvePreviewUrl(clip, getAssetById, state.useProxyPlaybackForAssets)
+          if (!clipUrl) {
+            if (playbackJump) {
+              state.failPlaybackJump(playbackJump.token, `The media for “${clip.name || 'this clip'}” is unavailable.`)
+              return
+            }
+            continue
+          }
+          const video = videoCache.getVideoElement({ ...clip, url: clipUrl })
+          if (!video) {
+            scheduleDeferredDraw(seekDriven ? 'seek-video-missing' : 'paused-video-missing')
+            if (isScrubbingPreview) { scrubPicturesReady = false; continue }
+            return
+          }
+          const isCachedRender = clip.cacheStatus === 'cached' && clip.cacheUrl && clipUrl === clip.cacheUrl
+          const clipTime = time - (clip.startTime || 0)
+          const transitionPlayback = getClipPlaybackTimingAtTimeline(clip, time, 0.01, {
+            allowHandles,
+            ...getOpticalFlowContextOptions(clip),
           })
-          if (!ensurePreciseVideoSeekReady(video, targetTime, targetFps, clipUrl)) {
-            scheduleDeferredDraw(role === 'track-matte'
-              ? 'precise-track-matte-video-seek'
-              : 'precise-video-seek')
+          const targetTime = isCachedRender
+            ? clamp(clipTime, 0, Math.max(0, clip.duration - 0.01))
+            : transitionPlayback.time
+
+          if (playbackJump) {
+            jumpVideos.add(video)
+            const asset = clip.assetId ? getAssetById(clip.assetId) : null
+            const targetFps = getPreciseVideoSeekFps({
+              usingOpticalFlow: !isCachedRender && transitionPlayback.usingOpticalFlow,
+              opticalFlowFps: clip.opticalFlowCache?.targetFps,
+              isTimelineCache: isCachedRender, timelineFps: fps, clipSourceFps: clip.sourceFps,
+              assetFps: asset?.settings?.fps ?? asset?.fps ?? asset?.metadata?.fps,
+            })
+            clearPreciseVideoSeek(video)
+            if (!ensurePlaybackJumpVideoReady(video, targetTime, targetFps, clipUrl, playbackJump)) jumpPicturesReady = false
+            // Start every visible picture/matte concurrently at the frozen
+            // destination; no early-layer return may starve a later decoder.
+            continue
+          }
+
+          if (isScrubbingPreview) {
+            const asset = clip.assetId ? getAssetById(clip.assetId) : null
+            const targetFps = getPreciseVideoSeekFps({
+              usingOpticalFlow: !isCachedRender && transitionPlayback.usingOpticalFlow,
+              opticalFlowFps: clip.opticalFlowCache?.targetFps,
+              isTimelineCache: isCachedRender,
+              timelineFps: fps,
+              clipSourceFps: clip.sourceFps,
+              assetFps: asset?.settings?.fps ?? asset?.fps ?? asset?.metadata?.fps,
+            })
+            clearPreciseVideoSeek(video)
+            const picture = scrubPresentation.observe(video, { sourceKey: clipUrl, targetTime, fps: targetFps })
+            if (!picture.ready) scrubPicturesReady = false
+            // Observe every layer and its matte even if an earlier video is still
+            // decoding. A ready picture waits for the whole composite to consume it.
+            continue
+          }
+
+          if (video.readyState < 1) {
+            scheduleDeferredDraw(seekDriven ? 'seek-video-metadata' : 'paused-video-metadata')
             return
           }
+
+          if (state.isPreciseFrameStep) {
+            const asset = clip.assetId ? getAssetById(clip.assetId) : null
+            const targetFps = getPreciseVideoSeekFps({
+              usingOpticalFlow: !isCachedRender && transitionPlayback.usingOpticalFlow,
+              opticalFlowFps: clip.opticalFlowCache?.targetFps,
+              isTimelineCache: isCachedRender,
+              timelineFps: fps,
+              clipSourceFps: clip.sourceFps,
+              assetFps: asset?.settings?.fps ?? asset?.fps ?? asset?.metadata?.fps,
+            })
+            if (!ensurePreciseVideoSeekReady(video, targetTime, targetFps, clipUrl)) {
+              scheduleDeferredDraw(role === 'track-matte'
+                ? 'precise-track-matte-video-seek'
+                : 'precise-video-seek')
+              return
+            }
+            if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+              scheduleDeferredDraw(role === 'track-matte'
+                ? 'precise-track-matte-video-frame'
+                : 'precise-video-frame')
+              return
+            }
+            continue
+          }
+
+          const readyTolerance = seekDriven ? 0.12 : ((isTransitionClip && state.isPlaying && !loopSeekHoldActive) ? 0.16 : 0.025)
+          if (Math.abs((video.currentTime || 0) - targetTime) > readyTolerance) {
+            video.currentTime = targetTime
+            scheduleDeferredDraw(seekDriven ? 'seek-video-seek' : 'paused-video-seek')
+            // If we already have a good frame, preserve it while the parked
+            // seek resolves. Reverse playback is seek-driven too, so holding
+            // the canvas here prevents stale decoder frames from leaking.
+            if (hasPaintedFrameRef.current || video.readyState < 2) return
+          }
+
           if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-            scheduleDeferredDraw(role === 'track-matte'
-              ? 'precise-track-matte-video-frame'
-              : 'precise-video-frame')
+            scheduleDeferredDraw(seekDriven ? 'seek-video-frame' : 'paused-video-frame')
             return
           }
+        }
+      }
+
+      if (playbackJump) {
+        for (const [video, record] of playbackJumpVideosRef.current) {
+          if (!jumpVideos.has(video)) { record.landing.cancel(); playbackJumpVideosRef.current.delete(video) }
+        }
+        if (!jumpPicturesReady) { scheduleDeferredDraw('playback-jump-pending'); return }
+        for (const { clip } of visualClips) {
+          if (clip.type !== 'image') continue
+          const url = resolvePreviewUrl(clip, getAssetById, state.useProxyPlaybackForAssets)
+          if (!url || imageCacheRef.current.get(url)?.failed) {
+            state.failPlaybackJump(playbackJump.token, `The image for “${clip.name || 'this clip'}” is unavailable.`)
+            return
+          }
+        }
+      }
+
+      if (!scrubPicturesReady) {
+        scheduleDeferredDraw('scrub-picture-pending')
+        return
+      }
+
+      ensureCanvasSize(canvas, width, height)
+      const ctx = canvas.getContext('2d', { alpha: false })
+      if (!ctx) return
+
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.globalAlpha = 1
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.filter = 'none'
+      // Keep the visible canvas intact until the staged composite is complete.
+
+      const { stageCanvas, stageCtx } = acquireStageCanvas(canvas, width, height)
+      if (!stageCtx) return
+      stageCtx.imageSmoothingEnabled = true
+      stageCtx.imageSmoothingQuality = 'high'
+      stageCtx.setTransform(1, 0, 0, 1, 0, 0)
+      stageCtx.globalAlpha = 1
+      stageCtx.globalCompositeOperation = 'source-over'
+      stageCtx.filter = 'none'
+      stageCtx.fillStyle = '#000000'
+      stageCtx.fillRect(0, 0, width, height)
+
+      // GPU compositing: clips draw into the WebGL2 stage instead of
+      // stageCtx; the finished frame blits into stageCanvas below so all the
+      // hold/blit/last-frame logic stays identical.
+      const gpuStage = getGpuStage(width, height, state.previewCompositorMode)
+      if (gpuStage) gpuStage.beginFrame()
+      const clipState = { ...state, width, height, fps, gpuStage }
+
+      let sawUnreadyVisual = false
+      for (const entry of visualClips) {
+        const { clip } = entry
+        if (!clip) continue
+        if (clip.type === 'adjustment') {
+          applyAdjustmentLayer(stageCtx, clip, time, frameIndex, clipState)
           continue
         }
-
-        const readyTolerance = state.isScrubbingPreview
-          ? getScrubReadyTolerance(fps)
-          : (seekDriven ? 0.12 : ((isTransitionClip && state.isPlaying && !loopSeekHoldActive) ? 0.16 : 0.025))
-        if (Math.abs((video.currentTime || 0) - targetTime) > readyTolerance) {
-          if (state.isScrubbingPreview) {
-            issueScrubSeek(video, targetTime)
-            scheduleDeferredDraw('scrub-video-seek')
-            if (video.readyState >= 2 && video.videoWidth && video.videoHeight) continue
-            return
-          }
-          video.currentTime = targetTime
-          scheduleDeferredDraw(seekDriven ? 'seek-video-seek' : 'paused-video-seek')
-          // If we already have a good frame, preserve it while the parked
-          // seek resolves. Reverse playback is seek-driven too, so holding
-          // the canvas here prevents stale decoder frames from leaking.
-          if (hasPaintedFrameRef.current || video.readyState < 2) return
-        }
-
-        if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
-          scheduleDeferredDraw(seekDriven ? 'seek-video-frame' : 'paused-video-frame')
-          return
+        if (clip.type === 'video' || clip.type === 'image' || clip.type === 'text' || clip.type === 'shape' || clip.type === 'captions') {
+          const status = drawVisualClip(stageCtx, entry, time, transitionInfo, clipState, frameIndex, matteEntryByClipId.get(clip.id) || null)
+          if (status === 'unready') sawUnreadyVisual = true
         }
       }
-    }
 
-    ensureCanvasSize(canvas, width, height)
-    const ctx = canvas.getContext('2d', { alpha: false })
-    if (!ctx) return
-
-    const shouldHoldLastFrame = state.isPlaying && hasPaintedFrameRef.current
-    ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.globalAlpha = 1
-    ctx.globalCompositeOperation = 'source-over'
-    ctx.filter = 'none'
-    const lastFrameCanvas = lastFrameCanvasRef.current
-    if (shouldHoldLastFrame && lastFrameCanvas) {
-      ctx.drawImage(lastFrameCanvas, 0, 0, width, height)
-    } else {
-      ctx.fillStyle = '#000000'
-      ctx.fillRect(0, 0, width, height)
-    }
-
-    const stageCanvas = document.createElement('canvas')
-    ensureCanvasSize(stageCanvas, width, height)
-    const stageCtx = stageCanvas.getContext('2d', { alpha: false })
-    if (!stageCtx) return
-    stageCtx.imageSmoothingEnabled = true
-    stageCtx.imageSmoothingQuality = 'high'
-    stageCtx.setTransform(1, 0, 0, 1, 0, 0)
-    stageCtx.globalAlpha = 1
-    stageCtx.globalCompositeOperation = 'source-over'
-    stageCtx.filter = 'none'
-    stageCtx.fillStyle = '#000000'
-    stageCtx.fillRect(0, 0, width, height)
-
-    // GPU compositing: clips draw into the WebGL2 stage instead of
-    // stageCtx; the finished frame blits into stageCanvas below so all the
-    // hold/blit/last-frame logic stays identical.
-    const gpuStage = getGpuStage(width, height, state.previewCompositorMode)
-    if (gpuStage) gpuStage.beginFrame()
-    const clipState = { ...state, width, height, fps, gpuStage }
-
-    let sawUnreadyVisual = false
-    for (const entry of visualClips) {
-      const { clip } = entry
-      if (!clip) continue
-      if (clip.type === 'adjustment') {
-        applyAdjustmentLayer(stageCtx, clip, time, frameIndex, clipState)
-        continue
+      const fadeOverlay = getFadeOverlayInfo(transitionInfo)
+      if (fadeOverlay && fadeOverlay.opacity > 0.001) {
+        if (gpuStage) {
+          gpuStage.drawFill(fadeOverlay.color, Math.min(1, fadeOverlay.opacity))
+        } else {
+          stageCtx.save()
+          stageCtx.globalAlpha = Math.min(1, fadeOverlay.opacity)
+          stageCtx.fillStyle = fadeOverlay.color
+          stageCtx.fillRect(0, 0, width, height)
+          stageCtx.restore()
+        }
       }
-      if (clip.type === 'video' || clip.type === 'image' || clip.type === 'text' || clip.type === 'shape' || clip.type === 'captions') {
-        const status = drawVisualClip(stageCtx, entry, time, transitionInfo, clipState, frameIndex, matteEntryByClipId.get(clip.id) || null)
-        if (status === 'unready') sawUnreadyVisual = true
-      }
-    }
 
-    const fadeOverlay = getFadeOverlayInfo(transitionInfo)
-    if (fadeOverlay && fadeOverlay.opacity > 0.001) {
       if (gpuStage) {
-        gpuStage.drawFill(fadeOverlay.color, Math.min(1, fadeOverlay.opacity))
-      } else {
-        stageCtx.save()
-        stageCtx.globalAlpha = Math.min(1, fadeOverlay.opacity)
-        stageCtx.fillStyle = fadeOverlay.color
-        stageCtx.fillRect(0, 0, width, height)
-        stageCtx.restore()
+        gpuStage.present()
+        stageCtx.drawImage(gpuStage.canvas, 0, 0)
       }
-    }
 
-    if (gpuStage) {
-      gpuStage.present()
-      stageCtx.drawImage(gpuStage.canvas, 0, 0)
-    }
-
-    // A clip that should be visible couldn't draw yet (cold element at a
-    // cut, mid-seek decoder dip, image still decoding). Blitting now would
-    // flash the black stage and poison the held frame, so keep the previous
-    // frame on screen briefly — the rAF loop retries every tick while
-    // playing. Bounded so a permanently broken source degrades to black
-    // instead of freezing playback on a stale frame.
-    if (state.isPlaying && sawUnreadyVisual && hasPaintedFrameRef.current && lastFrameCanvasRef.current) {
-      if (!unreadyHoldUntilRef.current) {
-        unreadyHoldUntilRef.current = nowMs + PLAYBACK_UNREADY_HOLD_MS
-        logCanvasDiag('unready-hold:start', { time: Number(time.toFixed(3)) })
+      // A clip that should be visible couldn't draw yet (cold element at a
+      // cut, mid-seek decoder dip, image still decoding). Blitting now would
+      // flash the black stage and poison the held frame, so keep the previous
+      // frame on screen briefly — the rAF loop retries every tick while
+      // playing. Bounded so a permanently broken source degrades to black
+      // instead of freezing playback on a stale frame.
+      if ((isScrubbingPreview || playbackJump) && sawUnreadyVisual) {
+        scheduleDeferredDraw('scrub-composite-pending')
+        return
       }
-      if (nowMs < unreadyHoldUntilRef.current) return
-    } else if (!sawUnreadyVisual && unreadyHoldUntilRef.current) {
-      unreadyHoldUntilRef.current = 0
-    }
-
-    ctx.clearRect(0, 0, width, height)
-    ctx.drawImage(stageCanvas, 0, 0)
-    if (!lastFrameCanvasRef.current) {
-      lastFrameCanvasRef.current = document.createElement('canvas')
-    }
-    ensureCanvasSize(lastFrameCanvasRef.current, width, height)
-    const lastCtx = lastFrameCanvasRef.current.getContext('2d', { alpha: false })
-    if (lastCtx) {
-      lastCtx.clearRect(0, 0, width, height)
-      lastCtx.drawImage(stageCanvas, 0, 0)
-    }
-    hasPaintedFrameRef.current = true
-    // Commit bookkeeping for the live-capture bridge: which timeline time
-    // this frame represents, and a serial so captures can insist on a FRESH
-    // commit (post-edit) rather than a stale frame at the same time.
-    lastCommittedFrameTimeRef.current = time
-    frameCommitSerialRef.current += 1
-    // Playback fps meter: `presented` counts unique timeline frames committed
-    // (a 60Hz commit loop on a 24fps timeline presents 24/s). Counted
-    // unconditionally — the badge only displays while playing, and gating on
-    // play state here would tie the meter to where that flag happens to live.
-    const playbackStats = playbackStatsRef?.current
-    if (playbackStats) {
-      playbackStats.commits += 1
-      // (|| 0) heals a stats object born before drawMs existed (HMR keeps refs).
-      playbackStats.drawMs = (playbackStats.drawMs || 0) + (getNowMs() - drawStartMs)
-      const frameIndex = Math.floor(time * fps + 0.000001)
-      if (frameIndex !== playbackStats.lastFrameIndex) {
-        playbackStats.lastFrameIndex = frameIndex
-        playbackStats.presented += 1
+      if (state.isPlaying && sawUnreadyVisual && hasPaintedFrameRef.current && lastFrameCanvasRef.current) {
+        if (!unreadyHoldUntilRef.current) {
+          unreadyHoldUntilRef.current = nowMs + PLAYBACK_UNREADY_HOLD_MS
+          logCanvasDiag('unready-hold:start', { time: Number(time.toFixed(3)) })
+        }
+        if (nowMs < unreadyHoldUntilRef.current) return
+      } else if (!sawUnreadyVisual && unreadyHoldUntilRef.current) {
+        unreadyHoldUntilRef.current = 0
       }
+
+      ctx.clearRect(0, 0, width, height)
+      ctx.drawImage(stageCanvas, 0, 0)
+      if (!lastFrameCanvasRef.current) {
+        lastFrameCanvasRef.current = document.createElement('canvas')
+      }
+      ensureCanvasSize(lastFrameCanvasRef.current, width, height)
+      const lastCtx = lastFrameCanvasRef.current.getContext('2d', { alpha: false })
+      if (lastCtx) {
+        lastCtx.clearRect(0, 0, width, height)
+        lastCtx.drawImage(stageCanvas, 0, 0)
+      }
+      hasPaintedFrameRef.current = true
+      // Commit bookkeeping for the live-capture bridge: which timeline time
+      // this frame represents, and a serial so captures can insist on a FRESH
+      // commit (post-edit) rather than a stale frame at the same time.
+      lastCommittedFrameTimeRef.current = time
+      frameCommitSerialRef.current += 1
+      scrubPainted = isScrubbingPreview
+      // The transport and audio may resume only after the target's complete
+      // picture is published. A stale/newer click cannot acknowledge this one.
+      if (playbackJump) state.completePlaybackJump(playbackJump.token)
+      // Playback fps meter: `presented` counts unique timeline frames committed
+      // (a 60Hz commit loop on a 24fps timeline presents 24/s). Counted
+      // unconditionally — the badge only displays while playing, and gating on
+      // play state here would tie the meter to where that flag happens to live.
+      const playbackStats = playbackStatsRef?.current
+      if (playbackStats) {
+        playbackStats.commits += 1
+        // (|| 0) heals a stats object born before drawMs existed (HMR keeps refs).
+        playbackStats.drawMs = (playbackStats.drawMs || 0) + (getNowMs() - drawStartMs)
+        const frameIndex = Math.floor(time * fps + 0.000001)
+        if (frameIndex !== playbackStats.lastFrameIndex) {
+          playbackStats.lastFrameIndex = frameIndex
+          playbackStats.presented += 1
+        }
+      }
+      if (loopSeekHoldActive) {
+        loopSeekHoldUntilRef.current = 0
+      }
+    } finally {
+      // Only a successful final blit may release the decoded pictures and
+      // request newer targets. Never retarget a video in its completion draw
+      // before the compositor has had a chance to show that picture.
+      if (isScrubbingPreview) scrubPresentation.endPass({ painted: scrubPainted })
     }
-    if (loopSeekHoldActive) {
-      loopSeekHoldUntilRef.current = 0
-    }
-  }, [applyAdjustmentLayer, drawVisualClip, ensurePreciseVideoSeekReady, issueScrubSeek, preloadVideosAroundTime, safeFps, safeHeight, safeWidth, scheduleDeferredDraw])
+  }, [applyAdjustmentLayer, clearAllPreciseVideoSeeks, clearPlaybackJumpVideos, clearPreciseVideoSeek, drawVisualClip, ensurePlaybackJumpVideoReady, ensurePreciseVideoSeekReady, preloadVideosAroundTime, safeFps, safeHeight, safeWidth, scheduleDeferredDraw])
 
   drawFrameRef.current = drawFrame
 
@@ -1822,6 +2016,7 @@ function CanvasPreviewRenderer({
       // Force strict seek tolerances — scrub mode would accept video frames
       // up to ~a frame away from the target.
       scrubPreviewStateRef.current.activeUntil = 0
+      scrubPresentationRef.current.cancelAll()
       drawFrameRef.current?.()
       const currentPlayhead = useTimelineStore.getState().playheadPosition
       const committedTime = lastCommittedFrameTimeRef.current
@@ -1863,16 +2058,30 @@ function CanvasPreviewRenderer({
   }, [])
 
   useEffect(() => {
-    const currentPlayhead = Number(playheadPosition) || 0
     const scrubState = scrubPreviewStateRef.current
 
     if (isPlaying) {
-      scrubState.lastPlayhead = currentPlayhead
+      wasPlayingRef.current = true
       scrubState.activeUntil = 0
       // Native playback advances cached videos outside the exact seek gate.
       // Drop settled targets so the first paused frame-step must establish a
       // fresh decoder presentation instead of trusting pre-playback state.
-      preciseVideoSeeksRef.current = new WeakMap()
+      clearAllPreciseVideoSeeks()
+      if (scrubSettleTimerRef.current) {
+        window.clearTimeout(scrubSettleTimerRef.current)
+        scrubSettleTimerRef.current = 0
+      }
+      return
+    }
+
+    const currentPlayhead = Number(playheadPosition) || 0
+    if (wasPlayingRef.current) {
+      // First paused pass after playback: the playhead was not tracked here
+      // while playing, so stopping must not be mistaken for a scrub move.
+      wasPlayingRef.current = false
+      clearAllPreciseVideoSeeks()
+      scrubState.lastPlayhead = currentPlayhead
+      scrubState.activeUntil = 0
       if (scrubSettleTimerRef.current) {
         window.clearTimeout(scrubSettleTimerRef.current)
         scrubSettleTimerRef.current = 0
@@ -1902,13 +2111,14 @@ function CanvasPreviewRenderer({
       scrubSettleTimerRef.current = 0
       drawFrameRef.current?.()
     }, SCRUB_SETTLE_DELAY_MS)
-  }, [isPlaying, playheadPosition, playheadSeekIntent])
+  }, [clearAllPreciseVideoSeeks, isPlaying, playheadPosition, playheadSeekIntent])
 
   // Timeline dispatches this on scrub mouseup. Exit scrub mode and run the
   // strict-tolerance draw immediately instead of waiting out the settle
   // timer, so the released frame commits as fast as the seek can resolve.
   useEffect(() => {
     const handleScrubEnd = () => {
+      scrubPresentationRef.current.cancelAll()
       scrubPreviewStateRef.current.activeUntil = 0
       if (scrubSettleTimerRef.current) {
         window.clearTimeout(scrubSettleTimerRef.current)
@@ -1939,6 +2149,9 @@ function CanvasPreviewRenderer({
   }, [drawFrame, isPlaying])
 
   useEffect(() => () => {
+    scrubPresentationRef.current.cancelAll()
+    clearPlaybackJumpVideos()
+    clearAllPreciseVideoSeeks()
     if (deferredDrawTimerRef.current) {
       window.clearTimeout(deferredDrawTimerRef.current)
       deferredDrawTimerRef.current = 0
@@ -1951,7 +2164,7 @@ function CanvasPreviewRenderer({
       window.clearTimeout(scrubSettleTimerRef.current)
       scrubSettleTimerRef.current = 0
     }
-  }, [])
+  }, [clearAllPreciseVideoSeeks, clearPlaybackJumpVideos])
 
   // LUT library changes (import finishing, boot load completing) alter what
   // runColorPass can resolve — repaint the paused frame so a newly imported
@@ -1967,6 +2180,9 @@ function CanvasPreviewRenderer({
   useEffect(() => {
     if (!isPlaying) drawFrame()
   }, [
+    // A cold image/mask can finish decoding after a paused frame-step has
+    // already painted. Its load revision must invalidate that same frame.
+    assetRevision,
     assets,
     clips,
     drawFrame,
@@ -1996,7 +2212,8 @@ function CanvasPreviewRenderer({
       y: ((event.clientY - rect.top) / rect.height) * height,
     }
 
-    const state = useTimelineStore.getState()
+    const rawState = useTimelineStore.getState()
+    const state = getCompoundRenderState(rawState)
     const time = state.playheadPosition || 0
     const transitionInfo = state.getTransitionAtTime(time)
     const transitionClipIds = getTransitionClipIds(transitionInfo)
@@ -2043,7 +2260,11 @@ function CanvasPreviewRenderer({
         : getBaseDrawRect(sourceWidth || width, sourceHeight || height, width, height)
 
       if (clipContainsCanvasPoint(point, clip, drawRect, clipTransform, transitionStyle)) {
-        return clip
+        // Render-only children never enter selection or transform gestures.
+        // Their editable identity in this view is the containing parent.
+        return clip.compoundParentId
+          ? rawState.clips.find((candidate) => candidate.id === clip.compoundParentId) || null
+          : clip
       }
     }
 
@@ -2051,6 +2272,7 @@ function CanvasPreviewRenderer({
   }, [safeHeight, safeWidth])
 
   return (
+    <>
     <canvas
       ref={canvasRef}
       data-preview-popout-source="canvas"
@@ -2074,6 +2296,12 @@ function CanvasPreviewRenderer({
         display: 'block',
       }}
     />
+    {compoundRenderErrors?.length > 0 && <div
+      role="alert"
+      data-testid="compound-preview-error"
+      className="absolute inset-x-2 top-2 z-20 rounded border border-red-400/60 bg-black/90 p-2 text-xs text-red-200"
+    >{compoundRenderErrors.join(' ')}</div>}
+    </>
   )
 }
 

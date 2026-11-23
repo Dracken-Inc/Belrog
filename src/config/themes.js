@@ -2,14 +2,8 @@ export const THEME_STORAGE_KEY = 'comfystudio-theme'
 
 export const THEMES = [
   {
-    id: 'belrog',
-    label: 'Belrog',
-    description: 'Default brand theme with deep obsidian blacks, crimson fire, and ember gold accents',
-    preview: { bg: '#0a0608', surface: '#1a1015', accent: '#c41e3a', text: '#f5e6d3' },
-  },
-  {
-    id: 'Belrog',
-    label: 'Belrog',
+    id: 'velorn',
+    label: 'Velorn',
     description: 'Default brand theme with deep blues, violet, and readable old-gold accents',
     preview: { bg: '#030610', surface: '#11172a', accent: '#987000', text: '#f4eef8' },
   },
@@ -45,7 +39,7 @@ export const THEMES = [
   },
 ]
 
-export const DEFAULT_THEME_ID = 'belrog'
+export const DEFAULT_THEME_ID = 'velorn'
 
 export function getStoredThemeId() {
   try {

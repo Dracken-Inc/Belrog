@@ -58,6 +58,10 @@ export function createMultiClipTrimSession({
   const minimumDuration = 1 / safeFps
   let groupMinimumDelta = -Infinity
   let groupMaximumDelta = Infinity
+  // Feedback metadata only. Keep the existing numerical trim bounds below as
+  // the authority; these records explain which clip/handle imposed a bound.
+  const minimumConstraints = []
+  const maximumConstraints = []
 
   const snapshots = targets.map((clip) => {
     const startTime = Math.max(0, finiteNumber(clip.startTime, 0))
@@ -89,24 +93,37 @@ export function createMultiClipTrimSession({
     let maximumDelta
     if (edge === 'left') {
       minimumDelta = -startTime
+      minimumConstraints.push({ delta: -startTime, kind: 'timeline-start', clipId: clip.id })
       if (!infinitelyExtendable) {
         minimumDelta = Math.max(minimumDelta, -trimStart / timeScale)
+        minimumConstraints.push({ delta: -trimStart / timeScale, kind: 'source-start', clipId: clip.id })
       }
       if (Number.isFinite(leftNeighborEnd)) {
         minimumDelta = Math.max(minimumDelta, leftNeighborEnd - startTime)
+        minimumConstraints.push({ delta: leftNeighborEnd - startTime, kind: 'neighbor', clipId: clip.id })
       }
       maximumDelta = duration - minimumDuration
+      maximumConstraints.push({ delta: maximumDelta, kind: 'minimum-duration', clipId: clip.id })
     } else {
       minimumDelta = minimumDuration - duration
+      minimumConstraints.push({ delta: minimumDelta, kind: 'minimum-duration', clipId: clip.id })
       maximumDelta = Infinity
       if (Number.isFinite(sourceDuration)) {
         maximumDelta = Math.min(
           maximumDelta,
           (sourceDuration - trimStart) / timeScale - duration
         )
+        const sourceDurationKnown = Number.isFinite(Number(clip.sourceDuration))
+          && Number(clip.sourceDuration) > 0
+        maximumConstraints.push({
+          delta: (sourceDuration - trimStart) / timeScale - duration,
+          kind: sourceDurationKnown ? 'source-end' : 'source-limit',
+          clipId: clip.id,
+        })
       }
       if (Number.isFinite(rightNeighborStart)) {
         maximumDelta = Math.min(maximumDelta, rightNeighborStart - endTime)
+        maximumConstraints.push({ delta: rightNeighborStart - endTime, kind: 'neighbor', clipId: clip.id })
       }
     }
 
@@ -143,6 +160,10 @@ export function createMultiClipTrimSession({
     snapshots,
     minimumDelta: groupMinimumDelta,
     maximumDelta: groupMaximumDelta,
+    limitConstraints: {
+      minimum: minimumConstraints.filter(({ delta }) => Math.abs(delta - groupMinimumDelta) < 1e-7),
+      maximum: maximumConstraints.filter(({ delta }) => Math.abs(delta - groupMaximumDelta) < 1e-7),
+    },
   }
 }
 

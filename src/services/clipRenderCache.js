@@ -19,6 +19,7 @@ import { exportTimeline } from './exporter'
 import useTimelineStore from '../stores/timelineStore'
 import useProjectStore from '../stores/projectStore'
 import { getClipBakeSignature } from '../utils/clipBakeSignature'
+import { createClipCacheReadRequest, isClipCacheReadCurrent, createClipSourceRequest, isClipSourceRequestCurrent } from '../utils/clipCacheReadGuard.mjs'
 
 const RENDERABLE_CLIP_TYPES = new Set(['video', 'image', 'text', 'shape'])
 const CACHE_DIR = 'cache'
@@ -56,6 +57,8 @@ export async function renderClipToCache(clipId, { onProgress = () => {} } = {}) 
   const fps = Math.max(1, Number(settings.fps) || 24)
 
   const controller = new AbortController()
+  const sourceRequest = createClipSourceRequest(clip, timelineState.timelineSessionId, projectHandle)
+  const stillCurrent = () => isClipSourceRequestCurrent(sourceRequest, useTimelineStore.getState(), useProjectStore.getState().currentProjectHandle)
   activeClipRenders.set(clipId, controller)
   timelineState.setCacheStatus(clipId, 'rendering', 0)
 
@@ -88,18 +91,22 @@ export async function renderClipToCache(clipId, { onProgress = () => {} } = {}) 
       signal: controller.signal,
     }, (progressInfo) => {
       const progress = Math.max(0, Math.min(100, Number(progressInfo?.progress) || 0))
+      if (!stillCurrent()) return
       useTimelineStore.getState().setCacheStatus(clipId, 'rendering', progress)
       onProgress(progressInfo)
     })
 
     const { getProjectFileUrl } = await import('./fileSystem')
     const url = await getProjectFileUrl(projectHandle, cachePath)
+    if (!stillCurrent()) return null
     if (!url) throw new Error('Failed to resolve cached render URL')
     useTimelineStore.getState().setCacheUrl(clipId, url, cachePath, 'full', bakeSignature)
     return { url, cachePath }
   } catch (err) {
-    const latest = useTimelineStore.getState().clips.find((c) => c.id === clipId)
-    useTimelineStore.getState().setCacheStatus(clipId, latest?.cacheUrl ? 'invalid' : 'none', 0)
+    if (stillCurrent()) {
+      const latest = useTimelineStore.getState().clips.find((c) => c.id === clipId)
+      useTimelineStore.getState().setCacheStatus(clipId, latest?.cacheUrl ? 'invalid' : 'none', 0)
+    }
     throw err
   } finally {
     activeClipRenders.delete(clipId)
@@ -115,6 +122,9 @@ export async function renderClipToCache(clipId, { onProgress = () => {} } = {}) 
 export async function hydrateClipRenderCaches(projectPath) {
   if (!projectPath || typeof window === 'undefined' || !window.electronAPI?.isElectron) return
   const timelineState = useTimelineStore.getState()
+  // Asset loading can start hydration before projectStore publishes the new
+  // handle. The timeline session and source key still bind this exact open.
+  const openingProjectHandle = useProjectStore.getState().currentProjectHandle
   const candidates = timelineState.clips.filter((clip) => (
     clip?.cachePath
     && clip.cacheStatus === 'cached'
@@ -124,14 +134,23 @@ export async function hydrateClipRenderCaches(projectPath) {
 
   const { getProjectFileUrl } = await import('./fileSystem')
   for (const clip of candidates) {
+    const request = createClipCacheReadRequest(clip, timelineState.timelineSessionId, projectPath)
+    const stillCurrent = () => {
+      const currentHandle = useProjectStore.getState().currentProjectHandle
+      return (currentHandle === projectPath || currentHandle === openingProjectHandle)
+        && isClipCacheReadCurrent(request, useTimelineStore.getState(), projectPath)
+    }
+    if (!stillCurrent()) continue
     try {
       const absolutePath = await window.electronAPI.pathJoin(projectPath, clip.cachePath)
-      if (!(await window.electronAPI.exists(absolutePath))) {
+      const exists = await window.electronAPI.exists(absolutePath)
+      if (!stillCurrent()) continue
+      if (!exists) {
         useTimelineStore.getState().setCacheStatus(clip.id, 'none', 0)
         continue
       }
       const url = await getProjectFileUrl(projectPath, clip.cachePath)
-      if (url) {
+      if (url && stillCurrent()) {
         useTimelineStore.getState().setCacheUrl(clip.id, url, clip.cachePath, clip.cacheKind || null, clip.cacheSignature || null)
       }
     } catch (err) {

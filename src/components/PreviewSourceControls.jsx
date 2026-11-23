@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react'
 import { useAssetsStore } from '../stores/assetsStore'
 import { useTimelineStore } from '../stores/timelineStore'
+import { attachSourceTransportKeyboard } from '../utils/sourceTransportKeyboard.mjs'
 
 // Source controls (issue #89): mark In/Out on the previewed video/audio asset,
 // then insert only that range onto the timeline as a pre-trimmed clip. Lives
@@ -25,15 +26,23 @@ const formatTc = (seconds) => {
   return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`
 }
 
-const makeSourcePlayerLinkGroupId = (asset) => {
-  const safeAssetId = String(asset?.id || 'asset').replace(/[^a-zA-Z0-9_-]+/g, '_')
-  return `link-srcplayer-${safeAssetId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
 // The asset preview <video> element is owned by PreviewPanel and registered
 // into the assets store; grab it lazily so registration timing (cleared and
 // re-registered on every preview switch) never leaves us holding a stale node.
 const getPreviewVideo = () => useAssetsStore.getState().videoRef || null
+
+const readDecodedSourceDuration = (video, assetUrl) => {
+  if (!video || video.readyState < 1 || !video.currentSrc || !assetUrl) return null
+  try {
+    const baseUrl = typeof document === 'undefined' ? undefined : document.baseURI
+    const expectedUrl = new URL(assetUrl, baseUrl).href
+    const decodedUrl = new URL(video.currentSrc, baseUrl).href
+    const duration = Number(video.duration)
+    return decodedUrl === expectedUrl && Number.isFinite(duration) && duration > 0 ? duration : null
+  } catch (_) {
+    return null
+  }
+}
 
 // Scrub seeks are coalesced: a video seek is asynchronous and can take
 // 100-300ms on long-GOP sources, while pointermove fires far faster than
@@ -51,16 +60,7 @@ const issueCoalescedSeek = (video, target, pendingRef) => {
   }, { once: true })
 }
 
-// Inserts follow the active track when it is type-compatible and unlocked,
-// else fall back to the first compatible unlocked track — the same idiom as
-// drag-drop placement in Timeline.jsx.
-const resolveTargetTrack = (tracks, activeTrackId, isAudio) => {
-  const wantType = isAudio ? 'audio' : 'video'
-  const all = tracks || []
-  const active = all.find((track) => track.id === activeTrackId)
-  if (active && active.type === wantType && active.locked !== true) return active
-  return all.find((track) => track.type === wantType && track.locked !== true) || null
-}
+const SOURCE_EDIT_LABELS = { insert: 'Insert', overwrite: 'Overwrite', append: 'Add to End' }
 
 export default function PreviewSourceControls({ asset }) {
   const barRef = useRef(null)
@@ -68,23 +68,36 @@ export default function PreviewSourceControls({ asset }) {
   const tcRef = useRef(null)
   const draggingRef = useRef(null)
   const pendingSeekRef = useRef(null)
+  const sourceEditDescriptionId = useId()
+  const sourceEditStatusId = useId()
 
   const isPlaying = useAssetsStore((s) => s.isPlaying)
-  const storeDuration = useAssetsStore((s) => s.duration)
   const setPreviewMode = useAssetsStore((s) => s.setPreviewMode)
   const videoEl = useAssetsStore((s) => s.videoRef)
   const sourceSeedRequest = useAssetsStore((s) => s.sourceSeedRequest)
   const timelineTracks = useTimelineStore((s) => s.tracks)
+  const timelineClips = useTimelineStore((s) => s.clips)
+  const timelineTransitions = useTimelineStore((s) => s.transitions)
+  const timelineMarkers = useTimelineStore((s) => s.markers)
+  const timelineFps = useTimelineStore((s) => s.timelineFps)
   const activeTrackId = useTimelineStore((s) => s.activeTrackId)
+  const playheadPosition = useTimelineStore((s) => s.playheadPosition)
+  const timelineSessionId = useTimelineStore((s) => s.timelineSessionId)
+  const timelineHistory = useTimelineStore((s) => s.history)
+  const timelineHistoryIndex = useTimelineStore((s) => s.historyIndex)
+  const timelineClipCounter = useTimelineStore((s) => s.clipCounter)
+  const timelineDuration = useTimelineStore((s) => s.duration)
+  const timelineIsPlaying = useTimelineStore((s) => s.isPlaying)
+  const previewSourceEdit = useTimelineStore((s) => s.previewSourceEdit)
 
   const [inPoint, setInPoint] = useState(null)
   const [outPoint, setOutPoint] = useState(null)
+  const [decodedSourceMeasurement, setDecodedSourceMeasurement] = useState(null)
   const [footerNote, setFooterNote] = useState({ tone: 'muted', text: '' })
   const noteTimerRef = useRef(null)
 
-  // Success notes are transient so the live "Inserts to <track>" label comes
-  // back — otherwise the note would hide track changes made after an insert.
-  // Errors stay until the user acts; they are instructions, not receipts.
+  // Success notes are transient receipts. Live targets and validation remain
+  // visible independently, so a result never hides the next edit's scope.
   const showFooterNote = useCallback((note) => {
     if (noteTimerRef.current) clearTimeout(noteTimerRef.current)
     setFooterNote(note)
@@ -135,12 +148,40 @@ export default function PreviewSourceControls({ asset }) {
     useAssetsStore.getState().clearSourceSeedRequest()
   }, [sourceSeedRequest, asset?.id, videoEl])
 
-  const isAudio = asset?.type === 'audio'
+  // Shared preview duration can still belong to the previous asset while a
+  // replacement source loads. Only trust a decoder which has metadata for
+  // this URL; the src attribute alone changes before the decoder catches up.
+  useEffect(() => {
+    const measure = () => {
+      const duration = readDecodedSourceDuration(videoEl, asset?.url)
+      setDecodedSourceMeasurement(previous => (
+        previous?.assetId === asset?.id && previous?.assetUrl === asset?.url
+        && previous?.video === videoEl && previous?.duration === duration
+          ? previous
+          : { assetId: asset?.id, assetUrl: asset?.url, video: videoEl, duration }
+      ))
+    }
+    const clear = () => setDecodedSourceMeasurement(null)
+    measure()
+    videoEl?.addEventListener('loadedmetadata', measure)
+    videoEl?.addEventListener('durationchange', measure)
+    videoEl?.addEventListener('emptied', clear)
+    videoEl?.addEventListener('error', clear)
+    return () => {
+      videoEl?.removeEventListener('loadedmetadata', measure)
+      videoEl?.removeEventListener('durationchange', measure)
+      videoEl?.removeEventListener('emptied', clear)
+      videoEl?.removeEventListener('error', clear)
+    }
+  }, [asset?.id, asset?.url, videoEl])
+
   const sourceFps = Number(asset?.settings?.fps ?? asset?.fps) || 24
   const frameStep = 1 / sourceFps
-  const sourceDuration = (Number(storeDuration) > 0 && Number.isFinite(Number(storeDuration)))
-    ? Number(storeDuration)
-    : Number(asset?.duration ?? asset?.settings?.duration) || 0
+  const decodedSourceDuration = decodedSourceMeasurement && decodedSourceMeasurement.assetId === asset?.id
+    && decodedSourceMeasurement?.assetUrl === asset?.url && decodedSourceMeasurement?.video === videoEl
+    ? decodedSourceMeasurement.duration : null
+  const sourceDuration = decodedSourceDuration ?? [asset?.duration, asset?.settings?.duration]
+    .map(Number).find(value => Number.isFinite(value) && value > 0) ?? 0
 
   const effIn = inPoint ?? 0
   const effOut = outPoint ?? sourceDuration
@@ -252,32 +293,28 @@ export default function PreviewSourceControls({ asset }) {
   // timeline range and X is cut-at-playhead). Modified combos pass through —
   // Alt+X still clears the timeline In/Out. Escape hands the monitor back to
   // the timeline; no stopPropagation so an open context menu still closes.
-  useEffect(() => {
-    const handler = (event) => {
-      const tag = String(event.target?.tagName || '').toLowerCase()
-      if (tag === 'input' || tag === 'textarea' || event.target?.isContentEditable) return
-      const key = event.key
-      if (key === 'Escape') {
+  useEffect(() => attachSourceTransportKeyboard({
+    canHandle: () => {
+      const state = useAssetsStore.getState()
+      return state.previewMode === 'asset' && state.currentPreview?.id === asset?.id && state.currentPreview?.url === asset?.url
+        && state.videoRef === videoEl && useTimelineStore.getState().timelineSessionId === timelineSessionId
+        && !state.mediaPreparation?.critical
+    },
+    onAction: action => {
+      if (action === 'exit') {
         if (document.fullscreenElement) return
         if ((useTimelineStore.getState().clips || []).length === 0) return
         setPreviewMode('timeline')
         return
       }
-      if (event.ctrlKey || event.metaKey || event.altKey) return
-      const handled = ['i', 'I', 'o', 'O', 'x', 'X', ' ', 'ArrowLeft', 'ArrowRight'].includes(key)
-      if (!handled) return
-      event.preventDefault()
-      event.stopPropagation()
-      if (key === 'i' || key === 'I') markIn()
-      else if (key === 'o' || key === 'O') markOut()
-      else if (key === 'x' || key === 'X') clearRange()
-      else if (key === ' ') togglePlay()
-      else if (key === 'ArrowLeft') stepFrame(-1)
-      else if (key === 'ArrowRight') stepFrame(1)
+      if (action === 'in') markIn()
+      else if (action === 'out') markOut()
+      else if (action === 'clear') clearRange()
+      else if (action === 'toggle') togglePlay()
+      else if (action === 'previous-frame') stepFrame(-1)
+      else if (action === 'next-frame') stepFrame(1)
     }
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
-  }, [markIn, markOut, clearRange, togglePlay, stepFrame, setPreviewMode])
+  }), [asset?.id, asset?.url, videoEl, timelineSessionId, markIn, markOut, clearRange, togglePlay, stepFrame, setPreviewMode])
 
   // Scrub bar: click/drag scrubs, gold handles drag the In/Out points.
   const positionToTime = useCallback((clientX) => {
@@ -312,82 +349,60 @@ export default function PreviewSourceControls({ asset }) {
     draggingRef.current = null
   }, [])
 
-  // ---- Insert ----------------------------------------------------------
+  // ---- Source edits ----------------------------------------------------
 
-  const handleInsert = useCallback((where) => {
-    const state = useTimelineStore.getState()
-    const track = resolveTargetTrack(state.tracks, state.activeTrackId, isAudio)
-    if (!track) {
-      showFooterNote({ tone: 'error', text: `No unlocked ${isAudio ? 'audio' : 'video'} track available — add one first.` })
-      return
-    }
-    const fps = Number(state.timelineFps) || 24
-    const startTime = where === 'playhead'
-      ? Math.max(0, Number(state.playheadPosition) || 0)
-      : (state.clips || [])
-        .filter((clip) => clip.trackId === track.id)
-        .reduce((end, clip) => Math.max(end, (Number(clip.startTime) || 0) + (Number(clip.duration) || 0)), 0)
+  const sourceEditRequests = useMemo(() => Object.fromEntries(
+    Object.keys(SOURCE_EDIT_LABELS).map((mode) => [mode, { asset, mode, inPoint, outPoint, sourceDuration }])
+  ), [asset, inPoint, outPoint, sourceDuration])
 
-    const trimOverrides = hasRange
-      ? { trimStart: effIn, duration: Math.max(1 / fps, rangeDuration) }
-      : {}
+  // The store owns range validation, destination resolution, and edit scope.
+  // Subscribe to every timeline input used by its preview so the displayed
+  // targets and blockers always reflect the current timeline. On click, pass
+  // this exact preview's token rather than silently accepting a newer target.
+  const sourceEditPreviews = useMemo(() => Object.fromEntries(
+    Object.entries(sourceEditRequests).map(([mode, request]) => [mode,
+      previewSourceEdit?.(request) || { ok: false, reason: 'Source editing is not available yet.' },
+    ])
+  ), [
+    sourceEditRequests, previewSourceEdit, timelineTracks, timelineClips,
+    timelineTransitions, timelineMarkers, timelineFps, activeTrackId,
+    playheadPosition, timelineSessionId, timelineHistory, timelineHistoryIndex,
+    timelineClipCounter, timelineDuration, timelineIsPlaying,
+  ])
 
-    // Linked embedded audio, in exact parity with drag-drop and the MCP
-    // placement path — including the range trim, so picture and sound stay
-    // in sync on a partial insert.
-    const includeLinkedAudio = !isAudio
-      && String(asset?.type || '').toLowerCase() === 'video'
-      && asset?.hasAudio !== false
-      && asset?.audioEnabled !== false
-    const audioTrack = includeLinkedAudio
-      ? (state.tracks || []).find((candidate) => (
-        candidate.type === 'audio' && candidate.locked !== true && candidate.visible !== false
-      )) || null
-      : null
-    const linkGroupId = audioTrack ? makeSourcePlayerLinkGroupId(asset) : undefined
-
-    const clip = state.addClip?.(track.id, asset, startTime, fps, {
-      ...trimOverrides,
-      metadata: { addedBySourcePlayer: true },
-      ...(linkGroupId ? { linkGroupId, selectAfterAdd: false } : {}),
+  const sourceEditBlockers = useMemo(() => {
+    const byReason = new Map()
+    Object.entries(sourceEditPreviews).forEach(([mode, preview]) => {
+      if (preview.ok) return
+      const reason = preview.reason || 'This edit is not available.'
+      const labels = byReason.get(reason) || []
+      labels.push(SOURCE_EDIT_LABELS[mode])
+      byReason.set(reason, labels)
     })
-    if (!clip) {
-      showFooterNote({ tone: 'error', text: 'Could not add the clip to the timeline.' })
+    return Array.from(byReason, ([reason, labels]) => ({ reason, label: labels.join(' / ') }))
+  }, [sourceEditPreviews])
+
+  const handleSourceEdit = useCallback((mode) => {
+    const preview = sourceEditPreviews[mode]
+    if (!preview?.ok) {
+      showFooterNote({ tone: 'error', text: preview?.reason || 'This edit is not available.' })
       return
     }
-
-    let audioClip = null
-    if (audioTrack && linkGroupId) {
-      audioClip = useTimelineStore.getState().addClip?.(audioTrack.id, { ...asset, type: 'audio' }, clip.startTime, fps, {
-        saveHistory: false,
-        linkGroupId,
-        selectAfterAdd: false,
-        duration: clip.duration,
-        ...(trimOverrides.trimStart != null ? { trimStart: trimOverrides.trimStart } : {}),
-        metadata: {
-          addedBySourcePlayer: true,
-          linkedVideoClipId: clip.id,
-          embeddedAudioFromVideoAsset: true,
-        },
-      })
-      useTimelineStore.setState(() => ({
-        selectedClipIds: audioClip ? [clip.id, audioClip.id] : [clip.id],
-      }))
+    const result = useTimelineStore.getState().applySourceEdit?.(sourceEditRequests[mode], preview.token)
+    if (!result?.ok) {
+      showFooterNote({ tone: 'error', text: result?.reason || 'Could not apply the source edit. No clips were added.' })
+      return
     }
-
+    const action = mode === 'overwrite' ? 'Overwrote' : mode === 'append' ? 'Added' : 'Inserted'
+    const targets = (preview.targetTrackNames || [preview.videoTrackName, preview.audioTrackName]).filter(Boolean).join(' + ')
     showFooterNote({
       tone: 'success',
-      text: hasRange
-        ? `Inserted ${formatTc(clip.duration)} (source ${formatTc(effIn)} → ${formatTc(effOut)}) on ${track.name || track.id} at ${formatTc(clip.startTime)}.`
-        : `Inserted the full clip on ${track.name || track.id} at ${formatTc(clip.startTime)}.`,
+      text: `${action} ${formatTc(result.duration)} at ${formatTc(result.startTime)}${targets ? ` on ${targets}` : ''}${hasRange ? ` (source ${formatTc(effIn)} → ${formatTc(effOut)})` : ''}.`,
     })
-  }, [asset, effIn, effOut, hasRange, isAudio, rangeDuration, showFooterNote])
+  }, [sourceEditPreviews, sourceEditRequests, hasRange, effIn, effOut, showFooterNote])
 
-  // Live, unlike the store snapshot in handleInsert: clicking a track in the
-  // timeline re-renders this label immediately, so it doubles as feedback
-  // for "which track did I just make active".
-  const targetTrack = resolveTargetTrack(timelineTracks, activeTrackId, isAudio)
-  const targetTrackLabel = targetTrack ? (targetTrack.name || targetTrack.id) : null
+  const videoTrackName = Object.values(sourceEditPreviews).find((preview) => preview.videoTrackName)?.videoTrackName
+  const audioTrackName = Object.values(sourceEditPreviews).find((preview) => preview.audioTrackName)?.audioTrackName
 
   if (!asset) return null
 
@@ -435,7 +450,7 @@ export default function PreviewSourceControls({ asset }) {
         </span>
       </div>
 
-      {/* Transport, marks, and inserts */}
+      {/* Transport and source marks */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
         <button
           type="button"
@@ -461,33 +476,68 @@ export default function PreviewSourceControls({ asset }) {
         <button type="button" onClick={clearRange} className="rounded-md border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-xs text-sf-text-muted hover:bg-sf-dark-700 hover:text-sf-text-primary">
           Clear <span className="ml-0.5 rounded border border-sf-dark-500 px-1 font-mono text-[10px]">X</span>
         </button>
-        <div className="flex gap-3 px-1.5 font-mono text-[10px] text-sf-text-muted">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-1.5 font-mono text-[10px] text-sf-text-muted">
           <span>In <span className="text-sf-text-primary">{formatTc(inPoint)}</span></span>
           <span>Out <span className="text-sf-text-primary">{formatTc(outPoint)}</span></span>
           <span>Range <span className="text-sf-accent">{hasRange ? formatTc(rangeDuration) : 'full clip'}</span></span>
         </div>
-        <span
-          className={`min-w-0 flex-1 truncate text-right text-[10px] ${footerNote.tone === 'error' ? 'text-sf-error' : footerNote.tone === 'success' ? 'text-sf-success' : 'text-sf-text-muted'}`}
-          title={footerNote.text || undefined}
-        >
-          {footerNote.text || (targetTrackLabel
-            ? `Inserts to ${targetTrackLabel}`
-            : 'No compatible track on this timeline yet')}
-        </span>
-        <button
-          type="button"
-          onClick={() => handleInsert('end')}
-          className="rounded-md border border-sf-dark-600 bg-sf-dark-800 px-2.5 py-1 text-xs text-sf-text-primary hover:bg-sf-dark-700"
-        >
-          Add to End
-        </button>
-        <button
-          type="button"
-          onClick={() => handleInsert('playhead')}
-          className="rounded-md bg-sf-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-sf-accent/90"
-        >
-          Insert at Playhead
-        </button>
+      </div>
+
+      <div className="space-y-1.5 border-t border-sf-dark-700 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div data-testid="source-edit-targets" className="flex min-w-0 flex-1 basis-48 flex-wrap gap-x-3 gap-y-1 text-[10px] text-sf-text-muted">
+            <span className="min-w-0 break-words">Video: <span className="text-sf-text-primary">{videoTrackName || '—'}</span></span>
+            <span className="min-w-0 break-words">Audio: <span className="text-sf-text-primary">{audioTrackName || '—'}</span></span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              data-testid="source-edit-insert"
+              onClick={() => handleSourceEdit('insert')}
+              disabled={!sourceEditPreviews.insert.ok}
+              aria-describedby={`${sourceEditDescriptionId} ${sourceEditStatusId}`}
+              title={sourceEditPreviews.insert.ok ? 'Open space at the playhead across the whole timeline' : sourceEditPreviews.insert.reason}
+              className="rounded-md bg-sf-accent px-2.5 py-1 text-xs font-medium text-white hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Insert at Playhead
+            </button>
+            <button
+              type="button"
+              data-testid="source-edit-overwrite"
+              onClick={() => handleSourceEdit('overwrite')}
+              disabled={!sourceEditPreviews.overwrite.ok}
+              aria-describedby={`${sourceEditDescriptionId} ${sourceEditStatusId}`}
+              title={sourceEditPreviews.overwrite.ok ? 'Replace material at the playhead on destination tracks only' : sourceEditPreviews.overwrite.reason}
+              className="rounded-md border border-sf-dark-600 bg-sf-dark-800 px-2.5 py-1 text-xs text-sf-text-primary hover:bg-sf-dark-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Overwrite at Playhead
+            </button>
+            <button
+              type="button"
+              data-testid="source-edit-append"
+              onClick={() => handleSourceEdit('append')}
+              disabled={!sourceEditPreviews.append.ok}
+              aria-describedby={`${sourceEditDescriptionId} ${sourceEditStatusId}`}
+              title={sourceEditPreviews.append.ok ? `Add at ${formatTc(sourceEditPreviews.append.startTime)} on destination tracks` : sourceEditPreviews.append.reason}
+              className="rounded-md border border-sf-dark-600 bg-sf-dark-800 px-2.5 py-1 text-xs text-sf-text-primary hover:bg-sf-dark-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Add to End
+            </button>
+          </div>
+        </div>
+        <p id={sourceEditDescriptionId} className="text-[10px] leading-relaxed text-sf-text-muted">
+          Insert affects the whole timeline, including markers. Overwrite affects destination tracks only.
+        </p>
+        <div id={sourceEditStatusId} data-testid="source-edit-status" role="status" aria-live="polite" aria-atomic="true" className="space-y-1 break-words text-[10px] leading-relaxed">
+          {footerNote.text && (
+            <p className={footerNote.tone === 'error' ? 'text-sf-error' : footerNote.tone === 'success' ? 'text-sf-success' : 'text-sf-text-muted'}>
+              {footerNote.text}
+            </p>
+          )}
+          {sourceEditBlockers.map(({ reason, label }) => (
+            <p key={reason} className="text-sf-error">{label}: {reason}</p>
+          ))}
+        </div>
       </div>
     </div>
   )

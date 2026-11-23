@@ -89,8 +89,8 @@ function createBridgeButton() {
   const button = document.createElement("button");
   button.id = "comfystudio-bridge-send";
   button.type = "button";
-  button.textContent = "Send to Belrog";
-  button.title = "Export this graph as API JSON and send it back to Belrog.";
+  button.textContent = "Send to Velorn";
+  button.title = "Export this graph as API JSON and send it back to Velorn.";
   button.style.border = "1px solid rgba(59, 130, 246, 0.65)";
   button.style.borderRadius = "8px";
   button.style.background = "rgba(15, 23, 42, 0.92)";
@@ -115,10 +115,10 @@ function createBridgeButton() {
     try {
       const exported = await getCurrentApiWorkflow();
       const sent = postWorkflowToComfyStudio(exported);
-      setStatus(sent ? "Sent to Belrog." : "Open ComfyUI inside Belrog to send directly.", sent ? "ok" : "error");
+      setStatus(sent ? "Sent to Velorn." : "Open ComfyUI inside Velorn to send directly.", sent ? "ok" : "error");
       window.setTimeout(() => setStatus("", "idle"), sent ? 2500 : 6500);
     } catch (error) {
-      setStatus(error?.message || "Could not send workflow to Belrog.", "error");
+      setStatus(error?.message || "Could not send workflow to Velorn.", "error");
     } finally {
       button.disabled = false;
       button.textContent = previousText;
@@ -129,7 +129,7 @@ function createBridgeButton() {
 }
 
 app.registerExtension({
-  name: "Belrog.Bridge",
+  name: "Velorn.Bridge",
   setup() {
     createBridgeButton();
   },

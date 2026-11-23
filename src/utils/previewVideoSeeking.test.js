@@ -5,9 +5,44 @@ import {
   doesPresentedVideoFrameMatchTarget,
   getPreciseVideoSeekFps,
   getTargetVideoFrameIndex,
+  getVideoFrameSeekTime,
+  isSameVideoFrameSeekTime,
   isFrameStepSeekIntentAtTime,
   shouldIssuePreciseVideoSeek,
 } from './previewVideoSeeking.js'
+
+test('physical seek timestamps stay inside the intended frame after microsecond truncation', () => {
+  for (const fps of [24, 25, 29.97, 48, 60, 96]) {
+    for (let frame = 0; frame < 200; frame += 1) {
+      const logicalTarget = frame / fps
+      const seekTime = getVideoFrameSeekTime(logicalTarget, fps)
+      const browserTime = Math.floor(seekTime * 1e6) / 1e6
+      assert.equal(getTargetVideoFrameIndex(browserTime, fps), frame)
+      assert.equal(doesPresentedVideoFrameMatchTarget({
+        mediaTime: frame / fps, targetTime: logicalTarget, fps,
+      }), true)
+    }
+  }
+  assert.equal(getTargetVideoFrameIndex(0.791666, 24), 18)
+  assert.equal(getVideoFrameSeekTime(19 / 24, 24), 19.5 / 24)
+})
+
+test('interior seek clamps safely at the media end and normalizes invalid inputs', () => {
+  assert.equal(getVideoFrameSeekTime(1.99, 24, 2), 47.5 / 24)
+  assert.equal(getVideoFrameSeekTime(2, 24, 2), 2 - 1e-6)
+  assert.equal(getVideoFrameSeekTime(2, 24, 0.0000001), 0)
+  assert.equal(getVideoFrameSeekTime(-1, 24), 0.5 / 24)
+  assert.equal(getVideoFrameSeekTime(1.23, 0), 1.23)
+  assert.equal(getVideoFrameSeekTime(NaN, NaN), 0)
+})
+
+test('physical seek ownership tolerates decoder time-base rounding but not a different frame or seek', () => {
+  assert.equal(isSameVideoFrameSeekTime(4.020832, getVideoFrameSeekTime(4, 24), 24), true)
+  assert.equal(isSameVideoFrameSeekTime(4.021, getVideoFrameSeekTime(4, 24), 24), false)
+  assert.equal(isSameVideoFrameSeekTime(0.791666, 19 / 24, 24), false)
+  assert.equal(isSameVideoFrameSeekTime(NaN, 0, 24), false)
+  assert.equal(isSameVideoFrameSeekTime(0, 0, 0), false)
+})
 
 test('24 fps frame steps address every RIFE frame in a 0.5x 48 fps cache', () => {
   const targets = Array.from({ length: 8 }, (_, timelineFrame) => (timelineFrame / 24) * 0.5)

@@ -92,3 +92,23 @@ test('track solo excludes otherwise visible clips on non-solo tracks', () => {
   })
   assert.deepEqual([...ids], ['kept'])
 })
+
+test('compound visibility windows limit source preparation without rewriting authored clocks', () => {
+  const clip = { id: 'child', trackId: 'visible', startTime: -4, duration: 12,
+    compoundParentId: 'parent', playbackWindowStart: 2, playbackWindowEnd: 5 }
+  const prepare = (rangeStart, rangeEnd) => [...getRenderableVideoClipIds({ tracks, clips: [clip], rangeStart, rangeEnd })]
+  assert.deepEqual(prepare(0, 2), [])
+  assert.deepEqual(prepare(2, 2.5), ['child'])
+  assert.deepEqual(prepare(4.5, 5), ['child'])
+  assert.deepEqual(prepare(5, 8), [])
+  assert.equal(clip.startTime, -4)
+  assert.equal(clip.duration, 12)
+})
+
+test('compound children wholly outside the parent trim do not require their media', () => {
+  const ids = getRenderableVideoClipIds({ tracks, rangeStart: 0, rangeEnd: 20, clips: [
+    { id: 'before', trackId: 'visible', startTime: 1, duration: 1, playbackWindowStart: 5, playbackWindowEnd: 7 },
+    { id: 'after', trackId: 'visible', startTime: 10, duration: 1, playbackWindowStart: 5, playbackWindowEnd: 7 },
+  ] })
+  assert.deepEqual([...ids], [])
+})

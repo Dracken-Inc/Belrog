@@ -1,6 +1,7 @@
 import useTimelineStore from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
+import { getCompoundRenderState, getClipPlaybackWindow, isClipInPlaybackWindow } from '../utils/compoundPlayback.mjs'
 import { hasUsableProxy } from './proxyCache'
 import { shouldUseWebCodecsForAsset, supportsTransparentExport } from '../utils/alphaMedia.mjs'
 import { getAnimatedTransform, getAnimatedAdjustmentSettings, getAnimatedTextProperties, getAnimatedShapeProperties, getAnimatedShapeMask } from '../utils/keyframes'
@@ -19,6 +20,10 @@ import { getRenderAdjustments, getRenderEffects, isClipBypassed } from '../utils
 import { drawLiveCaptionsFrame } from '../utils/captionRenderer'
 import { getAudioClipFadeGain, getAudioClipFadeValues } from '../utils/audioClipFades'
 import { getAudioClipLinearGain, normalizeAudioClipGainDb } from '../utils/audioClipGain'
+import { normalizeAudioVolumeEnvelope } from '../utils/audioVolumeEnvelope.mjs'
+import { scheduleAudioVolumeEnvelope } from '../utils/audioVolumeAutomation.mjs'
+import { normalizeAudioEq } from '../utils/audioEq.mjs'
+import { createAudioEqChain } from './audioEqChain'
 import { clampTrackVolume, hasAudioSolo, isAudioTrackAudible, trackPanToStereoPosition, trackVolumeToLinearGain } from '../utils/audioTrackAudibility'
 import { collectAudioMixClips, countExpectedAudioMixClips } from '../../electron/audioMixEligibility.mjs'
 import { getEnabledAudioInserts, hasEnabledAudioInserts } from '../utils/audioInserts'
@@ -68,7 +73,9 @@ import {
   normalizeFrameSamplingMode,
 } from '../utils/frameSampling'
 import { createGpuCompositor, isGpuExportEnabled } from './gpuCompositor'
+import { createFramePipeSender } from './exportFramePipeSender'
 import { isAbsoluteRecordedPath } from './assetRelinkFallback'
+import { createExportScheduler } from './exportScheduler.mjs'
 import {
   cleanupCompletedPngSequenceTemp,
   getPngSequenceFrameFilename,
@@ -157,40 +164,6 @@ const getMediaErrorMessage = (err) => {
   if (targetError?.code != null) return `Media error code ${targetError.code}`
   if (err?.type) return `Media event: ${err.type}`
   return String(err)
-}
-
-/** Yield to the event loop so the UI can repaint and avoid the window going black during export */
-const yieldToMain = () => new Promise(resolve => {
-  const hiddenDocument = typeof document !== 'undefined' && document.visibilityState === 'hidden'
-  if (hiddenDocument || typeof requestAnimationFrame !== 'function') {
-    setTimeout(resolve, 0)
-    return
-  }
-  requestAnimationFrame(resolve)
-})
-
-/**
- * Stronger yield: a full event-loop task boundary (helps prevent renderer
- * crash under heavy export — tasks already queued, like decoder outputs and
- * IPC responses, run before the promise resolves). MessageChannel instead
- * of setTimeout(0) because consecutive zero-delay timers are clamped to
- * ~4ms in a hot loop.
- */
-const yieldTaskQueue = []
-let yieldPostPort = null
-const yieldToEventLoop = () => {
-  if (typeof MessageChannel === 'undefined') {
-    return new Promise(resolve => setTimeout(resolve, 0))
-  }
-  if (!yieldPostPort) {
-    const channel = new MessageChannel()
-    channel.port1.onmessage = () => yieldTaskQueue.shift()?.()
-    yieldPostPort = channel.port2
-  }
-  return new Promise((resolve) => {
-    yieldTaskQueue.push(resolve)
-    yieldPostPort.postMessage(null)
-  })
 }
 
 const isElectron = () => typeof window !== 'undefined' && window.electronAPI != null
@@ -1076,6 +1049,8 @@ const serializeAudioClipForMix = (clip) => ({
   type: 'audio',
   startTime: clip.startTime,
   duration: clip.duration,
+  playbackWindowStart: clip.playbackWindowStart,
+  playbackWindowEnd: clip.playbackWindowEnd,
   trimStart: clip.trimStart || 0,
   sourceTimeScale: clip.sourceTimeScale,
   timelineFps: clip.timelineFps,
@@ -1085,6 +1060,8 @@ const serializeAudioClipForMix = (clip) => ({
   gainDb: normalizeAudioClipGainDb(clip.gainDb),
   fadeIn: clip.fadeIn ?? 0,
   fadeOut: clip.fadeOut ?? 0,
+  volumeEnvelope: normalizeAudioVolumeEnvelope(clip.volumeEnvelope),
+  audioEq: normalizeAudioEq(clip.audioEq),
   url: clip.url || null,
 })
 
@@ -1143,8 +1120,13 @@ const formatAudioMixDropError = (skipped, includedCount, expectedCount) => {
   return `${head} Dropped: ${details.join('; ')}`
 }
 
-const runExportTimeline = async (options = {}, onProgress = () => {}) => {
-  const timelineState = useTimelineStore.getState()
+const runExportTimeline = async (options, onProgress, scheduler) => {
+  // Compound children are a read-only render view. Preserve their original
+  // local clocks; parent trims limit visibility rather than slicing media.
+  const timelineState = getCompoundRenderState(useTimelineStore.getState())
+  if (timelineState.compoundRenderErrors?.length > 0) {
+    throw new Error(`Cannot export: ${timelineState.compoundRenderErrors.join(' ')}`)
+  }
   const assetsState = useAssetsStore.getState()
   const projectState = useProjectStore.getState()
   // LUT grades read the in-memory library synchronously mid-frame; make sure
@@ -1213,9 +1195,17 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   const pngSequenceBaseName = pngSequenceExport
     ? sanitizePngSequenceBaseName(filename)
     : null
-  const soloClipSet = Array.isArray(soloClipIds) && soloClipIds.length > 0
-    ? new Set(soloClipIds)
+  const expandedSoloClipIds = Array.isArray(soloClipIds) && soloClipIds.length > 0
+    ? timelineState.clips
+      .filter((clip) => soloClipIds.includes(clip.id) || soloClipIds.includes(clip.compoundParentId))
+      .map((clip) => clip.id)
     : null
+  const soloClipSet = expandedSoloClipIds
+    ? new Set(expandedSoloClipIds)
+    : null
+  if (soloClipSet?.size === 0) {
+    throw new Error('The requested export clips have no available contents. Review the selection before exporting.')
+  }
   const throwIfCancelled = () => {
     if (signal?.aborted) {
       throw new Error('Export cancelled')
@@ -1296,7 +1286,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   // prepared sources live under that owned directory so a failed/cancelled
   // export can remove everything without ever touching the selected parent.
   const tempFolder = pngSequenceExport
-    ? await window.electronAPI.pathJoin(outputPath, '.Belrog-export-temp')
+    ? await window.electronAPI.pathJoin(outputPath, '.velorn-export-temp')
     : await window.electronAPI.pathJoin(outputFolder, `export_${Date.now()}`)
   if (pngSequenceExport) {
     const tempFolderResult = await window.electronAPI.createDirectory(tempFolder, { recursive: false })
@@ -1462,6 +1452,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   }
 
   let framePipeSessionId = null
+  let framePipeSender = null // how frames reach the pipe: 'port' (fast) or 'invoke'
   let framePipeEncoderUsed = null
   let framePipeHardwareFallback = null
   let framePipeHardwareFfmpeg = null
@@ -1538,6 +1529,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     soloClipIds: soloClipSet ? [...soloClipSet] : null,
   })
   const renderableVideoClips = videoClips.filter((clip) => renderableVideoClipIds.has(clip.id))
+  const renderableImageClips = imageClips.filter((clip) => !clip.compoundParentId || renderableVideoClipIds.has(clip.id))
 
   if (useCachedRenders) {
     for (const clip of renderableVideoClips) {
@@ -1632,7 +1624,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   const projectHandle = projectState.currentProjectHandle
   const resolvedAssetUrls = new Map()
   const resolvedVideoInputPaths = new Map()
-  for (const clip of [...renderableVideoClips, ...imageClips]) {
+  for (const clip of [...renderableVideoClips, ...renderableImageClips]) {
     const overrideUrl = cachedVideoSources.get(clip.id) || opticalFlowSources.get(clip.id)?.url || null
     const asset = assetsState.getAssetById(clip.assetId)
     // Baked text/shape clips have no asset; their only source is the bake.
@@ -1831,32 +1823,37 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   const FRAME_CURSOR_PREFETCH_SEC = 3
   // Per-phase wall-clock accumulators, surfaced in the completion payload so
   // a single export run shows where render time actually goes.
-  const exportPerf = { yieldMs: 0, layersMs: 0, sampleMs: 0, readbackMs: 0, pipeMs: 0, preSeekBatches: 0, preSeekClips: 0 }
+  const exportPerf = { progressYieldMs: 0, taskYieldMs: 0, layersMs: 0, sampleMs: 0, readbackMs: 0, pipeMs: 0, preSeekBatches: 0, preSeekClips: 0 }
   resetFrameSourceStats()
   // Pipe writes stack up to a small in-flight depth so the renderer's
   // structured-clone serialize, the main process's handling, and FFmpeg's
   // stdin write overlap across frames instead of running as one serial
   // round trip per frame. Order into FFmpeg's stdin is preserved: writes
   // fire and settle strictly FIFO, and Electron delivers same-channel
-  // messages in send order. invoke() serializes its arguments
-  // synchronously, so a queued frame's buffer may be reused as soon as the
-  // call returns.
+  // messages in send order. Frames travel through framePipeSender: either
+  // the plain invoke call (which copies the frame during the call, so the
+  // buffer may be reused as soon as it returns) or the faster port route.
   const exportPipelineEnabled = isExportPipelineEnabled()
   const maxInFlightPipeWrites = exportPipelineEnabled ? 3 : 1
   const inFlightPipeWrites = []
   const pendingGpuReadbacks = []
+  let gpuReadbackStats = null
   const settleOldestPipeWrite = async () => {
     const result = await inFlightPipeWrites.shift()
     if (!result?.success) {
       throw new Error(result?.error || 'Failed to write frame to FFmpeg pipe.')
     }
   }
-  const sendFrameToPipe = async (frameBuffer) => {
+  // `owned` means the buffer is ours to give away (see framePipeSender.send);
+  // otherwise it is copied and the caller may reuse it once this returns.
+  const sendFrameToPipe = async (frameBuffer, owned = false) => {
+    throwIfCancelled()
     const pipeWriteStart = performance.now()
     while (inFlightPipeWrites.length >= maxInFlightPipeWrites) {
       await settleOldestPipeWrite()
+      throwIfCancelled()
     }
-    inFlightPipeWrites.push(window.electronAPI.writeFrameToPipe(framePipeSessionId, frameBuffer))
+    inFlightPipeWrites.push(framePipeSender.send(frameBuffer, owned))
     exportPerf.pipeMs += performance.now() - pipeWriteStart
   }
   // GPU frames are collected one frame late (fence + PBO in the compositor)
@@ -1864,7 +1861,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   // composited.
   const sendOldestGpuReadback = async () => {
     const readbackStart = performance.now()
-    const pixels = await gpu.resolveFrameReadback(pendingGpuReadbacks.shift())
+    const pixels = await gpu.resolveFrameReadback(pendingGpuReadbacks.shift(), { signal })
     exportPerf.readbackMs += performance.now() - readbackStart
     await sendFrameToPipe(pixels.buffer)
   }
@@ -1927,7 +1924,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     const entry = {
       cursor: null,
       settled: false,
-      clipEnd: (Number(clip.startTime) || 0) + (Number(clip.duration) || 0),
+      clipEnd: getClipPlaybackWindow(clip).end,
     }
     entry.promise = createClipFrameCursor({
       url: preparedSourceUrl || sourceUrl,
@@ -2007,6 +2004,8 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     if (pipeStart?.success && pipeStart.sessionId) {
       framePipeSessionId = pipeStart.sessionId
       framePipeEncoderUsed = pipeStart.encoderUsed || null
+      framePipeSender = await createFramePipeSender(framePipeSessionId, width * height * 4)
+      console.log(`[Export] Frame pipe route: ${framePipeSender.mode}`)
       console.log(`Export frame pipe started with: ${framePipeEncoderUsed || 'unknown encoder'}`)
       if (pipeStart.hardwareFallback) {
         // The hardware encoder failed its runtime probe (missing from this
@@ -2198,14 +2197,13 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
   try {
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
     throwIfCancelled()
-    // The rAF-based yield caps the loop at the display refresh rate. With
-    // sequential decode producing frames much faster than vsync, yield for
-    // UI paint only every few frames — still ~15Hz of UI updates during
-    // export, without a per-frame vsync wait.
+    // Foreground direct exports allow periodic UI paints. The dedicated
+    // offscreen worker uses a task boundary instead, never a display-refresh
+    // callback: RAF can stall in a never-shown window despite visible state.
     if (frameIndex % 4 === 0) {
       const yieldStart = performance.now()
-      await yieldToMain()
-      exportPerf.yieldMs += performance.now() - yieldStart
+      await scheduler.yieldForProgress()
+      exportPerf.progressYieldMs += performance.now() - yieldStart
     }
     throwIfCancelled()
     const targetTime = rangeStart + frameIndex * frameDuration + frameSampleOffset
@@ -2229,6 +2227,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
 
     const layersStart = performance.now()
     const activeClipsUnfiltered = timelineState.getActiveClipsAtTime(time)
+      .filter(({ clip }) => !clip.compoundParentId || isClipInPlaybackWindow(clip, time))
     const activeClips = soloClipSet
       ? activeClipsUnfiltered.filter(({ clip }) => soloClipSet.has(clip.id))
       : activeClipsUnfiltered
@@ -3349,7 +3348,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     exportPerf.layersMs += performance.now() - layersStart
 
     if (framePipeSessionId) {
-      if (gpu && exportPipelineEnabled) {
+      if (gpu && exportPipelineEnabled && gpu.canUseAsyncReadback()) {
         const readbackStart = performance.now()
         pendingGpuReadbacks.push(gpu.beginFrameReadback())
         exportPerf.readbackMs += performance.now() - readbackStart
@@ -3357,10 +3356,20 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
           await sendOldestGpuReadback()
         }
       } else {
+        // A stalled fence switches this compositor to synchronous readback.
+        // Collect the older ticket snapshots before sending the current frame;
+        // rereading the current stage for a queued ticket would duplicate it.
+        while (pendingGpuReadbacks.length > 0) await sendOldestGpuReadback()
+        throwIfCancelled()
         const readbackStart = performance.now()
         let frameBuffer
+        // The canvas path below always yields a fresh buffer of its own.
+        let frameBufferOwned = true
         if (gpu) {
-          frameBuffer = gpu.readFramePixels().buffer
+          // Read straight into a buffer the pipe route can take as-is.
+          const target = framePipeSender.takeFrameBuffer()
+          frameBuffer = gpu.readFramePixels(target).buffer
+          frameBufferOwned = Boolean(target)
         } else {
           const frameData = ctx.getImageData(0, 0, width, height)
           const pixelData = frameData.data
@@ -3369,15 +3378,15 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
             : pixelData.buffer.slice(pixelData.byteOffset, pixelData.byteOffset + pixelData.byteLength)
         }
         exportPerf.readbackMs += performance.now() - readbackStart
-        await sendFrameToPipe(frameBuffer)
+        await sendFrameToPipe(frameBuffer, frameBufferOwned)
       }
       // Real task-queue yield while the write is in flight: decoder output
       // callbacks are event-loop tasks, and this loop is otherwise mostly
       // synchronous — without yielding, decoded frames sit undelivered
       // until the next seek is forced to wait for them.
       const taskYieldStart = performance.now()
-      await yieldToEventLoop()
-      exportPerf.yieldMs += performance.now() - taskYieldStart
+      await scheduler.yieldTask()
+      exportPerf.taskYieldMs += performance.now() - taskYieldStart
     } else {
       const frameBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
       if (!frameBlob) {
@@ -3416,7 +3425,9 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
       })
     }
     if (frameIndex > 0 && frameIndex % 10 === 0) {
-      await yieldToEventLoop()
+      const taskYieldStart = performance.now()
+      await scheduler.yieldTask()
+      exportPerf.taskYieldMs += performance.now() - taskYieldStart
     }
 
     // Frame-cursor lifecycle: warm decoders for clips that start soon so
@@ -3425,7 +3436,7 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     if (webCodecsEnabled) {
       for (const clip of renderableVideoClips) {
         if (clipFrameCursors.has(clip.id)) continue
-        const clipStart = Number(clip.startTime) || 0
+        const { start: clipStart } = getClipPlaybackWindow(clip)
         if (clipStart > time && clipStart <= time + FRAME_CURSOR_PREFETCH_SEC) {
           getClipCursorEntry(clip)
         }
@@ -3451,10 +3462,13 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     )
   }
   closeAllFrameCursors()
+  gpuReadbackStats = gpu?.getReadbackStats?.() || null
   gpu?.dispose()
+  framePipeSender?.dispose()
   } catch (err) {
     closeAllFrameCursors()
     gpu?.dispose()
+    framePipeSender?.dispose()
     pendingGpuReadbacks.length = 0
     for (const write of inFlightPipeWrites) {
       Promise.resolve(write).catch(() => {})
@@ -3519,12 +3533,15 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
       perf: {
         frames: totalFrames,
         gpuCompositing: false,
+        scheduling: scheduler.mode,
         perFrameMs: {
           mediaSample: perFrameMs(exportPerf.sampleMs),
           layerComposite: perFrameMs(exportPerf.layersMs - exportPerf.sampleMs),
           readback: perFrameMs(exportPerf.readbackMs),
           pipeWrite: 0,
-          uiYield: perFrameMs(exportPerf.yieldMs),
+          uiYield: perFrameMs(exportPerf.progressYieldMs + exportPerf.taskYieldMs),
+          progressYield: perFrameMs(exportPerf.progressYieldMs),
+          taskYield: perFrameMs(exportPerf.taskYieldMs),
         },
         preSeek: { batches: exportPerf.preSeekBatches, clips: exportPerf.preSeekClips },
         frameSource: getFrameSourceStats(),
@@ -3942,9 +3959,9 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
 
             const clipStart = Number(clip.startTime) || 0
             const clipDuration = Math.max(0, Number(clip.duration) || 0)
-            const clipEnd = clipStart + clipDuration
-            const visibleStart = Math.max(rangeStart, clipStart)
-            const visibleEnd = Math.min(rangeEnd, clipEnd)
+            const playbackWindow = getClipPlaybackWindow(clip)
+            const visibleStart = Math.max(rangeStart, playbackWindow.start)
+            const visibleEnd = Math.min(rangeEnd, playbackWindow.end)
             if (visibleEnd <= visibleStart) continue
 
             const clipOffsetOnTimeline = visibleStart - clipStart
@@ -3994,14 +4011,23 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
               gainNode.gain.setValueAtTime(baseGain, startOffset)
             }
 
-            source.connect(gainNode)
-            gainNode.connect(getOfflineTrackBus(track).input)
+            const envelopeGainNode = offlineContext.createGain()
+            scheduleAudioVolumeEnvelope(envelopeGainNode.gain, clip, {
+              localTime: startClipTime, contextTime: startOffset,
+              endLocalTime: endClipTime,
+            })
+            source.playbackRate.value = timeScale
+            const eqChain = createAudioEqChain(offlineContext, clip.audioEq)
+            source.connect(eqChain.input)
+            eqChain.output.connect(gainNode)
+            gainNode.connect(envelopeGainNode)
+            envelopeGainNode.connect(getOfflineTrackBus(track).input)
             source.start(startOffset, sourceOffset, playDuration)
           } catch (err) {
             console.warn('Failed to decode audio clip for export:', err)
             updateAudioStatus(`Failed clip ${index + 1}/${eligibleAudioClips.length} (skipped)`, 82)
           }
-          await yieldToEventLoop()
+          await scheduler.yieldTask()
         }
 
         let renderHeartbeat = null
@@ -4037,12 +4063,12 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     status: gifExport ? 'Building optimized 256-color GIF...' : EXPORT_STATUS.encoding,
     progress: 90,
   })
-  await yieldToMain()
+  await scheduler.yieldForProgress()
 
   let encodeResult = null
   if (gifExport) {
     if (!window.electronAPI?.encodeGif || !window.electronAPI?.abortGifEncode) {
-      throw new Error('GIF export requires the Belrog desktop app. Restart Belrog and try again.')
+      throw new Error('GIF export requires the Velorn desktop app. Restart Velorn and try again.')
     }
     throwIfCancelled()
     const gifEncodeSessionId = globalThis.crypto?.randomUUID?.()
@@ -4179,12 +4205,17 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
     perf: {
       frames: totalFrames,
       gpuCompositing: !!gpu,
+      gpuReadback: gpuReadbackStats,
+      scheduling: scheduler.mode,
+      framePipeRoute: framePipeSender?.mode || null,
       perFrameMs: {
         mediaSample: perFrameMs(exportPerf.sampleMs),
         layerComposite: perFrameMs(exportPerf.layersMs - exportPerf.sampleMs),
         readback: perFrameMs(exportPerf.readbackMs),
         pipeWrite: perFrameMs(exportPerf.pipeMs),
-        uiYield: perFrameMs(exportPerf.yieldMs),
+        uiYield: perFrameMs(exportPerf.progressYieldMs + exportPerf.taskYieldMs),
+        progressYield: perFrameMs(exportPerf.progressYieldMs),
+        taskYield: perFrameMs(exportPerf.taskYieldMs),
       },
       preSeek: { batches: exportPerf.preSeekBatches, clips: exportPerf.preSeekClips },
       frameSource: getFrameSourceStats(),
@@ -4208,21 +4239,27 @@ const runExportTimeline = async (options = {}, onProgress = () => {}) => {
  * or is cancelled. Existing folders (including the selected parent) are
  * rejected and are never cleanup targets.
  */
-export const exportTimeline = async (options = {}, onProgress = () => {}) => {
-  if (options.format !== 'png-seq') {
-    return runExportTimeline(options, onProgress)
-  }
+export const exportTimeline = async (options = {}, onProgress = () => {}, runtime = {}) => {
+  // Runtime-only context, not a saved preset or user-controllable job option.
+  const scheduler = createExportScheduler({ offscreen: runtime.offscreen === true })
+  try {
+    if (options.format !== 'png-seq') {
+      return await runExportTimeline(options, onProgress, scheduler)
+    }
 
-  const api = typeof window !== 'undefined' ? window.electronAPI : null
-  if (!api?.exists || !api?.createDirectory || !api?.deleteDirectory || !api?.pathJoin || !api?.writeFileFromArrayBuffer) {
-    throw new Error('PNG sequence export requires the Belrog desktop app.')
-  }
+    const api = typeof window !== 'undefined' ? window.electronAPI : null
+    if (!api?.exists || !api?.createDirectory || !api?.deleteDirectory || !api?.pathJoin || !api?.writeFileFromArrayBuffer) {
+      throw new Error('PNG sequence export requires the Velorn desktop app.')
+    }
 
-  return withOwnedPngSequenceOutput({
-    api,
-    outputPath: options.outputPath,
-    run: outputPath => runExportTimeline({ ...options, outputPath }, onProgress),
-  })
+    return await withOwnedPngSequenceOutput({
+      api,
+      outputPath: options.outputPath,
+      run: outputPath => runExportTimeline({ ...options, outputPath }, onProgress, scheduler),
+    })
+  } finally {
+    scheduler.dispose()
+  }
 }
 
 export default exportTimeline
