@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Play,
   StopCircle,
@@ -14,7 +14,6 @@ import {
   Maximize2,
 } from 'lucide-react'
 import ComfyLauncherLogViewer from './ComfyLauncherLogViewer'
-import ComfyConnectionSetup from './ComfyConnectionSetup'
 import { useI18n } from '../i18n/I18nContext'
 
 import {
@@ -37,6 +36,7 @@ import {
   describeComfyLauncherPortOwner,
   connectComfyLauncherExternal,
 } from '../services/comfyLauncher'
+import { refreshComfyConnectionMode } from '../services/localComfyConnection'
 
 const STATE_STYLES = {
   unknown: { dot: 'bg-slate-400', label: 'ComfyUI', tone: 'idle' },
@@ -84,6 +84,9 @@ function ComfyLauncherChip() {
   const [error, setError] = useState('')
   const [logViewerOpen, setLogViewerOpen] = useState(false)
   const [portOwner, setPortOwner] = useState(null) // { pid, name, port } | null
+  const [remoteSettings, setRemoteSettings] = useState(null)
+  const [remoteStatus, setRemoteStatus] = useState(null)
+  const [remoteError, setRemoteError] = useState('')
   // Which edge of the trigger button the popover anchors to. 'right' means the
   // popover extends leftward (good when the chip lives on the right side of a
   // header); 'left' means it extends rightward (needed when the chip lives
@@ -109,6 +112,24 @@ function ComfyLauncherChip() {
     })
     return unsub
   }, [open])
+  useEffect(() => {
+    if (!open) return undefined
+    window.electronAPI?.invoke('belrog:getRemoteServerSettings').then(setRemoteSettings).catch(() => {})
+    window.electronAPI?.invoke('belrog:getTunnelStatus').then(setRemoteStatus).catch(() => {})
+    return undefined
+  }, [open])
+
+  // Keep the ComfyUI connection resolver in sync with tunnel state. The main
+  // process auto-connects/reconnects the SSH tunnel independently of this UI,
+  // and the connection port MUST follow the tunnel (see localComfyConnection
+  // resolveEffectivePort). Cheap no-op when mode/port are unchanged.
+  useEffect(() => {
+    refreshComfyConnectionMode().catch(() => {})
+    const timer = setInterval(() => {
+      refreshComfyConnectionMode().catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -171,10 +192,7 @@ function ComfyLauncherChip() {
   }, [open])
 
   const stateStyle = STATE_STYLES[state.state] || STATE_STYLES.unknown
-  const connectedExternally = state.ownership === 'external' || state.state === 'external'
-  const stateLabel = connectedExternally
-    ? t('launcherChip.connectedExternally', {}, 'Connected externally')
-    : t(`launcherChip.states.${STATE_STYLES[state.state] ? state.state : 'unknown'}`)
+  const stateLabel = t(`launcherChip.states.${STATE_STYLES[state.state] ? state.state : 'unknown'}`)
   const isMacPlatform = window?.electronAPI?.platform === 'darwin'
   const launcherMode = config.launcherMode === 'mac-app' ? 'mac-app' : 'script'
 
@@ -182,14 +200,14 @@ function ComfyLauncherChip() {
     if (!available) return t('launcherChip.summary.unavailable')
     if (state.state === 'running' && state.ownership === 'app') {
       const uptime = formatUptime(state.uptimeMs || Math.max(0, Date.now() - state.startedAt))
-      return t('launcherChip.summary.managedApp', { uptime: uptime ? ` · ${uptime}` : '' }, 'Connected · ComfyUI.app managed by Velorn{{uptime}}')
+      return `Running via ComfyUI.app${uptime ? ` - up ${uptime}` : ''}`
     }
     if (state.state === 'running' && state.ownership === 'ours') {
       const uptime = formatUptime(state.uptimeMs || Math.max(0, Date.now() - state.startedAt))
-      return t('launcherChip.summary.managed', { uptime: uptime ? ` · ${uptime}` : '' }, 'Connected · managed by Velorn{{uptime}}')
+      return t('launcherChip.summary.running', { pid: state.pid ?? '?', uptime: uptime ? ` • ${t('launcherChip.summary.up')} ${uptime}` : '' })
     }
-    if (connectedExternally) {
-      return t('launcherChip.summary.connectedExternal', { endpoint: state.httpBase || 'ComfyUI' }, 'Connected at {{endpoint}} · startup managed outside Velorn')
+    if (state.state === 'external') {
+      return t('launcherChip.summary.external', { endpoint: state.httpBase || 'local ComfyUI' })
     }
     if (state.state === 'starting') return state.statusMessage || 'Starting ComfyUI…'
     if (state.state === 'stopping') return state.statusMessage || 'Stopping ComfyUI…'
@@ -197,7 +215,7 @@ function ComfyLauncherChip() {
     if (state.state === 'stopped') return state.statusMessage || 'ComfyUI is stopped.'
     if (state.state === 'idle') return t('launcherChip.summary.notRunning')
     return t('launcherChip.summary.unknown')
-  }, [available, state, connectedExternally, t])
+  }, [available, state, t])
 
   const wrap = async (action) => {
     setBusy(true)
@@ -218,6 +236,29 @@ function ComfyLauncherChip() {
   const handleStop = () => wrap(stopComfyLauncher)
   const handleRestart = () => wrap(restartComfyLauncher)
   const handleRefresh = () => wrap(refreshComfyLauncher)
+  const handleRemoteConnect = () => wrap(async () => {
+    const saved = await window.electronAPI.invoke('belrog:saveRemoteServerSettings', {
+      ...remoteSettings,
+      enabled: true,
+    })
+    if (!saved?.success) throw new Error(saved?.error || 'Could not save remote settings.')
+    const res = await window.electronAPI.invoke('belrog:connect')
+    const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
+    if (st) setRemoteStatus(st)
+    refreshComfyConnectionMode().catch(() => {})
+    return res
+  })
+  const handleRemoteDisconnect = () => wrap(async () => {
+    const res = await window.electronAPI.invoke('belrog:disconnect')
+    const st = await window.electronAPI.invoke('belrog:getTunnelStatus').catch(() => null)
+    if (st) setRemoteStatus(st)
+    refreshComfyConnectionMode().catch(() => {})
+    return res
+  })
+  const handleSaveRemoteSettings = async () => {
+    const saved = await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteSettings)
+    setRemoteError(saved?.success ? 'Saved.' : (saved?.error || 'Save failed.'))
+  }
 
   const handlePickLauncher = async () => {
     const result = await pickComfyLauncherScript()
@@ -235,15 +276,8 @@ function ComfyLauncherChip() {
 
   const handleUseCandidate = async (candidate) => {
     if (!candidate?.path) return
-    if (candidate.launcherMode === 'mac-app' && !isMacPlatform) return
-    const partial = candidate.launcherMode === 'mac-app'
-      ? { launcherMode: 'mac-app', macAppPath: candidate.path }
-      : { launcherMode: 'script', launcherScript: candidate.path }
-    await wrap(async () => {
-      const result = await updateComfyLauncherConfig(partial)
-      if (result?.success !== false) setConfig((prev) => ({ ...prev, ...partial, ...(result?.config || {}) }))
-      return result
-    })
+    await updateComfyLauncherConfig({ launcherMode: 'script', launcherScript: candidate.path })
+    setConfig((prev) => ({ ...prev, launcherMode: 'script', launcherScript: candidate.path }))
   }
 
   const handleOpenLogFile = async () => {
@@ -255,10 +289,6 @@ function ComfyLauncherChip() {
   const canStart = (state.state === 'idle' || state.state === 'stopped' || state.state === 'crashed' || state.state === 'unknown') && hasLauncherTarget
   const canStop = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
   const canRestart = state.state === 'running' && (state.ownership === 'ours' || canControlMacApp)
-  const showConnectionSetup = (!hasLauncherTarget || (state.state !== 'running' && !connectedExternally))
-    && state.state !== 'starting' && state.state !== 'stopping'
-  const usableCandidates = candidates.filter(candidate => candidate?.path
-    && (candidate.launcherMode === 'mac-app' ? isMacPlatform : !candidate.launcherMode || candidate.launcherMode === 'script'))
 
   if (!available) return null
 
@@ -277,7 +307,7 @@ function ComfyLauncherChip() {
       </button>
 
       {open && (
-        <div className={`absolute ${popoverAnchor === 'left' ? 'left-0' : 'right-0'} top-[110%] z-50 w-[380px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-80px)] overflow-y-auto bg-sf-dark-900 border border-sf-dark-700 rounded-lg shadow-2xl`}>
+        <div className={`absolute ${popoverAnchor === 'left' ? 'left-0' : 'right-0'} top-[110%] z-50 w-[380px] bg-sf-dark-900 border border-sf-dark-700 rounded-lg shadow-2xl overflow-hidden`}>
           <div className="px-3.5 py-3 border-b border-sf-dark-700 flex items-start gap-2">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -296,12 +326,6 @@ function ComfyLauncherChip() {
               <Loader2 className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
             </button>
           </div>
-
-          {showConnectionSetup && (
-            <div className="px-3.5 py-3 border-b border-sf-dark-700">
-              <ComfyConnectionSetup compact />
-            </div>
-          )}
 
           <div className="px-3.5 py-3 space-y-2.5 border-b border-sf-dark-700">
             <div className="flex gap-2">
@@ -334,12 +358,12 @@ function ComfyLauncherChip() {
               </button>
             </div>
 
-            {connectedExternally && (
+            {state.state === 'external' && (
               <div className="flex items-start gap-2 rounded-md bg-sky-500/10 border border-sky-500/30 px-2.5 py-2 text-[11px] text-sky-200">
                 <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <div>
-                    {t('launcherChip.externalConnectionHelp', {}, 'ComfyUI is connected. You can generate normally. Use its app or terminal to stop or restart it, or recheck whether Velorn can safely manage it.')}
+                    ComfyUI is already running but Belrog can't identify its process, so Stop and Restart are disabled. This usually means netstat/lsof isn't available. Try "Take control" to retry, or stop it from the window you started it from.
                   </div>
                   <div className="mt-1.5">
                     <button
@@ -348,7 +372,7 @@ function ComfyLauncherChip() {
                       disabled={busy}
                       className="px-2 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-50 text-[10.5px] font-semibold disabled:opacity-50"
                     >
-                      {t('launcherChip.recheckControls', {}, 'Recheck controls')}
+                      Take control
                     </button>
                   </div>
                 </div>
@@ -370,8 +394,8 @@ function ComfyLauncherChip() {
                     </div>
                     <div className="mt-0.5 text-amber-100/90 leading-snug">
                       {portOwner?.pid
-                        ? <>Held by <span className="font-mono">{portOwner.name || 'pid'} (pid {portOwner.pid})</span>. {portOwner.name && /python|comfy/i.test(portOwner.name) ? 'That looks like ComfyUI already running.' : 'Velorn will not be able to start ComfyUI until that process releases the port.'}</>
-                        : 'Another process is bound to this port. Velorn will not be able to start ComfyUI until that process releases the port.'}
+                        ? <>Held by <span className="font-mono">{portOwner.name || 'pid'} (pid {portOwner.pid})</span>. {portOwner.name && /python|comfy/i.test(portOwner.name) ? 'That looks like ComfyUI already running.' : 'Belrog will not be able to start ComfyUI until that process releases the port.'}</>
+                        : 'Another process is bound to this port. Belrog will not be able to start ComfyUI until that process releases the port.'}
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       <button
@@ -405,13 +429,6 @@ function ComfyLauncherChip() {
             )}
           </div>
 
-          <details open={hasLauncherTarget} className="border-b border-sf-dark-700">
-            <summary className="cursor-pointer px-3.5 py-3 text-xs font-medium text-sf-text-primary">
-              {t('launcherChip.optionalStartup', {}, 'Let Velorn start ComfyUI (optional)')}
-            </summary>
-            <p className="px-3.5 pb-2 text-[11px] text-sf-text-muted">
-              {t('launcherChip.optionalStartupHelp', {}, 'Choose an installation only if you want to start it from Velorn. Otherwise, open ComfyUI yourself and use Find running ComfyUI to connect.')}
-            </p>
           {isMacPlatform && (
             <div className="px-3.5 py-3 space-y-2 border-b border-sf-dark-700">
               <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold">Launcher mode</div>
@@ -463,12 +480,12 @@ function ComfyLauncherChip() {
                   </button>
                 </div>
               </div>
-              <div className="text-[11px] text-sf-text-primary break-words" title={config.macAppPath}>
+              <div className="text-[11px] text-sf-text-primary truncate" title={config.macAppPath}>
                 {config.macAppPath || (
-                  <span className="italic text-sf-text-muted">{t('launcherChip.noAppOptional', {}, 'No app selected. Browse for ComfyUI.app, or open it yourself and connect.')}</span>
+                  <span className="italic text-sf-text-muted">No app configured. Pick ComfyUI.app to open it from Belrog.</span>
                 )}
               </div>
-              <div className="text-[10px] text-sf-text-muted">Velorn opens the Mac app and waits for the configured endpoint.</div>
+              <div className="text-[10px] text-sf-text-muted">Belrog opens the Mac app and waits for the configured endpoint.</div>
             </div>
           )}
 
@@ -488,28 +505,26 @@ function ComfyLauncherChip() {
                 </button>
               </div>
             </div>
-            <div className="text-[11px] text-sf-text-primary break-words" title={config.launcherScript}>
+            <div className="text-[11px] text-sf-text-primary truncate" title={config.launcherScript}>
               {config.launcherScript || (
-                <span className="italic text-sf-text-muted">{t('launcherChip.noScriptOptional', {}, 'No launch script selected. Open ComfyUI yourself and connect, or browse for the .bat or .sh script you normally use.')}</span>
+                <span className="italic text-sf-text-muted">No launcher configured. Pick your run_nvidia_gpu.bat to let Belrog start ComfyUI for you.</span>
               )}
             </div>
-          </div>
-          )}
-            {usableCandidates.length > 0 && (
-              <div className="px-3.5 py-3 space-y-1">
+
+            {candidates.length > 0 && (
+              <div className="mt-1 space-y-1">
                 <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold flex items-center gap-1">
                   <FolderSearch className="w-3 h-3" />
-                  {t('launcherChip.detectedInstallations', {}, 'Detected installations')}
+                  Detected near your ComfyUI folder
                 </div>
-                {usableCandidates.map((candidate) => {
-                  const candidateMode = candidate.launcherMode === 'mac-app' ? 'mac-app' : 'script'
-                  const isCurrent = candidateMode === launcherMode && candidate.path === (candidateMode === 'mac-app' ? config.macAppPath : config.launcherScript)
+                {candidates.map((candidate) => {
+                  const isCurrent = candidate.path === config.launcherScript
                   return (
                     <button
                       key={candidate.path}
                       type="button"
                       onClick={() => handleUseCandidate(candidate)}
-                      disabled={busy || isCurrent}
+                      disabled={isCurrent}
                       className={`w-full text-left px-2 py-1.5 rounded border text-[11px] transition-colors ${isCurrent
                         ? 'bg-sf-accent/20 border-sf-accent/40 text-sf-text-primary cursor-default'
                         : 'bg-sf-dark-800 border-sf-dark-700 hover:bg-sf-dark-700 text-sf-text-primary'
@@ -522,17 +537,103 @@ function ComfyLauncherChip() {
                 })}
               </div>
             )}
-          </details>
+          </div>
+          )}
 
-          <details className="px-3.5 py-2.5" onToggle={event => {
-            if (event.currentTarget.open && logTailRef.current) {
-              logTailRef.current.scrollTop = logTailRef.current.scrollHeight
-            }
-          }}>
-            <summary className="cursor-pointer text-xs font-medium text-sf-text-muted">
-              {t('launcherChip.troubleshootingLogs', {}, 'Troubleshooting and logs')}
-            </summary>
-            <div className="mt-3">
+          {/* Remote Server (SSH tunnel) — fast-path reconnect + login settings.
+              The full editor (model root, node root, model listing, node install)
+              stays in Settings → Remote Server; this is the one-click path. */}
+          {remoteSettings && (
+            <div className="px-3.5 py-3 space-y-2.5 border-b border-sf-dark-700">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold">
+                  Remote server (SSH tunnel)
+                </div>
+                <span className={`w-2 h-2 rounded-full ${remoteStatus?.active
+                  ? 'bg-emerald-400'
+                  : remoteStatus?.connecting
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-slate-500'}`} />
+              </div>
+              <div className="text-[11px] text-sf-text-muted truncate">
+                {remoteStatus?.active
+                  ? `Connected — ${remoteSettings.sshHost}:${remoteSettings.tunnelRemotePort} → local :${remoteSettings.tunnelLocalPort}`
+                  : remoteSettings.sshHost
+                    ? `Not connected — ${remoteSettings.sshUsername || 'user'}@${remoteSettings.sshHost}`
+                    : 'No remote server configured (Settings → Remote Server)'}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleRemoteConnect}
+                  disabled={busy || remoteStatus?.connecting}
+                  className={`flex-1 h-8 rounded-md text-white text-[11px] font-semibold transition-colors ${remoteStatus?.active
+                    ? 'bg-sky-500/90 hover:bg-sky-500'
+                    : 'bg-emerald-500/90 hover:bg-emerald-500'} disabled:bg-sf-dark-700 disabled:text-sf-text-muted`}
+                >
+                  {remoteStatus?.active ? 'Reconnect' : 'Connect'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemoteDisconnect}
+                  disabled={busy || !remoteStatus?.active}
+                  className="flex-1 h-8 rounded-md bg-red-500/90 hover:bg-red-500 disabled:bg-sf-dark-700 disabled:text-sf-text-muted text-white text-[11px] font-semibold transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <input
+                  value={remoteSettings.sshHost || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshHost: e.target.value })}
+                  placeholder="ssh host / ip"
+                  className="col-span-2 rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshPort || 22}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshPort: Number(e.target.value) || 22 })}
+                  placeholder="port"
+                  className="rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshUsername || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshUsername: e.target.value })}
+                  placeholder="username"
+                  className="rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5"
+                />
+                <input
+                  value={remoteSettings.sshKeyPath || ''}
+                  onChange={(e) => setRemoteSettings({ ...remoteSettings, sshKeyPath: e.target.value })}
+                  placeholder="path to private key"
+                  className="col-span-2 rounded border border-sf-dark-600 bg-sf-dark-950 px-2 py-1.5 font-mono"
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[11px] text-sf-text-muted">
+                  <input
+                    type="checkbox"
+                    checked={!!remoteSettings.enabled}
+                    onChange={(e) => setRemoteSettings({ ...remoteSettings, enabled: e.target.checked })}
+                  />
+                  auto-connect on app start
+                </label>
+                <button
+                  type="button"
+                  onClick={handleSaveRemoteSettings}
+                  className="px-2 py-1 rounded bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25 text-[10.5px] font-semibold"
+                >
+                  Save
+                </button>
+              </div>
+              {remoteError && (
+                <div className="text-[11px] text-red-200 break-words flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span>{remoteError}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="px-3.5 py-2.5">
             <div className="flex items-center justify-between mb-1.5">
               <div className="text-[10px] uppercase tracking-wider text-sf-text-muted font-semibold flex items-center gap-1">
                 <FileText className="w-3 h-3" />
@@ -576,8 +677,7 @@ function ComfyLauncherChip() {
                 ))
               )}
             </div>
-            </div>
-          </details>
+          </div>
 
           <div className="px-3.5 py-2 bg-sf-dark-950/50 border-t border-sf-dark-700 flex items-center justify-between text-[10px] text-sf-text-muted">
             <span>{state.httpBase || '—'}</span>

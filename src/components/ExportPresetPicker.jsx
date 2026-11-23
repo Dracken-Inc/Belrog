@@ -38,9 +38,9 @@ export default function ExportPresetPicker({ presets, activePresetId, hardwareLa
   const presetLabel = item => Object.hasOwn(TILE_DETAILS, item.id)
     ? t(`export.deliveryPresets.items.${item.id}.label`, undefined, item.label)
     : item.label.replace('NVENC', hardwareLabel)
-  const presetSummary = item => Object.hasOwn(TILE_DETAILS, item.id)
+  const presetSummary = item => item && (Object.hasOwn(TILE_DETAILS, item.id)
     ? t(`export.deliveryPresets.items.${item.id}.summary`, undefined, item.summary)
-    : t('export.presetSummaries.' + item.id, { hardware: hardwareLabel }, item.summary)
+    : t('export.presetSummaries.' + item.id, { hardware: hardwareLabel }, item.summary))
 
   const openSave = () => {
     const result = validateCustomExportPresetSettings(settings)
