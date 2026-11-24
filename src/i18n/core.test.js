@@ -1,7 +1,23 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { interpolate, normalizeLocale, resolveLanguage, translate } from './core.js'
+import { interpolate, normalizeLocale, readStoredLanguage, resolveLanguage, translate } from './core.js'
+
+test('an upgraded install keeps the language the user picked', () => {
+  // Writers use the Belrog key, readers also accept the pre-rename key. Neither
+  // half may drift: drop the fallback and every existing install silently
+  // resets to English; write the old key and new installs keep writing a name
+  // the product no longer has.
+  const legacyOnly = { store: { 'velorn-language': 'ja' }, getItem(k) { return this.store[k] ?? null }, setItem(k, v) { this.store[k] = v } }
+  assert.equal(readStoredLanguage(legacyOnly), 'ja')
+  const currentKey = { store: { 'belrog-language': 'pt' }, getItem(k) { return this.store[k] ?? null } }
+  assert.equal(readStoredLanguage(currentKey), 'pt')
+  // The new key wins when both exist, so a migrated install never goes backwards.
+  assert.equal(readStoredLanguage({ store: { 'belrog-language': 'es', 'velorn-language': 'ja' }, getItem(k) { return this.store[k] ?? null } }), 'es')
+  assert.equal(readStoredLanguage({}), null)
+  assert.equal(readStoredLanguage(null), null)
+  assert.equal(readStoredLanguage({ getItem() { throw new Error('storage blocked') } }), null)
+})
 
 function leafKeys(value, prefix = '') {
   return Object.entries(value).flatMap(([key, child]) => {

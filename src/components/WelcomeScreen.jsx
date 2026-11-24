@@ -212,8 +212,8 @@ function WelcomeScreen() {
     ? Math.round((mediaPreparationCompleted / mediaPreparationTotal) * 100)
     : 0
   const showMediaPreparation = Boolean(isLoading && mediaPreparation?.active && mediaPreparationTotal > 0)
-  const welcomeHeroVideoSrc = getWelcomeAssetPath('velorn-project-selection-page.mp4')
-  const welcomeHeroPosterSrc = getWelcomeAssetPath('velorn-home-balanced-plate-4.webp')
+  const welcomeHeroVideoSrc = getWelcomeAssetPath('belrog-project-selection-page.mp4')
+  const welcomeHeroPosterSrc = getWelcomeAssetPath('belrog-home-balanced-plate-4.webp')
   const desktopMode = isElectronMode()
   
   // Keep partner-key status fresh so the chip in the header reflects

@@ -14,6 +14,7 @@
     "test:ssh-tunnel": "node --test tests/sshTunnelPortFallback.test.cjs tests/sshTunnelEndToEnd.test.cjs",
     "test:cast-gap-detection": "node --test tests/castGapDetection.test.cjs src/services/scriptGapDetection.test.mjs",
     "test:co-located": "node scripts/run-co-located-tests.cjs",
+    "test:naming": "node --test tests/productNaming.test.mjs",
     "test:undefined-identifiers": "node --test tests/undefinedIdentifiers.test.cjs && node scripts/check-undefined-identifiers.cjs electron src",
     "check:audio-analysis": "node ./scripts/check-audio-analysis.cjs",
     "test:timeline-hotfixes": "node --test ./src/utils/closeTimelineGap.test.mjs ./src/utils/closeTimelineGapStore.test.mjs ./src/utils/timelineSplitTarget.test.mjs ./src/utils/audioClipSplit.test.js ./src/utils/clipSplit.test.mjs ./src/utils/clipSplitStore.test.mjs ./src/utils/playheadEditsStore.test.mjs ./src/utils/timecodeInput.test.mjs ./src/utils/framePlayhead.test.mjs",
@@ -158,11 +159,11 @@
   "author": "belrog contributors",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/belrogLabs/belrog.git"
+    "url": "git+https://github.com/Dracken-Inc/Belrog.git"
   },
   "homepage": "https://belrog.ai",
   "bugs": {
-    "url": "https://github.com/belrogLabs/belrog/issues"
+    "url": "https://github.com/Dracken-Inc/Belrog/issues"
   },
   "license": "GPL-3.0-only",
   "dependencies": {
@@ -331,7 +332,7 @@
       ],
       "icon": "build/icons",
       "category": "Video",
-      "maintainer": "Belrog contributors <opensource@velorn.ai>",
+      "maintainer": "belrog contributors",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "deb": {
