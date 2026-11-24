@@ -5,28 +5,11 @@
  *
  * Timing law (belrog-maintenance): start[i] + length[i] === start[i+1] with
  * zero gaps/overlaps, and coverage ends exactly at the track duration.
+ *
+ * Pure tiling only: the ffprobe step lives in sunoIntakeProbe.mjs so this file
+ * can be bundled into the renderer.
  */
-import { spawnSync } from 'node:child_process'
-
 const MIN_SHOT_SEC = 3.5
-
-/** ffprobe a track: duration + lyrics tag (LRC-timed or plain). */
-export function probeSunoTrack(path, { ffprobeBin = 'ffprobe' } = {}) {
-  const res = spawnSync(ffprobeBin, [
-    '-v', 'quiet', '-print_format', 'json', '-show_format', path,
-  ], { encoding: 'utf8' })
-  if (res.status !== 0) throw new Error(`ffprobe failed on ${path}: ${res.stderr || res.status}`)
-  const fmt = JSON.parse(res.stdout || '{}')?.format
-  if (!fmt?.tags) throw new Error(`ffprobe returned no format tags for ${path}`)
-  const durationSec = Number(fmt.duration)
-  if (!Number.isFinite(durationSec) || durationSec <= 0) throw new Error(`bad duration on ${path}`)
-  const lyricsRaw = fmt.tags.lyrics || fmt.tags.LYRICS || fmt.tags.podcast_chapter_synched_lyrics || ''
-  return {
-    durationSec,
-    title: fmt.tags.title || '',
-    lyricsRaw: String(lyricsRaw),
-  }
-}
 
 /**
  * Lyric blocks from raw tag text. LRC lines ([mm:ss.xx] text) give real times;
@@ -156,18 +139,31 @@ export function generateSunoScript({ durationSec, lyricsRaw = '', style = '', se
     '',
   ]
   const body = shots.map((s, i) => {
-    const lyricText = s.lyric.length ? s.lyric.join(' / ') : '[No lyric]'
-    const type = s.lyric.length ? 'performance' : 'b-roll'
-    return [
+    const lyricText = s.lyric.length ? s.lyric.join(' / ') : ''
+    const type = lyricText ? 'performance' : 'b-roll'
+    const lines = [
       `Shot ${i + 1}: Suno tile ${String(i + 1).padStart(3, '0')}`,
       `Start at: ${fmtClock(s.startSec)}`,
-      `Lyric moment: ${lyricText.slice(0, 240)}`,
-      `Shot type: ${type}`,
-      `Keyframe prompt: ${styleLine}. Lyric beat: "${lyricText.slice(0, 160)}". One clear subject, strong composition, no text, no watermark, no logo.`,
-      `Motion prompt: ONE action: subtle subject movement matching the lyric beat. ONE camera move: slow push-in. Use the supplied audio as the clock. Do not generate additional music.`,
-      `Length: ${s.seconds.toFixed(1)}s`,
-      '',
-    ].join('\n')
+    ]
+    // No lyric in this tile: omit the cue entirely. Writing "[No lyric]" into
+    // the prompt would make the model paint a placeholder beat that never
+    // happens in the song.
+    if (lyricText) lines.push(`Lyric moment: ${lyricText.slice(0, 240)}`)
+    lines.push(`Shot type: ${type}`)
+    lines.push(
+      `Keyframe prompt: ${styleLine}. ` +
+      (lyricText
+        ? `Lyric beat: "${lyricText.slice(0, 160)}". `
+        : 'No lyric cue in this section — cut to the music, let the frame breathe. ') +
+      'One clear subject, strong composition, no text, no watermark, no logo.',
+    )
+    lines.push(
+      `Motion prompt: ONE action: ${lyricText ? 'subtle subject movement matching the lyric beat' : 'slow environmental movement, no performer beat'}. ` +
+      'ONE camera move: slow push-in. Use the supplied audio as the clock. Do not generate additional music.',
+    )
+    lines.push(`Length: ${s.seconds.toFixed(1)}s`)
+    lines.push('')
+    return lines.join('\n')
   })
   return head.join('\n') + body.join('\n')
 }

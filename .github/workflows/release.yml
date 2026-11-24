@@ -90,6 +90,9 @@ jobs:
       - name: Verify RIFE source and package hardening
         run: npm run test:rife-hardening
 
+      - name: Verify audio-to-oneshot intake
+        run: npm run test:audio-intake
+
       - name: Verify native media helpers
         run: npm run runtime:verify-native
 

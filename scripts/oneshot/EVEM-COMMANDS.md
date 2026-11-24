@@ -92,3 +92,30 @@ expected runtime, then bails honestly.
   only ~33GB — not recommended. **Henry stops vLLM, scripts never do** (vLLM is
   a host process; `sparkrun` doesn't manage it). Scripts only check and warn;
   `KEEP_VLLM=1` skips the warning.
+
+---
+
+## PHASE 2.5 — audio straight to a script (0.5.0, 🟢 safe)
+
+No hand-written script: the track is the brief. Prints the shot table and queues
+nothing.
+
+```bash
+cd /home/henlafon/belrog-src && npm run oneshot:audio -- --audio /path/to/song.m4a --style "cinematic photoreal"
+```
+
+Writes `~/h3-oneshot-runs/audio_<stamp>/script.txt` and `plan.json`. Read the
+shot table before moving on. If a line says `—` under `lyric`, that section has
+no lyric in the file and will be built as b-roll.
+
+## PHASE 2.6 — first test one-shots (🔴 shut me down first)
+
+Render only the first shots, on a matching audio excerpt, so the loop is minutes
+instead of hours:
+
+```bash
+cd /home/henlafon/belrog-src && npm run oneshot:audio -- --audio /path/to/song.m4a --limit 3 --run
+```
+
+`--max-seconds 60` works too. Whole-track rendering is `--full` and is not part
+of the test loop.

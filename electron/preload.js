@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRemoteServerSettings: () => ipcRenderer.invoke('belrog:getRemoteServerSettings'),
   getTunnelStatus: () => ipcRenderer.invoke('belrog:getTunnelStatus'),
   checkRemoteComfyUI: () => ipcRenderer.invoke('belrog:checkRemoteComfyUI'),
+  // Audio intake for the one-shot test path (0.5.0).
+  pickAudioTrack: () => ipcRenderer.invoke('belrog:pickAudioTrack'),
+  probeAudioTrack: (filePath) => ipcRenderer.invoke('belrog:probeAudioTrack', filePath),
   engineCandidateInfo: ipcRenderer.sendSync?.('engine-candidate:info') || null,
   writeClipboardText: text => copyTextGesture('text-clipboard:write', text),
   showTextCopyMenu: text => copyTextGesture('text-clipboard:menu', text),

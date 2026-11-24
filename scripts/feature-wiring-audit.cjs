@@ -98,6 +98,7 @@ const UNREACHABLE_ALLOWED = {
   'src/components/ComfyRouterPanel.jsx': 'orphaned upstream',
   'src/services/h3OneShot.js': 'headless engine: driven by scripts/oneshot and MCP actions',
   'src/services/h3OneShotWatch.js': 'headless engine: driven by scripts/oneshot',
+  'src/services/sunoIntakeProbe.mjs': 'ffprobe edge: used by the headless intake and the main-process probe, kept out of the renderer bundle',
 }
 
 function listSourceFiles(root) {

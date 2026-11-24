@@ -6,7 +6,8 @@
  * Lyrics come from the file's metadata (Suno embeds them); duration from ffprobe.
  */
 import { readFileSync, writeFileSync } from 'node:fs'
-import { probeSunoTrack, generateSunoScript } from '../../src/services/sunoIntake.js'
+import { generateSunoScript } from '../../src/services/sunoIntake.js'
+import { probeSunoTrack } from '../../src/services/sunoIntakeProbe.mjs'
 
 const argv = process.argv.slice(2)
 const args = { target: 5 }

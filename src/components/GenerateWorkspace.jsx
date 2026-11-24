@@ -3805,6 +3805,18 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // buildMusicVideoPlanFromScript. Empty by default — users click "Start from
   // template" or paste their own.
   const [yoloMusicScript, setYoloMusicScript] = useState(persistedState?.yoloMusicScript || '')
+  // Receive the director script from the embedded Perchance planner (Director
+  // Script tab in App.jsx). The text lands in yoloMusicScript; the user then
+  // presses the existing Parse button in the Director Script step.
+  useEffect(() => {
+    const handler = (event) => {
+      const text = String(event.detail?.text || '')
+      if (!text) return
+      setYoloMusicScript(text)
+    }
+    window.addEventListener('director-script-received', handler)
+    return () => window.removeEventListener('director-script-received', handler)
+  }, [])
   // Alt-pass script library. Each alt script is a second-unit coverage pass
   // of the same song — alt performance (different setting), environmental
   // b-roll (no performers), or detail b-roll (macro inserts). They all share

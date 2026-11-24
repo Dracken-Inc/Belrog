@@ -1,8 +1,16 @@
 # Current AI Handoff
 
-Last updated: 2026-08-12
+Last updated: 2026-11-24 (Belrog 0.5.0)
 
-This is the live state for moving Belrog development from the old Windows checkout to a clean repository state that can be cloned on Ubuntu.
+## 0.5.0 state
+
+- Working clone: `~/belrog-src`, branch `main`. The release tag is cut from `main`; the workflow checks out the tag, so a fix only ships if the tag moves.
+- Audio path: Generate → Music Video → **Script from audio** reads a track's duration and lyric tags, tiles shots gaplessly (`src/services/sunoIntake.js`), and fills the script box. The ffprobe half lives in `src/services/sunoIntakeProbe.mjs` so the renderer bundle stays free of Node builtins.
+- Headless test rig: `npm run oneshot:audio -- --audio song.m4a --limit 3 --run` writes a script plus plan under `~/h3-oneshot-runs/audio_<stamp>/` and queues only that many H3 clips on a matching excerpt. Plan-only is the default.
+- Known debt (tracked by `tests/featureWiring.test.cjs`): 6 features and 13 modules are still dark after the 0.4.1 merge. The ledger fails if it grows or if an entry is fixed without being removed.
+- Not wired yet: the H3 chain engine is not part of the app's job queue, so clip rendering still runs from the console.
+
+## Merged Migration
 
 ## Merged Migration
 

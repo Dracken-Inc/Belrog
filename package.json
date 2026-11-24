@@ -1,6 +1,6 @@
 {
   "name": "belrog",
-  "version": "0.4.87",
+  "version": "0.5.0",
   "description": "AI-native video editing built around real creative timelines, generative workflows, and local agent control.",
   "main": "electron/main.js",
   "scripts": {
@@ -9,6 +9,8 @@
     "test:velo-maintenance": "node --test tests/veloInstallationInspection.test.cjs tests/veloMaintenanceGuidance.test.cjs tests/veloMaintenanceIntegration.test.cjs tests/veloComputerTools.test.cjs tests/veloComputerAuthority.test.cjs tests/connectedAgentLuna.test.cjs",
     "test:velo-resume": "node --test tests/veloContextBudget.test.cjs tests/veloContextIntegration.test.cjs tests/fundedLunaFailureIntegration.test.cjs tests/fundedLunaTransport.test.cjs tests/fundedLunaRecovery.test.cjs tests/veloContinuationIntegration.test.cjs tests/localAgentToolResults.test.cjs tests/veloMaintenanceGuidance.test.cjs",
     "test:audio-analysis": "node --test ./src/services/audioAnalysis.test.mjs ./src/utils/audioAnalysisDsp.test.mjs ./src/utils/beatMarkers.test.mjs ./tests/audioAnalysisMcp.test.mjs ./tests/audioAnalysisNative.test.cjs",
+    "test:audio-intake": "node --test ./src/services/audioScriptIntake.test.mjs ./src/services/sunoIntake.test.mjs ./src/services/h3OneShot.test.mjs",
+    "oneshot:audio": "node scripts/oneshot/run-audio-to-oneshots.mjs",
     "check:audio-analysis": "node ./scripts/check-audio-analysis.cjs",
     "test:timeline-hotfixes": "node --test ./src/utils/closeTimelineGap.test.mjs ./src/utils/closeTimelineGapStore.test.mjs ./src/utils/timelineSplitTarget.test.mjs ./src/utils/audioClipSplit.test.js ./src/utils/clipSplit.test.mjs ./src/utils/clipSplitStore.test.mjs ./src/utils/playheadEditsStore.test.mjs ./src/utils/timecodeInput.test.mjs ./src/utils/framePlayhead.test.mjs",
     "check:timeline-hotfixes": "node ./scripts/check-timeline-hotfixes.cjs",

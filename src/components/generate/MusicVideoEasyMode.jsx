@@ -38,6 +38,7 @@ import { BUILTIN_WORKFLOW_PATHS } from '../../config/workflowRegistry'
 import CustomWorkflowSlotCard from './CustomWorkflowSlotCard'
 import { useAssetLibraryStore, allLibraryEntries } from '../../stores/assetLibraryStore'
 import { buildReferencePrompt, referenceNegative } from '../../services/scriptGapDetection'
+import { buildScriptFromAudioProbe, describeAudioIntake } from '../../services/audioScriptIntake.mjs'
 import CastPanel from '../panels/CastPanel'
 
 const DRAFT_STORAGE_KEY = 'comfystudio-music-video-easy-mode-draft-v1'
@@ -1029,6 +1030,34 @@ export default function MusicVideoEasyMode({
   }), [includeDetailBroll, includeEnvironmentalBroll, includeStoryBroll, performancePassCount])
   const coverageSummary = getCoverageSummary(coveragePlan)
   const canBuildPlan = Boolean(String(yoloMusicScript || '').trim())
+  // 0.5.0: the track is the brief. Read the file's clock and lyric tags, then
+  // write the shot list from that — no prompt writing before the first cut.
+  const [audioIntakeBusy, setAudioIntakeBusy] = useState(false)
+  const [audioIntakeStatus, setAudioIntakeStatus] = useState('')
+  const handleScriptFromAudio = useCallback(async () => {
+    const api = window?.electronAPI
+    if (!api?.pickAudioTrack || !api?.probeAudioTrack) {
+      setAudioIntakeStatus('Reading a track needs the desktop app.')
+      return
+    }
+    const filePath = await api.pickAudioTrack()
+    if (!filePath) return
+    if (String(yoloMusicScript || '').trim()
+      && !window.confirm('Replace the current director script with one built from this track?')) return
+    setAudioIntakeBusy(true)
+    setAudioIntakeStatus('Reading the track…')
+    try {
+      const probe = await api.probeAudioTrack(filePath)
+      if (!probe?.ok) throw new Error(probe?.error || 'That file could not be read.')
+      const result = buildScriptFromAudioProbe(probe, { style: yoloMusicStyleNotes || '' })
+      setYoloMusicScript(result.script)
+      setAudioIntakeStatus(describeAudioIntake(result))
+    } catch (error) {
+      setAudioIntakeStatus(String(error?.message || error))
+    } finally {
+      setAudioIntakeBusy(false)
+    }
+  }, [yoloMusicScript, setYoloMusicScript, yoloMusicStyleNotes])
   const customKeyframeReady = !customKeyframeWorkflowSelected || Boolean(customKeyframeValidation.ok)
   const customVideoReady = !customVideoWorkflowSelected || Boolean(customVideoValidation.ok)
   const canQueueKeyframes = plannedShotCount > 0 && !yoloActivePlanIsStale && customKeyframeReady
@@ -3235,6 +3264,15 @@ export default function MusicVideoEasyMode({
             >
               Template
             </button>
+            <button
+              type="button"
+              onClick={handleScriptFromAudio}
+              disabled={audioIntakeBusy}
+              title="Read a track's length and lyric tags, then write the shot list from it"
+              className="rounded-lg border border-sf-accent/50 bg-sf-accent/10 px-3 py-2 text-xs text-sf-accent transition-colors hover:bg-sf-accent/20 disabled:opacity-50"
+            >
+              {audioIntakeBusy ? 'Reading…' : 'Script from audio'}
+            </button>
           </div>
           <textarea
             value={yoloMusicScript}
@@ -3242,6 +3280,9 @@ export default function MusicVideoEasyMode({
             placeholder="Paste the LLM director script here."
             className="mt-4 min-h-[330px] w-full resize-y rounded-lg border border-sf-dark-600 bg-sf-dark-950 px-3 py-2 font-mono text-xs leading-5 text-sf-text-primary outline-none focus:border-sf-accent"
           />
+          {audioIntakeStatus && (
+            <div className="mt-2 text-xs text-sf-text-secondary">{audioIntakeStatus}</div>
+          )}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-xs text-sf-text-muted">
               {parseStatus || (yoloActivePlanIsStale ? 'Script changed since the last parse.' : 'Ready when the script has shots.')}
