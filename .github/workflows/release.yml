@@ -212,6 +212,25 @@ jobs:
           $version = node -p "require('./package.json').version"
           "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      # Fork divergence: package.json carries upstream's azureSignOptions. If it stays in the
+      # config while the Azure secrets are absent, electron-builder tries to install the
+      # TrustedSigning PowerShell module itself and the job hangs until the 6h runner timeout.
+      # Strip it so an unsigned fork build never reaches the signer.
+      - name: Disable code signing for unsigned build
+        if: ${{ steps.signing_mode.outputs.signed != 'true' }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            if (pkg.build && pkg.build.win && pkg.build.win.azureSignOptions) {
+              delete pkg.build.win.azureSignOptions;
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+              console.log('Removed azureSignOptions - building unsigned artifacts');
+            } else {
+              console.log('azureSignOptions already absent - nothing to strip');
+            }
+          "
+
       - name: Build Windows artifacts
         run: npm run build && npx electron-builder --win --x64 --publish never
 

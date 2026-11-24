@@ -74,6 +74,15 @@ test('finished package gate rejects missing/duplicate icons and missing/unreadab
   assert.throws(() => verifyDebIconListing(`${icon('-rw-r--r--')}\n${launcher.replace('-rw-r--r--', '-rw-------')}`, ['256x256.png']), /unreadable/)
 })
 
+test('gate follows the packaged name instead of hard-coding one brand', () => {
+  const forkIcon = mode => `${mode} 0/0 12 2026-11-03 00:00 ./usr/share/icons/hicolor/256x256/apps/belrog.png`
+  const forkLauncher = '-rw-r--r-- 0/0 12 2026-11-03 00:00 ./usr/share/applications/belrog.desktop'
+  assert.deepEqual(verifyDebIconListing(`${forkIcon('-rw-r--r--')}\n${forkLauncher}`, ['256x256.png']), ['256x256.png'])
+  assert.throws(() => verifyDebIconListing(`${forkIcon('-rw-------')}\n${forkLauncher}`, ['256x256.png']), /unreadable/)
+  assert.throws(() => verifyDebIconListing(`${forkIcon('-rw-r--r--')}\n${forkLauncher.replace('-rw-r--r--', '-rw-------')}`, ['256x256.png']), /unreadable/)
+  assert.throws(() => verifyDebIconListing(`${forkIcon('-rw-r--r--')}\n${launcher}\n${forkLauncher}`, ['256x256.png']), /more than one desktop launcher/)
+})
+
 test('artifact hook leaves other platforms untouched', async () => {
   for (const file of ['Velorn.dmg', 'Velorn.exe', 'Velorn.AppImage']) await completed({ file })
 })

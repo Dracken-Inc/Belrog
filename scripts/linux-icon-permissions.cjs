@@ -24,21 +24,32 @@ function prepareLinuxIcons(projectRoot, platform) {
   return files
 }
 
+// The installed basename comes from the packaged executable name, so it is not a fixed string:
+// an upstream build installs velorn.{png,desktop} and this fork installs belrog.{png,desktop}.
+// Match any basename and assert the invariants that actually matter - exactly one launcher,
+// one icon basename, every icon readable, and the inventory matching what was prepared.
 function verifyDebIconListing(listing, expectedFiles) {
   const found = []
-  let launcher = false
+  const iconNames = new Set()
+  const launcherNames = new Set()
   for (const line of listing.split('\n')) {
-    const icon = line.match(/\s\.\/usr\/share\/icons\/hicolor\/(\d+x\d+)\/apps\/velorn\.png$/)
-    const desktop = /\s\.\/usr\/share\/applications\/velorn\.desktop$/.test(line)
+    const icon = line.match(/\s\.\/usr\/share\/icons\/hicolor\/(\d+x\d+)\/apps\/([^/]+)\.png$/)
+    const desktop = line.match(/\s\.\/usr\/share\/applications\/([^/]+)\.desktop$/)
     if (!icon && !desktop) continue
     const mode = line.split(/\s+/)[0]
     if (mode[0] !== '-' || mode[1] !== 'r' || mode[4] !== 'r' || mode[7] !== 'r') {
       throw new Error(`Linux installer contains an unreadable icon/launcher: ${line.trim()}`)
     }
-    if (icon) found.push(`${icon[1]}.png`)
-    if (desktop) launcher = true
+    if (icon) { iconNames.add(icon[2]); found.push(`${icon[1]}.png`) }
+    if (desktop) launcherNames.add(desktop[1])
   }
-  if (!launcher) throw new Error('Linux installer is missing the Velorn desktop launcher')
+  if (!launcherNames.size) throw new Error('Linux installer is missing the desktop launcher')
+  if (launcherNames.size > 1) {
+    throw new Error(`Linux installer contains more than one desktop launcher: ${[...launcherNames].sort().join(', ')}`)
+  }
+  if (iconNames.size > 1) {
+    throw new Error(`Linux installer icons are not all named for one executable: ${[...iconNames].sort().join(', ')}`)
+  }
   if (!found.length || JSON.stringify(found.sort()) !== JSON.stringify([...expectedFiles].sort())) {
     throw new Error('Linux installer icon inventory does not match the prepared icons')
   }
