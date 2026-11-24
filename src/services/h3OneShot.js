@@ -311,3 +311,16 @@ export function planChain({ durationSeconds, chunkSeconds = H3_DEFAULT_CHUNK_SEC
     clipFiles: Array.from({ length: total }, (_, i) => i + 1),
   }
 }
+
+/**
+ * Trust-but-verify: verdict on the stitched final vs the song it claims to
+ * carry. `probed` = { hasAudio, durationSec } from ffprobe. [] = ship it.
+ */
+export function auditFinalArtifact({ hasAudio, durationSec, expectedDurationSec, maxDriftSec = 0.5 } = {}) {
+  const issues = []
+  if (!hasAudio) issues.push({ kind: 'audio', message: 'final artifact has no audio stream' })
+  if (!Number.isFinite(durationSec) || durationSec <= 0) issues.push({ kind: 'probe', message: 'final duration unprobeable' })
+  else if (!Number.isFinite(expectedDurationSec) || expectedDurationSec <= 0) issues.push({ kind: 'expected', message: 'expected duration unknown — cannot verify sync' })
+  else if (Math.abs(durationSec - expectedDurationSec) > maxDriftSec) issues.push({ kind: 'duration', message: `final ${durationSec.toFixed(2)}s vs song ${expectedDurationSec.toFixed(2)}s exceeds ${maxDriftSec}s drift` })
+  return issues
+}
