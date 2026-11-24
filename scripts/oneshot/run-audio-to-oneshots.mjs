@@ -38,6 +38,9 @@ const ARGS = (() => {
     repo: process.env.BELROG_REPO || path.resolve(HERE, '..', '..'),
     comfy: process.env.COMFY || 'http://127.0.0.1:8188',
     out: process.env.H3_RUNS || path.join(process.env.HOME || '.', 'h3-oneshot-runs'),
+    // Where ComfyUI reads input media from. The chain node takes a bare file
+    // name, so the track has to be visible in this folder.
+    inputDir: process.env.H3_INPUT || '/home/henlafon/spark-comfyui/data/input',
   }
   const argv = process.argv.slice(2)
   for (let i = 0; i < argv.length; i += 1) {
@@ -55,6 +58,7 @@ const ARGS = (() => {
     else if (k === '--repo') a.repo = argv[++i]
     else if (k === '--comfy') a.comfy = argv[++i]
     else if (k === '--out') a.out = argv[++i]
+    else if (k === '--input-dir') a.inputDir = argv[++i]
     else if (k === '--help' || k === '-h') a.help = true
     else {
       console.error(`unknown option: ${k}`)
@@ -78,7 +82,8 @@ function usage() {
   --image <file>        reference face for identity
   --repo <path>         Belrog checkout the engine loads from
   --comfy <url>         ComfyUI base (default $COMFY or 127.0.0.1:8188)
-  --out <dir>           run directory root (default ~/h3-oneshot-runs)`)
+  --out <dir>           run directory root (default ~/h3-oneshot-runs)
+  --input-dir <dir>     ComfyUI input folder (default $H3_INPUT or spark-comfyui/data/input)`)
 }
 
 if (ARGS.help || !ARGS.audio) {
@@ -177,7 +182,7 @@ function shotTable(shots) {
       log(`fatal: ffmpeg could not cut the excerpt: ${(cut.stderr || '').slice(-300)}`)
       process.exit(1)
     }
-    log(`excerpt: ${renderSeconds.toFixed(2)}s → ${path.relative(process.cwd(), audioForRun)}`)
+    log(`excerpt: ${renderSeconds.toFixed(2)}s → ${audioForRun}`)
   }
 
   const script = intake.generateSunoScript({
@@ -221,9 +226,25 @@ function shotTable(shots) {
   }
 
   const chainRunner = path.join(HERE, 'run-oneshot-chain.mjs')
+
+  // The chain node references the audio by bare file name, so stage it where
+  // ComfyUI reads input media. Unique prefix keeps two test runs from
+  // overwriting each other's excerpt mid-chain.
+  const ext = path.extname(audioForRun) || '.m4a'
+  const stagedName = `belrog_${stamp.replace(/[^0-9A-Za-z]/g, '')}${ext}`
+  const stagedPath = path.join(ARGS.inputDir, stagedName)
+  let audioForChain = audioForRun
+  if (fs.existsSync(ARGS.inputDir)) {
+    fs.copyFileSync(audioForRun, stagedPath)
+    audioForChain = stagedPath
+    log(`staged audio for ComfyUI: ${stagedPath}`)
+  } else {
+    log(`warn: ComfyUI input dir not found at ${ARGS.inputDir} — pass --input-dir or the chain will not find the audio.`)
+  }
+
   const childArgs = [
     chainRunner,
-    '--audio', audioForRun,
+    '--audio', audioForChain,
     '--script', scriptPath,
     '--duration', String(renderSeconds),
     '--chunk', String(ARGS.chunk),
@@ -234,13 +255,30 @@ function shotTable(shots) {
   if (ARGS.image) childArgs.push('--image', ARGS.image)
 
   log(`queueing test clips via ${path.relative(process.cwd(), chainRunner)}`)
+  const startedAt = Date.now()
   const child = spawnSync(process.execPath, childArgs, {
     stdio: 'inherit',
-    env: { ...process.env, COMFY: ARGS.comfy },
+    env: { ...process.env, COMFY: ARGS.comfy, H3_STATE: path.join(runDir, 'oneshot-state.json') },
   })
+
+  // The chain runner records its own outcome in state.json and exits 0 even on
+  // a fatal, so trusting the exit code alone would report a dead run as good.
+  const statePath = path.join(runDir, 'oneshot-state.json')
+  let chainStage = null
+  try {
+    if (fs.existsSync(statePath) && fs.statSync(statePath).mtimeMs >= startedAt - 10_000) {
+      chainStage = JSON.parse(fs.readFileSync(statePath, 'utf8'))?.stage ?? null
+    }
+  } catch { /* state is best-effort; the log below still tells the truth */ }
+
   fs.writeFileSync(path.join(runDir, 'oneshot-run.log'), logLines.join('\n') + '\n')
-  log(`chain runner exited with ${child.status}`)
-  process.exit(child.status ?? 1)
+  log(`chain runner exited with ${child.status} — state ${statePath}`)
+  if (chainStage === 'failed' || (child.status ?? 1) !== 0) {
+    log(`failed: no clips were produced. Read ${statePath} and ${path.join(runDir, 'oneshot-run.log')}.`)
+    process.exit(1)
+  }
+  log(`chain stage: ${chainStage || 'unknown'}`)
+  process.exit(0)
 })().catch((error) => {
   log(`fatal: ${error?.stack || error}`)
   try { fs.writeFileSync(path.join(runDir, 'oneshot-run.log'), logLines.join('\n') + '\n') } catch { /* ignore */ }
