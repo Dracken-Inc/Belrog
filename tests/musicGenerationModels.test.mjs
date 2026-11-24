@@ -85,7 +85,7 @@ test('ACE-Step graph stays compatible with the existing bundled workflow', () =>
     assert.equal(node.class_type, bundled[id].class_type)
     const expected = { ...bundled[id].inputs }
     if (id === '107') {
-      expected.filename_prefix = 'audio/velorn_music_ace'
+      expected.filename_prefix = 'audio/belrog_music_ace'
       expected.audioUI = ''
     }
     assert.deepEqual(node.inputs, expected, `legacy node ${id}`)
@@ -195,7 +195,7 @@ test('both graphs expose only the expected final audio saver, with managed outpu
     assert.equal(outputNodes.length, 1)
     assert.equal(outputNodes[0][0], outputId)
     assert.equal(graph[outputId].class_type, type)
-    assert.match(graph[outputId].inputs.filename_prefix, /^audio\/velorn_music_/)
+    assert.match(graph[outputId].inputs.filename_prefix, /^audio\/belrog_music_/)
     assert.deepEqual(graph[outputId].inputs.audio, ['18', 0])
   }
   assert.equal(buildYue2Workflow()['107'].inputs.format, 'flac')

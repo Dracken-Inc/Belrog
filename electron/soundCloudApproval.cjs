@@ -17,13 +17,18 @@ const node = (value, classType, keys) => keysAre(value, ['class_type', 'inputs']
 const link = (value, from) => Array.isArray(value) && value.length === 2 && value[0] === from && value[1] === 0
 const text = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max
 const seed = value => Number.isSafeInteger(value) && value >= 0
+// Output prefixes were renamed to the belrog_* spelling in November 2026, in the folder-qualified form
+// the savers use ('audio/belrog_sonilo'). Workflows saved before the rename, and anything already
+// queued, still carry the old spelling, so the approved shape matches either way. Only that brand
+// token is forgiven: every other input is still checked exactly.
+const outputPrefixIs = (value, prefix) => value === prefix || value === prefix.replace('belrog_', 'velorn_')
 const save = (value, from, prefix) => node(value, 'SaveAudioMP3', ['audio', 'filename_prefix', 'quality'])
-  && link(value.inputs.audio, from) && value.inputs.filename_prefix === prefix && value.inputs.quality === 'V0'
+  && link(value.inputs.audio, from) && outputPrefixIs(value.inputs.filename_prefix, prefix) && value.inputs.quality === 'V0'
 const seconds = value => Number.isInteger(value) && value >= 10 && value <= 360
 const name = value => typeof value === 'string' && value.length > 0 && value.length <= 120
 
 function sonilo(workflow) {
-  if (!keysAre(workflow, ['1', '2']) || !save(workflow[2], '1', 'audio/velorn_sonilo')) return null
+  if (!keysAre(workflow, ['1', '2']) || !save(workflow[2], '1', 'audio/belrog_sonilo')) return null
   const first = workflow[1]
   // Instrumental: $0.0025 a second.
   if (node(first, 'SoniloTextToMusic', ['prompt', 'duration', 'seed'])) {
@@ -39,7 +44,7 @@ function sonilo(workflow) {
 }
 
 function heygen(workflow) {
-  if (!keysAre(workflow, ['1', '2']) || !save(workflow[2], '1', 'audio/velorn_heygen')) return null
+  if (!keysAre(workflow, ['1', '2']) || !save(workflow[2], '1', 'audio/belrog_heygen')) return null
   const first = workflow[1]
   if (!node(first, 'HeyGenTextToSpeechNode', ['text', 'voice', 'custom_voice_id', 'speed', 'ssml', 'seed'])) return null
   const inputs = first.inputs
@@ -51,7 +56,7 @@ function heygen(workflow) {
 
 const FISH = { 's2.1-pro': 21.45, 'drama-3': 35.75 } // dollars for a million bytes of text
 function fish(workflow) {
-  if (!keysAre(workflow, ['1', '2', '3']) || !save(workflow[3], '2', 'audio/velorn_fish')) return null
+  if (!keysAre(workflow, ['1', '2', '3']) || !save(workflow[3], '2', 'audio/belrog_fish')) return null
   if (!node(workflow[1], 'FishAudioVoiceSelector', ['voice']) || !name(workflow[1].inputs.voice)) return null
   const second = workflow[2]
   if (!node(second, 'FishAudioTextToSpeech', ['text', 'model', 'model.voices.voice0', 'model.temperature', 'model.top_p', 'model.speed', 'model.volume', 'model.normalize', 'seed'])) return null

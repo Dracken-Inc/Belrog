@@ -15,7 +15,7 @@ function fakeSafeStorage({ available = true, backend = 'gnome_libsecret' } = {})
     decryptString: bytes => { const s = bytes.toString(); if (!s.startsWith('sealed:')) throw new Error('not sealed'); return Buffer.from(s.slice(7), 'hex').toString() } }
 }
 async function folder(t) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-key-test-'))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-key-test-'))
   t.after(() => fs.rm(dir, { recursive: true, force: true }))
   return dir
 }

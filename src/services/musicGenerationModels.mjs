@@ -208,7 +208,7 @@ export function buildAceStepWorkflow({
     107: {
       class_type: 'SaveAudioMP3',
       inputs: {
-        filename_prefix: 'audio/velorn_music_ace',
+        filename_prefix: 'audio/belrog_music_ace',
         quality: 'V0',
         audioUI: '',
         audio: ['18', 0],
@@ -306,7 +306,7 @@ export function buildYue2Workflow({
     107: {
       class_type: 'SaveAudioAdvanced',
       inputs: {
-        filename_prefix: 'audio/velorn_music_yue2',
+        filename_prefix: 'audio/belrog_music_yue2',
         format: 'flac',
         audio: ['18', 0],
       },

@@ -29,6 +29,23 @@ test('every cloud request the Sound tab builds is recognised, at no less than th
   assert.ok(soundCloudApproval(voiceFlow('fish-drama-3', '語'.repeat(3000))).maxUsd <= BUTTON_APPROVAL_USD)
 })
 
+test('the same request built before the output prefixes were renamed is still recognised', () => {
+  // Writers emit belrog_*, a project saved earlier still says velorn_*. Both are the same request,
+  // and an unrelated prefix is still nobody's approved click - that is what this pins down.
+  const beforeRename = flow => {
+    const copy = wire(flow)
+    for (const node of Object.values(copy)) {
+      if (node.inputs && typeof node.inputs.filename_prefix === 'string') node.inputs.filename_prefix = node.inputs.filename_prefix.replace('belrog_', 'velorn_')
+    }
+    return copy
+  }
+  assert.deepEqual(soundCloudApproval(beforeRename(song())), { label: 'Sonilo', maxUsd: 0.15 })
+  assert.ok(soundCloudApproval(beforeRename(voiceFlow('heygen-tts'))), 'heygen built before the rename')
+  assert.ok(soundCloudApproval(beforeRename(voiceFlow('fish-s2-pro'))), 'fish built before the rename')
+  const renamed = song(); renamed[2].inputs.filename_prefix = 'audio/someone_elses'
+  assert.equal(soundCloudApproval(renamed), null, 'an unrelated output name is not a Sound request')
+})
+
 test('anything that is not exactly one of those requests is not recognised', () => {
   const change = (flow, edit) => { const copy = wire(flow); edit(copy); return copy }
   const fish = voiceFlow('fish-s2-pro'), heygen = voiceFlow('heygen-tts')

@@ -11,7 +11,7 @@ const OTHER_KEY = 'synthetic-router-key-two-never-real'
 const PNG = createRouterTestPng()
 const response = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 async function fixture(t, overrides = {}) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-test-'))
   const requests = [], notices = [], approvals = []
   const state = { context: { session: 'session-one', projectKey: '/synthetic/project-one' }, policy: 'ask-cloud', time: Date.now(), approved: true }
   const transport = overrides.transport || (async (_url, options) => options.method === 'POST' ? response({ request_id: 'provider-job-one', status: 'IN_QUEUE' }, 201)
@@ -400,7 +400,7 @@ test('completed output uses one fixed authenticated result GET, verifies inline 
   const f = await fixture(t); const jobId = await f.queued(); f.advance(); await f.manager.refresh({ jobId })
   const result = await f.manager.output({ jobId })
   assert.equal(result.success, true); assert.equal(result.mimeType, 'image/png'); assert.deepEqual(Buffer.from(result.bytes), PNG)
-  assert.match(result.filename, /^velorn-router-[a-z0-9-]+\.png$/)
+  assert.match(result.filename, /^belrog-router-[a-z0-9-]+\.png$/)
   assert.equal(f.requests.at(-1).url, `https://api.comfy.org/v2/models/${MODEL}/requests/provider-job-one`)
   assert.equal(f.requests.at(-1).headers['X-API-Key'], KEY)
   assert.doesNotMatch(JSON.stringify(result), /https:|synthetic-router-key/)

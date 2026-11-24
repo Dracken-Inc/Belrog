@@ -9,7 +9,7 @@ function fixture({ jpeg = false } = {}) {
   let handle = '/synthetic/project', session = 'a', busy = false, status = 'COMPLETED', receipt = true
   let onOutput, onImport, onResolve, urlValue, urlError, preview = null
   const assets = [], calls = { output: 0, writes: 0, marks: 0 }, resolutions = [], updates = [], previews = []
-  const filename = `velorn-router-job-1.${jpeg ? 'jpg' : 'png'}`
+  const filename = `belrog-router-job-1.${jpeg ? 'jpg' : 'png'}`
   const job = () => ({ jobId: 'job-1', status, outputAvailable: status === 'COMPLETED', model: 'synthetic-model' })
   const importer = createRouterImageImporter({
     getApi: () => ({ list: async () => ({ success: true, jobs: [job()] }),
@@ -40,9 +40,9 @@ test('preview is inert; apply uses project-relative assets and repeated import i
   assert.equal((await f.importer('job-1', { previewOnly: false })).success, true)
   assert.equal((await f.importer('job-1', { previewOnly: false })).alreadyImported, true)
   assert.equal(f.calls.writes, 1); assert.equal(f.assets.length, 1)
-  assert.equal(f.assets[0].path, 'assets/images/velorn-router-job-1.png')
+  assert.equal(f.assets[0].path, 'assets/images/belrog-router-job-1.png')
   assert.equal(f.assets[0].routerGeneration.jobId, 'job-1')
-  assert.equal(f.assets[0].url, 'file:///synthetic/project/assets/images/velorn-router-job-1.png')
+  assert.equal(f.assets[0].url, 'file:///synthetic/project/assets/images/belrog-router-job-1.png')
   assert.equal(f.preview.id, f.assets[0].id)
 })
 test('concurrent imports share a single output request/write', async () => {
@@ -89,8 +89,8 @@ test('JPEG import resolves a playable project URL and explicitly previews the ne
   const result = await f.importer('job-1', { previewOnly: false })
   assert.equal(result.success, true)
   assert.equal(f.assets[0].type, 'image')
-  assert.equal(f.assets[0].path, 'assets/images/velorn-router-job-1.jpg')
-  assert.equal(f.assets[0].url, 'file:///synthetic/project/assets/images/velorn-router-job-1.jpg')
+  assert.equal(f.assets[0].path, 'assets/images/belrog-router-job-1.jpg')
+  assert.equal(f.assets[0].url, 'file:///synthetic/project/assets/images/belrog-router-job-1.jpg')
   assert.equal(f.preview, f.assets[0]); assert.equal(f.previews.length, 1)
   assert.equal(f.resolutions.length, 1)
 })
@@ -107,15 +107,15 @@ test('existing missing-URL image is repaired and previewed without download, cop
   assert.equal(result.success, true); assert.equal(result.alreadyImported, true); assert.equal(result.assetId, 'old-asset')
   assert.deepEqual(f.calls, { output: 0, writes: 0, marks: 0 })
   assert.equal(f.assets.length, 1); assert.equal(f.updates.length, 1)
-  assert.equal(f.preview.url, 'file:///synthetic/project/assets/images/velorn-router-job-1.jpg')
-  assert.equal(f.assets[0].path, 'assets/images/velorn-router-job-1.jpg')
+  assert.equal(f.preview.url, 'file:///synthetic/project/assets/images/belrog-router-job-1.jpg')
+  assert.equal(f.assets[0].path, 'assets/images/belrog-router-job-1.jpg')
 })
 
 test('whitespace and non-string legacy URLs are repaired with the same missing-URL rule', async () => {
   for (const value of ['  ', 42, {}]) {
     const f = fixture(); seedBrokenAsset(f); f.assets[0].url = value
     assert.equal((await f.importer('job-1', { previewOnly: false })).success, true)
-    assert.equal(f.preview.url, 'file:///synthetic/project/assets/images/velorn-router-job-1.png')
+    assert.equal(f.preview.url, 'file:///synthetic/project/assets/images/belrog-router-job-1.png')
     assert.equal(f.updates.length, 1); assert.deepEqual(f.calls, { output: 0, writes: 0, marks: 0 })
   }
 })
@@ -167,7 +167,7 @@ test('a Create sound file is saved under assets/audio with its real length and i
   const assets = [], previews = [], categories = []
   const audio = (overrides = {}) => createRouterImageImporter({
     getApi: () => ({ list: async () => ({ success: true, jobs: [{ jobId: 'job-9', status: 'COMPLETED', outputAvailable: true, model: 'elevenlabs/eleven_v4', create: true, modelLabel: 'Eleven V4', estimateUsd: 0.01 }] }),
-      output: async () => ({ success: true, kind: 'audio', bytes: new Uint8Array(600).fill(7), mimeType: 'audio/mpeg', filename: 'velorn-router-job-9.mp3', ...overrides }),
+      output: async () => ({ success: true, kind: 'audio', bytes: new Uint8Array(600).fill(7), mimeType: 'audio/mpeg', filename: 'belrog-router-job-9.mp3', ...overrides }),
       markImported: async () => ({ success: true }) }),
     getProject: () => ({ currentProject: { id: 'project' }, currentProjectHandle: '/synthetic/project' }),
     captureContext: () => ({ session: 'a', projectKey: '/synthetic/project' }),
@@ -176,7 +176,7 @@ test('a Create sound file is saved under assets/audio with its real length and i
     importFile: async (root, file, category) => { categories.push(category); return { path: `assets/${category}/${file.name}`, absolutePath: `${root}/assets/${category}/${file.name}` } },
     resolveAssetUrl: async (root, asset) => `file://${root}/${asset.path}`,
     makeFile: (bytes, name, options) => ({ bytes, name, ...options }),
-    measureDuration: async url => { assert.equal(url, 'file:///synthetic/project/assets/audio/velorn-router-job-9.mp3'); return 4.25 },
+    measureDuration: async url => { assert.equal(url, 'file:///synthetic/project/assets/audio/belrog-router-job-9.mp3'); return 4.25 },
   })
   const saved = await audio()('job-9', { previewOnly: false })
   assert.equal(saved.success, true)
@@ -185,7 +185,7 @@ test('a Create sound file is saved under assets/audio with its real length and i
   assert.deepEqual([assets[0].type, assets[0].duration, assets[0].source, assets[0].routerGeneration.modelLabel], ['audio', 4.25, 'comfy-router', 'Eleven V4'])
   assert.equal(previews.length, 0)
   assets.length = 0
-  assert.equal((await audio({ filename: 'velorn-router-job-9.exe' })('job-9', { previewOnly: false })).success, false)
+  assert.equal((await audio({ filename: 'belrog-router-job-9.exe' })('job-9', { previewOnly: false })).success, false)
   assert.equal((await audio({ mimeType: 'text/html' })('job-9', { previewOnly: false })).success, false)
   assert.equal(assets.length, 0)
 })

@@ -16566,7 +16566,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           ? 'image'
           : importedJobEntry.manifest?.outputType === 'audio'
             ? 'audio'
-          : 'video'}/velorn_${outputToken}`
+          : 'video'}/belrog_${outputToken}`
       ) : (
         isSingleVideoWorkflowId(job.workflowId) ||
         job.workflowId === 'ltx23-t2v' ||
@@ -16600,12 +16600,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             job.workflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID ||
             job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
           )
-            ? `image/velorn_${outputToken}`
+            ? `image/belrog_${outputToken}`
             : (
               job.workflowId === 'music-gen-yue2'
-                ? `audio/velorn_music_${outputToken}`
+                ? `audio/belrog_music_${outputToken}`
                 : job.workflowId === 'sonilo-v2m' || job.workflowId === ELEVENLABS_TTS_WORKFLOW_ID
-                  ? `audio/velorn_${outputToken}`
+                  ? `audio/belrog_${outputToken}`
                   : ''
             )
       )
@@ -17435,7 +17435,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             duration: job.musicDuration,
             lengthMode: job.musicLengthMode,
             seed: job.seed,
-            filenamePrefix: outputPrefix || 'audio/velorn_music_yue2',
+            filenamePrefix: outputPrefix || 'audio/belrog_music_yue2',
           })
           break
         case ELEVENLABS_TTS_WORKFLOW_ID:

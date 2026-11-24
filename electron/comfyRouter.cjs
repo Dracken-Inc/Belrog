@@ -980,7 +980,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
   const audioOutput = (job, data) => {
     const header = audioHeader(data) || otherSound(data)
     if (!header) throw fault('COMFY_ROUTER_OUTPUT_UNVERIFIED', 'Comfy returned a message instead of a sound file. Nothing was imported.')
-    return { success: true, jobId: job.id, kind: 'audio', made: getModel(job.create.modelId).kind, bytes: new Uint8Array(data), mimeType: header.mimeType, filename: `velorn-router-${job.id}.${header.extension}` }
+    return { success: true, jobId: job.id, kind: 'audio', made: getModel(job.create.modelId).kind, bytes: new Uint8Array(data), mimeType: header.mimeType, filename: `belrog-router-${job.id}.${header.extension}` }
   }
   async function createOutput(op, job) {
     const model = getModel(job.create.modelId)
@@ -1016,7 +1016,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     if (model.kind === 'video') {
       const container = videoHeader(data) || otherVideo(data)
       if (!container) throw fault('COMFY_ROUTER_OUTPUT_UNVERIFIED', 'Comfy returned a message instead of a video file. Nothing was imported.')
-      return { success: true, jobId: job.id, kind: 'video', bytes: new Uint8Array(data), mimeType: container.mimeType, filename: `velorn-router-${job.id}.${container.extension}` }
+      return { success: true, jobId: job.id, kind: 'video', bytes: new Uint8Array(data), mimeType: container.mimeType, filename: `belrog-router-${job.id}.${container.extension}` }
     }
     return pictureOutput(op, job, data)
   }
@@ -1032,7 +1032,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     if (!header || !declared) throw fault('COMFY_ROUTER_OUTPUT_UNVERIFIED', 'Comfy returned something that is not a picture Belrog can read. Nothing was imported.')
     const { mimeType, extension } = header
     const size = declared
-    return { success: true, jobId: job.id, bytes: new Uint8Array(data), mimeType, width: size.width, height: size.height, filename: `velorn-router-${job.id}.${extension}` }
+    return { success: true, jobId: job.id, bytes: new Uint8Array(data), mimeType, width: size.width, height: size.height, filename: `belrog-router-${job.id}.${extension}` }
   }
   function markImported(payload) { return perform(payload, ['jobId', 'assetId'], async op => {
     const job = owned(op, payload.jobId)

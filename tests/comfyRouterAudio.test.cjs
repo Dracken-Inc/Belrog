@@ -16,7 +16,7 @@ const MP3 = Buffer.concat([Buffer.from('ID3\x04\x00\x00\x00\x00\x00\x21', 'latin
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 
 async function fixture(t, { answer, allowPending = false } = {}) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-audio-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-audio-test-'))
   const requests = [], approvals = []
   const state = { now: 1_800_000_000_000, answer: answer || (() => new Response(MP3, { status: 200, headers: { 'Content-Type': 'audio/mpeg', 'x-comfy-credits-used': '1.33' } })) }
   const manager = createComfyRouter({ storageDir, allowPending, now: () => state.now, getContext: async () => ({ session: 's', projectKey: '/synthetic/project' }), getPolicy: async () => 'ask-cloud',
@@ -133,7 +133,7 @@ test('a voice request is sent once on the wait route and its audio is kept until
   assert.equal(f.requests.length, before)
   assert.deepEqual(await f.files(), [`result-${sent.job.jobId}.audio`])
   const output = await f.manager.output({ jobId: sent.job.jobId })
-  assert.deepEqual([output.success, output.kind, output.made, output.mimeType, output.filename], [true, 'audio', 'voice', 'audio/mpeg', `velorn-router-${sent.job.jobId}.mp3`])
+  assert.deepEqual([output.success, output.kind, output.made, output.mimeType, output.filename], [true, 'audio', 'voice', 'audio/mpeg', `belrog-router-${sent.job.jobId}.mp3`])
   assert.deepEqual(Buffer.from(output.bytes), MP3)
   assert.equal(f.requests.length, before)
   assert.equal((await f.manager.markImported({ jobId: sent.job.jobId, assetId: 'asset-1' })).success, true)
@@ -265,7 +265,7 @@ test('a Pika Music song is sent once, waits for its answer, and its file is coll
   assert.deepEqual(fetched.map(r => r.url), [`${STORE}.mp3?Signature=y`])
   assert.deepEqual(fetched[0].headers, {})
   const output = await f.manager.output({ jobId: job.jobId })
-  assert.deepEqual([output.success, output.kind, output.made, output.mimeType, output.filename], [true, 'audio', 'music', 'audio/mpeg', `velorn-router-${job.jobId}.mp3`])
+  assert.deepEqual([output.success, output.kind, output.made, output.mimeType, output.filename], [true, 'audio', 'music', 'audio/mpeg', `belrog-router-${job.jobId}.mp3`])
   assert.equal(Buffer.from(output.bytes).equals(MP3), true)
 })
 

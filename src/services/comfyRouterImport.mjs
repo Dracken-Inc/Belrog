@@ -66,10 +66,10 @@ export function createRouterImageImporter({ getApi, getProject, getAssets, captu
         // Create speech, sounds and music arrive as a sound file the native side already checked.
         const isAudio = output.kind === 'audio'
         const validDescriptor = isAudio
-          ? ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/mp4'].includes(output.mimeType) && /^velorn-router-[a-zA-Z0-9_-]+\.(mp3|wav|ogg|flac|m4a)$/.test(output.filename || '')
+          ? ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac', 'audio/mp4'].includes(output.mimeType) && /^(?:belrog|velorn)-router-[a-zA-Z0-9_-]+\.(mp3|wav|ogg|flac|m4a)$/.test(output.filename || '')
           : isVideo
-          ? ['video/mp4', 'video/quicktime'].includes(output.mimeType) && /^velorn-router-[a-zA-Z0-9_-]+\.(mp4|mov)$/.test(output.filename || '')
-          : ['image/png', 'image/jpeg', 'image/webp'].includes(output.mimeType) && /^velorn-router-[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(output.filename || '')
+          ? ['video/mp4', 'video/quicktime'].includes(output.mimeType) && /^(?:belrog|velorn)-router-[a-zA-Z0-9_-]+\.(mp4|mov)$/.test(output.filename || '')
+          : ['image/png', 'image/jpeg', 'image/webp'].includes(output.mimeType) && /^(?:belrog|velorn)-router-[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/.test(output.filename || '')
         if (!validDescriptor) throw new Error('The native image descriptor was invalid.')
         const bytes = output.bytes instanceof Uint8Array ? output.bytes : new Uint8Array(output.bytes)
         if (!bytes.length || bytes.byteLength > (isVideo ? 96 : isAudio ? 40 : 20) * 1024 * 1024) throw new Error(isVideo ? 'The returned clip exceeded the import limit.' : isAudio ? 'The returned audio exceeded the import limit.' : 'The returned image exceeded the import limit.')

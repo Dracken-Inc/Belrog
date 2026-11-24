@@ -15,7 +15,7 @@ const response = (value, status = 200, headers = {}) => new Response(JSON.string
 const picture = (width = 512, height = 512) => ({ mimeType: 'image/png', base64: createRouterTestPng({ width, height }).toString('base64') })
 
 async function fixture(t, { failOn = 0 } = {}) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-batch-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-batch-test-'))
   const requests = [], approvals = []
   const state = { approved: true, posts: 0 }
   const manager = createComfyRouter({ storageDir, getContext: async () => ({ session: 's', projectKey: '/synthetic/project' }), getPolicy: async () => 'ask-cloud',

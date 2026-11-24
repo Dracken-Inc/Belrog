@@ -88,7 +88,7 @@ window.electronAPI = {
   },
   output: async ({ jobId }) => {
     calls.push({ method: 'output', jobId })
-    return { success: true, bytes: jpegBytes.slice(), mimeType: 'image/jpeg', filename: `velorn-router-${jobId}.jpg` }
+    return { success: true, bytes: jpegBytes.slice(), mimeType: 'image/jpeg', filename: `belrog-router-${jobId}.jpg` }
   },
   markImported: async ({ jobId, assetId }) => {
     jobs.find(job => job.jobId === jobId).importedAssetId = assetId
@@ -101,7 +101,7 @@ const importer = createRouterImageImporter({
   getAssets: () => ({ assets, addAsset: value => { const asset = { ...value, id: `asset-${imports.length}` }; assets.push(asset); return asset },
     setPreview, updateAssetUrl: (id, url) => { const index = assets.findIndex(asset => asset.id === id); assets[index] = { ...assets[index], url } } }),
   captureContext: () => ({ session: 'fixture-session', projectKey: '/synthetic/project' }), isBusy: () => false,
-  importFile: async (handle, file, category) => { imports.push(file.name.replace(/^velorn-router-/, '').replace(/\.jpg$/, '')); return importAsset(handle, file, category) },
+  importFile: async (handle, file, category) => { imports.push(file.name.replace(/^belrog-router-/, '').replace(/\.jpg$/, '')); return importAsset(handle, file, category) },
   resolveAssetUrl: (handle, asset) => asset.absolutePath ? getAbsoluteFileUrl(asset.absolutePath) : getProjectFileUrl(handle, asset.path),
   makeFile: (...args) => new File(...args),
 })

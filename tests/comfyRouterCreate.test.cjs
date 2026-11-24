@@ -11,7 +11,7 @@ const P = 'A red fox trotting through a snowy pine forest'
 const response = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 
 async function fixture(t, overrides = {}) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-create-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-create-test-'))
   const requests = [], approvals = []
   // `quote` is what the pretend Comfy answers to a price question: a [low, high]
   // pair, an HTTP status to fail with, or null for "no usable answer".
@@ -301,7 +301,7 @@ test('GPT Image and Seedream pictures are saved at the size asked for, and kept 
     f.state.result = openai(bytes); f.state.decoded = { width, height }
     const output = await f.manager.output({ jobId: job.jobId })
     assert.equal(output.success, true, modelId)
-    assert.deepEqual([output.mimeType, output.width, output.height, output.filename], ['image/png', width, height, `velorn-router-${job.jobId}.png`])
+    assert.deepEqual([output.mimeType, output.width, output.height, output.filename], ['image/png', width, height, `belrog-router-${job.jobId}.png`])
     assert.ok(Buffer.from(output.bytes).equals(bytes))
     assert.equal(f.requests.length, 1)
     assert.match(f.requests[0].url, /\/requests\/provider-job-one$/)
@@ -383,13 +383,13 @@ test('a Seedance clip is fetched and kept whatever kind of video file it is; onl
   f.state.result = seedance(`${STORE}.mp4?Signature=y`)
   f.state.file = raw(mp4())
   const output = await f.manager.output({ jobId: job.jobId })
-  assert.deepEqual([output.success, output.kind, output.mimeType, output.filename], [true, 'video', 'video/mp4', `velorn-router-${job.jobId}.mp4`])
+  assert.deepEqual([output.success, output.kind, output.mimeType, output.filename], [true, 'video', 'video/mp4', `belrog-router-${job.jobId}.mp4`])
   assert.equal(output.bytes.length, 8192)
   f.state.file = raw(mp4(8192, 'qt  '))
   assert.equal((await f.manager.output({ jobId: job.jobId })).mimeType, 'video/quicktime')
   const webm = Buffer.alloc(8192, 1); webm.writeUInt32BE(0x1a45dfa3, 0)
   f.state.file = raw(webm)
-  assert.deepEqual((({ success, mimeType, filename }) => [success, mimeType, filename])(await f.manager.output({ jobId: job.jobId })), [true, 'video/webm', `velorn-router-${job.jobId}.webm`])
+  assert.deepEqual((({ success, mimeType, filename }) => [success, mimeType, filename])(await f.manager.output({ jobId: job.jobId })), [true, 'video/webm', `belrog-router-${job.jobId}.webm`])
   // A container this code does not know is still the clip that was paid for.
   for (const odd of [mp4(64), Buffer.alloc(8192, 7)]) {
     f.state.file = raw(odd)

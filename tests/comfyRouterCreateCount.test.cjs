@@ -11,7 +11,7 @@ const P = 'A red fox trotting through a snowy pine forest'
 const response = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } })
 
 async function fixture(t, { failOn = 0, failWith = null } = {}) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-count-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-count-test-'))
   const requests = [], approvals = []
   const state = { approved: true, policy: 'ask-cloud', posts: 0 }
   const manager = createComfyRouter({ storageDir, getContext: async () => ({ session: 's', projectKey: '/synthetic/project' }), getPolicy: async () => state.policy,

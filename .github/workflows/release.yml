@@ -90,6 +90,22 @@ jobs:
       - name: Verify tests that live beside their source
         run: npm run test:co-located
 
+      # Output prefixes and saver names are the only record linking a finished file to the project
+      # that asked for it, and they used to spell the product's old name. Writers say Belrog now
+      # while readers still take both spellings, so both halves have to be tested together: change
+      # one side only and auto-import stops, or the Sound tab's priced button stops approving its
+      # own requests and every click pays for the native confirmation path. No workflow ran these.
+      - name: Verify Create and Sound generation wiring
+        run: |
+          npm run test:create
+          npm run test:music-generation
+
+      # What the installer, the window title, the menus and the release notes call the product.
+      # Tiered on purpose: identifiers already written onto user disks are tracked by a ratchet,
+      # retired by migration, not by find-and-replace.
+      - name: Verify the product is called Belrog where it ships
+        run: npm run test:naming
+
       - name: Verify export scheduling
         run: npm run test:export-scheduler
 

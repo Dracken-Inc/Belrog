@@ -144,7 +144,7 @@ test('cloud songs run as a Sonilo node inside ComfyUI', () => {
   // A description alone is the instrumental node, priced at 0.5275 credits a second.
   assert.deepEqual(soniloWorkflow({ prompt: '  warm lo-fi  ', seconds: 60, seed: 7 }), {
     1: { class_type: 'SoniloTextToMusic', inputs: { prompt: 'warm lo-fi', duration: 60, seed: 7 } },
-    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/velorn_sonilo', quality: 'V0' } } })
+    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/belrog_sonilo', quality: 'V0' } } })
   assert.equal(priceText(recordedPrice(sonilo, { seconds: 60 }), { rate: 211 }), 'about $0.15 · 32 credits')
   // Lyrics switch to the sung model, with the words in a Lyrics block and a custom length.
   const sung = soniloWorkflow({ prompt: 'folk-pop at 96 BPM', seconds: 120, lyrics: ' [Verse]\nHello ', seed: 9 })
@@ -190,7 +190,7 @@ test('cloud voices from Fish Audio and HeyGen run as nodes inside ComfyUI', () =
   const presenter = cloudVoiceWorkflow(heygen, { text: 'Hello.', voice: 'Chill Brian (English, male)', seed: 9 })
   assert.deepEqual(presenter, { outputNodeId: '2', workflow: {
     1: { class_type: 'HeyGenTextToSpeechNode', inputs: { text: 'Hello.', voice: 'Chill Brian (English, male)', custom_voice_id: '', speed: 1, ssml: false, seed: 9 } },
-    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/velorn_heygen', quality: 'V0' } } } })
+    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/belrog_heygen', quality: 'V0' } } } })
   assert.throws(() => cloudVoiceWorkflow(fish, { text: ' ', voice: 'Delia (en)', seed: 1 }), /what the voice should say/)
   assert.throws(() => cloudVoiceWorkflow(fish, { text: 'Hi', voice: 'Chill Brian (English, male)', seed: 1 }), /Choose a voice/)
   assert.throws(() => cloudVoiceWorkflow(fish, { text: 'x'.repeat(3001), voice: 'Delia (en)', seed: 1 }), /3,000 characters/)

@@ -84,7 +84,7 @@ async function run(job, text, voice) {
     const made = await ask({ type: 'speak', text, voice })
     if (made.error || !made.bytes) throw new Error(made.error || 'The voice could not be made.')
     if (job.projectDir !== useProjectStore.getState().currentProjectHandle) throw new Error('The project was closed before the voice was finished, so it was not saved.')
-    const file = new File([made.bytes], `velorn_voice_${Date.now()}.wav`, { type: 'audio/wav' })
+    const file = new File([made.bytes], `belrog_voice_${Date.now()}.wav`, { type: 'audio/wav' })
     const info = await importAsset(job.projectDir, file, 'audio')
     const seconds = Number(info.duration) > 0 ? Number(info.duration) : made.seconds
     const asset = useAssetsStore.getState().addAsset({

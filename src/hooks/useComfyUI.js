@@ -505,11 +505,11 @@ export function useComfyUI() {
         extension = '.png';
         mimeType = 'image/png';
         
-        filename = `velorn_input_${Date.now()}${extension}`;
+        filename = `belrog_input_${Date.now()}${extension}`;
         console.log('Converted to PNG. Creating file:', filename);
         file = new File([pngBlob], filename, { type: mimeType });
       } else {
-        filename = `velorn_input_${Date.now()}${extension}`;
+        filename = `belrog_input_${Date.now()}${extension}`;
         console.log('Creating file with extension:', extension, 'mimeType:', mimeType);
         file = new File([blob], filename, { type: mimeType });
       }

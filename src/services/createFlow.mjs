@@ -50,7 +50,7 @@ export function stableAudioWorkflow({ prompt, seconds, seed }) {
     5: { class_type: 'EmptyLatentAudio', inputs: { seconds, batch_size: 1 } },
     6: { class_type: 'KSampler', inputs: { model: ['1', 0], positive: ['3', 0], negative: ['4', 0], latent_image: ['5', 0], seed, steps: 8, cfg: 1, sampler_name: 'lcm', scheduler: 'simple', denoise: 1 } },
     7: { class_type: 'VAEDecodeAudio', inputs: { samples: ['6', 0], vae: ['1', 2] } },
-    8: { class_type: 'SaveAudioMP3', inputs: { audio: ['7', 0], filename_prefix: 'audio/velorn_stable_audio', quality: 'V0' } },
+    8: { class_type: 'SaveAudioMP3', inputs: { audio: ['7', 0], filename_prefix: 'audio/belrog_stable_audio', quality: 'V0' } },
   }
 }
 export const LOCAL_PRICE = 'free, made on this computer'
@@ -132,12 +132,12 @@ export function cloudVoiceWorkflow(model, { text, voice, seed }) {
   if (!Number.isSafeInteger(seed) || seed < 0 || seed > 2147483647) throw new Error('Bad seed.')
   if (model.id === 'heygen-tts') return { outputNodeId: '2', workflow: {
     1: { class_type: 'HeyGenTextToSpeechNode', inputs: { text: words, voice, custom_voice_id: '', speed: 1, ssml: false, seed } },
-    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/velorn_heygen', quality: 'V0' } } } }
+    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/belrog_heygen', quality: 'V0' } } } }
   if (model.id === 'fish-s2-pro' || model.id === 'fish-drama-3') return { outputNodeId: '3', workflow: {
     1: { class_type: 'FishAudioVoiceSelector', inputs: { voice } },
     2: { class_type: 'FishAudioTextToSpeech', inputs: { text: words, model: model.id === 'fish-drama-3' ? 'drama-3' : 's2.1-pro', 'model.voices.voice0': ['1', 0],
       'model.temperature': 0.7, 'model.top_p': 0.7, 'model.speed': 1, 'model.volume': 0, 'model.normalize': true, seed } },
-    3: { class_type: 'SaveAudioMP3', inputs: { audio: ['2', 0], filename_prefix: 'audio/velorn_fish', quality: 'V0' } } } }
+    3: { class_type: 'SaveAudioMP3', inputs: { audio: ['2', 0], filename_prefix: 'audio/belrog_fish', quality: 'V0' } } } }
   throw new Error('Unknown cloud voice model.')
 }
 // Tempo for songs. ACE-Step takes a real number; the other models read it from the description.
@@ -160,7 +160,7 @@ export function soniloWorkflow({ prompt, seconds, lyrics = '', seed }) {
   return {
     1: words ? { class_type: 'SoniloMusic15', inputs: { prompt: text, duration: 'custom', 'duration.seconds': seconds, seed } }
       : { class_type: 'SoniloTextToMusic', inputs: { prompt: text, duration: seconds, seed } },
-    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/velorn_sonilo', quality: 'V0' } },
+    2: { class_type: 'SaveAudioMP3', inputs: { audio: ['1', 0], filename_prefix: 'audio/belrog_sonilo', quality: 'V0' } },
   }
 }
 // The Sound tab: which kinds it holds, and things to start from.

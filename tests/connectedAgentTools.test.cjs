@@ -74,7 +74,7 @@ test('native generation monitor fails without a catalog capability or after canc
 })
 
 async function routerFixture(t, trustedFullAccess) {
-  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-agent-test-'))
+  const storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-agent-test-'))
   const nativeApprovals = [], providerRequests = [], nativeCalls = []
   const state = { approved: true }
   let f

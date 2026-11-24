@@ -2229,10 +2229,10 @@ export function modifyLocalApiWorkflow(workflow, options = {}) {
     }
 
     if (cls === 'SaveImage' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/velorn_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'image/belrog_local'
     }
     if (cls === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_local'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/belrog_local'
     }
 
     if (cls === 'CLIPTextEncode' && typeof node.inputs.text === 'string') {
@@ -2806,7 +2806,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     height = 1440,
     duration = 5,
     seed = Math.floor(Math.random() * 1000000000000),
-    filenamePrefix = 'video/velorn_minimax_h3',
+    filenamePrefix = 'video/belrog_minimax_h3',
     assetFilenames = {},
   } = options
 
@@ -2838,7 +2838,7 @@ export function modifyMinimaxH3ReferenceWorkflow(workflow, options = {}) {
     }
 
     if (node.class_type === 'SaveVideo' && 'filename_prefix' in node.inputs) {
-      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/velorn_minimax_h3'
+      node.inputs.filename_prefix = filenamePrefix || node.inputs.filename_prefix || 'video/belrog_minimax_h3'
     }
   }
 

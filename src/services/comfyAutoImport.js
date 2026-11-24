@@ -30,6 +30,7 @@
 import { comfyui } from './comfyui'
 import { importAsset } from './fileSystem'
 import { canImportGifMedia, importGifAsset, isGifFilename } from './gifImport'
+import { isBelrogManagedOutput } from './comfyOutputOwnership.mjs'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
 import { isPromptHandledByApp } from './comfyPromptGuard'
@@ -68,7 +69,8 @@ function appendLauncherLog(stream, text) {
 // avoid unbounded growth in long sessions.
 const MAX_SIGNATURES = 2000
 const importedSignatures = new Set()
-const VELORN_MANAGED_OUTPUT_RE = /^(director_job_|velorn_|velorn_job_|comfystudio_|comfystudio_job_|flow_ai_|topaz_video_upscale_|comfystudiomask_|BelrogMask_)/i
+// Which files count as ours lives in comfyOutputOwnership.mjs, beside the prefixes that writers
+// use, so the reader and the writers are changed together.
 const MAX_ELIGIBLE_PROMPT_IDS = 300
 const eligibleUnmanagedPromptIds = new Set()
 let runtimeOptions = {}
@@ -128,11 +130,6 @@ function normalizeSourceText(value) {
 
 function sameSourceText(left, right) {
   return normalizeSourceText(left).toLowerCase() === normalizeSourceText(right).toLowerCase()
-}
-
-function isBelrogManagedOutput(fileDesc) {
-  const filename = normalizeSourceText(fileDesc?.filename)
-  return VELORN_MANAGED_OUTPUT_RE.test(filename)
 }
 
 function getAutoImportSourceFields(fileDesc, promptId) {

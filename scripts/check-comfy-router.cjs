@@ -32,7 +32,7 @@ async function main() {
       return image?.complete && image.naturalWidth === 1024 && image.naturalHeight === 1024
     })
     const snapshot = await state()
-    assert.equal(snapshot.preview.type, 'image'); assert.match(snapshot.preview.path, /^assets\/images\/velorn-router-job-1(?:_\d+)?\.jpg$/)
+    assert.equal(snapshot.preview.type, 'image'); assert.match(snapshot.preview.path, /^assets\/images\/belrog-router-job-1(?:_\d+)?\.jpg$/)
     assert.match(snapshot.preview.url, /^blob:/)
   }
   let groups = 0
