@@ -114,10 +114,71 @@ function fmtClock(sec) {
 }
 
 /**
+ * Cast slugs this script can name without making anyone up: the user's Cast
+ * roster first, then [Name] tags inside the lyrics. Bracket section headers
+ * ([Verse], [Chorus]) are structure, not people, so they are filtered against
+ * a small blocklist instead of being harvested as performers.
+ */
+const LYRIC_TAG_BLOCK = new Set([
+  'verse', 'chorus', 'pre-chorus', 'bridge', 'intro', 'outro', 'hook', 'drop',
+  'breakdown', 'interlude', 'solo', 'reprise', 'refrain', 'post-chorus',
+  'ad-lib', 'adlib', 'spoken', 'instrumental', 'beat', 'fade', 'production',
+])
+
+export function harvestCastSlugs({ cast = [], lyricsRaw = '' } = {}) {
+  const slugs = []
+  const seen = new Set()
+  const push = (raw) => {
+    const slug = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
+    if (!slug || seen.has(slug)) return
+    seen.add(slug)
+    slugs.push(slug)
+  }
+  for (const entry of Array.isArray(cast) ? cast : []) push(entry?.slug || entry?.label)
+  // Tag-only lines name the singer: "[Rose]" or "[Jake] / [Rose]". A line that
+  // starts with a timestamp ("[00:12.00]line") is timing, so it is skipped
+  // whole; lyric text inside a sung line is never treated as a name.
+  for (const line of String(lyricsRaw || '').split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('[')) continue
+    if (/^\[\d{1,2}:\d{2}/.test(trimmed)) continue
+    for (const match of trimmed.matchAll(/\[([^\]]{1,40})\]/g)) {
+      const tag = match[1].trim()
+      if (!tag || /^\d+$/.test(tag) || /^\d{1,2}:\d{2}([.:]\d+)?$/.test(tag) || LYRIC_TAG_BLOCK.has(tag.toLowerCase())) continue
+      // "[Rose] / [Jake]" split on separators; "[Verse 1]"-style headers drop
+      // their trailing number before the blocklist check.
+      for (const part of tag.split(/\s*\/\s*|\s*&\s*|\s*,\s*/)) {
+        const cleaned = part.replace(/\s*\d+\s*$/, '').trim()
+        if (!cleaned || LYRIC_TAG_BLOCK.has(cleaned.toLowerCase())) continue
+        if (/^(verse|chorus|bridge|intro|outro|part|section|take)\w*\s*\d*$/i.test(cleaned)) continue
+        push(cleaned)
+      }
+    }
+  }
+  return slugs
+}
+
+/**
  * Full script text for the one-shot compiler from a probed track + style brief.
  * seedBase derives from title+duration so reruns are stable, new files differ.
+ *
+ * This is a skeleton, not a film. It commits to the two things the file can
+ * prove — when the cuts happen and what is being sung — and names the cast it
+ * knows. Everything creative (the frame, the setting, the camera) is left to
+ * the director planner, because invented prose here turned into 31 identical
+ * shots of a "slow push-in". The [placeholder] marker on each keyframe line
+ * keeps that visible in the queue instead of quietly generating a guess.
  */
-export function generateSunoScript({ durationSec, lyricsRaw = '', style = '', seedBase = null, targetSec = 5, title = '' } = {}) {
+export function generateSunoScript({
+  durationSec,
+  lyricsRaw = '',
+  style = '',
+  seedBase = null,
+  targetSec = 5,
+  title = '',
+  cast = [],
+  lyricSource = 'file',
+} = {}) {
   const blocks = parseLyricBlocks(lyricsRaw, durationSec)
   const shots = tileShots(blocks, durationSec, { targetSec })
   const issues = auditTiling(shots, durationSec)
@@ -126,44 +187,70 @@ export function generateSunoScript({ durationSec, lyricsRaw = '', style = '', se
   const seedSource = `${title}|${durationSec}`
   for (let i = 0; i < seedSource.length; i += 1) { hash ^= seedSource.charCodeAt(i); hash = Math.imul(hash, 16777619) >>> 0 }
   const seed = seedBase ?? (hash % 900000) + 100000
-  const styleLine = style.trim() || 'cinematic photoreal, moody film lighting, shallow depth of field'
+  const knownSlugs = harvestCastSlugs({ cast, lyricsRaw })
+  const slugs = knownSlugs.length ? knownSlugs : ['lead']
+  const rosterSlugs = new Set((Array.isArray(cast) ? cast : [])
+    .map((entry) => String(entry?.slug || entry?.label || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_')))
+  const styleNote = String(style || '').trim()
+    || 'not set — add the look in the Director step'
+  const lyricNote = {
+    timed: 'timed in step 1 by transcription or your pasted SRT/LRC',
+    file: 'read from the file',
+    transcription: 'timed by transcription',
+    pasted: 'untimed lyrics pasted — spread across the song',
+    none: 'not found — cutting on the clock only',
+  }[lyricSource] || 'timing only'
   const head = [
     'BELROG DIRECTOR SCRIPT',
-    `Seed base: ${seed}. Deterministic Suno intake tiling — regenerate only with a new file or brief.`,
-    `Story: music video for "${title || 'untitled'}", ${durationSec.toFixed(2)}s. Generated from track metadata; no hand-authored shots.`,
+    `Seed base: ${seed}. Deterministic tiling from the track — regenerate only with a new file or brief.`,
+    `Story: music video for "${title || 'untitled'}", ${durationSec.toFixed(2)}s.`,
+    `This script is a skeleton. Cut timings and lyric lines come from the track (${lyricNote}).`,
+    'Nothing describes a frame on purpose: send it to the Director step to get the shots written, or write them here.',
+    `Style: ${styleNote}`,
     '',
-    'Coverage 1: Main scripted sequence',
+    '# Cast this script names. An "uncast" line means the name appears but no reference sheet exists yet.',
+    ...slugs.map((slug) => `CHARACTER: ${slug} — ${rosterSlugs.has(slug) ? 'in your Cast roster' : 'uncast: no reference sheet yet'}`),
+    '',
+    'Coverage 1: Main tiled sequence',
     'Coverage type: main_sequence',
-    'Coverage label: Main scripted sequence',
-    'Purpose: Full-duration tiled lane from Suno metadata.',
+    'Coverage label: Main tiled sequence',
+    'Purpose: Cut the track on lyric onsets with exact timing and no gaps.',
     '',
   ]
   const body = shots.map((s, i) => {
-    const lyricText = s.lyric.length ? s.lyric.join(' / ') : ''
+    const lyricText = s.lyric.filter((line) => !/^\s*\[[^\]]*\]\s*$/.test(line)).join(' / ')
     const type = lyricText ? 'performance' : 'b-roll'
     const lines = [
-      `Shot ${i + 1}: Suno tile ${String(i + 1).padStart(3, '0')}`,
+      `Shot ${i + 1}: Cut at ${fmtClock(s.startSec)}`,
       `Start at: ${fmtClock(s.startSec)}`,
     ]
-    // No lyric in this tile: omit the cue entirely. Writing "[No lyric]" into
-    // the prompt would make the model paint a placeholder beat that never
-    // happens in the song.
-    if (lyricText) lines.push(`Lyric moment: ${lyricText.slice(0, 240)}`)
+    if (lyricText) {
+      // Who sings: the [Tag] on these lines if there is one, the only known
+      // performer if there is one, otherwise the whole roster. Guessing a
+      // single singer from a multi-cast roster is invention, so we do not.
+      const tagged = [...new Set(s.lyric
+        .flatMap((line) => [...String(line).matchAll(/\[([^\]]{1,40})\]/g)].map((m) => m[1]))
+        .map((tag) => tag.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, ''))
+        .filter((tag) => slugs.includes(tag)))]
+      const artist = tagged.length ? tagged.join(', ') : (slugs.length === 1 ? slugs[0] : 'all')
+      lines.push(`Artist: ${artist}`)
+      // No lyric in this tile: omit the cue entirely. Writing "[No lyric]" into
+      // the prompt would make the model paint a placeholder beat that never
+      // happens in the song.
+      lines.push(`Lyric moment: ${lyricText.slice(0, 240)}`)
+    }
     lines.push(`Shot type: ${type}`)
     lines.push(
-      `Keyframe prompt: ${styleLine}. ` +
-      (lyricText
-        ? `Lyric beat: "${lyricText.slice(0, 160)}". `
-        : 'No lyric cue in this section — cut to the music, let the frame breathe. ') +
-      'One clear subject, strong composition, no text, no watermark, no logo.',
-    )
-    lines.push(
-      `Motion prompt: ONE action: ${lyricText ? 'subtle subject movement matching the lyric beat' : 'slow environmental movement, no performer beat'}. ` +
-      'ONE camera move: slow push-in. Use the supplied audio as the clock. Do not generate additional music.',
+      `Keyframe prompt: [placeholder] ${fmtClock(s.startSec)}–${fmtClock(s.startSec + s.seconds)}, `
+      + (lyricText ? `performance on the line "${lyricText.slice(0, 160)}"` : 'no vocal here, cut to the music')
+      + '. Waiting for the director to write this frame.',
     )
     lines.push(`Length: ${s.seconds.toFixed(1)}s`)
     lines.push('')
     return lines.join('\n')
   })
-  return head.join('\n') + body.join('\n')
+  // A blank line between the coverage header and the first shot is load-bearing:
+  // the parser folds the lines right after a heading into scene context, and
+  // without it Shot 1 disappears from the plan.
+  return `${head.join('\n')}\n\n${body.join('\n')}`
 }

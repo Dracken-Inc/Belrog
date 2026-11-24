@@ -21,8 +21,12 @@ export function countScriptShots(script) {
 
 /**
  * Probe result from the main process (belrog:probeAudioTrack) plus optional
- * style/target options → { script, shotCount, hasLyrics, durationSec, title }.
- * Throws with a readable reason when the track cannot be tiled.
+ * style/target options → { script, shotCount, hasLyrics, durationSec, title,
+ * lyricSource }. Throws with a readable reason when the track cannot be tiled.
+ *
+ * `lyricsRaw` is the text to time against; when it is empty the file's own
+ * lyric tags are used. That ordering matters: a Suno download carries no tags,
+ * so the only real timings are the ones the app already produced in step 1.
  */
 export function buildScriptFromAudioProbe(probe, options = {}) {
   const durationSec = Number(probe?.durationSec)
@@ -32,7 +36,12 @@ export function buildScriptFromAudioProbe(probe, options = {}) {
   if (durationSec < AUDIO_INTAKE_MIN_SECONDS) {
     throw new Error(`That track is ${durationSec.toFixed(1)}s — too short to cut into one-shot clips.`)
   }
-  const lyricsRaw = String(probe?.lyricsRaw || '')
+  const fileLyrics = String(probe?.lyricsRaw || '')
+  const overrideLyrics = String(options.lyricsRaw || '')
+  const lyricsRaw = overrideLyrics.trim() ? overrideLyrics : fileLyrics
+  const lyricSource = options.lyricSource
+    || (overrideLyrics.trim() ? (options.lyricsTimed ? 'timed' : 'pasted')
+      : (fileLyrics.trim() ? 'file' : 'none'))
   const script = generateSunoScript({
     durationSec,
     lyricsRaw,
@@ -40,6 +49,8 @@ export function buildScriptFromAudioProbe(probe, options = {}) {
     targetSec: Number(options.targetSec) || AUDIO_INTAKE_TARGET_SHOT_SECONDS,
     seedBase: options.seedBase,
     title: String(probe?.title || ''),
+    cast: Array.isArray(options.cast) ? options.cast : [],
+    lyricSource,
   })
   const shotCount = countScriptShots(script)
   if (!shotCount) throw new Error('The script came back empty — nothing to generate.')
@@ -47,6 +58,7 @@ export function buildScriptFromAudioProbe(probe, options = {}) {
     script,
     shotCount,
     hasLyrics: Boolean(lyricsRaw.trim()),
+    lyricSource,
     durationSec,
     title: String(probe?.title || ''),
   }
@@ -59,7 +71,8 @@ export function buildScriptFromAudioProbe(probe, options = {}) {
 export function previewAudioTiling(probe, options = {}) {
   const durationSec = Number(probe?.durationSec)
   if (!Number.isFinite(durationSec) || durationSec <= 0) return { shots: [], issues: [{ kind: 'empty', message: 'no duration' }] }
-  const blocks = parseLyricBlocks(String(probe?.lyricsRaw || ''), durationSec)
+  const lyricsRaw = String(options.lyricsRaw || probe?.lyricsRaw || '')
+  const blocks = parseLyricBlocks(lyricsRaw, durationSec)
   const shots = tileShots(blocks, durationSec, { targetSec: Number(options.targetSec) || AUDIO_INTAKE_TARGET_SHOT_SECONDS })
   return { shots, issues: auditTiling(shots, durationSec) }
 }
@@ -70,6 +83,12 @@ export function describeAudioIntake(result) {
   const minutes = Math.floor(result.durationSec / 60)
   const seconds = Math.round(result.durationSec - minutes * 60)
   const length = minutes ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`
-  const source = result.hasLyrics ? 'with lyric timing from the file' : 'timing only — add lyrics for better beats'
+  const source = {
+    timed: 'lyric timed in step 1',
+    file: 'lyric timing read from the file',
+    transcription: 'lyric timing from the transcription',
+    pasted: 'untimed lyrics — spread across the song',
+    none: 'timing only — add lyrics for better beats',
+  }[result.lyricSource || (result.hasLyrics ? 'file' : 'none')]
   return `${result.shotCount} shots across ${length}, ${source}.`
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen, session } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen, session, clipboard } = require('electron')
 const crypto = require('crypto')
 const path = require('path')
 const os = require('os')
@@ -21,6 +21,7 @@ const {
   resolveHardwareExportRoute,
 } = require('./hardwareExportFfmpeg')
 const { inspectIsoBmffLayout } = require('./exportSourcePreparation')
+const { parseProbeOutput } = require('./audioTrackProbe')
 const {
   appendVp9AlphaArgs,
   getAlphaExportError,
@@ -4360,11 +4361,16 @@ ipcMain.handle('media:getFileUrlDirect', (event, filePath) => {
 // Belrog 0.5.0: audio-to-script intake. ffprobe supplies the clock and the
 // lyric tags Suno writes into the file; the renderer turns that into a
 // director script (src/services/sunoIntake.js). Nothing is hand-authored.
+// Video containers are allowed because a Suno drop is often an mp4: the clock
+// and the audio are what this path reads, and ffprobe gets both from a video.
 ipcMain.handle('belrog:pickAudioTrack', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose a track for the one-shot test',
+    title: 'Choose the song file',
     properties: ['openFile'],
-    filters: [{ name: 'Audio', extensions: ['m4a', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'opus'] }],
+    filters: [{
+      name: 'Audio or video',
+      extensions: ['m4a', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'opus', 'mp4', 'm4v', 'mov', 'webm', 'mkv'],
+    }],
   })
   if (result.canceled || !result.filePaths?.length) return null
   return result.filePaths[0]
@@ -4379,7 +4385,10 @@ ipcMain.handle('belrog:probeAudioTrack', async (_event, filePath) => {
     const timer = setTimeout(() => done({ ok: false, error: 'ffprobe timed out.' }), 15000)
     let proc
     try {
-      proc = spawn(ffprobePath, ['-v', 'quiet', '-print_format', 'json', '-show_format', filePath], { windowsHide: true })
+      // -show_streams too: some mp4/mov muxers leave the container duration
+      // blank while every stream carries it, and "no readable duration" was a
+      // dead end with no hint that the file was fine.
+      proc = spawn(ffprobePath, ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath], { windowsHide: true })
     } catch (error) {
       clearTimeout(timer)
       return done({ ok: false, error: String(error?.message || error) })
@@ -4392,26 +4401,23 @@ ipcMain.handle('belrog:probeAudioTrack', async (_event, filePath) => {
     proc.on('close', (code) => {
       clearTimeout(timer)
       if (code !== 0) return done({ ok: false, error: (stderr || `ffprobe exited ${code}`).trim().slice(0, 400) })
-      let fmt = null
-      try { fmt = JSON.parse(stdout || '{}')?.format } catch (_) { fmt = null }
-      const durationSec = Number(fmt?.duration)
-      if (!fmt || !Number.isFinite(durationSec) || durationSec <= 0) {
-        return done({ ok: false, error: 'ffprobe could not read a duration from that file.' })
-      }
-      const tags = fmt.tags || {}
-      const pick = (name) => {
-        const key = Object.keys(tags).find((k) => k.toLowerCase() === name)
-        return key ? String(tags[key] || '') : ''
-      }
-      done({
-        ok: true,
-        durationSec,
-        title: pick('title') || path.basename(filePath, path.extname(filePath)),
-        lyricsRaw: pick('lyrics') || pick('unsyncedlyrics') || pick('podcast_chapter_synched_lyrics') || '',
-        fileName: path.basename(filePath),
-      })
+      done(parseProbeOutput(stdout, filePath))
     })
   })
+})
+
+// Clipboard writes go through the main process on purpose. The renderer's
+// navigator.clipboard throws NotAllowedError ("Document is not focused")
+// whenever focus is inside the Director Script iframe, which made Copy Brief
+// look dead. electron.clipboard has no focus requirement.
+ipcMain.handle('belrog:writeClipboardText', (_event, text) => {
+  if (typeof text !== 'string') return { ok: false, error: 'Clipboard text must be a string.' }
+  try {
+    clipboard.writeText(text)
+    return { ok: true, length: text.length }
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) }
+  }
 })
 
 ipcMain.handle('media:getVideoFps', async (event, filePath) => {

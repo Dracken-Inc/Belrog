@@ -31,6 +31,7 @@ import { applyImportedWorkflowBindings } from '../services/importedWorkflowBindi
 import { fetchComfyTemplateCatalog } from '../services/comfyTemplateCatalog'
 import { importComfyTemplate, reimportImportedWorkflow } from '../services/templateImporter'
 import { COMFY_PARTNER_KEY_CHANGED_EVENT } from '../services/comfyPartnerAuth'
+import { copyText } from '../services/clipboard.mjs'
 import useComfyUI from '../hooks/useComfyUI'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
@@ -62,6 +63,7 @@ import { canImportGifMedia, importGifAsset, isGifFilename } from '../services/gi
 import { enqueuePlaybackTranscode } from '../services/playbackCache'
 import { enqueueProxyTranscode, isProxyPlaybackEnabled } from '../services/proxyCache'
 import { formatCaptionCuesAsSrt, transcribeAsset } from '../services/captionTranscription'
+import { buildScriptFromTrack } from '../services/musicVideoTrackIntake.mjs'
 import {
   buildYoloPlanFromScript,
   flattenYoloPlanVariants,
@@ -479,19 +481,9 @@ const PERSISTED_GENERATION_QUEUE_LIMIT = 100
 const RECOVERABLE_JOB_STATUSES = new Set(['queued', 'uploading', 'configuring', 'queuing', 'running', 'saving', 'paused'])
 
 async function copyTextToClipboard(text) {
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
-  const textarea = document.createElement('textarea')
-  textarea.value = String(text || '')
-  textarea.style.position = 'fixed'
-  textarea.style.opacity = '0'
-  document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
+  // Main process first: the web API fails with "Document is not focused"
+  // whenever focus is in the Director Script iframe (see services/clipboard).
+  return copyText(text)
 }
 
 function buildGenerationErrorTroubleshootingHints(errorText = '') {
@@ -4510,7 +4502,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       generationMode,
     })
     try {
-      await copyTextToClipboard(text)
+      const copied = await copyTextToClipboard(text)
+      if (!copied?.ok) throw new Error(copied?.error)
       setFormErrorCopyStatus('Copied')
       setTimeout(() => setFormErrorCopyStatus(''), 1600)
     } catch {
@@ -4854,7 +4847,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const handleCopyDependencyReport = useCallback(async () => {
     const text = buildMissingDependencyClipboardText(dependencyCheck)
     try {
-      await copyTextToClipboard(text)
+      const copied = await copyTextToClipboard(text)
+      if (!copied?.ok) throw new Error(copied?.error)
       addComfyLog('info', 'Dependency report copied to clipboard.')
     } catch (_) {
       setFormError('Could not copy dependency report. Copy manually from the checklist.')
@@ -5022,6 +5016,49 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     () => getPlainMusicLyricLines(yoloMusicProvidedLyrics),
     [yoloMusicProvidedLyrics]
   )
+  // 0.6.1 one-file flow: the song loaded in step 1 IS the file the script is
+  // cut from. Resolve its on-disk path the same way the generate path does
+  // (absolutePath, else project folder + stored relative path), then let the
+  // intake service pick the best lyric source and write the skeleton. No
+  // second file picker: that times one song and generates another.
+  const handleBuildMusicVideoScriptFromTrack = useCallback(async () => {
+    const asset = yoloMusicAudioAsset
+    if (!asset) {
+      const message = 'Add the song in step 1 first — the shot list is cut from that file.'
+      setFormError(message)
+      throw new Error(message)
+    }
+    let filePath = ''
+    if (typeof asset.absolutePath === 'string' && asset.absolutePath.trim()) {
+      filePath = asset.absolutePath.trim()
+    } else if (asset.path && typeof currentProjectHandle === 'string' && window.electronAPI?.pathJoin) {
+      try {
+        filePath = await window.electronAPI.pathJoin(currentProjectHandle, asset.path)
+      } catch (error) {
+        addComfyLog('warn', `Could not resolve the song file path: ${error?.message || error}`)
+        filePath = ''
+      }
+    }
+    const result = await buildScriptFromTrack({
+      filePath,
+      asset,
+      api: window.electronAPI,
+      lyricsText: yoloMusicLyrics,
+      providedLyrics: yoloMusicProvidedLyrics,
+      cast: Array.isArray(yoloMusicCast) ? yoloMusicCast : [],
+      style: yoloMusicBriefStyleNotes,
+    })
+    addComfyLog('info', `Director script tiled from ${result.fileName || asset.name || 'the song file'}: ${result.shotCount} shots, ${result.lyricNote}.`)
+    return result
+  }, [
+    addComfyLog,
+    currentProjectHandle,
+    yoloMusicAudioAsset,
+    yoloMusicBriefStyleNotes,
+    yoloMusicCast,
+    yoloMusicProvidedLyrics,
+    yoloMusicLyrics,
+  ])
   const handleImportYoloMusicAudio = useCallback(async () => {
     if (yoloMusicAudioImporting) return
     if (!currentProjectHandle) {
@@ -9853,9 +9890,16 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       cast: yoloMusicResolvedCast,
       coveragePlan: options.coveragePlan || null,
     })
-    await copyTextToClipboard(llmPrompt)
+    const copied = await copyTextToClipboard(llmPrompt)
+    if (!copied?.ok) {
+      const reason = copied?.error || 'the clipboard is not available'
+      setFormError(`Could not copy the brief: ${reason}`)
+      addComfyLog('error', `Music video LLM brief copy failed: ${reason}`)
+      return false
+    }
     setFormError(null)
     addComfyLog('status', 'Music video LLM brief copied.')
+    return true
   }, [
     addComfyLog,
     yoloMusicAudioAsset?.name,
@@ -18079,6 +18123,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     yoloMusicTranscribingSrt={yoloMusicTranscribingSrt}
                     yoloMusicTranscriptionStatus={yoloMusicTranscriptionStatus}
                     handleYoloMusicTranscribeSrt={handleYoloMusicTranscribeSrt}
+                    onBuildScriptFromTrack={handleBuildMusicVideoScriptFromTrack}
                     yoloMusicProvidedLyrics={yoloMusicProvidedLyrics}
                     setYoloMusicProvidedLyrics={setYoloMusicProvidedLyrics}
                     yoloMusicAlignProvidedLyrics={yoloMusicAlignProvidedLyrics}

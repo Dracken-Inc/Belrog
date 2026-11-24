@@ -38,7 +38,8 @@ import { BUILTIN_WORKFLOW_PATHS } from '../../config/workflowRegistry'
 import CustomWorkflowSlotCard from './CustomWorkflowSlotCard'
 import { useAssetLibraryStore, allLibraryEntries } from '../../stores/assetLibraryStore'
 import { buildReferencePrompt, referenceNegative } from '../../services/scriptGapDetection'
-import { buildScriptFromAudioProbe, describeAudioIntake } from '../../services/audioScriptIntake.mjs'
+import { describeAudioIntake } from '../../services/audioScriptIntake.mjs'
+import { copyText } from '../../services/clipboard.mjs'
 import CastPanel from '../panels/CastPanel'
 
 const DRAFT_STORAGE_KEY = 'comfystudio-music-video-easy-mode-draft-v1'
@@ -236,25 +237,10 @@ function plural(count, singular, pluralLabel = `${singular}s`) {
 }
 
 async function copyTextToClipboard(text) {
-  const value = String(text || '')
-  if (!value) return false
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value)
-    return true
-  }
-  if (typeof document === 'undefined') return false
-  const textarea = document.createElement('textarea')
-  textarea.value = value
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  try {
-    return document.execCommand('copy')
-  } finally {
-    document.body.removeChild(textarea)
-  }
+  // Main process first: the web API rejects with "Document is not focused"
+  // while the Director Script planner iframe holds focus.
+  const result = await copyText(text)
+  return Boolean(result?.ok)
 }
 
 function flattenPlanShots(plan) {
@@ -512,6 +498,7 @@ export default function MusicVideoEasyMode({
   yoloMusicTranscribingSrt,
   yoloMusicTranscriptionStatus,
   handleYoloMusicTranscribeSrt,
+  onBuildScriptFromTrack = null,
   yoloMusicProvidedLyrics,
   setYoloMusicProvidedLyrics,
   yoloMusicAlignProvidedLyrics,
@@ -1035,29 +1022,24 @@ export default function MusicVideoEasyMode({
   const [audioIntakeBusy, setAudioIntakeBusy] = useState(false)
   const [audioIntakeStatus, setAudioIntakeStatus] = useState('')
   const handleScriptFromAudio = useCallback(async () => {
-    const api = window?.electronAPI
-    if (!api?.pickAudioTrack || !api?.probeAudioTrack) {
-      setAudioIntakeStatus('Reading a track needs the desktop app.')
-      return
-    }
-    const filePath = await api.pickAudioTrack()
-    if (!filePath) return
+    if (audioIntakeBusy) return
     if (String(yoloMusicScript || '').trim()
-      && !window.confirm('Replace the current director script with one built from this track?')) return
+      && !window.confirm('Replace the current director script with one built from your song file?')) return
     setAudioIntakeBusy(true)
-    setAudioIntakeStatus('Reading the track…')
+    setAudioIntakeStatus('Cutting the song file into shots…')
     try {
-      const probe = await api.probeAudioTrack(filePath)
-      if (!probe?.ok) throw new Error(probe?.error || 'That file could not be read.')
-      const result = buildScriptFromAudioProbe(probe, { style: yoloMusicStyleNotes || '' })
+      if (typeof onBuildScriptFromTrack !== 'function') {
+        throw new Error('The song step is not connected. Reopen the tab and try again.')
+      }
+      const result = await onBuildScriptFromTrack()
       setYoloMusicScript(result.script)
-      setAudioIntakeStatus(describeAudioIntake(result))
+      setAudioIntakeStatus(`${describeAudioIntake(result)} · ${result.fileName || 'your file'}`)
     } catch (error) {
       setAudioIntakeStatus(String(error?.message || error))
     } finally {
       setAudioIntakeBusy(false)
     }
-  }, [yoloMusicScript, setYoloMusicScript, yoloMusicStyleNotes])
+  }, [audioIntakeBusy, onBuildScriptFromTrack, setYoloMusicScript, yoloMusicScript])
   const customKeyframeReady = !customKeyframeWorkflowSelected || Boolean(customKeyframeValidation.ok)
   const customVideoReady = !customVideoWorkflowSelected || Boolean(customVideoValidation.ok)
   const canQueueKeyframes = plannedShotCount > 0 && !yoloActivePlanIsStale && customKeyframeReady
@@ -1629,8 +1611,10 @@ export default function MusicVideoEasyMode({
 
   const handleCopyBrief = async () => {
     setBriefStatus('')
-    await handleCopyMusicVideoLlmPrompt({ coveragePlan })
-    setBriefStatus('LLM brief copied.')
+    const copied = await handleCopyMusicVideoLlmPrompt({ coveragePlan })
+    setBriefStatus(copied === false
+      ? 'Copy failed — the brief is in the log, copy it from there.'
+      : 'LLM brief copied.')
   }
 
   const handleParseScript = () => {
@@ -3247,10 +3231,11 @@ export default function MusicVideoEasyMode({
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-sf-text-primary">
                 <FileText className="h-4 w-4 text-sf-accent" />
-                Paste director script
+                Director script
               </div>
               <p className="mt-1 text-xs leading-5 text-sf-text-secondary">
-                This script becomes the plan. Shot type, start time, keyframe prompt, and motion prompt drive the next steps.
+                This script becomes the plan: start time, who sings, keyframe prompt, motion prompt. Cut it from your song
+                file, then let the Director step write the frames.
               </p>
             </div>
             <button
@@ -3268,10 +3253,10 @@ export default function MusicVideoEasyMode({
               type="button"
               onClick={handleScriptFromAudio}
               disabled={audioIntakeBusy}
-              title="Read a track's length and lyric tags, then write the shot list from it"
+              title="Cut the song you loaded in step 1 into one shot per clip, with exact timings"
               className="rounded-lg border border-sf-accent/50 bg-sf-accent/10 px-3 py-2 text-xs text-sf-accent transition-colors hover:bg-sf-accent/20 disabled:opacity-50"
             >
-              {audioIntakeBusy ? 'Reading…' : 'Script from audio'}
+              {audioIntakeBusy ? 'Cutting…' : 'Cut shots from my song'}
             </button>
           </div>
           <textarea
