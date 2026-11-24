@@ -5,6 +5,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Platform info
   platform: process.platform,
   isElectron: true,
+
+  // Audio intake for the Suno-track one-shot path: pick an m4a, then read its
+  // duration/chapters so the renderer can derive the director script.
+  pickAudioTrack: () => ipcRenderer.invoke('belrog:pickAudioTrack'),
+  probeAudioTrack: (filePath) => ipcRenderer.invoke('belrog:probeAudioTrack', filePath),
   
   // Generic invoke for dynamic IPC calls
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

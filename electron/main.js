@@ -4357,6 +4357,63 @@ ipcMain.handle('media:getFileUrlDirect', (event, filePath) => {
   return `file://${normalizedPath}`
 })
 
+// Belrog 0.5.0: audio-to-script intake. ffprobe supplies the clock and the
+// lyric tags Suno writes into the file; the renderer turns that into a
+// director script (src/services/sunoIntake.js). Nothing is hand-authored.
+ipcMain.handle('belrog:pickAudioTrack', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose a track for the one-shot test',
+    properties: ['openFile'],
+    filters: [{ name: 'Audio', extensions: ['m4a', 'mp3', 'wav', 'flac', 'aac', 'ogg', 'opus'] }],
+  })
+  if (result.canceled || !result.filePaths?.length) return null
+  return result.filePaths[0]
+})
+
+ipcMain.handle('belrog:probeAudioTrack', async (_event, filePath) => {
+  if (!ffprobePath) return { ok: false, error: 'FFprobe binary not available.' }
+  if (!filePath || typeof filePath !== 'string') return { ok: false, error: 'No audio file given.' }
+  return await new Promise((resolve) => {
+    let settled = false
+    const done = (value) => { if (!settled) { settled = true; resolve(value) } }
+    const timer = setTimeout(() => done({ ok: false, error: 'ffprobe timed out.' }), 15000)
+    let proc
+    try {
+      proc = spawn(ffprobePath, ['-v', 'quiet', '-print_format', 'json', '-show_format', filePath], { windowsHide: true })
+    } catch (error) {
+      clearTimeout(timer)
+      return done({ ok: false, error: String(error?.message || error) })
+    }
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (chunk) => { stdout += chunk })
+    proc.stderr.on('data', (chunk) => { stderr += chunk })
+    proc.on('error', (error) => { clearTimeout(timer); done({ ok: false, error: String(error?.message || error) }) })
+    proc.on('close', (code) => {
+      clearTimeout(timer)
+      if (code !== 0) return done({ ok: false, error: (stderr || `ffprobe exited ${code}`).trim().slice(0, 400) })
+      let fmt = null
+      try { fmt = JSON.parse(stdout || '{}')?.format } catch (_) { fmt = null }
+      const durationSec = Number(fmt?.duration)
+      if (!fmt || !Number.isFinite(durationSec) || durationSec <= 0) {
+        return done({ ok: false, error: 'ffprobe could not read a duration from that file.' })
+      }
+      const tags = fmt.tags || {}
+      const pick = (name) => {
+        const key = Object.keys(tags).find((k) => k.toLowerCase() === name)
+        return key ? String(tags[key] || '') : ''
+      }
+      done({
+        ok: true,
+        durationSec,
+        title: pick('title') || path.basename(filePath, path.extname(filePath)),
+        lyricsRaw: pick('lyrics') || pick('unsyncedlyrics') || pick('podcast_chapter_synched_lyrics') || '',
+        fileName: path.basename(filePath),
+      })
+    })
+  })
+})
+
 ipcMain.handle('media:getVideoFps', async (event, filePath) => {
   if (!ffprobePath) {
     return { success: false, error: 'FFprobe binary not available.' }
