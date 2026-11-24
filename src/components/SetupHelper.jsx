@@ -14,7 +14,7 @@ const CLOUD_CHECK_LABELS = { missing: 'No hosted key', configured: 'Not verified
 const CLOUD_SUMMARIES = {
   missing: 'No hosted key is configured. Open Comfy Cloud controls to enter a Comfy key privately. No new Comfy Cloud request was made.',
   configured: 'A hosted key is available, but account access has not been verified in this session. Use Check account access in Comfy Cloud controls.',
-  verified: 'The last explicit account check in this Velorn session reported active access. Luna read that stored result; it did not contact Comfy Cloud again. Hosted generation is not enabled or tested.',
+  verified: 'The last explicit account check in this Belrog session reported active access. Luna read that stored result; it did not contact Comfy Cloud again. Hosted generation is not enabled or tested.',
   waitlisted: 'The last explicit account check reported a waitlisted account. No new Comfy Cloud request was made.',
   'auth-rejected': 'The last explicit account check rejected the tested key. Open Comfy Cloud controls to review or replace it. No new Comfy Cloud request was made.',
   'subscription-or-rate-limited': 'The last explicit account check reported a subscription or rate limit. No new Comfy Cloud request was made.',
@@ -239,7 +239,7 @@ export default function SetupHelper({ initialIntegration = '', preferAgent = fal
     operation.current = request; setPending('action'); setError(''); setNotice('')
     setMessages(previous => previous.map(entry => entry.checks?.length ? { ...entry, stale: true } : entry))
     try {
-      if (typeof api?.performAction !== 'function') throw new Error('Fully quit and reopen Velorn to enable these setup controls. Guided and manual setup remain available.')
+      if (typeof api?.performAction !== 'function') throw new Error('Fully quit and reopen Belrog to enable these setup controls. Guided and manual setup remain available.')
       await resetBarrier
       if (!current()) return
       if (!sessionReady) { await resetSession(api); if (!current()) return; setSessionReady(true) }
@@ -277,7 +277,7 @@ export default function SetupHelper({ initialIntegration = '', preferAgent = fal
     {integration && <>
       <p className="setup-helper-privacy" id={privacyId}>Only your setup question and limited setup checks are sent. No project, timeline, files or project chat are attached. Never paste API keys, passwords or sign-in codes here.</p>
       <div className="setup-helper-transcript" role="log" aria-label={`${NAMES[integration]} setup conversation`} aria-live="polite" aria-relevant="additions text">
-        {!messages.length && <p className="setup-helper-empty">Ask what you need help with. For example: “How do I connect {NAMES[integration]} to Velorn?” Nothing runs until you send.</p>}
+        {!messages.length && <p className="setup-helper-empty">Ask what you need help with. For example: “How do I connect {NAMES[integration]} to Belrog?” Nothing runs until you send.</p>}
         {messages.map((entry, index) => <article key={index} className="setup-helper-message" data-role={entry.role}>
           <h3>{entry.role === 'user' ? 'You' : entry.role === 'action' ? 'Native setup action' : 'Luna · setup guidance'}</h3>
           <p className="setup-helper-text">{entry.role === 'assistant' ? guidanceText(entry.text) : entry.text}</p>
@@ -301,20 +301,20 @@ export default function SetupHelper({ initialIntegration = '', preferAgent = fal
       </div>
       {cloudCompletion && <section className="setup-helper-completion" aria-label="Comfy Cloud account setup complete">
         <h3>Comfy Cloud account check verified</h3>
-        <p>The last explicit account check in this Velorn session reported active access. Luna only read that result; it did not contact Comfy Cloud again.</p>
-        <p>This does not verify your subscription, credit balance or workflows. Hosted generation is not enabled in Velorn yet. Your local ComfyUI, editing assistant, model and chats are unchanged.</p>
+        <p>The last explicit account check in this Belrog session reported active access. Luna only read that result; it did not contact Comfy Cloud again.</p>
+        <p>This does not verify your subscription, credit balance or workflows. Hosted generation is not enabled in Belrog yet. Your local ComfyUI, editing assistant, model and chats are unchanged.</p>
         <div className="setup-helper-actions"><button type="button" onClick={() => leave(onFinish || onSkip)}>Finish setup — keep current assistant</button></div>
       </section>}
       {codexCompletion && <section className="setup-helper-completion" aria-label="Codex setup complete">
         <h3>Codex setup verified</h3>
-        <p>Velorn found Codex CLI and verified that it is signed in through ChatGPT.</p>
+        <p>Belrog found Codex CLI and verified that it is signed in through ChatGPT.</p>
         <p>This checks installation and sign-in only. No Codex prompt was sent; model responses and tool capabilities have not been tested.</p>
         <p>This check did not change your sign-in, editing assistant, model or chats.</p>
         <div className="setup-helper-actions"><button type="button" onClick={() => leave(onFinish || onSkip)}>Finish setup — keep current assistant</button></div>
       </section>}
       {comfyCompletion && <section className="setup-helper-completion" aria-label="ComfyUI setup complete">
         <h3>ComfyUI connection verified</h3>
-        <p>Velorn reached your saved local ComfyUI connection on port {comfyCompletion}.</p>
+        <p>Belrog reached your saved local ComfyUI connection on port {comfyCompletion}.</p>
         <p>This verifies the connection only. Models, workflows and generation have not been tested.</p>
         <p>This check did not change your saved connection, editing assistant, model or chats.</p>
         <div className="setup-helper-actions"><button type="button" onClick={() => leave(onFinish || onSkip)}>Finish setup — keep current assistant</button></div>
@@ -322,10 +322,10 @@ export default function SetupHelper({ initialIntegration = '', preferAgent = fal
       {completion && <section className="setup-helper-completion" aria-label="LM Studio setup complete">
         <h3>LM Studio connection verified</h3>
         {completion.loadedModels ? <>
-          <p>Velorn reached the local server. LM Studio reported {completion.loadedModels.names.length === 1 && !completion.loadedModels.truncated ? 'this language model' : 'these language models'} loaded:</p>
+          <p>Belrog reached the local server. LM Studio reported {completion.loadedModels.names.length === 1 && !completion.loadedModels.truncated ? 'this language model' : 'these language models'} loaded:</p>
           <ul>{completion.loadedModels.names.map((name, index) => <li key={index}>{name}</li>)}</ul>
           {completion.loadedModels.truncated && <p className="setup-helper-completion-note">Additional loaded model details are not shown.</p>}
-        </> : <p>Velorn reached the local server. LM Studio reports a loaded chat model. Its name could not be displayed.</p>}
+        </> : <p>Belrog reached the local server. LM Studio reports a loaded chat model. Its name could not be displayed.</p>}
         <p>This checks connection and loaded state only. No inference or tool-capability test was run.</p>
         <p>Your current editing assistant, model and chats are unchanged.</p>
         <div className="setup-helper-actions">
@@ -350,7 +350,7 @@ export default function SetupHelper({ initialIntegration = '', preferAgent = fal
         <div className="setup-helper-actions">{['open_app', 'choose_app'].map(action => <button type="button" key={action} disabled={Boolean(pending)} onClick={() => void performAction({ integration, action })}>{ACTION_LABELS[action]}</button>)}</div>
       </details>}
       {integration === 'codex' && <details className="setup-helper-guides"><summary>Codex setup controls</summary>
-        <p>Open Velorn’s existing setup controls without another Luna message. Opening them does not sign you in or out, change settings, send a Codex prompt, or switch your editing assistant.</p>
+        <p>Open Belrog’s existing setup controls without another Luna message. Opening them does not sign you in or out, change settings, send a Codex prompt, or switch your editing assistant.</p>
         <div className="setup-helper-actions"><button type="button" disabled={Boolean(pending)} onClick={() => void performAction({ integration, action: 'configure' })}>Open Codex setup controls</button></div>
       </details>}
       <details className="setup-helper-guides"><summary>Official {NAMES[integration]} guides</summary>

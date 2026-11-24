@@ -85,7 +85,7 @@ export function createAgentSetupDownloadsTracker({ api, projectPath, chatId, pol
     actions.set(jobId, operation)
     emit({ pendingById: { ...state.pendingById, [jobId]: method }, actionErrors: { ...state.actionErrors, [jobId]: '' } })
     try {
-      if (typeof api?.[method] !== 'function') throw new Error('Reopen the latest Velorn build to manage this installer download.')
+      if (typeof api?.[method] !== 'function') throw new Error('Reopen the latest Belrog build to manage this installer download.')
       const result = await api[method]({ jobId })
       if (!current(token)) return
       if (result?.success !== true || result.jobId && result.jobId !== jobId) {

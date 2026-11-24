@@ -1,6 +1,6 @@
 'use strict'
 
-// Explicit, local-only smoke test. Actual model, actual Velorn tool schemas,
+// Explicit, local-only smoke test. Actual model, actual Belrog tool schemas,
 // synthetic project and host-owned tool stubs. Never opens a project, executes
 // editor actions, submits a generation or spends cloud credits.
 const assert = require('node:assert/strict')

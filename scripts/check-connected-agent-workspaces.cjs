@@ -99,7 +99,7 @@ async function main() {
     await page.getByLabel('Model', { exact: true }).selectOption('fixture-codex-fast')
     // Selecting a model intentionally returns to chat; permissions remain in Settings.
     await openSettings()
-    await checkbox('Velorn tools').check(); await checkbox('Research & setup').check()
+    await checkbox('Belrog tools').check(); await checkbox('Research & setup').check()
     await checkbox('Share images').check(); await checkbox('Include current view').check()
     await backToChat()
     const first = await send('First synthetic conversation for cross-workspace review.')
@@ -134,7 +134,7 @@ async function main() {
       assert.equal(await button('Assistant settings').getAttribute('aria-expanded'), 'true')
       assert.equal(await page.getByLabel('Assistant selection', { exact: true }).inputValue(), 'codex')
       assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'fixture-codex-fast')
-      for (const name of ['Velorn tools', 'Research & setup', 'Share images', 'Include current view']) assert.equal(await checkbox(name).isChecked(), true)
+      for (const name of ['Belrog tools', 'Research & setup', 'Share images', 'Include current view']) assert.equal(await checkbox(name).isChecked(), true)
       await assertIdentity()
     }
     await backToChat()
@@ -325,7 +325,7 @@ async function main() {
         if (name === 'ComfyUI') await capture(`02-comfyui-narrow-${width}`)
       }
       await openSettings()
-      for (const target of [page.getByLabel('Assistant selection', { exact: true }), page.getByLabel('Model', { exact: true }), checkbox('Velorn tools'), checkbox('Share images'), button('Back to chat')]) await assertReachable(target)
+      for (const target of [page.getByLabel('Assistant selection', { exact: true }), page.getByLabel('Model', { exact: true }), checkbox('Belrog tools'), checkbox('Share images'), button('Back to chat')]) await assertReachable(target)
       await capture(`03-settings-narrow-${width}`)
       await backToChat(); await assertIdentity()
     }
@@ -343,7 +343,7 @@ async function main() {
     await page.getByLabel('Custom model ID', { exact: true }).fill('fixture-local-selected')
     await button('Use model').click()
     await openSettings()
-    await checkbox('Velorn tools').check(); await checkbox('Research & setup').check()
+    await checkbox('Belrog tools').check(); await checkbox('Research & setup').check()
     await checkbox('Vision-capable model').check(); await checkbox('Share images').check()
     await backToChat()
     const localRequest = await send('Keep this local-model conversation across all workspaces.')
@@ -363,7 +363,7 @@ async function main() {
       assert.equal(await page.getByLabel('Assistant selection', { exact: true }).inputValue(), 'lmstudio')
       assert.equal(await page.getByLabel('Model', { exact: true }).inputValue(), 'fixture-local-selected')
       assert.equal(await page.getByLabel('Custom model ID', { exact: true }).count(), 0, 'A committed custom choice is selected, not an unsaved draft')
-      for (const name of ['Velorn tools', 'Research & setup', 'Vision-capable model', 'Share images']) assert.equal(await checkbox(name).isChecked(), true)
+      for (const name of ['Belrog tools', 'Research & setup', 'Vision-capable model', 'Share images']) assert.equal(await checkbox(name).isChecked(), true)
       await backToChat(); await assertIdentity()
     }
     pass('LM Studio provider, exact custom model, independent history, draft and explicit vision/tool permissions also survive every workspace')

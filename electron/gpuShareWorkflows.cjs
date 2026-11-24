@@ -1,8 +1,8 @@
 'use strict'
-// The workflows that may run on someone else's GPU through the Velorn network.
+// The workflows that may run on someone else's GPU through the Belrog network.
 // This list is the whole of it: a job names one of these ids and a few plain
 // choices, never a workflow, a node, a model file or a path. Each entry binds
-// those choices into a workflow that ships with Velorn, and refuses to bind if
+// those choices into a workflow that ships with Belrog, and refuses to bind if
 // that file is no longer the shape it was checked against.
 //
 // LTX 2.3 image to video came first. MiniMax H3 text to image and image edit
@@ -58,7 +58,7 @@ const H3_COMMON = Object.freeze({ '1': 'UNETLoader', '2': 'CLIPLoader', '3': 'VA
 const H3_EDIT_NODES = Object.freeze({ ...H3_COMMON, '10': 'LoadImage', '11': 'ResizeImageMaskNode', '12': 'ResizeImageMaskNode', '13': 'GetImageSize' })
 // Binds a picture job into one of the two H3 files. The file must be exactly the nodes it was checked with: no more, no fewer.
 function bindH3(nodes, workflow, choices, { imageName, prefix, randomSeed }) {
-  const changed = () => refuse('The MiniMax H3 workflow in this Velorn is not the one the network was built for. Update Velorn.', 'GPU_SHARE_WORKFLOW_CHANGED')
+  const changed = () => refuse('The MiniMax H3 workflow in this Belrog is not the one the network was built for. Update Belrog.', 'GPU_SHARE_WORKFLOW_CHANGED')
   if (!plain(workflow) || Object.keys(workflow).length !== Object.keys(nodes).length) throw changed()
   for (const [id, classType] of Object.entries(nodes)) if (workflow[id]?.class_type !== classType || !plain(workflow[id].inputs)) throw changed()
   const bound = JSON.parse(JSON.stringify(workflow))
@@ -79,7 +79,7 @@ const LTX_I2V_NODES = Object.freeze({ '269': 'LoadImage', '320:319': 'PrimitiveS
 // Binds a job into the shipped LTX 2.3 file. `imageName` is the name ComfyUI gave the uploaded input picture (or the
 // placeholder, for text to video); `prefix` is where this job's result is saved. `randomSeed` supplies a seed when none was chosen.
 function bindLtx(workflow, choices, { imageName, prefix, randomSeed }, { fps, fromText }) {
-  const changed = () => refuse('The LTX workflow in this Velorn is not the one the network was built for. Update Velorn.', 'GPU_SHARE_WORKFLOW_CHANGED')
+  const changed = () => refuse('The LTX workflow in this Belrog is not the one the network was built for. Update Belrog.', 'GPU_SHARE_WORKFLOW_CHANGED')
   if (!plain(workflow)) throw refuse('The LTX workflow file could not be read.', 'GPU_SHARE_WORKFLOW_CHANGED')
   for (const [id, classType] of Object.entries(LTX_I2V_NODES)) if (workflow[id]?.class_type !== classType || !plain(workflow[id].inputs)) throw changed()
   const bound = JSON.parse(JSON.stringify(workflow))

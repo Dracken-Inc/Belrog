@@ -43,7 +43,7 @@ test('UI-only legacy entries are visible but honestly blocked, and reading does 
   const read = await f.library.read({ workflowId: 'my-workflow:unmarked' })
   assert.equal(read.format, 'ui'); assert.deepEqual(read.uiWorkflow, f.record.uiWorkflow)
   const prepared = await f.library.prepare({ workflowId: 'my-workflow:unmarked' })
-  assert.equal(prepared.ready, false); assert.match(prepared.error, /save it to Velorn again/)
+  assert.equal(prepared.ready, false); assert.match(prepared.error, /save it to Belrog again/)
   assert.equal(await fs.readFile(f.file, 'utf8'), original)
 })
 test('captured API graph needs no markers; precise overrides clone the original and produce exact fingerprints', async t => {

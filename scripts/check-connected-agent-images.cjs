@@ -35,7 +35,7 @@ async function main() {
   }
   if (process.argv.includes('--live')) {
     const response = await sendFullAccessCodex({ workingDirectory: root, model: 'gpt-6-luna', reasoningEffort: 'low',
-      context: '{}', messages: [{ role: 'user', content: 'Integration test: use your native image generation tool exactly once to generate one simple square illustration of a blue circle on a cream background. Do not use shell, web, scripts, ComfyUI, or any other generation method. Do not retry. Velorn will save and show the output automatically. Then give a brief final reply.' }], images: [] },
+      context: '{}', messages: [{ role: 'user', content: 'Integration test: use your native image generation tool exactly once to generate one simple square illustration of a blue circle on a cream background. Do not use shell, web, scripts, ComfyUI, or any other generation method. Do not retry. Belrog will save and show the output automatically. Then give a brief final reply.' }], images: [] },
     { onGeneratedImage: accept, onEvent(event) { if (['status', 'tool'].includes(event.type)) console.log(JSON.stringify(event)) }, timeoutMs: 240000 })
     console.log(JSON.stringify({ reply: response.text }))
   } else {

@@ -18,21 +18,21 @@ const helper = require('../electron/remoteCompanionHandoff.cjs');
     browser = await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/usr/bin/google-chrome',args:['--no-sandbox']});
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${server.address().port}`);
-    const publicKey = await page.evaluate(async()=>{window.fixturePair=await VelornPhoneHandoff.createRequestKey();return fixturePair.publicKey;});
+    const publicKey = await page.evaluate(async()=>{window.fixturePair=await BelrogPhoneHandoff.createRequestKey();return fixturePair.publicKey;});
     const requestId='r'.repeat(24),computerId='c'.repeat(32);
     const payload={v:1,requestId,computerId,deviceId:'d'.repeat(32),bundle:{v:1,url:'wss://synthetic.example.test/relay',roomId:'m'.repeat(32),token:'t'.repeat(43),secret:'s'.repeat(43)},nativeToken:'a'.repeat(64)};
     const envelope = await helper.seal({publicKey,payload,requestId,computerId});
     const result=await page.evaluate(async ({envelope,requestId,computerId})=>{
       let exportRejected=false,wrongScopeRejected=false;
       try{await crypto.subtle.exportKey('jwk',fixturePair.privateKey);}catch{exportRejected=true;}
-      try{await VelornPhoneHandoff.open({privateKey:fixturePair.privateKey,envelope,requestId:'z'.repeat(24),computerId});}catch{wrongScopeRejected=true;}
-      return {payload:await VelornPhoneHandoff.open({privateKey:fixturePair.privateKey,envelope,requestId,computerId}),
-        fingerprint:await VelornPhoneHandoff.fingerprint(fixturePair.publicKey),exportRejected,wrongScopeRejected};
+      try{await BelrogPhoneHandoff.open({privateKey:fixturePair.privateKey,envelope,requestId:'z'.repeat(24),computerId});}catch{wrongScopeRejected=true;}
+      return {payload:await BelrogPhoneHandoff.open({privateKey:fixturePair.privateKey,envelope,requestId,computerId}),
+        fingerprint:await BelrogPhoneHandoff.fingerprint(fixturePair.publicKey),exportRejected,wrongScopeRejected};
     },{envelope,requestId,computerId});
     assert.deepEqual(result.payload,payload);assert.equal(result.fingerprint,await helper.fingerprint(publicKey));
     assert.equal(result.exportRejected,true);assert.equal(result.wrongScopeRejected,true);
     const nativePair=await helper.createRequestKey();
-    const reverse=await page.evaluate(async args=>VelornPhoneHandoff.seal(args),{publicKey:nativePair.publicKey,payload,requestId,computerId});
+    const reverse=await page.evaluate(async args=>BelrogPhoneHandoff.seal(args),{publicKey:nativePair.publicKey,payload,requestId,computerId});
     assert.deepEqual(await helper.open({privateKey:nativePair.privateKey,envelope:reverse,requestId,computerId}),payload);
     console.log('PASS: Chromium/native encrypted handoff in both directions, nonextractable private key, matching fingerprint and rejected wrong scope');
   } finally {await browser?.close();await new Promise(resolve=>server.close(resolve));}

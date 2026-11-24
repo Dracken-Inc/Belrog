@@ -240,7 +240,7 @@ function Harness() {
   window.exportWorkspaceTest.remount = () => flushSync(() => { setVersion(value => value + 1); setMounted(true); setActive(true) })
   return <div className="h-screen flex flex-col overflow-hidden bg-sf-dark-950 text-sf-text-primary">
     <header className="h-10 shrink-0 flex items-center gap-4 border-b border-sf-dark-700 px-4 text-xs">
-      <span>Velorn · isolated export verification</span>
+      <span>Belrog · isolated export verification</span>
       <button disabled={priorityMode && busy} onClick={() => setActive(true)} aria-pressed={active}>Export workspace</button>
       <button disabled={priorityMode && busy} onClick={() => setActive(false)} aria-pressed={!active}>Other workspace</button>
       <button data-export-allowed="true" onClick={() => { controls.minimized = true }}>Minimize fixture</button>

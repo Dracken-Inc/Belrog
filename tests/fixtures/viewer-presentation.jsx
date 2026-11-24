@@ -76,7 +76,7 @@ function Fixture() {
     window.viewerPresentationTest.setMounted = value => flushSync(() => setMounted(value))
   }, [])
   return <div className="flex h-screen flex-col bg-sf-dark-950 text-sf-text-primary">
-    <header className="h-12 shrink-0 border-b border-sf-dark-700 p-3" data-testid="editor-sibling">Velorn · isolated editor outside the viewer</header>
+    <header className="h-12 shrink-0 border-b border-sf-dark-700 p-3" data-testid="editor-sibling">Belrog · isolated editor outside the viewer</header>
     <div className="flex min-h-0 flex-1">
       <aside className="w-48 shrink-0 border-r border-sf-dark-700 p-3" data-testid="asset-sibling">Synthetic assets only</aside>
       <main className="flex min-w-0 flex-1 flex-col">

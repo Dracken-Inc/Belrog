@@ -41,7 +41,7 @@ const SAMPLES = Object.fromEntries(Object.entries(import.meta.glob('../assets/so
 const CREATE_KINDS = ['image', 'video']
 const EACH_KIND = value => Object.fromEntries(KIND_ORDER.map(id => [id, value()]))
 const DOCKED = ['generating', 'result', 'trouble', 'rules']
-// Whether this computer has already shown the Velorn network's rules.
+// Whether this computer has already shown the Belrog network's rules.
 // v2 (2026-11-16): the IP address is kept. v3 (2026-11-17): a reported job's result goes to reviewers. Each change shows the rules once more.
 const NETWORK_RULES_KEY = 'velorn.network.rules.v3'
 const networkRulesSeen = () => { try { return Boolean(window.localStorage.getItem(NETWORK_RULES_KEY)) } catch { return false } }
@@ -117,11 +117,11 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const [resumed, setResumed] = useState(false) // the current run was picked up from before, not started just now
   const pending = useRef(null) // a prepared request waiting for a fresh click
   const run = useRef(0)
-  const watched = useRef(new Set()) // requests this tab has already followed since Velorn opened
+  const watched = useRef(new Set()) // requests this tab has already followed since Belrog opened
   const stepNow = useRef(step); stepNow.current = step
   const projectPath = useProjectStore(state => (typeof state.currentProjectHandle === 'string' ? state.currentProjectHandle : state.currentProject?.name || ''))
   const fileInput = useRef(null)
-  // Workflows that computers share with this account show as video and picture models; which computer runs a job is Velorn's choice.
+  // Workflows that computers share with this account show as video and picture models; which computer runs a job is Belrog's choice.
   const net = sharedOnly && typeof window !== 'undefined' ? window.electronAPI?.gpuNetwork : null
   const [netHosts, setNetHosts] = useState([])
   const [netProblem, setNetProblem] = useState('') // why the list of shared GPUs could not be read, in the person's words
@@ -156,8 +156,8 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     try {
       const listed = await net.hosts()
       setNetHosts(listed?.success && Array.isArray(listed.hosts) ? listed.hosts : [])
-      setNetProblem(listed?.success ? (listed.banned ? 'This account can no longer send jobs on the Velorn network.' : '') : listed?.error || 'The Velorn network could not be reached.')
-    } catch { setNetHosts([]); setNetProblem('The Velorn network could not be reached.') }
+      setNetProblem(listed?.success ? (listed.banned ? 'This account can no longer send jobs on the Belrog network.' : '') : listed?.error || 'The Belrog network could not be reached.')
+    } catch { setNetHosts([]); setNetProblem('The Belrog network could not be reached.') }
     setNetLoaded(true)
   }, [net])
   // What is free changes by the minute, so the cards are checked again now and then while they are on screen.
@@ -200,7 +200,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     const groups = new Map()
     for (const m of shared) {
       const id = m.hosts?.[0]?.hostId || m.id
-      if (!groups.has(id)) groups.set(id, { id, name: m.maker || 'A Velorn creator', list: [] })
+      if (!groups.has(id)) groups.set(id, { id, name: m.maker || 'A Belrog creator', list: [] })
       groups.get(id).list.push(m)
     }
     return [...groups.values()]
@@ -284,7 +284,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
           if (++misses < 4 * started.length && !['COMFY_ROUTER_AUTH', 'COMFY_ROUTER_KEY_REQUIRED', 'COMFY_ROUTER_UNCERTAIN'].includes(answer?.code)) continue
           failures.push(answer?.code ? problemFor(answer, context) : { screen: 'trouble', kind: 'lost', title: 'We lost touch with Comfy',
             body: `Your ${nounOf} may still be on its way. Check your Comfy usage page before generating again, or you could pay twice for the same thing.`,
-            note: "Velorn won't send this request again on its own.", primary: 'Go back' })
+            note: "Belrog won't send this request again on its own.", primary: 'Go back' })
           waiting.delete(current.jobId); continue
         }
         misses = 0
@@ -302,7 +302,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     settle(made, failures, unsaved, token)
   }, [api, collect, kind, model, settle])
 
-  // Requests that were still being made when Velorn closed (or that finished but
+  // Requests that were still being made when Belrog closed (or that finished but
   // were never saved) are picked up again: watched and collected, never re-sent.
   // Runs when the tab opens, when a key arrives, and when the project changes.
   const followNow = useRef(follow); followNow.current = follow
@@ -369,7 +369,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
       const now = read(ids)
       const failed = now.find(item => item.status === 'failed')
       if (failed || !now.length) {
-        setTrouble({ kind: 'local', title: `The ${NOUN(model.kind)} wasn't made`, body: failed?.error || (builtin ? 'Velorn lost track of this request.' : 'ComfyUI lost track of this request.'),
+        setTrouble({ kind: 'local', title: `The ${NOUN(model.kind)} wasn't made`, body: failed?.error || (builtin ? 'Belrog lost track of this request.' : 'ComfyUI lost track of this request.'),
           note: cloud ? 'Your Comfy usage page shows whether this attempt was charged.' : 'Nothing was charged: this ran on your computer.', primary: 'Back' })
         setStep('trouble'); return
       }
@@ -387,7 +387,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   // it, watches it and saves the result; the effect below shows where it stands.
   const generateNetwork = async ({ agreed = false } = {}) => {
     const pictureJob = model.kind === 'image', musicJob = model.kind === 'music'
-    // A creator's own workflow says what it starts from; Velorn's own are known.
+    // A creator's own workflow says what it starts from; Belrog's own are known.
     if (model.own && model.needsImage && !picture) { setNotice(`Add a picture first. ${model.name} starts from it.`); return }
     if (model.own && !model.needsImage && picture) { setNotice(`${model.name} starts from the description only. Remove the picture, or choose another model.`); return }
     if (!model.own && !pictureJob && !picture && !model.makes) { setNotice('Add a picture first. The clip starts from it.'); return }
@@ -441,7 +441,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     } else if (netState.phase === 'failed') {
       velornNetwork.clear(); void loadNetHosts()
       if (netState.cancelled) { setNotice('Stopped. Nothing was saved.'); setStep('compose') }
-      else { setTrouble({ kind: 'network', title: `The ${made === 'image' ? 'picture' : made === 'music' ? 'song' : 'video'} wasn't made`, body: netState.error, note: 'Nothing was charged: the Velorn network is free.', primary: 'Back' }); setStep('trouble') }
+      else { setTrouble({ kind: 'network', title: `The ${made === 'image' ? 'picture' : made === 'music' ? 'song' : 'video'} wasn't made`, body: netState.error, note: 'Nothing was charged: the Belrog network is free.', primary: 'Back' }); setStep('trouble') }
     }
   }, [sharedOnly, netState, step, jobs, loadNetHosts])
 
@@ -502,9 +502,9 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     let answer
     try { answer = await api.connect({ apiKey: keyValue.trim() }) } catch { answer = { success: false } }
     setKeyValue('')
-    if (!answer?.success) { setKeyError(problemFor(answer).keyError || answer?.error || 'Velorn could not reach Comfy. Check your connection and try again.'); return }
+    if (!answer?.success) { setKeyError(problemFor(answer).keyError || answer?.error || 'Belrog could not reach Comfy. Check your connection and try again.'); return }
     await refreshStatus(); setStep('compose')
-    setNotice(answer.remembered ? 'Connected. Your key is remembered on this computer. You can forget it in Settings, under ComfyUI Connection.' : 'Connected. Your key is kept until Velorn closes.')
+    setNotice(answer.remembered ? 'Connected. Your key is remembered on this computer. You can forget it in Settings, under ComfyUI Connection.' : 'Connected. Your key is kept until Belrog closes.')
   }
   const usePicture = (next, forKind = kind) => { setPictures(all => { release(all[forKind]); return { ...all, [forKind]: next } }); setNotice('') }
   const addPicture = async event => {
@@ -536,7 +536,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   }
   const removePicture = () => setPictures(all => { release(all[kind]); return { ...all, [kind]: null } })
 
-  if (!api?.models) return <div className="vcreate" data-layout="open"><p className="vc-muted">Create is available in the Velorn desktop app.</p></div>
+  if (!api?.models) return <div className="vcreate" data-layout="open"><p className="vc-muted">Create is available in the Belrog desktop app.</p></div>
   const roleLabel = video ? (pictureUse === 'reference' && !model?.network ? 'Use as reference' : 'Start from this picture') : 'Edit this picture'
   const summary = kind === 'voice' ? voices.find(v => v.id === options.voice)?.name || 'Voice' : audio ? `${options.seconds} seconds` : `${SHAPES.find(s => s.id === options.shape)?.label} · ${video ? `${options.seconds} seconds${options.resolution !== '720p' ? ` · ${options.resolution}` : ''}` : `${count} ${count === 1 ? 'image' : 'images'}${options.size !== '1K' ? ` · ${options.size}` : ''}`}`
   const note = fitNote(model, wanted[kind])
@@ -656,8 +656,8 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
       {step === 'rules' && <section className="vc-stage vc-rise" aria-label="Before you use a shared GPU">
         <h2>Before you use a shared GPU</h2>
         <p>This clip is made on someone else’s computer. Its owner can see your description and your picture.</p>
-        <p>Every job is tied to your Velorn account. Velorn keeps your description, your IP address and a fingerprint of the picture and the clip for 30 days, to stop abuse. The owner can report a job; Velorn’s reviewers then see the result, and it is deleted once they decide.</p>
-        <p><strong>No nudity and no sexual acts.</strong> Sending them gets your account and your internet connection banned from the Velorn network.</p>
+        <p>Every job is tied to your Belrog account. Belrog keeps your description, your IP address and a fingerprint of the picture and the clip for 30 days, to stop abuse. The owner can report a job; Belrog’s reviewers then see the result, and it is deleted once they decide.</p>
+        <p><strong>No nudity and no sexual acts.</strong> Sending them gets your account and your internet connection banned from the Belrog network.</p>
         <div className="vc-row" style={{ justifyContent: 'center' }}>
           <button type="button" className="vc-go" onClick={() => void generateNetwork({ agreed: true })}>I understand, send it</button>
           <button type="button" className="vc-line" style={{ minHeight: 48 }} onClick={backToCompose}>Cancel</button>
@@ -781,7 +781,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
               <button type="submit" className="vc-go" disabled={!keyValue.trim()}>Connect</button>
             </form>
             {keyError && <p className="vc-alert" role="alert"><AlertTriangle aria-hidden="true" size={18} style={{ flex: '0 0 auto', marginTop: 1 }} />{keyError}</p>}
-            <span className="vc-small">{status?.canRemember ? 'Your key is stored on this computer, encrypted by its password store. It is never shown again.' : "This computer has no protected password store, so the key is kept only until Velorn closes."}</span>
+            <span className="vc-small">{status?.canRemember ? 'Your key is stored on this computer, encrypted by its password store. It is never shown again.' : "This computer has no protected password store, so the key is kept only until Belrog closes."}</span>
             <div className="vc-row vc-between" style={{ fontSize: 14, alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 320px' }}>
                 <div><button type="button" className="vc-line" onClick={() => api.openGuide?.().catch(() => {})}>Get a Comfy key<ExternalLink aria-hidden="true" size={15} /></button></div>

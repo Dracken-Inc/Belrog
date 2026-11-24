@@ -159,7 +159,7 @@ function createMobileCompanionServer({ clientRoot, onMessage, onStatus, apiOnly 
     // Error strings from native code may contain paths or provider secrets.
     // Only an allowlisted public reason leaves this boundary.
     if (record.status === 'rejected') record.error = ['BUSY', 'STALE_SCOPE', 'NOT_AVAILABLE', 'DECLINED', 'CANCELLED'].includes(result?.code)
-      ? result.code : 'The desktop did not accept or complete this message. Check Velorn before retrying.'
+      ? result.code : 'The desktop did not accept or complete this message. Check Belrog before retrying.'
     record.updatedAt = now()
     if (!accepted && activeId === id) activeId = null
     notify()

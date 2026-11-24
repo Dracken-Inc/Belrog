@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const REVIEW_ID = /^review-[a-zA-Z0-9-]{1,100}$/
 const TURN_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const REVIEW_DATA = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/
-const SESSION_WARNING = 'Review stills are available for this session only. Restart Velorn to enable saved review media.'
+const SESSION_WARNING = 'Review stills are available for this session only. Restart Belrog to enable saved review media.'
 
 function restoredFrame(value, chatId, turnIds) {
   if (!value || !REVIEW_ID.test(value.id) || value.chatId !== chatId || !turnIds.has(value.turnId)
@@ -33,7 +33,7 @@ export function useAgentReviewMedia({ projectKey, projectPath, chatId, turnIds, 
     if (!alive.current || scope.current.projectKey !== projectKey || !scope.current.isProjectCurrent()) return
     const current = cache.current, activeChat = scope.current.chatId
     const warning = (current.notice?.chatId === activeChat ? current.notice.text : '') || current.loadError || ([...current.errors].some(id => current.frames.get(id)?.chatId === activeChat)
-      ? 'Some review stills could not be saved. They remain available in this session; keep Velorn open and check project storage.'
+      ? 'Some review stills could not be saved. They remain available in this session; keep Belrog open and check project storage.'
       : !supported && scope.current.turnsKey ? SESSION_WARNING : '')
     setState({ projectKey, frames: [...current.frames.values()].sort((a, b) => a.capturedAt - b.capturedAt), warning })
   }, [projectKey, supported])

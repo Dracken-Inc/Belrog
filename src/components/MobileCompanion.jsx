@@ -45,7 +45,7 @@ export function useMobileCompanion(options) {
   const previewConsent = useRef(false)
   previewConsent.current = enabled && sharingPreview
   // Chat attachments follow the agent's Share images choice (included in Full
-  // access). Full access also includes the current Velorn workspace view.
+  // access). Full access also includes the current Belrog workspace view.
   const reviewConsent = useRef(false)
   reviewConsent.current = enabled && options.shareReviewImages === true
   const safeText = text => redactConnectedAgentText(String(text || '').slice(0, 8000))
@@ -90,7 +90,7 @@ export function useMobileCompanion(options) {
       activity: { items: activityItems, updatedAt: activityPublication.current.updatedAt },
       available: !current.loading && !current.exportBusy,
       status: current.awaitingApproval ? 'Review the pending action.'
-        : current.busy ? (current.preparing ? 'Preparing your request…' : safeText(current.activity).slice(0,150) || 'Velorn Agent is working…')
+        : current.busy ? (current.preparing ? 'Preparing your request…' : safeText(current.activity).slice(0,150) || 'Belrog Agent is working…')
           : safeText(current.status).slice(0, 150),
       preview: previewRef.current,
       reviewProjectPath: current.projectPath,
@@ -215,10 +215,10 @@ export function useMobileCompanion(options) {
       try {
         const response = await api.publish({ scope, snapshot: snapshot() })
         if (!disposed && response?.success === false) {
-          setConnection(null); setNotice(response.error || 'Phone connection interrupted. Reconnecting when Velorn is ready…')
+          setConnection(null); setNotice(response.error || 'Phone connection interrupted. Reconnecting when Belrog is ready…')
           setPending(null); pendingRef.current = null
         }
-      } catch { if (!disposed) { setConnection(null); setNotice('Phone connection interrupted. Reconnecting when Velorn is ready…') } }
+      } catch { if (!disposed) { setConnection(null); setNotice('Phone connection interrupted. Reconnecting when Belrog is ready…') } }
       finally { publishing = false }
     }
     void publish()
@@ -250,7 +250,7 @@ export function useMobileCompanion(options) {
       const result = await api?.disable?.({ scope })
       if (!result?.success) throw new Error('not confirmed')
       status = result.status || null
-    } catch { setNotice('Unable to confirm disconnection. Quit Velorn to end access.'); return }
+    } catch { setNotice('Unable to confirm disconnection. Quit Belrog to end access.'); return }
     // Pausing sharing retains the registered account. Only native status can
     // say whether it was disconnected; do not render pause as a sign-out.
     setConnection(status); setPending(null); pendingRef.current = null
@@ -339,18 +339,18 @@ export function useMobileCompanion(options) {
   async function forget() {
     const result = await api?.forget?.({ scope })
     if (result?.success) { setConnection(null); setNotice('Phone forgotten. Pair again to reconnect.') }
-    else setNotice('Could not forget the phone. Quit Velorn to end this connection.')
+    else setNotice('Could not forget the phone. Quit Belrog to end this connection.')
   }
   async function checkAccountRequests() {
     if (checkingAccountRef.current || !api?.checkAccountRequests) return
     checkingAccountRef.current = true; setCheckingAccount(true); setNotice('')
     try {
       const result = await api.checkAccountRequests({ scope })
-      if (!result?.success) throw new Error(result?.error || 'Velorn account requests could not be checked.')
+      if (!result?.success) throw new Error(result?.error || 'Belrog account requests could not be checked.')
       if (mounted.current) setNotice(result.linked ? 'Computer linked. Return to My computers on your phone.'
-        : result.declined ? 'Velorn account request declined. Your existing pairing is unchanged.'
-          : 'No pending requests. On your signed-in Velorn account page, choose “Link this browser’s connection” first.')
-    } catch (error) { if (mounted.current) setNotice(error.message || 'Velorn account requests could not be checked.') }
+        : result.declined ? 'Belrog account request declined. Your existing pairing is unchanged.'
+          : 'No pending requests. On your signed-in Belrog account page, choose “Link this browser’s connection” first.')
+    } catch (error) { if (mounted.current) setNotice(error.message || 'Belrog account requests could not be checked.') }
     finally { checkingAccountRef.current = false; if (mounted.current) setCheckingAccount(false) }
   }
   async function connectPhoneAccount({ reauthenticate = false } = {}) {
@@ -393,7 +393,7 @@ export function useMobileCompanion(options) {
   }
   async function manageDesktopAccount(action) {
     if (!['sign-out', 'switch-account'].includes(action) || enabling.current || latest.current.busy || latest.current.loading || latest.current.exportBusy || !latest.current.isCurrent()) return
-    if (!api?.manageDesktopAccount) { setNotice('Restart Velorn to enable the updated account controls.'); return }
+    if (!api?.manageDesktopAccount) { setNotice('Restart Belrog to enable the updated account controls.'); return }
     enabling.current = true; setChanging(true); setNotice('')
     const startContext = contextRef.current
     const stillCurrent = () => mounted.current && contextRef.current === startContext && latest.current.isCurrent()
@@ -431,14 +431,14 @@ export function MobileCompanionSettings({ mobile, disabled, accountPanel = false
   return <section className="ca-settings-section ca-mobile-settings" aria-label="Mobile companion">
     {!accountPanel && <h3>Mobile companion · beta</h3>}
     {!accountPanel && mobile.nativeApprovals?.map(approval => <NativeMobileApproval key={approval.approvalId} approval={approval} decide={mobile.decideNative} />)}
-    {!accountPanel && mobile.guidedAvailable && <div className="ca-mobile-account-link" aria-label="Velorn account connection">
-      <p>A Velorn account connects this computer for Velo access when available and lets you use your phone. Desktop editing, your own Codex, and local LM Studio do not require a Velorn account.</p>
-      <p>On your phone, open <a href="https://connect.velorn.ai" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>connect.velorn.ai</a> and sign in with the same account you use to enable phone access here. Keep this computer awake with Velorn running and a project open.</p>
+    {!accountPanel && mobile.guidedAvailable && <div className="ca-mobile-account-link" aria-label="Belrog account connection">
+      <p>A Belrog account connects this computer for Velo access when available and lets you use your phone. Desktop editing, your own Codex, and local LM Studio do not require a Belrog account.</p>
+      <p>On your phone, open <a href="https://connect.velorn.ai" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>connect.velorn.ai</a> and sign in with the same account you use to enable phone access here. Keep this computer awake with Belrog running and a project open.</p>
       {!mobile.connection?.guided?.registered ? <>
         <label>Computer name <input value={mobile.computerName} maxLength={80} onChange={event => mobile.setComputerName(event.target.value)} disabled={disabled || mobile.changing} /></label>
         <button type="button" disabled={disabled || mobile.changing || !mobile.computerName.trim()} onClick={mobile.connectPhoneAccount}>{mobile.changing ? 'Opening phone setup…' : 'Enable phone access'}</button>
       </> : <>
-        <p><strong>{mobile.connection.guided.computer.name}</strong> · {mobile.connection.guided.enabled && mobile.connection.guided.automaticAccountAccess ? 'Phone access enabled' : 'Velorn account linked'}</p>
+        <p><strong>{mobile.connection.guided.computer.name}</strong> · {mobile.connection.guided.enabled && mobile.connection.guided.automaticAccountAccess ? 'Phone access enabled' : 'Belrog account linked'}</p>
         {(!mobile.connection.guided.enabled || !mobile.connection.guided.automaticAccountAccess || mobile.connection.guided.phase === 'account-unavailable') && <button type="button" disabled={disabled || mobile.changing} onClick={mobile.connectPhoneAccount}>{mobile.changing ? 'Enabling phone access…' : 'Enable phone access'}</button>}
         {mobile.connection.guided.enabled && mobile.connection.guided.automaticAccountAccess && mobile.connection.guided.automaticAvailable && <p>{mobile.connection.guided.devices.some(device => device.connected) ? 'Your phone connection is ready.' : 'Online and ready for your phone.'} Sign in with the same account on your phone to connect.</p>}
         <details><summary>Connected devices · {mobile.connection.guided.devices.length}</summary>
@@ -446,15 +446,15 @@ export function MobileCompanionSettings({ mobile, disabled, accountPanel = false
             <span>{device.name} · {device.connected ? 'Connected' : 'Offline'}</span>{' '}
             <button type="button" disabled={disabled} onClick={() => mobile.disconnectPhoneDevice(device.id)}>Disconnect</button>
           </li>)}</ul> : <p>No phones connected yet.</p>}
-          <button type="button" disabled={disabled} onClick={mobile.disconnectPhoneAccount}>Disconnect Velorn account</button>
+          <button type="button" disabled={disabled} onClick={mobile.disconnectPhoneAccount}>Disconnect Belrog account</button>
         </details>
       </>}
       {mobile.connection?.guided?.message && <p role="status">{mobile.connection.guided.message}</p>}
     </div>}
-    {!accountPanel && <p>Use your desktop agent, projects and shared media from your phone. Paid generations still ask.{!mobile.guidedAvailable && ' Your computer must stay awake with Velorn running.'}</p>}
+    {!accountPanel && <p>Use your desktop agent, projects and shared media from your phone. Paid generations still ask.{!mobile.guidedAvailable && ' Your computer must stay awake with Belrog running.'}</p>}
     <details><summary>{accountPanel ? (legacyAvailable ? 'Legacy pairing' : 'Sharing details') : legacyAvailable ? 'Advanced · sharing options and older pairing' : 'Advanced · sharing options'}</summary>
     {legacyAvailable && <p>Older private-link pairing remains available here. Local HTTP addresses are for trusted Wi-Fi only: never port-forward them or expose them through an internet tunnel.</p>}
-    <p>Take full access on your paired phone to enable tools, research, downloads and media sharing together. Codex includes computer commands; LM Studio uses Velorn tools. You can remember a custom workflow as local after reviewing it once.</p>
+    <p>Take full access on your paired phone to enable tools, research, downloads and media sharing together. Codex includes computer commands; LM Studio uses Belrog tools. You can remember a custom workflow as local after reviewing it once.</p>
     {!mobile.available && <p>Phone connections are not available in this build.</p>}
     {mobile.available && legacyAvailable && (!mobile.enabled
       ? <button type="button" disabled={disabled || mobile.changing} onClick={mobile.enable}>{mobile.changing ? 'Waiting for confirmation…' : 'Pair a phone'}</button>
@@ -463,13 +463,13 @@ export function MobileCompanionSettings({ mobile, disabled, accountPanel = false
         {mobile.connection?.remote?.configured && <p role="status">Remote beta: {mobile.connection.remote.connected ? 'encrypted phone connection active' : 'waiting for the remote phone or relay'}. Use your private remote pairing link outside this network.</p>}
         {mobile.connection?.remote?.configured && <div className="ca-mobile-account-link">
           <p>To add this existing connection to My computers, sign in on your phone and choose “Link this browser’s connection”. Then check here and approve once. Desktop use stays login-free.</p>
-          <button type="button" disabled={disabled || mobile.checkingAccount} onClick={mobile.checkAccountRequests}>{mobile.checkingAccount ? 'Checking Velorn account requests…' : 'Check Velorn account requests'}</button>
+          <button type="button" disabled={disabled || mobile.checkingAccount} onClick={mobile.checkAccountRequests}>{mobile.checkingAccount ? 'Checking Belrog account requests…' : 'Check Belrog account requests'}</button>
         </div>}
         {mobile.connection?.remote?.reason === 'configuration-error' && <p role="status">Remote configuration could not be loaded. Local sharing is still available.</p>}
         {!mobile.connection?.paired && mobile.connection?.pairingCode && <p>Pairing code: <strong className="ca-mobile-code">{mobile.connection?.pairingCode}</strong><small>Code expires in five minutes.</small></p>}
         <button type="button" onClick={mobile.forget}>Forget older pairing and stop sharing</button></>)}
       {mobile.enabled && <>
-        <p>Phone connection restarts automatically with Velorn and an open project.{legacyAvailable && ' Your phone stays paired until you forget it.'} Stop sharing turns off automatic reconnection.</p>
+        <p>Phone connection restarts automatically with Belrog and an open project.{legacyAvailable && ' Your phone stays paired until you forget it.'} Stop sharing turns off automatic reconnection.</p>
         <label className="ca-check"><input type="checkbox" checked={mobile.sharePreview} disabled={mobile.fullAccess} onChange={event => mobile.setSharePreview(event.target.checked)} />Share Editor / Storyboard still previews{mobile.fullAccess ? ' · included in Full access' : ''}</label>
         <p>Workspace snapshots refresh after responses when Editor or Storyboard is visible, not as video playback. Saved chat images, audio and videos return when you reconnect to the project. Media streams from this computer.</p></>}
     </details>

@@ -862,10 +862,10 @@
     },
     "launcher": {
       "desktopOnly": "ComfyUIランチャーはデスクトップ版でのみ利用できます。",
-      "connectedExternally": "接続済み（Velornの管理外）",
-      "connectedManaged": "接続済み・Velornで管理",
-      "externalConnectionHelp": "ComfyUIに接続しています。停止や再起動は、ComfyUIのアプリまたはターミナルで行ってください。Velornで起動を管理しなくても生成できます。",
-      "optionalStartup": "VelornからComfyUIを起動する（任意）",
+      "connectedExternally": "接続済み（Belrogの管理外）",
+      "connectedManaged": "接続済み・Belrogで管理",
+      "externalConnectionHelp": "ComfyUIに接続しています。停止や再起動は、ComfyUIのアプリまたはターミナルで行ってください。Belrogで起動を管理しなくても生成できます。",
+      "optionalStartup": "BelrogからComfyUIを起動する（任意）",
       "optionalStartupHelp": "ComfyUIを自分で開いている場合は、そのまま利用できます。ここから起動したい場合は、検出されたインストール先を選ぶか、起動スクリプトを参照してください。",
       "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて上の項目から接続してください。",
       "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて、上の項目から接続することもできます。",
@@ -1327,11 +1327,11 @@
     "lineSummary": "{{total}}行中{{visible}}行{{rolling}}{{paused}}"
   },
   "launcherChip": {
-    "connectedExternally": "接続済み（Velornの管理外）",
-    "externalConnectionHelp": "ComfyUIに接続しています。通常どおり生成できます。停止や再起動はComfyUIのアプリまたはターミナルで行うか、Velornで安全に管理できるか再確認してください。",
+    "connectedExternally": "接続済み（Belrogの管理外）",
+    "externalConnectionHelp": "ComfyUIに接続しています。通常どおり生成できます。停止や再起動はComfyUIのアプリまたはターミナルで行うか、Belrogで安全に管理できるか再確認してください。",
     "recheckControls": "操作できるか再確認",
-    "optionalStartup": "VelornからComfyUIを起動する（任意）",
-    "optionalStartupHelp": "Velornから起動したい場合だけ、インストール先を選択してください。それ以外の場合は、ComfyUIを自分で開き、「起動中のComfyUIを検索」から接続してください。",
+    "optionalStartup": "BelrogからComfyUIを起動する（任意）",
+    "optionalStartupHelp": "Belrogから起動したい場合だけ、インストール先を選択してください。それ以外の場合は、ComfyUIを自分で開き、「起動中のComfyUIを検索」から接続してください。",
     "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて接続してください。",
     "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて接続するか、普段使っている.batまたは.shスクリプトを参照してください。",
     "detectedInstallations": "検出されたインストール先",
@@ -1353,9 +1353,9 @@
       "external": "外部プロセスを検出：{{endpoint}}",
       "notRunning": "ComfyUIは実行されていません。",
       "unknown": "ComfyUIの状態は不明です。",
-      "managedApp": "接続済み・ComfyUI.appをVelornで管理{{uptime}}",
-      "managed": "接続済み・Velornで管理{{uptime}}",
-      "connectedExternal": "{{endpoint}}に接続済み・起動はVelornの管理外"
+      "managedApp": "接続済み・ComfyUI.appをBelrogで管理{{uptime}}",
+      "managed": "接続済み・Belrogで管理{{uptime}}",
+      "connectedExternal": "{{endpoint}}に接続済み・起動はBelrogの管理外"
     },
     "reprobeHelp": "ComfyUIの状態を再確認",
     "start": "起動",

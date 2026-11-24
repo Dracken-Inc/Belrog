@@ -91,7 +91,7 @@ function Fixture() {
     return () => window.removeEventListener('comfystudio-open-comfyui-tab', open)
   }, [])
   return <main style={{ minHeight: '100vh', background: '#090e18', color: '#e7ebf5', padding: 28 }}>
-    <h1 style={{ fontSize: 20 }}>Velorn · Workflow opening fixture</h1>
+    <h1 style={{ fontSize: 20 }}>Belrog · Workflow opening fixture</h1>
     <p style={{ margin: '12px 0', color: '#a8b2c7' }}>Synthetic saved graphs and native bridge. No generation or project writes.</p>
     <p role="status">Active tab: {tab}</p>
     <div style={{ display: tab === 'comfyui' ? 'block' : 'none', marginTop: 24 }}>

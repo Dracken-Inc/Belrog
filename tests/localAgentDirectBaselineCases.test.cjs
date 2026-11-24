@@ -14,7 +14,7 @@ function seed() {
   clips.push({ id: 'clip-7', type: 'audio', trackId: 'music-track', startTime: 0, duration: 20 },
     { id: 'clip-8', type: 'text', trackId: 'title-track', startTime: 0, duration: 3,
       text: 'SEE IT DIFFERENTLY', textProperties: { text: 'SEE IT DIFFERENTLY', fontSize: 70 }, keyframes: {} },
-    { id: 'clip-9', type: 'text', trackId: 'title-track', startTime: 16, duration: 4, textProperties: { text: 'Made in Velorn' } })
+    { id: 'clip-9', type: 'text', trackId: 'title-track', startTime: 16, duration: 4, textProperties: { text: 'Made in Belrog' } })
   return { id: 'timeline-test', name: 'Existing sequence', width: 1920, height: 1080, fps: 24, duration: 20,
     clipCount: 9, clips, tracks: [{ id: 'picture-track' }, { id: 'title-track' }, { id: 'music-track' }],
     markers: [], transitions: [], transitionCount: 0, context: { revision: 1 } }

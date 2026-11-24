@@ -63,7 +63,7 @@ function createLocalAgentGpuCoordinator({
 
   function check(ctx) {
     if (ctx.signal.aborted) throw abortError(ctx.signal)
-    if (disposed) throw failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Velorn before retrying.')
+    if (disposed) throw failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Belrog before retrying.')
   }
   function waiting(ctx, value, message) {
     if (ctx.waiting !== value) {
@@ -146,7 +146,7 @@ function createLocalAgentGpuCoordinator({
         continue
       }
       if (!busyEndpoints.has(endpoint) && !records.length) {
-        // A restarted Velorn or an external client's completed generation may
+        // A restarted Belrog or an external client's completed generation may
         // leave an idle ComfyUI holding VRAM without any in-process job record.
         let state = null
         try { state = memoryState(await request(ctx, endpoint, '/system_stats')) }
@@ -273,7 +273,7 @@ function createLocalAgentGpuCoordinator({
     })()
   }
   function enqueue(kind, options, operation) {
-    if (disposed) return Promise.reject(failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Velorn before retrying.'))
+    if (disposed) return Promise.reject(failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Belrog before retrying.'))
     const controller = new AbortController()
     const ctx = { ...options, kind, operation, signal: controller.signal, waiting: false }
     const abort = () => controller.abort(abortError(options.signal))
@@ -341,14 +341,14 @@ function createLocalAgentGpuCoordinator({
         return { tracking: true, promptId }
       }
       record.state = 'unknown'
-      record.error = failure('LOCAL_GPU_GENERATION_UNCERTAIN', 'ComfyUI submission may have started, but its prompt ID was not confirmed. Inspect the ComfyUI queue/history; do not resubmit automatically. Once generation is safely stopped or finished, restart Velorn to restore the local agent.')
+      record.error = failure('LOCAL_GPU_GENERATION_UNCERTAIN', 'ComfyUI submission may have started, but its prompt ID was not confirmed. Inspect the ComfyUI queue/history; do not resubmit automatically. Once generation is safely stopped or finished, restart Belrog to restore the local agent.')
       busyEndpoints.add(record.endpoint)
       return { tracking: false, code: record.error.code, error: record.error.publicMessage }
     },
     dispose() {
       if (disposed) return
       disposed = true
-      lifetime.abort(failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Velorn before retrying.'))
+      lifetime.abort(failure('LOCAL_GPU_DISPOSED', 'The local GPU coordinator has closed. Restart Belrog before retrying.'))
       generations.length = 0; inferences.length = 0
       leases.clear(); ownedModels.clear(); preparingModels.clear(); busyEndpoints.clear()
     },

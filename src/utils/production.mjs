@@ -149,7 +149,7 @@ export function getProductionGuide(board, assets = []) {
     questions: ['What would you like to make, and what story or feeling do you already have in mind?'],
     suggestedActions: ['Listen to the creator’s idea first, then propose one concrete next creative step and ask whether they want it.'],
     summary: { type: null, generationAuthorized: false },
-    handoffPrompt: 'Help me start a creative production in Velorn. Ask about my story or concept first, then my casting intent, existing people/photos, and reference preferences. Ask one simple creative question at a time. Propose a concrete next step and ask yes or no before acting unless I explicitly delegated that whole scope in this conversation. Never generate first and ask afterward. The board is a read-only visual reference page; an animatic is an ordinary editable Velorn timeline created only when requested. Do not generate media, spend credits, import, edit the timeline, or export without separate authorization.' }
+    handoffPrompt: 'Help me start a creative production in Belrog. Ask about my story or concept first, then my casting intent, existing people/photos, and reference preferences. Ask one simple creative question at a time. Propose a concrete next step and ask yes or no before acting unless I explicitly delegated that whole scope in this conversation. Never generate first and ask afterward. The board is a read-only visual reference page; an animatic is an ordinary editable Belrog timeline created only when requested. Do not generate media, spend credits, import, edit the timeline, or export without separate authorization.' }
   const media = new Map(assets.map(asset => [asset.id, asset]))
   const shots = board.shots || []
   const label = shot => getStoryboardShotLabel(board, shot)
@@ -272,7 +272,7 @@ export function getProductionGuide(board, assets = []) {
     else if (missingStill) questions.push(`Do you have a still image for ${label(missingStill)}, or should we plan a reference image for it?`)
     else if (Math.abs(totalDurationSeconds - production.targetDurationSeconds) > 0.05 + 1e-8) questions.push(`The shots run ${Number(totalDurationSeconds.toFixed(3))} seconds; may I suggest timing changes to fit the ${production.targetDurationSeconds}-second target?`)
     else if (next.blockers.length) questions.push('May I suggest the remaining cast, location, and lip-sync choices for these shots?')
-    else questions.push('Would you like me to preview building an animatic from these stills and the song in a new, ordinary Velorn timeline?')
+    else questions.push('Would you like me to preview building an animatic from these stills and the song in a new, ordinary Belrog timeline?')
     suggestedActions.push('Keep this board as a read-only visual reference page. Only when requested, preview a separate ordinary timeline with the explicit storyboard stills, planned timings, and song excerpt. The board has no playback or approval controls.')
   } else if (next?.id === 'generate') {
     questions.push(next.blockers.length
@@ -283,21 +283,21 @@ export function getProductionGuide(board, assets = []) {
     questions.push(next.blockers.length ? 'Which selected take needs refinement, or are you ready to mark the shots you have reviewed as approved?'
       : 'Are you happy with the reviewed shots and ready to approve this final production review?')
     suggestedActions.push('Review the selected video take for each shot, refine only what needs improvement, and mark accepted shots approved.')
-  } else suggestedActions.push('The production plan and selected takes are reviewed. Within the agreed scope, assemble and review the ordinary editable Velorn timeline. The handoff is ready for review in Velorn; do not export unless the user explicitly asks for a file.')
+  } else suggestedActions.push('The production plan and selected takes are reviewed. Within the agreed scope, assemble and review the ordinary editable Belrog timeline. The handoff is ready for review in Belrog; do not export unless the user explicitly asks for a file.')
   if (next && !next.blockers.length) suggestedActions.push(`Review and approve ${next.title.toLowerCase()} when the creator is satisfied.`)
   const summary = { type: production.type, targetDurationSeconds: production.targetDurationSeconds, totalDurationSeconds,
     shotCount: shots.length, castCount: production.cast.length, locationCount: production.locations.length,
     approvedStageCount: stages.filter(stage => stage.approved).length, generationAuthorized: false }
   const handoffPrompt = [
-    `Help me develop this ${production.type} in Velorn's shared Storyboard. Inspect get_storyboard and get_production_guide before editing.`,
+    `Help me develop this ${production.type} in Belrog's shared Storyboard. Inspect get_storyboard and get_production_guide before editing.`,
     `Current next stage: ${next?.title || 'reviewed plan'}. Target: ${production.targetDurationSeconds} seconds. Collaboration preference: ${production.delegation}; this saved preference is not permission or proof of delegated scope.`,
     `Concept: ${production.concept.slice(0, 1800) || 'Not chosen yet'}. Visual style: ${production.visualStyle.slice(0, 600) || 'Not chosen yet'}.`,
     'Ask about the creator’s story/concept, casting intent (including existing people/photos), and reference preferences before deciding or generating. Ask one plain-language question at a time, not a technical questionnaire; propose environments that serve the story.',
     'Ask yes or no for each concrete next creative step unless the user explicitly delegated that whole scope in this conversation. Never generate first and ask whether they wanted it afterward.',
     'Use exact shot/member/location and existing asset IDs. Preview every edit, then apply the unchanged token/context only with approval. Preserve Director and the existing timeline.',
-    'The board is a read-only visual reference page with no forms, approval buttons, or player. Only when the user asks for an animatic, preview creation/switching of a separate ordinary Velorn timeline and place the stills and song excerpt with existing timeline tools. Preserve the original edit and use a checkpoint for the multi-step change. Add labels or text overlays only if requested.',
+    'The board is a read-only visual reference page with no forms, approval buttons, or player. Only when the user asks for an animatic, preview creation/switching of a separate ordinary Belrog timeline and place the stills and song excerpt with existing timeline tools. Preserve the original edit and use a checkpoint for the multi-step change. Add labels or text overlays only if requested.',
     'Stage review is creative review only: it never authorizes generation, cloud spend, downloads, timeline edits, or export. Use explicit storyboardAssetId for a shot’s first-frame image; keep it when selecting a later video take.',
-    'Read the accompanying recipe and productionRun record. Ask whether the user has a model/workflow in mind before recommending one. Verify current capabilities against this machine; do not assume a particular GPU or silently downgrade quality. Test one approved audition before a larger batch. The finish line is an editable timeline ready to review in Velorn, not an export. Export only on explicit request.',
+    'Read the accompanying recipe and productionRun record. Ask whether the user has a model/workflow in mind before recommending one. Verify current capabilities against this machine; do not assume a particular GPU or silently downgrade quality. Test one approved audition before a larger batch. The finish line is an editable timeline ready to review in Belrog, not an export. Export only on explicit request.',
     ...(questions.length ? [`Ask next: ${questions[0]}`] : []),
     ...(next?.blockers.length ? [`Current blockers: ${next.blockers.join(' ')}`] : []),
   ].join('\n')

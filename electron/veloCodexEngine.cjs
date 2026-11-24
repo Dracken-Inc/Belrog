@@ -43,8 +43,8 @@ function checkedMcp(mcpServers = {}, mcpEnv = {}, accessMode) {
     if (!['velorn_session', 'velorn_generation'].includes(name) || !object(server) || !/^VELORN_AGENT_MCP_[A-F0-9]{16}$/.test(server.bearer_token_env_var)
       || !/^[a-f0-9]{64}$/.test(mcpEnv[server.bearer_token_env_var] || '')
       || (server.default_tools_approval_mode !== undefined && server.default_tools_approval_mode !== 'approve')
-      || Object.keys(server).some(k => !['url', 'bearer_token_env_var', 'startup_timeout_sec', 'tool_timeout_sec', 'default_tools_approval_mode', 'enabled', 'required', 'enabled_tools'].includes(k))) throw fault('VELO_ENGINE_CONFIG', 'Only the native per-turn Velorn MCP gateway is accepted.')
-    if (new URL(localProviderUrl(server.url)).pathname !== '/mcp') throw fault('VELO_ENGINE_CONFIG', 'Invalid local Velorn tool endpoint.')
+      || Object.keys(server).some(k => !['url', 'bearer_token_env_var', 'startup_timeout_sec', 'tool_timeout_sec', 'default_tools_approval_mode', 'enabled', 'required', 'enabled_tools'].includes(k))) throw fault('VELO_ENGINE_CONFIG', 'Only the native per-turn Belrog MCP gateway is accepted.')
+    if (new URL(localProviderUrl(server.url)).pathname !== '/mcp') throw fault('VELO_ENGINE_CONFIG', 'Invalid local Belrog tool endpoint.')
     wantedEnv.add(server.bearer_token_env_var)
   }
   if (Object.keys(mcpEnv).some(name => !wantedEnv.has(name))) throw fault('VELO_ENGINE_CONFIG', 'Unrelated child environment entries are not accepted.')
@@ -58,7 +58,7 @@ function buildEngineConfig({ providerUrl, catalogPath, stateDir, accessMode = 'c
     model: MODEL, model_provider: PROVIDER, model_reasoning_effort: EFFORT,
     model_catalog_json: catalogPath,
     model_providers: { [PROVIDER]: {
-      name: 'Velorn local funded gateway', base_url: localProviderUrl(providerUrl), wire_api: 'responses',
+      name: 'Belrog local funded gateway', base_url: localProviderUrl(providerUrl), wire_api: 'responses',
       capabilities: { remote_compaction: 'v2' },
       requires_openai_auth: false, supports_websockets: false,
       request_max_retries: 0, stream_max_retries: 0,
@@ -120,7 +120,7 @@ function dynamicSpecs(tools, accessMode) {
     seen.add(tool.name)
     return { type: 'function', name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
   })
-  return specs.length ? [{ type: 'namespace', name: 'velorn', description: 'Native Velorn project tools; permissions and spending remain enforced by Velorn.', tools: specs }] : []
+  return specs.length ? [{ type: 'namespace', name: 'velorn', description: 'Native Belrog project tools; permissions and spending remain enforced by Belrog.', tools: specs }] : []
 }
 
 function createVeloCodexEngine(options) {
@@ -175,7 +175,7 @@ function createVeloCodexEngine(options) {
     const p = event.params
     if (!active || active.kind === 'compaction' || p?.threadId !== threadId || p.turnId !== active.turnId || p.namespace !== 'velorn'
       || accessMode === 'chat' || !allowedTools.has(p.tool) || !validId(p.callId) || typeof callHostTool !== 'function') {
-      send({ id: event.id, result: { success: false, contentItems: [{ type: 'inputText', text: 'Velorn rejected an unscoped or unavailable tool. No action was performed.' }] } }); return
+      send({ id: event.id, result: { success: false, contentItems: [{ type: 'inputText', text: 'Belrog rejected an unscoped or unavailable tool. No action was performed.' }] } }); return
     }
     const callKey = digest(JSON.stringify([threadId, p.turnId, p.callId]))
     if (!hostCalls.has(callKey)) {
@@ -193,7 +193,7 @@ function createVeloCodexEngine(options) {
           ? { type: 'inputImage', imageUrl: `data:${i.mimeType};base64,${i.data}` }
           : { type: 'inputText', text: i.type === 'text' && typeof i.text === 'string' ? i.text : JSON.stringify(i) }) : [{ type: 'inputText', text: typeof value === 'string' ? value : JSON.stringify(value ?? null) }]
         return { success: value?.isError !== true, contentItems }
-      })().catch(error => ({ success: false, contentItems: [{ type: 'inputText', text: error?.code === 'CANCELLED' ? 'The request was cancelled. Inspect before repeating earlier actions.' : 'The native Velorn tool failed or permission changed. Inspect the result; do not repeat uncertain actions automatically.' }] }))
+      })().catch(error => ({ success: false, contentItems: [{ type: 'inputText', text: error?.code === 'CANCELLED' ? 'The request was cancelled. Inspect before repeating earlier actions.' : 'The native Belrog tool failed or permission changed. Inspect the result; do not repeat uncertain actions automatically.' }] }))
       hostCalls.set(callKey, result)
     }
     send({ id: event.id, result: await hostCalls.get(callKey) })
@@ -244,7 +244,7 @@ function createVeloCodexEngine(options) {
     const result = { threadId, turnId: p.turn.id, status, text, completedItems: turn.items, usage: turn.usage, resumed: turn.resumed,
       ...(turn.kind === 'compaction' ? { operation: 'compaction', compacted: status === 'completed' && compactionVerified } : {}) }
     if (status === 'completed' && !compactionVerified) {
-      turn.reject(fault('VELO_ENGINE_COMPACTION_UNCONFIRMED', 'The engine did not confirm context compaction. Its retained history will not be replaced or replayed by Velorn.', { recoveryRequired: true, result })); return
+      turn.reject(fault('VELO_ENGINE_COMPACTION_UNCONFIRMED', 'The engine did not confirm context compaction. Its retained history will not be replaced or replayed by Belrog.', { recoveryRequired: true, result })); return
     }
     if (status === 'failed') turn.reject(fault('VELO_ENGINE_TURN_FAILED', 'Velo could not finish this turn. Earlier actions may have completed; inspect before continuing.', { recoveryRequired: true, result, engineError: p.turn.error }))
     else turn.resolve(result)
@@ -377,7 +377,7 @@ function createVeloCodexEngine(options) {
     const turnId = active.turnId
     await rpc('turn/interrupt', { threadId, turnId })
     // Stop also cleans already-yielded native terminals owned by this thread.
-    // This never cancels Velorn-managed ComfyUI jobs or another chat's process.
+    // This never cancels Belrog-managed ComfyUI jobs or another chat's process.
     await rpc('thread/backgroundTerminals/clean', { threadId })
     return { stopped: true, turnId }
   }

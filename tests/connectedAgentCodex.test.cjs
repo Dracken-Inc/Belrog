@@ -483,7 +483,7 @@ test('Codex tool session replaces MCP configuration and keeps credentials only i
   await assert.rejects(fetch(url))
 })
 
-test('Codex accepts only explicitly scoped Velorn MCP events; foreign and execution tools stop the turn', () => {
+test('Codex accepts only explicitly scoped Belrog MCP events; foreign and execution tools stop the turn', () => {
   const events = []; const failures = []
   const reader = createProtocolReader({ onEvent: event => events.push(event), onFailure: error => failures.push(error), onComplete: () => {}, allowedMcpServer: 'velorn_session', allowedToolNames: new Set(['inspect_project']) })
   reader.push(line({ type: 'item.started', item: { type: 'mcp_tool_call', server: 'velorn_session', tool: 'inspect_project' } }))
@@ -522,7 +522,7 @@ test('optional installed-CLI audit advertises no execution tools to a synthetic 
   let child; let timer
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Velorn local safety audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
+    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Belrog local safety audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
     child = spawn('codex', args, { cwd: directory, env: childEnvironment(), stdio: ['pipe', 'pipe', 'pipe'], shell: false })
     child.stdout.resume(); child.stderr.resume()
     child.stdin.end('Synthetic local safety audit. Reply hello; no tools.')
@@ -542,7 +542,7 @@ test('optional installed-CLI audit advertises no execution tools to a synthetic 
 
 test('optional installed-CLI audit exposes all session MCP tools and no host execution tools', { skip: process.env.VELORN_CODEX_LOCAL_PROBE !== '1', timeout: 30000 }, async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-codex-mcp-probe-'))
-  const catalog = Array.from({ length: 162 }, (_, i) => ({ name: `velorn_tool_${i}`, description: 'Synthetic Velorn safety-audit tool', inputSchema: { type: 'object', properties: {} } }))
+  const catalog = Array.from({ length: 162 }, (_, i) => ({ name: `velorn_tool_${i}`, description: 'Synthetic Belrog safety-audit tool', inputSchema: { type: 'object', properties: {} } }))
   let dispatched = 0
   const gateway = await createMcpGateway({ toolSession: { listTools: async () => catalog, callTool: async () => { dispatched++; return { content: [] } } } })
   const requests = []
@@ -555,7 +555,7 @@ test('optional installed-CLI audit exposes all session MCP tools and no host exe
   let child; let timer
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(gateway), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Velorn local MCP audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
+    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(gateway), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Belrog local MCP audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
     child = spawn('codex', args, { cwd: directory, env: { ...childEnvironment(), [gateway.tokenEnvVar]: gateway.bearerToken }, stdio: ['pipe', 'pipe', 'pipe'], shell: false })
     child.stdout.resume(); child.stderr.resume(); child.stdin.end('Synthetic local MCP safety audit. Do not call tools.')
     timer = setTimeout(() => child.kill('SIGKILL'), 20000)
@@ -598,7 +598,7 @@ test('optional installed-CLI synthetic response dispatches an action only throug
   let child; let timer
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
-    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(gateway), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Velorn synthetic dispatch audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
+    const args = ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check', '--sandbox', 'read-only', '--json', ...restrictionArgs(gateway), '-c', 'model_provider="velorn_probe"', '-c', 'model="velorn-probe"', '-c', 'model_providers.velorn_probe.name="Belrog synthetic dispatch audit"', '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`, '-c', 'model_providers.velorn_probe.wire_api="responses"', '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-']
     child = spawn('codex', args, { cwd: directory, env: { ...childEnvironment(), [gateway.tokenEnvVar]: gateway.bearerToken }, stdio: ['pipe', 'pipe', 'pipe'], shell: false })
     let output = ''
     child.stdout.setEncoding('utf8'); child.stdout.on('data', chunk => { output += chunk; if (output.length > 2e6) child.kill('SIGKILL') }); child.stderr.resume()
@@ -652,7 +652,7 @@ async function knownModelProbe({ script, toolSession, item, signal, onEvent, con
       onEvent: event => { events.push(event); onEvent?.(event) },
       spawnImpl: (command, args, options) => spawn(command, configureArgs(args.slice(0, -1).concat([
         '-c', 'model_provider="velorn_probe"',
-        '-c', 'model_providers.velorn_probe.name="Velorn localhost known-model audit"',
+        '-c', 'model_providers.velorn_probe.name="Belrog localhost known-model audit"',
         '-c', `model_providers.velorn_probe.base_url="http://127.0.0.1:${server.address().port}/v1"`,
         '-c', 'model_providers.velorn_probe.wire_api="responses"',
         '-c', 'model_providers.velorn_probe.requires_openai_auth=false', '-',
@@ -673,10 +673,10 @@ function probeObjects(request) {
     .flatMap(item => Array.isArray(item.output) ? item.output.map(block => block.text) : [item.output])
     .flatMap(text => { try { return [JSON.parse(text)] } catch { return [] } })
 }
-const knownCatalog = Array.from({ length: 162 }, (_, i) => ({ name: `velorn_tool_${i}`, description: 'Synthetic Velorn tool; no project or filesystem access.', inputSchema: { type: 'object', properties: {} } }))
+const knownCatalog = Array.from({ length: 162 }, (_, i) => ({ name: `velorn_tool_${i}`, description: 'Synthetic Belrog tool; no project or filesystem access.', inputSchema: { type: 'object', properties: {} } }))
 const installedProbeOptions = { skip: process.env.VELORN_CODEX_LOCAL_PROBE !== '1', timeout: 30000 }
 
-test('optional known-model code-mode route exposes the full Velorn-only inventory and preserves host denial', installedProbeOptions, async () => {
+test('optional known-model code-mode route exposes the full Belrog-only inventory and preserves host denial', installedProbeOptions, async () => {
   await preflightCodex({ toolsEnabled: true })
   const calls = []
   const result = await knownModelProbe({

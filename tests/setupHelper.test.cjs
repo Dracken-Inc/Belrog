@@ -160,12 +160,12 @@ test('initial request distinguishes ComfyUI in-app controls from external guides
     assert.match(action.description, /Start\/Stop\/Restart controls, not a web guide/)
     assert.match(action.description, /ONLY offers it, never executes it/)
     assert.match(action.parameters.properties.action.description, /configure: show in-app controls/)
-    assert.match(action.parameters.properties.action.description, /connection_guide: external official documentation, NOT Velorn's controls/)
+    assert.match(action.parameters.properties.action.description, /connection_guide: external official documentation, NOT Belrog's controls/)
     assert.match(body.instructions, /request_setup_action with integration=comfyui and action=configure/)
     assert.match(body.instructions, /do not start, stop or change anything.*still calls for configure, not a guide/)
     assert.match(body.instructions, /get_setup_status first, then offer configure regardless of whether the connection is ready/)
     assert.match(body.instructions, /controls-only question, no readiness check is required; do not claim current readiness/)
-    assert.match(body.instructions, /Use guide actions when external official documentation is requested or needed for a step outside Velorn/)
+    assert.match(body.instructions, /Use guide actions when external official documentation is requested or needed for a step outside Belrog/)
     assert.match(body.instructions, /availability depends on the existing launcher and ownership checks/)
     assert.equal(body.model, MODEL)
     assert.equal(action.strict, true)
@@ -206,8 +206,8 @@ test('combined check and show-controls replay offers navigation for ready or una
 })
 test('controls-only and explicit ComfyUI documentation offers remain separate passive actions', async () => {
   for (const [action, message] of [
-    ['configure', 'Show me where to restart ComfyUI in Velorn, but do not restart it.'],
-    ['connection_guide', 'Show me the official ComfyUI connection documentation, not Velorn’s controls.'],
+    ['configure', 'Show me where to restart ComfyUI in Belrog, but do not restart it.'],
+    ['connection_guide', 'Show me the official ComfyUI connection documentation, not Belrog’s controls.'],
     ['installation_guide', 'Where is the official ComfyUI installation guide?'],
   ]) {
     let changes = 0
@@ -558,7 +558,7 @@ test('Cloud tool contract reads stored evidence only and offers two scoped actio
   for (const tool of first.tools) assert.ok(tool.parameters.properties.integration.enum.includes('comfycloud'))
   assert.match(first.tools[0].description, /ONLY read the stored native account-check result; no new Comfy request/)
   assert.match(first.tools[1].description, /only configure .*Open Comfy Cloud controls.* or connection_guide/)
-  assert.match(first.instructions, /ONLY reads Velorn's stored account-check result/)
+  assert.match(first.instructions, /ONLY reads Belrog's stored account-check result/)
   assert.match(first.instructions, /NOT verify a paid subscription, credit balance, models, workflows, generation capability or spending approval/)
   assert.match(first.instructions, /For a request to check again online, offer configure/)
   assert.match(first.instructions, /Hosted generation is not implemented/)

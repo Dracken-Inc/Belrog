@@ -10,7 +10,7 @@
  *   idle     - no external ComfyUI detected, nothing launched by us
  *   starting - we spawned the process, waiting for HTTP readiness
  *   running  - HTTP ready, child process is ours
- *   external - HTTP ready but the process was started outside Velorn
+ *   external - HTTP ready but the process was started outside Belrog
  *   stopping - user requested stop, we issued kill
  *   stopped  - cleanly stopped by user
  *   crashed  - unexpected exit without explicit stop
@@ -135,7 +135,7 @@ function probeHttp(httpBase, timeoutMs = 1500) {
         path: '/system_stats',
         method: 'GET',
         timeout: timeoutMs,
-        headers: { 'User-Agent': 'Velorn-Launcher/1.0' },
+        headers: { 'User-Agent': 'Belrog-Launcher/1.0' },
       },
       (res) => {
         let chunks = ''
@@ -502,7 +502,7 @@ class ComfyLauncher extends EventEmitter {
     await this._ensureLogDir()
     const config = safeCloneConfig(this._getConfig?.())
     // Layer 2 — try to reclaim a previously spawned ComfyUI before falling
-    // back to plain external detection. This handles the "Velorn
+    // back to plain external detection. This handles the "Belrog
     // crashed but ComfyUI is still running" case where we want full Stop/
     // Restart control again, not just read-only external status.
     const reclaimed = config.launcherMode === 'mac-app' || !config.launcherScript ? false : await this._tryReclaimFromStateFile()
@@ -756,12 +756,12 @@ class ComfyLauncher extends EventEmitter {
     // Port is answering ComfyUI. Before settling for a read-only "external"
     // state, try to find its PID via netstat/lsof. If we can identify it,
     // we can offer Stop/Restart just like a process we spawned ourselves.
-    // This covers the "Velorn crashed, ComfyUI kept running, no state
+    // This covers the "Belrog crashed, ComfyUI kept running, no state
     // file" case, as well as users who launched ComfyUI manually.
     const config = safeCloneConfig(this._getConfig?.())
     if (!config.launcherScript && !(config.launcherMode === 'mac-app' && config.macAppPath)) {
       // Manual-connect fallback is connection-only. Merely opening Settings or
-      // finding a server must not grant Velorn control over the user's process.
+      // finding a server must not grant Belrog control over the user's process.
       let health
       try { health = JSON.parse(probe.body) } catch { /* not ComfyUI */ }
       this._pid = null; this._pidIdentity = null; this._ownedHttpBase = ''
@@ -771,7 +771,7 @@ class ComfyLauncher extends EventEmitter {
         return
       }
       this._ownership = 'external'
-      this._setState('external', { statusMessage: `Connected to ComfyUI at ${httpBase}. Opened outside Velorn; manage it in ComfyUI.`, error: '' })
+      this._setState('external', { statusMessage: `Connected to ComfyUI at ${httpBase}. Opened outside Belrog; manage it in ComfyUI.`, error: '' })
       return
     }
     const pid = await this._findOwningPidFor(httpBase)
@@ -796,7 +796,7 @@ class ComfyLauncher extends EventEmitter {
       })
       this._appendLog('system', `Adopted running ComfyUI (pid ${pid}) from external process. Stop/Restart enabled.`)
       this._setState('running', {
-        statusMessage: `Connected to running ComfyUI (pid ${pid}). Velorn didn't start it, but can stop or restart it.`,
+        statusMessage: `Connected to running ComfyUI (pid ${pid}). Belrog didn't start it, but can stop or restart it.`,
       })
       return
     }
@@ -854,7 +854,7 @@ class ComfyLauncher extends EventEmitter {
   async _inspectPidProcess(pid, httpBase, expectedIdentity = null) {
     try {
       const endpoint = new URL(httpBase)
-      // Native process control is only for Velorn's local ComfyUI endpoint.
+      // Native process control is only for Belrog's local ComfyUI endpoint.
       if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1') return null
       const identity = await this._readProcessIdentity(pid)
       if (!identity || (expectedIdentity && identity !== expectedIdentity)) return null
@@ -1092,7 +1092,7 @@ class ComfyLauncher extends EventEmitter {
   }
 
   /**
-   * Called once during init(). If a previous Velorn session wrote a
+   * Called once during init(). If a previous Belrog session wrote a
    * state file and the recorded PID is still alive and the HTTP endpoint
    * still answers as ComfyUI, we "reclaim" the process: treat it as our
    * own, so Stop / Restart work normally. Otherwise clear the stale file.
@@ -1171,7 +1171,7 @@ class ComfyLauncher extends EventEmitter {
 
     // Layer 1 — probe before spawn. If ComfyUI is already answering on the
     // configured port (e.g. the user launched it manually, or our previous
-    // Velorn session crashed and left ComfyUI alive), adopting it is
+    // Belrog session crashed and left ComfyUI alive), adopting it is
     // always the right answer. Spawning a second process would fail with
     // EADDRINUSE and only confuse the user.
     if (httpBase) {
@@ -1189,7 +1189,8 @@ class ComfyLauncher extends EventEmitter {
 
     const launcherScript = String(config.launcherScript || '').trim()
     if (!launcherScript) {
-      const message = 'No ComfyUI launcher script is configured. Pick your run_nvidia_gpu.bat (or equivalent) in Settings.'
+      const launcherName = process.platform === 'win32' ? 'run_nvidia_gpu.bat' : 'run_nvidia_gpu.sh'
+      const message = `No ComfyUI launcher script is configured. Pick your ${launcherName} (or equivalent) in Settings.`
       this._setState('idle', { statusMessage: message, error: 'missing-launcher' })
       return { success: false, error: message }
     }
@@ -1246,7 +1247,7 @@ class ComfyLauncher extends EventEmitter {
     this._probingSince = nowMs()
     this._setState('starting', { statusMessage: `Starting ComfyUI (pid ${this._pid}). First boot can take 30-60s.`, error: '' })
 
-    // Persist pid/port so a future Velorn boot can reclaim this child
+    // Persist pid/port so a future Belrog boot can reclaim this child
     // if we crash before it exits. Fire-and-forget: we never block startup
     // on disk I/O.
     if (this._pid) {
@@ -1457,7 +1458,7 @@ class ComfyLauncher extends EventEmitter {
     // ComfyUI_windows_portable do NOT forward %* to main.py.
     const portable = detectPortableLayout(launcherScript)
     if (portable) {
-      // --enable-cors-header "*" is required for Velorn's renderer to
+      // --enable-cors-header "*" is required for Belrog's renderer to
       // talk to ComfyUI in dev mode (Vite at 127.0.0.1:5173 vs. ComfyUI at
       // 127.0.0.1:8188) and to read mask / render-cache PNGs back into a
       // canvas without being blocked by ComfyUI's origin-only middleware.
@@ -1480,7 +1481,7 @@ class ComfyLauncher extends EventEmitter {
         // detached:true puts the child in its own process group so it can
         // survive the parent if the user chooses "Leave ComfyUI running" at
         // quit time. File descriptors survive independently of this parent;
-        // bounded file tailing supplies live logs while Velorn is running.
+        // bounded file tailing supplies live logs while Belrog is running.
         detached: true,
         stdio,
         env: pythonEnv,
@@ -1641,10 +1642,10 @@ class ComfyLauncher extends EventEmitter {
       return this._stopMacApp()
     }
     if (this._state === 'external' || this._ownership !== 'ours') {
-      return { success: false, error: 'ComfyUI was started outside of Velorn. Stop it from the window where you started it.' }
+      return { success: false, error: 'ComfyUI was started outside of Belrog. Stop it from the window where you started it.' }
     }
     if (!this._child && !this._pid) {
-      return { success: false, error: 'No ComfyUI process is currently owned by Velorn.' }
+      return { success: false, error: 'No ComfyUI process is currently owned by Belrog.' }
     }
     this._setState('stopping', { statusMessage: 'Stopping ComfyUI…' })
     this._appendLog('system', 'Stop requested by user.')
@@ -1695,7 +1696,7 @@ class ComfyLauncher extends EventEmitter {
     if (this._state === 'external') {
       return {
         success: false,
-        error: 'ComfyUI was opened outside Velorn. Restart it in ComfyUI, then reconnect here.',
+        error: 'ComfyUI was opened outside Belrog. Restart it in ComfyUI, then reconnect here.',
       }
     }
 
@@ -1733,7 +1734,7 @@ class ComfyLauncher extends EventEmitter {
   }
 
   /**
-   * Release the child process so it keeps running after Velorn quits.
+   * Release the child process so it keeps running after Belrog quits.
    *
    * This is a best-effort operation: we unref the subprocess, stop the console
    * file viewer, and strip listeners so its future exit doesn't touch us.
@@ -1752,7 +1753,7 @@ class ComfyLauncher extends EventEmitter {
       return { detached: false }
     }
     const pid = this._pid
-    this._appendLog('system', 'Detach requested — leaving ComfyUI running after Velorn quits.')
+    this._appendLog('system', 'Detach requested — leaving ComfyUI running after Belrog quits.')
 
     this._stopProbing()
 
@@ -1775,14 +1776,14 @@ class ComfyLauncher extends EventEmitter {
 
     try { child?.unref() } catch (_) { /* ignore */ }
 
-    // Flip ownership to "external" so if Velorn is relaunched while
+    // Flip ownership to "external" so if Belrog is relaunched while
     // ComfyUI is still up, the normal detectExternal path adopts it.
     this._ownership = 'external'
     this._child = null
     this._setState('external', {
       statusMessage: pid
-        ? `ComfyUI left running (pid ${pid}). It will continue after Velorn quits.`
-        : 'ComfyUI left running. It will continue after Velorn quits.',
+        ? `ComfyUI left running (pid ${pid}). It will continue after Belrog quits.`
+        : 'ComfyUI left running. It will continue after Belrog quits.',
     })
 
     this._closeLogFile()

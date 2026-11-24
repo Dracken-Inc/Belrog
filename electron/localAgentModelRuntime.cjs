@@ -93,11 +93,11 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
   }
   function resolve(rows, model, previous) {
     const matches = rows.filter(row => previous ? row.key === previous.key : row.key === model || row.loaded_instances.some(instance => instance?.id === model))
-    if (matches.length !== 1) throw failure('The selected local model could not be identified uniquely. Refresh models in Velorn before using GPU sharing.')
+    if (matches.length !== 1) throw failure('The selected local model could not be identified uniquely. Refresh models in Belrog before using GPU sharing.')
     const row = matches[0]
     const instances = row.loaded_instances.filter(instance => object(instance) && validId(instance.id))
     if (instances.length !== row.loaded_instances.length) throw failure('LM Studio returned an invalid loaded-model identity.')
-    // Once Velorn owns an instance, its recorded ID is authoritative. The model
+    // Once Belrog owns an instance, its recorded ID is authoritative. The model
     // key is not an instance identity: a sibling may use that key as its alias,
     // or be the only remaining instance after ours was unloaded for generation.
     // In either case restore our saved configuration instead of adopting it.
@@ -109,14 +109,14 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
   async function prepareModel({ model, endpoint, signal }) {
     if (!validId(model)) throw failure('Choose a local model before using GPU sharing.')
     const origin = endpointOrigin(endpoint), key = `${origin}\n${model}`
-    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Velorn before loading more models.')
+    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Belrog before loading more models.')
     const previous = suspended.get(key)
     let { row, instance } = resolve(await models(origin, signal), model, previous)
     const profile = Object.hasOwn(modelProfiles, row.key) ? modelProfiles[row.key] : null
     const defaultConfig = Number.isSafeInteger(profile?.contextLength) && profile.contextLength > 0
       && profile.contextLength <= 1048576 ? { context_length: profile.contextLength } : {}
     if (previous?.uncertainLoad && (!previous.instanceId || instance?.id !== previous.instanceId)) {
-      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Velorn before continuing GPU sharing.')
+      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Belrog before continuing GPU sharing.')
     }
     if (!instance) {
       const config = { ...defaultConfig, ...(previous?.config || {}) }
@@ -124,13 +124,13 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
       suspended.set(key, { key: row.key, config, uncertainLoad: true })
       const loaded = await request(origin, '/load', { body: { model: row.key, ...config, echo_load_config: true }, signal, timeoutMs: loadTimeoutMs })
       if (loaded.status !== 'loaded' || !validId(loaded.instance_id)) throw failure('LM Studio did not confirm that the selected model loaded.')
-      if (existingInstanceIds.has(loaded.instance_id)) throw failure('LM Studio returned a different instance that was already loaded instead of restoring the selected model. Velorn did not use or unload that instance.')
+      if (existingInstanceIds.has(loaded.instance_id)) throw failure('LM Studio returned a different instance that was already loaded instead of restoring the selected model. Belrog did not use or unload that instance.')
       suspended.set(key, { key: row.key, instanceId: loaded.instance_id, config, uncertainLoad: true })
       const fresh = resolve(await models(origin, signal), row.key, { key: row.key, instanceId: loaded.instance_id })
       row = fresh.row; instance = fresh.instance
       if (!instance || instance.id !== loaded.instance_id) throw failure('The restored local model could not be verified.')
     }
-    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Velorn before loading more models.')
+    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Belrog before loading more models.')
     suspended.set(key, { key: row.key, instanceId: instance.id, config: savedConfig(instance.config) })
     // A custom instance alias may change after reload. The host, not the model,
     // supplies this verified replacement ID to the next inference request.
@@ -142,14 +142,14 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
     const previous = suspended.get(key)
     const rows = await models(origin, signal)
     if (previous?.uncertainLoad && (!previous.instanceId || !rows.some(row => row.key === previous.key && row.loaded_instances.some(instance => instance.id === previous.instanceId)))) {
-      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Velorn before starting generation.')
+      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Belrog before starting generation.')
     }
     // Once owned, never adopt another client's replacement instance just
     // because it uses the same weights. Only prepareModel may claim a new ID.
     if (previous && !rows.some(row => row.key === previous.key && row.loaded_instances.some(instance => instance.id === previous.instanceId))) return { released: true }
     const { row, instance } = resolve(rows, model, previous)
     if (!instance) return { released: true }
-    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Velorn before loading more models.')
+    if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Belrog before loading more models.')
     // Save before POST: cancellation can race an already accepted unload. A
     // later preparation rechecks actual state, never repeats a generation.
     suspended.set(key, { key: row.key, instanceId: instance.id, config: savedConfig(instance.config) })

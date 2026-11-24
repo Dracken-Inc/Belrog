@@ -739,7 +739,7 @@ function StandaloneFixture() {
   React.useEffect(() => { window.connectedAgentTest.ready = true }, [])
   return <div className="h-screen min-w-0 flex flex-col overflow-hidden bg-sf-dark-950 text-sf-text-primary">
     <header className="flex items-center gap-3 px-4 py-3 border-b border-sf-border min-w-0 shrink-0">
-      <strong className="text-sm">Velorn</strong>
+      <strong className="text-sm">Belrog</strong>
       <nav className="flex gap-2" aria-label="Fixture workspace modes">{['storyboard', 'editor'].map(tab =>
         <button key={tab} className="px-2 py-1 text-sm rounded bg-sf-dark-800" aria-current={activeTab === tab ? 'page' : undefined}
           onClick={() => setActiveTab(tab)}>{tab === 'editor' ? 'Editor' : 'Storyboard'}</button>)}</nav>
@@ -819,7 +819,7 @@ function DockFixture() {
   </div>
   return <div className="h-screen min-w-0 flex flex-col overflow-hidden bg-sf-dark-950 text-sf-text-primary">
     <header className="flex items-center gap-3 px-4 py-3 border-b border-sf-border min-w-0 shrink-0" data-testid="fixture-titlebar">
-      <strong className="text-sm">Velorn</strong>
+      <strong className="text-sm">Belrog</strong>
       <nav className="flex gap-1 min-w-0" aria-label="Fixture workspace modes">{['storyboard', 'editor', 'generate', 'stock', 'comfyui', 'export', 'discover'].map(tab =>
         <button key={tab} className="px-2 py-1 text-sm rounded bg-sf-dark-800" aria-current={workspace === tab ? 'page' : undefined}
           disabled={exportBusy} onClick={() => setWorkspace(tab)}>{tab === 'comfyui' ? 'ComfyUI' : tab[0].toUpperCase() + tab.slice(1)}</button>)}</nav>

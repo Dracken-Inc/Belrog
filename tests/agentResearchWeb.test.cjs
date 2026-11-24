@@ -101,7 +101,7 @@ test('TLS requests pin a vetted DNS result, keep certificate validation, and nev
   assert.equal(options.path, '/path?q=one'); assert.equal(options.port, 443)
   assert.equal(options.agent, false); assert.equal(options.rejectUnauthorized, true)
   assert.equal(options.autoSelectFamily, false)
-  assert.deepEqual(options.headers, { Host: 'example.com', 'User-Agent': 'Velorn-Public-Research/1.0', Accept: '*/*', 'Accept-Encoding': 'identity' })
+  assert.deepEqual(options.headers, { Host: 'example.com', 'User-Agent': 'Belrog-Public-Research/1.0', Accept: '*/*', 'Accept-Encoding': 'identity' })
   const pinned = await new Promise(resolve => options.lookup('example.com', { all: true }, (_error, addresses) => resolve(addresses)))
   assert.deepEqual(pinned, [{ address: '93.184.216.34', family: 4 }])
   assert.equal(mock.lookups.length, 1)

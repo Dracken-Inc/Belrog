@@ -64,7 +64,7 @@ export default function ComfyRouterPanel({ onClose, onOpenSpending, onImport }) 
     async function load(initial = false) {
       const version = ++loadVersion
       if (!api?.status || !api?.list) {
-        if (!cancelled) { setError('Cloud images require the updated Velorn desktop app.'); if (initial) setPending('') }
+        if (!cancelled) { setError('Cloud images require the updated Belrog desktop app.'); if (initial) setPending('') }
         return
       }
       try {
@@ -171,7 +171,7 @@ export default function ComfyRouterPanel({ onClose, onOpenSpending, onImport }) 
         <p>Generate one 1024 × 1024 image with {modelLabel(status?.modelLabel || status?.model)}. This uses the paid Comfy Router API, separate from hosted Comfy Cloud workflows. Local ComfyUI does not need to be running.</p>
         <section className="comfy-router-card" aria-labelledby="comfy-router-connection-title">
           <div className="comfy-router-row"><h3 id="comfy-router-connection-title">Router connection</h3><span className="comfy-router-badge">{status?.connected ? 'Connected for this session' : 'Not connected'}</span></div>
-          <p className="comfy-router-muted">Use your workspace-backed Comfy API key here, never in chat. It is kept only until Velorn quits, not in your project or browser storage. Hosted and Partner/API keys are not automatically reused.</p>
+          <p className="comfy-router-muted">Use your workspace-backed Comfy API key here, never in chat. It is kept only until Belrog quits, not in your project or browser storage. Hosted and Partner/API keys are not automatically reused.</p>
           {status?.connected && <p className="comfy-router-muted">Key accepted for model access. Workspace access, credits and generation have not been verified by this connection check.</p>}
           <form onSubmit={connect}>
             <label htmlFor="comfy-router-key">Comfy Router API key</label>
@@ -204,7 +204,7 @@ export default function ComfyRouterPanel({ onClose, onOpenSpending, onImport }) 
           {plan && <div className="comfy-router-estimate" aria-label="Generation cost preview">
             <strong>{estimateLabel(plan.estimate)}</strong>
             <p>{modelLabel(plan.modelLabel || status?.modelLabel || plan.model)} · 1 square image. Estimate, not a billing receipt; provider pricing may change{plan.estimate?.asOf ? ` (published ${plan.estimate.asOf})` : ''}.</p>
-            <p>The next step opens Velorn’s native spending confirmation before submitting to Comfy Router.</p>
+            <p>The next step opens Belrog’s native spending confirmation before submitting to Comfy Router.</p>
             {status?.policy !== 'ask-cloud' && !blocked && <p role="alert">Spending permission is unavailable. Refresh jobs to read the current policy before requesting generation.</p>}
             <button type="button" className="comfy-router-primary" disabled={disabled || status?.policy !== 'ask-cloud'} onClick={submit}>Request generation</button>
           </div>}

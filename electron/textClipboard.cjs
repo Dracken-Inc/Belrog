@@ -7,7 +7,7 @@ function registerTextClipboardIpc({ ipcMain, getMainWindow, clipboard, Menu }) {
     const window = getMainWindow()
     if (!window || window.isDestroyed() || event.sender !== window.webContents
       || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
-      throw new Error('Only the Velorn editor main frame may copy text.')
+      throw new Error('Only the Belrog editor main frame may copy text.')
     }
     if (typeof text !== 'string' || !text.length || Buffer.byteLength(text, 'utf8') > MAX_CLIPBOARD_TEXT_BYTES) {
       throw new TypeError('Copy requires non-empty text of at most 1 MiB.')

@@ -603,7 +603,7 @@ test('explicit marker apply previews, approves exact payload, and then dispatche
   ])
   assert.equal(f.approvals.length, 1)
   assert.deepEqual(f.approvals[0].arguments, f.dispatches[3].args)
-  assert.match(f.approvals[0].warnings.join(' '), /Approving this edit also creates an in-memory Velorn safety checkpoint/)
+  assert.match(f.approvals[0].warnings.join(' '), /Approving this edit also creates an in-memory Belrog safety checkpoint/)
   assert.ok(f.approvals[0].preview)
   const duplicate = await f.session.callTool('add_timeline_markers', args)
   assert.equal(duplicate.isError, true)

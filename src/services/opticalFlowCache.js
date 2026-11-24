@@ -92,7 +92,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
     throw new Error('Optical-flow analysis is already running for this clip.')
   }
   if (!isElectron() || !window.electronAPI?.generateOpticalFlowCache) {
-    throw new Error('Optical Flow is available in the Velorn desktop app only.')
+    throw new Error('Optical Flow is available in the Belrog desktop app only.')
   }
 
   const timelineState = useTimelineStore.getState()
@@ -172,7 +172,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   const sourceSignature = await buildSourceSignature(sourcePath)
   assertSetupCurrent()
   if (!sourceSignature) {
-    throw new Error('Velorn could not verify the source file before building Optical Flow. Relink it and try again.')
+    throw new Error('Belrog could not verify the source file before building Optical Flow. Relink it and try again.')
   }
   const jobId = `optical-flow-${safeFilename(clip.id)}-${suffix}`
   const controller = new AbortController()
@@ -261,7 +261,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
       expectedDuration: range.duration,
       maxFrames: MAX_INTERPOLATED_FRAMES,
     })
-    if (!result?.success) throw new Error(result?.error || 'Velorn could not build the smooth-motion cache.')
+    if (!result?.success) throw new Error(result?.error || 'Belrog could not build the smooth-motion cache.')
     completedOutputShouldBeRemoved = true
     if (controller.signal.aborted || result?.cancelled) throw new Error('Optical Flow cancelled')
     if (result.cleanupWarning) {
@@ -291,7 +291,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
     if (!currentBuildClip || getBuildTimingContract(currentBuildClip, useTimelineStore.getState(), timelineFps, sourceFps) !== buildContext.timingContract) {
       throw new Error('The source clip changed before Optical Flow finished. The result was discarded.')
     }
-    if (!url) throw new Error('Velorn could not open the completed Optical Flow cache.')
+    if (!url) throw new Error('Belrog could not open the completed Optical Flow cache.')
     const completedCache = {
       version: OPTICAL_FLOW_CACHE_VERSION,
       status: 'ready',

@@ -41,11 +41,11 @@ async function finish(name) {
   await create({owned:true},true);await app.evaluate(()=>globalThis.closeTest.quit());await until(s=>s.records.includes('veto:0'),'Quit veto')
   assert.equal((await state()).cleanupCount,0);await app.evaluate(()=>globalThis.closeTest.configure({allowUnsaved:true}));await app.evaluate(()=>globalThis.closeTest.quit());await finish('Menu Quit Cancel/retry preserves launcher')
   for(const failure of ['saveFail','hangSave']) {
-    await create({owned:true,[failure]:true});await close();let s=await until(s=>s.records.includes('dialog:Velorn is still open'),'Missing save warning')
+    await create({owned:true,[failure]:true});await close();let s=await until(s=>s.records.includes('dialog:Belrog is still open'),'Missing save warning')
     assert.equal(s.destroyed,false);assert.equal(s.cleanupCount,0);await app.evaluate((_,failure)=>globalThis.closeTest.configure({[failure]:false}),failure)
     await close();await finish(`${failure}: visible failure and successful retry`)
   }
-  await create({owned:true,stopOnQuit:true,launcherChoice:2});await close();await until(s=>s.records.includes('dialog:Quit Velorn?'),'Launcher prompt')
+  await create({owned:true,stopOnQuit:true,launcherChoice:2});await close();await until(s=>s.records.includes('dialog:Quit Belrog?'),'Launcher prompt')
   assert.equal((await state()).records.includes('save-start'),false)
   await app.evaluate(()=>globalThis.closeTest.configure({launcherChoice:1}));await close();await finish('Launcher Cancel then Leave')
   await create({owned:true,cleanupDelay:150});await close();await until(s=>s.destroyed,'No close');await app.evaluate(()=>globalThis.closeTest.quit());await finish('Cleanup drains exactly once before quitting')

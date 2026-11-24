@@ -402,7 +402,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
           {setupFlow.mode === 'choose-root' ? (
             <>
               <p className="mb-1.5 text-[10px] text-amber-200/90">
-                {model.label} isn't set up yet. Point Velorn at your ComfyUI folder to download it.
+                {model.label} isn't set up yet. Point Belrog at your ComfyUI folder to download it.
               </p>
               <button
                 onClick={setupFlow.chooseComfyFolder}

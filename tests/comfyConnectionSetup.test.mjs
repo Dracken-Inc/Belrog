@@ -149,8 +149,8 @@ test('cancelled save also leaves browser fallback cache and storage untouched', 
 
 test('missing native bridge and rejected probes yield useful errors without writes', async () => {
   const f = fixture({ discoverConnections: undefined, probeConnection: undefined })
-  assert.match((await discoverRunningComfy()).error, /reopen Velorn/)
-  assert.match((await connectRunningComfy(8000)).error, /reopen Velorn/)
+  assert.match((await discoverRunningComfy()).error, /reopen Belrog/)
+  assert.match((await connectRunningComfy(8000)).error, /reopen Belrog/)
   assert.deepEqual(f.calls, [])
   fixture({ probeConnection: async () => { throw new Error('Unavailable') } })
   assert.equal((await connectRunningComfy(8000)).error, 'Unavailable')

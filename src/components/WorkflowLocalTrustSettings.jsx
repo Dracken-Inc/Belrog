@@ -31,7 +31,7 @@ export default function WorkflowLocalTrustSettings({ disabled = false, api = glo
     setBusy(id); setError('')
     try {
       const result = await api?.revokeLocalTrust?.({ id })
-      if (result?.success !== true) throw new Error(result?.error || 'The local-workflow choice could not be removed. Restart Velorn if the native bridge is unavailable.')
+      if (result?.success !== true) throw new Error(result?.error || 'The local-workflow choice could not be removed. Restart Belrog if the native bridge is unavailable.')
       await refresh()
     } catch (reason) { setError(reason?.message || 'The local-workflow choice could not be removed.') }
     finally { setBusy(null) }

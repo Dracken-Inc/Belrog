@@ -6,7 +6,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
 const base = new URL(process.env.VELORN_TEST_URL || 'http://127.0.0.1:5199')
 if (base.protocol !== 'http:' || base.hostname !== '127.0.0.1' || base.username || base.password) throw new Error('Activity fixture requires loopback HTTP')
 const output = fs.mkdtempSync(path.join(os.tmpdir(), 'velorn-connected-agent-activity-'))
-const labels = { preparing: 'Preparing message…', working: 'Working…', tool: 'Using Velorn tools…',
+const labels = { preparing: 'Preparing message…', working: 'Working…', tool: 'Using Belrog tools…',
   approval: 'Waiting for your approval', decision: 'Submitting your decision…' }
 const workspaces = ['Editor', 'Storyboard', 'Generate', 'Stock', 'ComfyUI', 'Export', 'Discover']
 
@@ -99,7 +99,7 @@ async function main() {
     await openSettings()
     await page.getByLabel('Model', { exact: true }).selectOption('fixture-codex-fast')
     await openSettings()
-    await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Share images', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Include current view', exact: true }).check()
     await backToChat(); await assertIdle()

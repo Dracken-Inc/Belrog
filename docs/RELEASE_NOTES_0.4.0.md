@@ -1,7 +1,7 @@
-# Velorn v0.4.0 — New ways to create: Visuals, Sound, GPU sharing and Velo
+# Belrog v0.4.0 — New ways to create: Visuals, Sound, GPU sharing and Velo
 
-This is the biggest Velorn release so far. You can share your graphics card with
-other creators, reach Velorn from your phone, and work with Velo, the built-in
+This is the biggest Belrog release so far. You can share your graphics card with
+other creators, reach Belrog from your phone, and work with Velo, the built-in
 assistant. Two new tabs, Visuals and Sound, make pictures, video, voices and sound
 effects through Comfy Router with your own Comfy key.
 
@@ -16,9 +16,9 @@ when it is idle, for free.
 
 - **Use a shared GPU:** pick a workflow someone shares, write a description, and
   the result is made on their computer and saved into your project.
-- **Share your own:** add a ComfyUI workflow you saved to Velorn, test it on your
+- **Share your own:** add a ComfyUI workflow you saved to Belrog, test it on your
   computer, and share it with the people you invite. You can also offer it to
-  everyone; a person at Velorn looks at it first.
+  everyone; a person at Belrog looks at it first.
 - Shared workflows can make pictures, video and music. A music workflow takes a
   description, optional lyrics and a length of up to four minutes.
 - Nobody can send their own workflow to your computer. Only the ones you added
@@ -30,20 +30,20 @@ available right now" is a normal answer. Nudity and sexual content are not
 allowed; an owner can report a job, and accounts that break the rules lose
 access.
 
-## Velorn on your phone
+## Belrog on your phone
 
-Open Velorn in your phone's browser and connect it to a computer that is running
-Velorn. From the phone you can talk to Velo, make pictures and video, and use
+Open Belrog in your phone's browser and connect it to a computer that is running
+Belrog. From the phone you can talk to Velo, make pictures and video, and use
 shared GPUs, while the work happens on your computer and lands in your project.
 
 ## Velo, the built-in assistant
 
-Sign in to a Velorn account and **Velo** can answer questions about your project
+Sign in to a Belrog account and **Velo** can answer questions about your project
 and make edits for you. With **Full access** switched on, Velo can also run
 commands and work with files on your computer.
 
 - Full access works on Windows, macOS and Linux.
-- Pressing Stop, or closing Velorn, ends everything a command started.
+- Pressing Stop, or closing Belrog, ends everything a command started.
 - Velo tells you when a command will be stopped at the end of its answer.
 
 ## Visuals: pictures and video
@@ -76,10 +76,10 @@ read with the Comfy key you pasted in Visuals.
 
 ## Director: a music video from a song
 
-The **Director** tab starts with Music Video. Give it a song and Velorn listens to
+The **Director** tab starts with Music Video. Give it a song and Belrog listens to
 it and writes down the lyrics with their timing, so each line can become a shot.
 
-- Listening runs on your own computer and is free. The first time, Velorn
+- Listening runs on your own computer and is free. The first time, Belrog
   downloads its listening tools (about 3 GB).
 - On a computer with a graphics card, listening is much faster in this version:
   finding the voice and lining up the words now use the card when that works,
@@ -98,7 +98,7 @@ it and writes down the lyrics with their timing, so each line can become a shot.
 ## Good to know
 
 - **Comfy credits:** Visuals and Sound spend credits from your own Comfy
-  account. Velorn shows the price first and never spends without a click.
+  account. Belrog shows the price first and never spends without a click.
 - **ComfyUI:** local models, custom workflows and the workflows you share on
   GPU sharing all run in ComfyUI on your own computer.
 - **Music:** Sound has no music model yet. Music can be made on a shared GPU, or
@@ -118,5 +118,5 @@ it and writes down the lyrics with their timing, so each line can become a shot.
 - `Linux AppImage`: portable Linux build
 - `Linux deb`: Debian/Ubuntu package
 
-Ignore the auto-generated source-code archives unless you plan to build Velorn
+Ignore the auto-generated source-code archives unless you plan to build Belrog
 from source.

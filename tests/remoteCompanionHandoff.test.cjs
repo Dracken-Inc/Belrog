@@ -35,7 +35,7 @@ test('input key and envelope bounds reject private JWK fields, wrong algorithms 
 test('browser UMD runtime without Buffer and native helper interoperate in both directions', async () => {
   const sandbox={crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,DataView,URL,atob,btoa};
   vm.runInNewContext(fs.readFileSync(require.resolve('../electron/remoteCompanionHandoff.cjs'),'utf8'),sandbox);
-  const browser=sandbox.VelornPhoneHandoff;
+  const browser=sandbox.BelrogPhoneHandoff;
   assert.equal(await browser.fingerprint(pair.publicKey),await helper.fingerprint(pair.publicKey));
   assert.equal(JSON.stringify(await browser.open({privateKey:pair.privateKey,envelope,requestId,computerId})),JSON.stringify(payload));
   const browserPair=await browser.createRequestKey();

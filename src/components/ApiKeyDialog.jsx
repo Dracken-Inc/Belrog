@@ -387,7 +387,7 @@ function ApiKeyDialogContent({
           )}
 
           <div className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/40 px-3 py-2.5 text-[11px] text-sf-text-muted">
-            {guided ? 'Saved in Velorn’s settings on this computer. Used for Comfy key checks and Partner/API requests; never included in chat or agent tool results.' : <>{t('apiKey.storagePrefix')}{' '}
+            {guided ? 'Saved in Belrog’s settings on this computer. Used for Comfy key checks and Partner/API requests; never included in chat or agent tool results.' : <>{t('apiKey.storagePrefix')}{' '}
             <code className="rounded bg-sf-dark-800 px-1">api_key_comfy_org</code>{' '}
             {t('apiKey.storageSuffix')}</>}
           </div>

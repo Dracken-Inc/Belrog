@@ -100,7 +100,7 @@ async function publicFetch(value, { signal }) {
       servername: url.hostname, rejectUnauthorized: true, agent: false, family: selected.family, autoSelectFamily: false,
       maxHeaderSize: 32768, lookup: (_name, options, callback) => typeof options === 'function'
         ? options(null, selected.address, selected.family) : options?.all ? callback(null, [selected]) : callback(null, selected.address, selected.family),
-      headers: { Accept: '*/*', 'Accept-Encoding': 'identity', 'User-Agent': 'Velorn-LM-Setup/1.0' },
+      headers: { Accept: '*/*', 'Accept-Encoding': 'identity', 'User-Agent': 'Belrog-LM-Setup/1.0' },
     }, incoming => {
       response = incoming
       if (incoming.socket?.remoteAddress?.replace(/^::ffff:/, '') !== selected.address.replace(/^::ffff:/, '')) {
@@ -253,7 +253,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
       let canDownload = true
       try { await availableDestination(record) } catch (error) { if (error.code !== 'DESTINATION_EXISTS') throw error; canDownload = false }
       const warnings = ["Model metadata and licensing come from its publisher. Loading is separate; no prompt is sent and your current agent remains unchanged."]
-      if (!canDownload) warnings.push('This exact destination already exists. Use the existing model in LM Studio; Velorn will not overwrite it.')
+      if (!canDownload) warnings.push('This exact destination already exists. Use the existing model in LM Studio; Belrog will not overwrite it.')
       const memory = Number(totalmem())
       if (!Number.isFinite(memory) || data.bytes * 1.5 > memory) warnings.push('This model may exceed available memory when loaded. File size is not a memory-fit guarantee.')
       const planId = randomUUID(), expiresAt = now() + planMs
@@ -405,7 +405,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
   async function status(args, owner) { const job = find(args, owner); await live(owner, 'status'); return jobView(job) }
   async function cancel(args, owner) {
     const job = find(args, owner); await live(owner, 'cancel')
-    if (job.state === 'loading') throw fault('LOAD_IN_PROGRESS', 'LM Studio has no verified cancellation for an accepted model load. Check LM Studio; Velorn will not claim it was unloaded.')
+    if (job.state === 'loading') throw fault('LOAD_IN_PROGRESS', 'LM Studio has no verified cancellation for an accepted model load. Check LM Studio; Belrog will not claim it was unloaded.')
     if (job.state === 'downloading') { job.operation.controller.abort('cancelled'); await job.done }
     return jobView(job)
   }
@@ -434,7 +434,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
     try { response = await abortable(fetchLocal(`${ORIGIN}/api/v1/models${route}`, { method: body ? 'POST' : 'GET', redirect: 'error', signal,
       headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined }), signal) }
     catch (error) { checkAbort(signal); if (error.safeLmSetup) throw error; throw fault('LM_OFFLINE', 'LM Studio is not responding on its local port 1234.') }
-    if ([401, 403].includes(response.status)) { await closeResponse(response); throw fault('LM_AUTH_REQUIRED', 'LM Studio requires authentication. Velorn will not disable authentication or bypass it; configure a supported connection in LM Studio.') }
+    if ([401, 403].includes(response.status)) { await closeResponse(response); throw fault('LM_AUTH_REQUIRED', 'LM Studio requires authentication. Belrog will not disable authentication or bypass it; configure a supported connection in LM Studio.') }
     if (response.status !== 200) { await closeResponse(response); throw fault('LM_API_UNAVAILABLE', 'LM Studio could not confirm model management. Update or inspect LM Studio before retrying.') }
     if (response.url && response.url !== `${ORIGIN}/api/v1/models${route}`) { await closeResponse(response); throw fault('LM_API_UNAVAILABLE', 'The local model-management endpoint changed.') }
     return readJson(response, signal)
@@ -479,8 +479,8 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
       if (exact[0].loaded_instances.length === 1) {
         const instance = exact[0].loaded_instances[0]
         job.effectiveContextTokens = contextTokens(instance.config?.context_length)
-        if (job.effectiveContextTokens === null || job.effectiveContextTokens > job.modelMaxContextTokens) throw fault('LM_CONTEXT_UNAVAILABLE', 'The existing model instance has no verifiable loaded context. Inspect its context setting in LM Studio; Velorn left it loaded and unchanged.')
-        if (job.effectiveContextTokens < job.requestedContextTokens) throw fault('LM_CONTEXT_TOO_SMALL', `The existing model is loaded with ${job.effectiveContextTokens.toLocaleString('en-US')} context tokens; setup targets ${job.requestedContextTokens.toLocaleString('en-US')}. Change its context in LM Studio when you are ready; Velorn did not reload or unload it.`)
+        if (job.effectiveContextTokens === null || job.effectiveContextTokens > job.modelMaxContextTokens) throw fault('LM_CONTEXT_UNAVAILABLE', 'The existing model instance has no verifiable loaded context. Inspect its context setting in LM Studio; Belrog left it loaded and unchanged.')
+        if (job.effectiveContextTokens < job.requestedContextTokens) throw fault('LM_CONTEXT_TOO_SMALL', `The existing model is loaded with ${job.effectiveContextTokens.toLocaleString('en-US')} context tokens; setup targets ${job.requestedContextTokens.toLocaleString('en-US')}. Change its context in LM Studio when you are ready; Belrog did not reload or unload it.`)
         instanceId = instance.id
       }
       else if (exact[0].loaded_instances.length > 1) throw fault('LM_IDENTITY_UNAVAILABLE', 'Multiple instances of this model are already loaded. Select the intended instance in LM Studio.')
@@ -492,7 +492,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
         if (loaded.status !== 'loaded' || loaded.type !== 'llm' || !safeId(loaded.instance_id)) throw fault('LOAD_UNCONFIRMED', 'LM Studio did not confirm the model load. Inspect LM Studio before trying again.')
         if (Object.hasOwn(loaded, 'load_config')) {
           echoedContextTokens = contextTokens(loaded.load_config?.context_length)
-          if (echoedContextTokens === null) throw fault('LM_CONTEXT_UNCONFIRMED', 'LM Studio returned an invalid loaded context. Inspect its context setting; Velorn will not automatically retry or unload the model.')
+          if (echoedContextTokens === null) throw fault('LM_CONTEXT_UNCONFIRMED', 'LM Studio returned an invalid loaded context. Inspect its context setting; Belrog will not automatically retry or unload the model.')
         }
         instanceId = loaded.instance_id
       }
@@ -506,7 +506,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
         || job.effectiveContextTokens < job.requestedContextTokens || job.effectiveContextTokens > job.modelMaxContextTokens
         || requestedNewLoad && job.effectiveContextTokens !== job.requestedContextTokens
         || echoedContextTokens !== null && echoedContextTokens !== job.effectiveContextTokens) {
-        throw fault('LM_CONTEXT_UNCONFIRMED', 'LM Studio did not verify the requested context on the exact loaded instance. Inspect its context setting; Velorn will not automatically retry or unload the model.')
+        throw fault('LM_CONTEXT_UNCONFIRMED', 'LM Studio did not verify the requested context on the exact loaded instance. Inspect its context setting; Belrog will not automatically retry or unload the model.')
       }
       await live(job.owner, 'load-background'); checkAbort(signal)
       commitGuard(job.owner, 'load-commit')
@@ -515,7 +515,7 @@ function createLmStudioModelSetup({ confirm, assertCanStart = async () => {}, as
     } catch (error) {
       job.state = 'completed'; job.contextVerified = false; job.error = safeError(error)
       if (['MODEL_CHANGED', 'DESTINATION_CHANGED', 'ENOENT', 'UNSAFE_DESTINATION'].includes(error?.code)) job.invalidated = true
-      if (job.uncertain) job.warning = 'LM Studio may have accepted the load. Velorn will not automatically repeat or unload it; inspect LM Studio first.'
+      if (job.uncertain) job.warning = 'LM Studio may have accepted the load. Belrog will not automatically repeat or unload it; inspect LM Studio first.'
     } finally { job.operation.close() }
   }
   async function load(args, owner) {

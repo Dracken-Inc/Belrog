@@ -8,7 +8,7 @@ const { readConfig } = require('./remoteCompanionDesktop.cjs');
 const MAX_RESPONSE = 32 * 1024;
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const name = value => typeof value === 'string' && value.length > 0 && value.length <= 120 && !/[\u0000-\u001f\u007f]/.test(value);
-function unavailable() { return new Error('Velorn account requests could not be checked. Try again from Velorn.'); }
+function unavailable() { return new Error('Belrog account requests could not be checked. Try again from Belrog.'); }
 function requestJson({ url, token, body, signal }) {
   return new Promise((resolve, reject) => {
     const contents = JSON.stringify(body);

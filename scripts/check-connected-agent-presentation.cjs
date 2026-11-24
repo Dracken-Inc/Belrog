@@ -113,7 +113,7 @@ async function main() {
     await page.locator('select[aria-label="Model"] option[value="fixture-codex-fast"]').waitFor({ state: 'attached' })
     await page.getByLabel('Model', { exact: true }).selectOption('fixture-codex-fast')
     await button('Assistant settings').click()
-    await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Research & setup', exact: true }).check()
     await button('Back to chat').click()
 

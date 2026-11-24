@@ -671,7 +671,7 @@ test('real native IPC and hub resume browser-approved paused setup with stable o
   assert.equal(saved.computer.token, original.setup.token);
   assert.equal(saved.enabled, true);
   assert.equal(dialogs.length, 1);
-  assert.equal(dialogs[0].title, 'Connect this computer to your Velorn account?');
+  assert.equal(dialogs[0].title, 'Connect this computer to your Belrog account?');
   assert.equal(dialogs[0].checkboxLabel, undefined, 'guided resume does not enable legacy LAN sharing');
   assert.ok(events.some(value => value.type === 'status' && value.status.guided?.registered));
 });
@@ -702,7 +702,7 @@ test('real native IPC can remove a paused account without restoring sharing or c
   assert.equal(result.status.enabled, false);
   assert.equal((await call('preference')).enabled, false);
   assert.equal(dialogs.length, 1);
-  assert.equal(dialogs[0].title, 'Disconnect Velorn account?');
+  assert.equal(dialogs[0].title, 'Disconnect Belrog account?');
   assert.deepEqual(f.calls.slice(before.calls).map(item => item.route), ['/account/desktop/guided/unregister']);
   assert.equal(f.adapters.length, before.adapters);
   assert.equal(f.opens.length, before.opens);

@@ -74,7 +74,7 @@ async function runElectron() {
       }
       if (!['/', '/frame', '/foreign', '/favicon.ico'].includes(request.url)) { response.writeHead(404); response.end(); return }
       response.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'self'" })
-      response.end('<!doctype html><html><body><h1>Velorn synthetic spending IPC fixture</h1><p>No project or provider is connected.</p>'
+      response.end('<!doctype html><html><body><h1>Belrog synthetic spending IPC fixture</h1><p>No project or provider is connected.</p>'
         + (request.url === '/' ? '<iframe title="Synthetic untrusted child" src="/frame"></iframe>' : '') + '</body></html>')
     })
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))

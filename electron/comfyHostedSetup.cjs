@@ -73,7 +73,7 @@ function createComfyHostedSetup({ ipcMain, app, getMainWindow, safeStorage, fs =
     const window = getMainWindow(), contents = window?.webContents, frame = contents?.mainFrame
     if (disposed || !window || window.isDestroyed() || !contents || contents.isDestroyed() || !frame
       || !nativeRead && (event?.sender !== contents || event?.senderFrame !== frame)) {
-      throw fault('COMFY_HOSTED_UNAUTHORIZED', 'Hosted setup is available only in the main Velorn desktop window.')
+      throw fault('COMFY_HOSTED_UNAUTHORIZED', 'Hosted setup is available only in the main Belrog desktop window.')
     }
     if (document && !current(document)) invalidate(document)
     if (!document) {
@@ -85,7 +85,7 @@ function createComfyHostedSetup({ ipcMain, app, getMainWindow, safeStorage, fs =
     return document
   }
   function assertCurrent(doc) {
-    if (!current(doc)) throw fault('COMFY_HOSTED_CANCELLED', 'Hosted setup was cancelled because the Velorn window changed.')
+    if (!current(doc)) throw fault('COMFY_HOSTED_CANCELLED', 'Hosted setup was cancelled because the Belrog window changed.')
   }
   function assertOperation(op) {
     assertCurrent(op.document)

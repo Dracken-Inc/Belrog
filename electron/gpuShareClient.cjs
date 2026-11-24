@@ -1,5 +1,5 @@
 'use strict'
-// This computer's two roles on the Velorn network.
+// This computer's two roles on the Belrog network.
 //
 // HOST (only while the person has switched sharing on): every few seconds tell
 // the queue what this computer offers and whether it is free, and take the next
@@ -31,12 +31,12 @@ const plain = value => value !== null && typeof value === 'object' && !Array.isA
 const fault = (code, message) => Object.assign(new Error(message), { code, publicMessage: message })
 // What the queue's refusals mean, in the person's words.
 const REFUSALS = Object.freeze({
-  unauthorized: 'Sign in to your Velorn account on this computer first.', host_unavailable: 'That computer is not available right now.',
+  unauthorized: 'Sign in to your Belrog account on this computer first.', host_unavailable: 'That computer is not available right now.',
   workflow_unavailable: 'That computer does not offer this workflow right now.', daily_limit: 'You\'ve used today\'s free jobs. Check again later.',
-  one_at_a_time: 'You already have a job on the Velorn network. Wait for it to finish.', host_busy: 'That computer has a queue. Try again in a while.',
-  network_full: 'The Velorn network is full right now. Try again in a while.', banned: 'This account can no longer send jobs on the Velorn network.',
-  unavailable: 'The Velorn network cannot take this job right now. Try again later.', too_large: 'That is too large to send.', not_found: 'That job is no longer on the Velorn network.' })
-const refused = reply => fault(`GPU_NETWORK_${String(reply?.error || 'unavailable').toUpperCase()}`, REFUSALS[reply?.error] || 'The Velorn network could not do that right now.')
+  one_at_a_time: 'You already have a job on the Belrog network. Wait for it to finish.', host_busy: 'That computer has a queue. Try again in a while.',
+  network_full: 'The Belrog network is full right now. Try again in a while.', banned: 'This account can no longer send jobs on the Belrog network.',
+  unavailable: 'The Belrog network cannot take this job right now. Try again later.', too_large: 'That is too large to send.', not_found: 'That job is no longer on the Belrog network.' })
+const refused = reply => fault(`GPU_NETWORK_${String(reply?.error || 'unavailable').toUpperCase()}`, REFUSALS[reply?.error] || 'The Belrog network could not do that right now.')
 const pieceCount = bytes => Math.ceil(bytes / PIECE)
 
 const OWN_ID = /^own-[a-f0-9]{16}$/
@@ -59,12 +59,12 @@ function ownChoices(input, { lyrics: takesLyrics = false } = {}) {
   return { prompt, seed, ...(lyrics.trim() ? { lyrics: lyrics.trim() } : {}), ...(seconds !== null ? { seconds } : {}) }
 }
 
-function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirmJob = async () => false, getComputerName = () => 'A Velorn computer', getOwn = () => null,
+function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirmJob = async () => false, getComputerName = () => 'A Belrog computer', getOwn = () => null,
   onChange = () => {}, now = Date.now, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
-  if (typeof host?.status !== 'function' || typeof host.getSettings !== 'function' || typeof host.idle !== 'function' || typeof runner?.run !== 'function' || typeof getNetwork !== 'function') throw new TypeError('The Velorn network client needs the sharing choices, the job runner and the service connection.')
+  if (typeof host?.status !== 'function' || typeof host.getSettings !== 'function' || typeof host.idle !== 'function' || typeof runner?.run !== 'function' || typeof getNetwork !== 'function') throw new TypeError('The Belrog network client needs the sharing choices, the job runner and the service connection.')
   let hosting = { connected: false, note: 'Sharing is off.', job: null, lastError: null, lastJob: null, recent: [] }
   // The last few jobs other people sent here, so the person can look back at one and report it. With a job log
-  // the picture and the clip are kept too, and the list is still there after Velorn restarts.
+  // the picture and the clip are kept too, and the list is still there after Belrog restarts.
   const remember = (job, requester, outcome, files = {}) => { if (job.requester?.sameAccount) return
     const prompt = String(job.choices?.prompt || '').slice(0, 300), hasFiles = Boolean(jobLog && (files.image || files.clip))
     hosting = { ...hosting, recent: [{ jobId: job.jobId, from: requester, prompt, outcome, at: Date.now(), reported: false, hasFiles }, ...hosting.recent.filter(item => item.jobId !== job.jobId)].slice(0, 10) }
@@ -77,7 +77,7 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
 
   async function call(route, payload, options) {
     const network = getNetwork()
-    if (typeof network?.request !== 'function') throw fault('GPU_NETWORK_SIGNED_OUT', 'Sign in to your Velorn account on this computer first.')
+    if (typeof network?.request !== 'function') throw fault('GPU_NETWORK_SIGNED_OUT', 'Sign in to your Belrog account on this computer first.')
     return network.request(route, payload, options)
   }
   async function must(route, payload, options) {
@@ -97,7 +97,7 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
       hosting = { ...hosting, job: null, lastJob: { from: requester, outcome: 'declined', reason, at: Date.now() } }; remember(job, requester, 'declined'); current = null; tell() }
     try {
       // 1. Is this still something this person allows and this computer was asked properly?
-      // One of Velorn's own that the person ticked, or one of the person's own that they chose to share.
+      // One of Belrog's own that the person ticked, or one of the person's own that they chose to share.
       let entry = getApproved(job.workflowId)
       if (entry && !settings.allowedWorkflows.includes(job.workflowId)) entry = null
       if (!entry && OWN_ID.test(job.workflowId || '')) { try { entry = (await getOwn()?.resolveShared(job.workflowId))?.entry || null } catch { entry = null } }
@@ -183,11 +183,11 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
       // An own workflow carries its fingerprint only when its owner asked for it to be open to everyone.
       const own = (offered.own || []).filter(item => status.offering.includes(item.id)).slice(0, 12).map(item => ({ id: item.id, name: item.name, shape: item.shape, ...(item.fingerprint ? { fingerprint: item.fingerprint } : {}) }))
       const reply = await call('host/heartbeat', { offering: status.offering, idle: status.idle && !current, invited: settings.invited,
-        dailyLimitPerPerson: settings.dailyLimitPerPerson, askBeforeEach: settings.askBeforeEach, name: String(getComputerName() || 'A Velorn computer').slice(0, 80),
+        dailyLimitPerPerson: settings.dailyLimitPerPerson, askBeforeEach: settings.askBeforeEach, name: String(getComputerName() || 'A Belrog computer').slice(0, 80),
         ...(own.length ? { own, ...(settings.displayName ? { maker: settings.displayName } : {}) } : {}),
         // Open to everyone is the owner's own switch; the field is sent only when it is on.
         ...(settings.everyone?.enabled ? { everyone: { perPerson: settings.everyone.perPerson, total: settings.everyone.total } } : {}) })
-      if (reply?.ok !== true) { hosting = { ...hosting, connected: false, note: REFUSALS[reply?.error] || 'The Velorn network is not reachable right now.' }; tell(); return hostState() }
+      if (reply?.ok !== true) { hosting = { ...hosting, connected: false, note: REFUSALS[reply?.error] || 'The Belrog network is not reachable right now.' }; tell(); return hostState() }
       hosting = { ...hosting, connected: true, lastError: null,
         note: !status.offering.length ? 'Sharing is on, but nothing is being offered. Allow a workflow this computer can run.' : status.idle || current ? 'Sharing is on.' : `Sharing is on, but this computer is not free. ${status.reasons.join(' ')}` }
       if (current && Array.isArray(reply.cancelled) && reply.cancelled.includes(current.jobId)) current.controller.abort()
@@ -195,7 +195,7 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
       // Take a job only when free. It runs apart from the heartbeat, which keeps going.
       if (!current && plain(reply.job) && typeof reply.job.jobId === 'string') void runOffered(reply.job, settings)
     } catch (error) {
-      hosting = { ...hosting, connected: false, note: error?.publicMessage || 'The Velorn network is not reachable right now.' }; tell()
+      hosting = { ...hosting, connected: false, note: error?.publicMessage || 'The Belrog network is not reachable right now.' }; tell()
     } finally { beating = false }
     return hostState()
   }
@@ -242,9 +242,9 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
       // An owner's own workflows: the queue's words are data, so each is checked and cut to size here.
       const own = (Array.isArray(item.own) ? item.own : []).filter(entry => plain(entry) && OWN_ID.test(entry.id || '') && offering.includes(entry.id) && Object.hasOwn(OWN_SHAPES, entry.shape) && text(entry.name, 60))
         .slice(0, 12).map(entry => ({ id: entry.id, name: text(entry.name, 60), shape: entry.shape, ...OWN_SHAPES[entry.shape] }))
-      return { hostId: item.hostId, name: String(item.name || 'A Velorn computer').slice(0, 80), idle: item.idle === true, sameAccount: item.sameAccount === true,
+      return { hostId: item.hostId, name: String(item.name || 'A Belrog computer').slice(0, 80), idle: item.idle === true, sameAccount: item.sameAccount === true,
         askBeforeEach: item.askBeforeEach === true, waiting: Number.isInteger(item.waiting) ? item.waiting : 0, ...(item.everyone === true ? { everyone: true } : {}),
-        workflows: offering.filter(id => getApproved(id)), ...(own.length ? { own, maker: text(item.maker, 40) || 'A Velorn creator' } : {}),
+        workflows: offering.filter(id => getApproved(id)), ...(own.length ? { own, maker: text(item.maker, 40) || 'A Belrog creator' } : {}),
         ...(Number.isInteger(item.remainingToday) ? { remainingToday: item.remainingToday } : {}) }
     }).filter(item => item.workflows.length || item.own)
     seenOwn.clear(); for (const item of hosts) if (item.own) seenOwn.set(item.hostId, item.own)
@@ -252,16 +252,16 @@ function createGpuShareClient({ host, runner, getNetwork, jobLog = null, confirm
   }
   // Sends one job and resolves once the picture is fully delivered to the queue.
   async function submit({ hostId, workflowId, choices, image } = {}) {
-    // Velorn's own list, or a workflow that computer's owner listed as their own the last time this account looked.
+    // Belrog's own list, or a workflow that computer's owner listed as their own the last time this account looked.
     const listed = getApproved(workflowId) ? null : (seenOwn.get(hostId) || []).find(item => item.id === workflowId)
     const entry = getApproved(workflowId) || (listed ? { needsImage: listed.needsImage, normalize: input => ownChoices(input, listed) } : null)
-    if (!entry) throw fault('GPU_SHARE_WORKFLOW_UNKNOWN', 'That workflow is not offered on the Velorn network.')
+    if (!entry) throw fault('GPU_SHARE_WORKFLOW_UNKNOWN', 'That workflow is not offered on the Belrog network.')
     const checked = entry.normalize(choices)
     // The words to sing are held to the same rules as the description.
     for (const words of [checked.prompt, checked.lyrics]) { const verdict = words ? checkPrompt(words) : { ok: true }; if (!verdict.ok) throw fault(verdict.code, verdict.reason) }
     if (entry.needsImage) checkImage(image)
     else if (image != null) throw fault('GPU_SHARE_INVALID', 'This workflow does not take a picture.')
-    if (typeof hostId !== 'string' || !/^[a-f0-9]{32}$/.test(hostId)) throw fault('GPU_SHARE_INVALID', 'Choose a computer on the Velorn network.')
+    if (typeof hostId !== 'string' || !/^[a-f0-9]{32}$/.test(hostId)) throw fault('GPU_SHARE_INVALID', 'Choose a computer on the Belrog network.')
     const { seed, ...sent } = checked
     const made = await must('submit', { hostId, workflowId, choices: seed === null ? sent : { ...sent, seed },
       ...(entry.needsImage ? { image: { mimeType: image.mimeType, bytes: image.bytes.length, pieces: pieceCount(image.bytes.length) } } : {}) })

@@ -43,7 +43,7 @@ test('conversation asks creative intent and model preference before acting witho
   assert.equal(conversation.askBeforeNextCreativeStage, true)
   assert.equal(conversation.surface, 'external-assistant-or-velorn-agent')
   assert.equal(conversation.board.mode, 'read-only-visual-board')
-  assert.match(conversation.board.navigation, /Velorn menu → Open storyboard/)
+  assert.match(conversation.board.navigation, /Belrog menu → Open storyboard/)
   assert.match(conversation.board.navigation, /does not author project data/)
   assert.match(conversation.questions, /not a questionnaire upfront/)
   assert.match(conversation.board.controls, /No required forms, selectable cards/)

@@ -1,5 +1,5 @@
 'use strict'
-// Asks Comfy for live price quotes through Velorn's own Create connection and
+// Asks Comfy for live price quotes through Belrog's own Create connection and
 // prints them beside the recorded prices. FREE: it only connects and previews.
 // It never submits a request, so no model runs and nothing is charged.
 // The key is read from a hidden prompt, kept in memory, and never written.

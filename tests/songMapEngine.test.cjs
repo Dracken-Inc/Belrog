@@ -131,7 +131,7 @@ test('a graphics-card speech program is tried first when there is one, and left 
   // The card version is offered beside the plain one, never instead of it.
   const first = await listen({ used: 'card' })
   assert.deepEqual([first.request.whisperCliPath, first.request.whisperGpuCliPath, first.result.speech], [cli, card, { used: 'card' }])
-  // It found no card: the words were heard on the processor, and it is not tried again while Velorn runs.
+  // It found no card: the words were heard on the processor, and it is not tried again while Belrog runs.
   const second = await listen({ used: 'processor', cardProblem: 'no-card' })
   assert.deepEqual([second.request.whisperGpuCliPath, second.result.speech], [card, { used: 'processor', cardProblem: 'no-card' }])
   const third = await listen({ used: 'processor' })

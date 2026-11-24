@@ -58,7 +58,7 @@ test('planning is read-only, paths redacted, metadata only, and tools stay optio
   const f = await fixture(t), plan = await planned(f)
   assert.equal(plan.download.canDownload, true)
   assert.equal(plan.download.bytes, 1024)
-  assert.match(plan.download.destination, /^Downloads\/Velorn Setup\/Comfy-Desktop-[a-f0-9-]+\.dmg$/)
+  assert.match(plan.download.destination, /^Downloads\/Belrog Setup\/Comfy-Desktop-[a-f0-9-]+\.dmg$/)
   assert.equal(JSON.stringify(plan).includes(f.root), false)
   assert.deepEqual(f.calls.map(value => value.method), ['HEAD'])
   assert.equal(f.approvals.length, 0)
@@ -72,13 +72,13 @@ test('download requires explicit native approval, then separate verified OS open
   assert.equal(job.state, 'completed', JSON.stringify(job))
   assert.equal(job.canOpen, true)
   assert.equal(f.quarantine.length, 1)
-  assert.match(f.quarantine[0].value, /^0083;[a-f0-9]+;Velorn;[a-f0-9-]+$/)
+  assert.match(f.quarantine[0].value, /^0083;[a-f0-9]+;Belrog;[a-f0-9-]+$/)
   assert.equal(f.approvals.length, 1)
   assert.equal(f.approvals[0].owner, OWNER)
   assert.equal(f.approvals[0].action, 'download')
   assert.equal(f.approvals[0].bytes, 1024)
   assert.equal(f.opens.length, 0)
-  await until(async () => (await fs.readdir(path.join(f.downloads, 'Velorn Setup'))).length === 1)
+  await until(async () => (await fs.readdir(path.join(f.downloads, 'Belrog Setup'))).length === 1)
   const result = await f.manager.open({ jobId: job.jobId }, OWNER)
   assert.equal(result.opened, true)
   assert.equal(result.installed, false)
@@ -244,7 +244,7 @@ test('symlinked download root or setup subdirectory cannot be used', async t => 
   for (const subfolder of [false, true]) {
     const f = await fixture(t), elsewhere = path.join(f.root, 'elsewhere')
     await fs.mkdir(elsewhere)
-    if (subfolder) await fs.symlink(elsewhere, path.join(f.downloads, 'Velorn Setup'))
+    if (subfolder) await fs.symlink(elsewhere, path.join(f.downloads, 'Belrog Setup'))
     else { await fs.rmdir(f.downloads); await fs.symlink(elsewhere, f.downloads) }
     assert.equal((await planned(f)).download.canDownload, false)
     assert.deepEqual(await fs.readdir(elsewhere), [])
@@ -278,7 +278,7 @@ test('download byte cap, truncation, changed size and invalid DMG all fail close
     assert.equal(job.state, 'failed', JSON.stringify(job))
     assert.equal(job.canOpen, false)
     assert.equal((await f.manager.open({ jobId: job.jobId }, OWNER)).code, 'NOT_COMPLETED')
-    await until(async () => !(await fs.readdir(path.join(f.downloads, 'Velorn Setup'))).length)
+    await until(async () => !(await fs.readdir(path.join(f.downloads, 'Belrog Setup'))).length)
   }
 })
 
@@ -298,7 +298,7 @@ test('quarantine marking is mandatory and failures never promote an openable DMG
     assert.equal(job.error.code, 'QUARANTINE_FAILED')
     assert.equal(job.canOpen, false)
     assert.doesNotMatch(JSON.stringify(job), /private/)
-    await until(async () => !(await fs.readdir(path.join(f.downloads, 'Velorn Setup'))).length)
+    await until(async () => !(await fs.readdir(path.join(f.downloads, 'Belrog Setup'))).length)
   }
 })
 
@@ -308,7 +308,7 @@ test('content or inode changes during quarantine marking are caught before promo
   } }), job = await completed(f)
   assert.equal(job.state, 'failed')
   assert.equal(job.error.code, 'INSTALLER_CHANGED')
-  await until(async () => !(await fs.readdir(path.join(f.downloads, 'Velorn Setup'))).length)
+  await until(async () => !(await fs.readdir(path.join(f.downloads, 'Belrog Setup'))).length)
 })
 
 test('changed root mid-stream never promotes or deletes a replacement file', async t => {
@@ -318,9 +318,9 @@ test('changed root mid-stream never promotes or deletes a replacement file', asy
     const body = Readable.from((async function* () {
       const old = path.join(f.root, 'saved-original-downloads')
       await fs.rename(f.downloads, old)
-      await fs.mkdir(path.join(f.downloads, 'Velorn Setup'), { recursive: true })
-      const partial = (await fs.readdir(path.join(old, 'Velorn Setup'))).find(value => value.endsWith('.partial'))
-      await fs.writeFile(path.join(f.downloads, 'Velorn Setup', partial), 'unrelated-replacement')
+      await fs.mkdir(path.join(f.downloads, 'Belrog Setup'), { recursive: true })
+      const partial = (await fs.readdir(path.join(old, 'Belrog Setup'))).find(value => value.endsWith('.partial'))
+      await fs.writeFile(path.join(f.downloads, 'Belrog Setup', partial), 'unrelated-replacement')
       yield dmg()
     })())
     return response(dmg(), { body })
@@ -328,9 +328,9 @@ test('changed root mid-stream never promotes or deletes a replacement file', asy
   const job = await completed(f)
   assert.equal(job.state, 'failed')
   assert.equal(job.error.code, 'DESTINATION_CHANGED')
-  const files = await fs.readdir(path.join(f.downloads, 'Velorn Setup'))
+  const files = await fs.readdir(path.join(f.downloads, 'Belrog Setup'))
   assert.equal(files.length, 1)
-  assert.equal(await fs.readFile(path.join(f.downloads, 'Velorn Setup', files[0]), 'utf8'), 'unrelated-replacement')
+  assert.equal(await fs.readFile(path.join(f.downloads, 'Belrog Setup', files[0]), 'utf8'), 'unrelated-replacement')
   assert.match(job.warning, /left untouched/)
 })
 
@@ -357,7 +357,7 @@ test('cancel aborts slow stream and cleans only the owned partial; foreign IDs n
   assert.equal((await f.manager.status({ jobId: job.jobId }, 'foreign')).code, 'UNKNOWN_JOB')
   assert.equal((await f.manager.open({ jobId: job.jobId }, 'foreign')).code, 'UNKNOWN_JOB')
   assert.equal((await f.manager.cancel({ jobId: job.jobId }, OWNER)).state, 'cancelled')
-  assert.deepEqual(await fs.readdir(path.join(f.downloads, 'Velorn Setup')), [])
+  assert.deepEqual(await fs.readdir(path.join(f.downloads, 'Belrog Setup')), [])
 })
 
 test('one active job and owner cancellation, including approval invalidation', async t => {
@@ -392,7 +392,7 @@ test('open decline, changed file/digest, and OS failure are never reported as in
   approve = false
   assert.equal((await f.manager.open({ jobId: job.jobId }, OWNER)).code, 'DECLINED')
   approve = true
-  const folder = path.join(f.downloads, 'Velorn Setup')
+  const folder = path.join(f.downloads, 'Belrog Setup')
   const filename = (await fs.readdir(folder)).find(value => value.endsWith('.dmg'))
   const handle = await fs.open(path.join(folder, filename), 'r+')
   await handle.write(Buffer.from([9]), 0, 1, 0); await handle.close()

@@ -21,7 +21,7 @@ function createCrashRecovery({ app, crashReporter, dialog, shell, versions = pro
     } catch (error) { console.warn('[Crash diagnostics] Could not write event:', error.message) }
   }
   try {
-    crashReporter.start({ productName: 'Velorn', uploadToServer: false, ignoreSystemCrashHandler: false })
+    crashReporter.start({ productName: 'Belrog', uploadToServer: false, ignoreSystemCrashHandler: false })
   } catch (error) { record('reporter-start-failed', { reason: error.message }) }
   app.on('will-quit', () => { quitting = true })
   app.on('child-process-gone', (_event, details) => record('child-process-gone', details))
@@ -33,9 +33,9 @@ function createCrashRecovery({ app, crashReporter, dialog, shell, versions = pro
       pending = true
       try {
         const { response } = await dialog.showMessageBox(window, {
-          type: 'error', title: 'Velorn needs to recover', message: 'The Velorn display process stopped.',
+          type: 'error', title: 'Belrog needs to recover', message: 'The Belrog display process stopped.',
           detail: `Reason: ${details.reason} (exit ${details.exitCode}).\n\nReload restores the interface; reopen your saved project if needed. Changes since the last save may be lost. Running external generations may continue—inspect their status before retrying.\n\nCrash reports stay on this computer and are not uploaded. Dumps may contain sensitive in-memory data; review before sharing.\nDiagnostics: ${directory}\nCrash dumps: ${app.getPath('crashDumps')}`,
-          buttons: ['Reload Velorn', 'Open diagnostics', 'Leave open'], defaultId: 0, cancelId: 2, noLink: true,
+          buttons: ['Reload Belrog', 'Open diagnostics', 'Leave open'], defaultId: 0, cancelId: 2, noLink: true,
         })
         if (quitting || window.isDestroyed() || window.webContents.isDestroyed()) return
         if (response === 0) window.webContents.reload()

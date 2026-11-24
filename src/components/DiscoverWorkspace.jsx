@@ -167,7 +167,7 @@ function VideoPlayerModal({ item, onClose }) {
             {t(
               'discover.player.privacy',
               undefined,
-              'Thumbnails are provided by YouTube. Velorn loads the player only after you choose to watch a video.',
+              'Thumbnails are provided by YouTube. Belrog loads the player only after you choose to watch a video.',
             )}
           </p>
           <button
@@ -215,7 +215,7 @@ export default function DiscoverWorkspace({ onClose }) {
               {t(
                 'discover.subtitle',
                 undefined,
-                'Short videos that teach Velorn, one part at a time.',
+                'Short videos that teach Belrog, one part at a time.',
               )}
             </p>
             <p className="mt-1 text-[11px] leading-relaxed text-sf-text-secondary">

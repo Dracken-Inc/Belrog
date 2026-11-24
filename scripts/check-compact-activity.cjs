@@ -49,7 +49,7 @@ async function main() {
     })
     await button('Assistant').click(); await button('Choose Velo').click()
     await page.getByText('Velo ready', { exact: true }).waitFor()
-    await button('Assistant settings').click(); await button('Work in Velorn').click(); await button('Back to chat').click()
+    await button('Assistant settings').click(); await button('Work in Belrog').click(); await button('Back to chat').click()
     const baseline = await snapshot()
     const id = await send('Inspect these synthetic workflows, then ask which reference image to use.')
     await emit(id, [

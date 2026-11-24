@@ -2,10 +2,10 @@ import { useEffect } from 'react'
 import useProjectStore from '../stores/projectStore'
 import { velornNetwork, saveNetworkResult } from '../services/velornNetwork'
 
-// Always mounted, shows nothing. A clip being made on the Velorn network is
+// Always mounted, shows nothing. A clip being made on the Belrog network is
 // followed and saved into the open project even when the Create tab is closed,
-// and a job left from before Velorn was restarted is picked up again.
-export default function VelornNetworkSaver() {
+// and a job left from before Belrog was restarted is picked up again.
+export default function BelrogNetworkSaver() {
   const projectPath = useProjectStore(state => (typeof state.currentProjectHandle === 'string' ? state.currentProjectHandle : state.currentProject?.name || ''))
   useEffect(() => { void velornNetwork.resume() }, [projectPath])
   // A job the paired phone sent is followed and saved here like one sent from this window.

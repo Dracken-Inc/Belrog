@@ -1309,7 +1309,7 @@ function AssetsPanel({ isActive = true }) {
       if (plan) {
         if (JSON.stringify(plan) !== JSON.stringify(getPlan())) throw new Error('Media paths or shared-file references changed. Please review the removal again.')
         nativeTrashBusyRef.current = true
-        setConfirmDialog({ title: 'Moving files to Trash…', message: 'Please wait. Keep Velorn open until this finishes.', confirmLabel: 'Working…', cancelLabel: 'Please wait', tone: 'info', busy: true })
+        setConfirmDialog({ title: 'Moving files to Trash…', message: 'Please wait. Keep Belrog open until this finishes.', confirmLabel: 'Working…', cancelLabel: 'Please wait', tone: 'info', busy: true })
         let result
         try { result = await trashAssetRemovalPlan(plan) }
         finally {

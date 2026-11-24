@@ -154,7 +154,7 @@ test('source patch removes WebP linkage and exposes PNG-only stb paths', () => {
   assert.match(patch, /^\+#define STBI_ONLY_PNG/m)
   assert.match(patch, /^\+\s+int success = stbi_write_png_to_func\(/m)
   assert.match(patch, /^\+\s+if \(format != PATHSTR\("png"\)\)/m)
-  assert.match(patch, /Velorn secure build: PNG input and output only; WebP is disabled\./)
+  assert.match(patch, /Belrog secure build: PNG input and output only; WebP is disabled\./)
   assert.match(patch, /case L'h':\n\+\s+print_usage\(\);\n\+\s+return 0;/)
   assert.match(patch, /case 'h':\n\+\s+print_usage\(\);\n\+\s+return 0;/)
 })
@@ -285,9 +285,9 @@ test('stage verifier rejects self-consistent provenance for untrusted model byte
   fs.mkdirSync(path.join(stage, 'licenses'), { recursive: true })
   if (process.platform === 'linux' && fs.existsSync('/bin/true')) {
     fs.copyFileSync('/bin/true', path.join(stage, 'rife-ncnn-vulkan'))
-    fs.appendFileSync(path.join(stage, 'rife-ncnn-vulkan'), '\nVelorn secure build: PNG input and output only; WebP is disabled.\n')
+    fs.appendFileSync(path.join(stage, 'rife-ncnn-vulkan'), '\nBelrog secure build: PNG input and output only; WebP is disabled.\n')
   } else {
-    fs.writeFileSync(path.join(stage, 'rife-ncnn-vulkan'), Buffer.from('Velorn secure build: PNG input and output only; WebP is disabled.\n'))
+    fs.writeFileSync(path.join(stage, 'rife-ncnn-vulkan'), Buffer.from('Belrog secure build: PNG input and output only; WebP is disabled.\n'))
   }
   fs.chmodSync(path.join(stage, 'rife-ncnn-vulkan'), 0o755)
   fs.writeFileSync(path.join(stage, 'rife-v4.6', 'flownet.bin'), Buffer.from('model-bin'))

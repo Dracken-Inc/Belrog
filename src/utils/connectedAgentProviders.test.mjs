@@ -6,14 +6,14 @@ import { agentEntryReadiness } from './agentEntryGuide.mjs'
 
 test('Velo is a display name, not a provider, model, history or consent migration', () => {
   assert.equal(connectedAgentProviderLabel('luna'), 'Velo')
-  assert.equal(VELO_DESCRIPTION, 'Velorn’s built-in AI assistant.')
+  assert.equal(VELO_DESCRIPTION, 'Belrog’s built-in AI assistant.')
   assert.equal(connectedAgentProviderLabel('velo'), 'Unknown provider')
   assert.equal(connectedAgentProviderLabel('codex'), 'Codex')
   assert.equal(connectedAgentProviderLabel('lmstudio'), 'LM Studio')
   assert.equal(connectedAgentProviderLabel('vee'), 'Unknown provider')
   assert.equal(fundedLunaModels()[0].id, 'gpt-6-luna')
   assert.equal(fundedLunaModels()[0].displayName, 'GPT-6 Luna')
-  assert.match(FUNDED_LUNA_DISCLOSURE, /Velorn service and OpenAI/)
+  assert.match(FUNDED_LUNA_DISCLOSURE, /Belrog service and OpenAI/)
   assert.match(FUNDED_LUNA_DISCLOSURE, /funded allowance/)
   for (const status of ['not-eligible', 'exhausted', 'unavailable']) assert.match(fundedLunaAvailability({ status }).message, /Velo/)
 })

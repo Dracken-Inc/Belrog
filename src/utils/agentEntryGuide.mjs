@@ -5,7 +5,7 @@ const modelId = value => typeof value === 'string' && value.length > 0 && value.
 export function agentEntryReadiness(result, { provider, model = '' } = {}) {
   if (provider === 'luna') {
     if (result?.success === true && result.provider === 'luna' && result.available === true && result.eligible === true) return { phase: 'ready' }
-    return { phase: 'problem', reason: 'Velo is available only to approved Velorn accounts with a remaining allowance. Check the connection; no Codex installation or login is needed.' }
+    return { phase: 'problem', reason: 'Velo is available only to approved Belrog accounts with a remaining allowance. Check the connection; no Codex installation or login is needed.' }
   }
   if (provider === 'codex') {
     if (result?.success === true && result.available === true) return { phase: 'ready', codexState: 'ready' }

@@ -14,12 +14,12 @@ function imageExtension(bytes) {
   throw Error('Codex returned an unsupported or incomplete image.')
 }
 function toolBody(result) {
-  if (result?.isError) throw Error('Velorn could not import the generated image. Inspect the recorded import result before retrying.')
+  if (result?.isError) throw Error('Belrog could not import the generated image. Inspect the recorded import result before retrying.')
   for (const block of result?.content || []) {
     if (block.type !== 'text') continue
     let body
     try { body = JSON.parse(block.text) } catch { continue }
-    if (body.success === false || body.result?.success === false) throw Error('Velorn could not import the generated image. Inspect the recorded import result before retrying.')
+    if (body.success === false || body.result?.success === false) throw Error('Belrog could not import the generated image. Inspect the recorded import result before retrying.')
     if (body.result?.asset) return body.result
     if (body.asset) return body
   }
@@ -53,7 +53,7 @@ async function receiveGeneratedImage(item, { toolSession, onReview = () => {}, s
   let imported
   try {
     check()
-    if (!toolSession) throw Error('Enable Velorn tools and open a saved project to import this image.')
+    if (!toolSession) throw Error('Enable Belrog tools and open a saved project to import this image.')
     imported = toolBody(await toolSession.callTool('import_asset_from_path', {
       path: source, category: 'images', asSequence: false, folderPath: 'Generated Images/GPT Image', previewOnly: false,
     }))

@@ -45,7 +45,7 @@ export default function ToolSetupAssistant({ integration, name, disabled = false
   }, [integration])
   const current = token => alive.current && version.current === token
   const requireMethod = method => {
-    if (typeof api?.[method] !== 'function') throw new Error('Fully quit and reopen the latest Velorn build to use guided tool setup.')
+    if (typeof api?.[method] !== 'function') throw new Error('Fully quit and reopen the latest Belrog build to use guided tool setup.')
     return api[method]
   }
   const acceptJob = (result, expectedId) => {
@@ -207,7 +207,7 @@ export default function ToolSetupAssistant({ integration, name, disabled = false
           {pollFailed && <button type="button" disabled={buttonDisabled} onClick={() => void run('status', refreshJob)}>Check download progress</button>}
           {job.state === 'completed' && job.canOpen === true && <button type="button" disabled={buttonDisabled} onClick={() => void openInstaller()}>Open installer</button>}
         </div>
-        <p className="optional-setup-hint">Closing setup stops these progress checks, not the download. Review setup to reconnect to this receipt during this Velorn session.</p>
+        <p className="optional-setup-hint">Closing setup stops these progress checks, not the download. Review setup to reconnect to this receipt during this Belrog session.</p>
       </div>}
       {error && <p className="optional-setup-error" role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}

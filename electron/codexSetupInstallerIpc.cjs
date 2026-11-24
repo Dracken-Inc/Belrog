@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto')
 const { createCodexSetupInstaller } = require('./codexSetupInstaller.cjs')
 const METHODS = ['plan', 'install', 'status', 'cancel']
 const CHANNELS = Object.freeze(Object.fromEntries(METHODS.map(name => [name, `codex-setup-installer:${name}`])))
-const failure = () => ({ success: false, code: 'UNAUTHORIZED', error: 'Reopen Codex setup in the main Velorn window.' })
+const failure = () => ({ success: false, code: 'UNAUTHORIZED', error: 'Reopen Codex setup in the main Belrog window.' })
 
 // Desktop-only authority. No URL/path/owner accepted from renderer or tools.
 function registerCodexSetupInstallerIpc({ ipcMain, app, dialog, getMainWindow, inspectExisting,

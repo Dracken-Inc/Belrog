@@ -44,7 +44,7 @@ test('profile uses only verified native account identity, never computer or devi
 test('phone registration is not presented as browser or provider sign-in', () => {
   assert.equal(desktopAccountStatus(null), 'Sign in for Velo access and phone connections. Velo availability depends on your account.')
   assert.equal(desktopAccountStatus({ guided: { phase: 'sign-in' } }), 'Finish signing in in your browser.')
-  assert.equal(desktopAccountStatus({ guided: { phase: 'confirm-account' } }), 'Confirm your Velorn account in the desktop prompt.')
+  assert.equal(desktopAccountStatus({ guided: { phase: 'confirm-account' } }), 'Confirm your Belrog account in the desktop prompt.')
   assert.equal(desktopAccountStatus({ guided: { registered: true, enabled: false } }), 'Signed in. Phone sharing is off.')
   assert.equal(desktopAccountStatus({ guided: { registered: true, enabled: true, automaticAvailable: true } }), 'Ready for your phone.')
   assert.equal(desktopAccountStatus({ guided: { registered: true, enabled: true, phase: 'reconnecting' } }), 'Reconnecting to the phone service…')

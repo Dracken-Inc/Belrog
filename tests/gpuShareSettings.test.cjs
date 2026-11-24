@@ -1,5 +1,5 @@
 'use strict'
-// The host's own sharing choices for the Velorn network: off by default, checked
+// The host's own sharing choices for the Belrog network: off by default, checked
 // as a whole, saved privately, and honest about what this computer can offer.
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -18,13 +18,13 @@ async function fixture(t, { queue = { queue_running: [], queue_pending: [] }, ca
   return { dir, state, make, host: make() }
 }
 
-test('sharing is off until the person switches it on, and Velorn offers no workflows of its own', async t => {
+test('sharing is off until the person switches it on, and Belrog offers no workflows of its own', async t => {
   const f = await fixture(t)
   assert.deepEqual(await f.host.getSettings(), { version: 1, enabled: false, allowedWorkflows: [], invited: [], askBeforeEach: true, dailyLimitPerPerson: 2, displayName: '', everyone: { enabled: false, perPerson: 2, total: 20 } })
   const status = await f.host.status()
   assert.equal(status.idle, true); assert.deepEqual([status.offering, status.offers, status.ownOffering], [[], [], []])
   assert.equal(status.network.connected, false); assert.match(status.network.note, /Not connected/)
-  // A built-in workflow that was ticked in an earlier Velorn is not offered any more, sharing on or off.
+  // A built-in workflow that was ticked in an earlier Belrog is not offered any more, sharing on or off.
   await f.host.updateSettings({ enabled: true, allowedWorkflows: ['ltx23-i2v', 'h3-t2i'] })
   assert.deepEqual([(await f.host.status()).offering, f.state.asked], [[], []], 'nothing is offered and ComfyUI is not even asked about them')
 })
@@ -65,14 +65,14 @@ test('this computer says why it is not free', async t => {
   assert.deepEqual(down.state.asked, [], 'ComfyUI is not asked about workflows while it is not running')
 })
 
-test('only the main Velorn window can read or change the choices', async t => {
+test('only the main Belrog window can read or change the choices', async t => {
   const f = await fixture(t)
   const handlers = new Map(), contents = { mainFrame: {} }, window = { isDestroyed: () => false, webContents: contents }
   const ipc = registerGpuShareIpc({ ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), removeHandler: channel => handlers.delete(channel) }, getMainWindow: () => window, host: f.host })
   const ours = { sender: contents, senderFrame: contents.mainFrame }
   assert.equal((await handlers.get('gpu-share:status')(ours)).success, true)
   assert.equal((await handlers.get('gpu-share:update')(ours, { enabled: true })).settings.enabled, true)
-  assert.deepEqual(await handlers.get('gpu-share:update')(ours, { allowedWorkflows: ['nope'] }), { success: false, error: 'Only workflows on the Velorn network list can be shared.' })
+  assert.deepEqual(await handlers.get('gpu-share:update')(ours, { allowedWorkflows: ['nope'] }), { success: false, error: 'Only workflows on the Belrog network list can be shared.' })
   for (const event of [{ sender: {}, senderFrame: contents.mainFrame }, { sender: contents, senderFrame: {} }, {}]) {
     assert.equal((await handlers.get('gpu-share:status')(event)).success, false)
     assert.equal((await handlers.get('gpu-share:update')(event, { enabled: false })).success, false)

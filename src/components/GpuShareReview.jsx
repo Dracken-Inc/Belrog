@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openApiWorkflowInComfyUi } from '../services/workflowSetupManager'
 
-// The review list, for the accounts the Velorn service lists as reviewers.
+// The review list, for the accounts the Belrog service lists as reviewers.
 // Workflows their owners want open to everyone wait here, and so do the jobs
 // hosts reported. Shown only when the service says this account is a reviewer.
 const box = 'rounded-lg border border-sf-dark-700 bg-sf-dark-900 p-3 flex flex-col gap-2 min-w-0'
@@ -96,7 +96,7 @@ export default function GpuShareReview() {
   return <section className={box} aria-label="Review" data-testid="gpu-review">
     <div className="flex items-center justify-between gap-2"><h3 className={heading}>Review{waiting ? ` · ${waiting} waiting` : ''}</h3>
       <button type="button" className={button} disabled={busy} onClick={() => void load()}>Check again</button></div>
-    <p className={quiet}>Only you see this. A workflow is open to every Velorn user once you approve it, in exactly the version you looked at. You can try it on its owner’s computer and open it in ComfyUI before you decide.</p>
+    <p className={quiet}>Only you see this. A workflow is open to every Belrog user once you approve it, in exactly the version you looked at. You can try it on its owner’s computer and open it in ComfyUI before you decide.</p>
     {data.items.length === 0 ? <p className={quiet}>Nothing has been sent for review yet.</p>
       : <ul className="flex flex-col gap-2 min-w-0">{data.items.map(item => <li key={item.sid} className="rounded-md bg-sf-dark-800 px-2.5 py-2 flex flex-col gap-2 min-w-0">
         <div className="flex gap-2.5 min-w-0">
@@ -104,7 +104,7 @@ export default function GpuShareReview() {
           <div className="min-w-0 flex-1 flex flex-col gap-0.5">
             <div className="flex items-baseline justify-between gap-2 min-w-0"><span className="text-sm font-medium break-words min-w-0">{item.name}</span>
               <span className="flex-none text-[11px] text-sf-text-muted">{STATUS[item.status]}</span></div>
-            <p className={`${quiet} break-words`}>{SHAPE[item.shape]} · by {item.maker || 'A Velorn creator'}{item.email ? ` · ${item.email}` : ''}</p>
+            <p className={`${quiet} break-words`}>{SHAPE[item.shape]} · by {item.maker || 'A Belrog creator'}{item.email ? ` · ${item.email}` : ''}</p>
             {item.reports > 0 && <p className="text-xs text-sf-warning">{item.reports} {item.reports === 1 ? 'person' : 'people'} who used it reported it.</p>}
             {item.note && <p className={`${quiet} break-words`}>Note: {item.note}</p>}
             {!item.hasExample && <p className={quiet}>No example picture came with it.</p>}

@@ -193,7 +193,7 @@ async function main() {
         diagnostics: { httpStatus: 403, errorType: 'not_enabled', requestId: 'c673156d-cbe2-4c55-bf73-b9b4dd5824ad' } })
       window.routerPanelTest.addJob({ jobId: 'job-legacy-rejected', status: 'FAILED', errorType: 'REQUEST_REJECTED',
         outputAvailable: false, canRefresh: false, needsReconnect: false, submissionRejected: true,
-        errorMessage: 'The earlier submission was rejected. Detailed provider error information was not recorded by that Velorn version.' })
+        errorMessage: 'The earlier submission was rejected. Detailed provider error information was not recorded by that Belrog version.' })
     })
     const rejected = page.getByRole('article', { name: 'Image request job-rejected', exact: true })
     const legacy = page.getByRole('article', { name: 'Image request job-legacy-rejected', exact: true })

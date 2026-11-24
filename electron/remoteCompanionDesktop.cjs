@@ -143,7 +143,7 @@ function createRemoteCompanionServer(options, { configPath, allowLocalTest = fal
     getStatus, isCurrentScope: (...args) => local.isCurrentScope(...args),
     async hasRemoteConfiguration() { try { return Boolean(await readConfig(configPath, allowLocalTest)); } catch { return false; } },
     async reviewPhoneAccountRequests({ confirm, isCurrent = () => true }) {
-      if (accountReview || !local.getStatus().enabled) throw Error('Velorn account review is unavailable.');
+      if (accountReview || !local.getStatus().enabled) throw Error('Belrog account review is unavailable.');
       const controller = new AbortController(), version = generation;
       accountReview = controller;
       try {

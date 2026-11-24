@@ -141,7 +141,7 @@ test('main editor may cancel UI or MCP exports before worker readiness; MCP job 
   for (const owner of ['ui', 'mcp']) {
     const h = harness()
     await h.run(owner, owner)
-    await assert.rejects(h.call('export:cancel', undefined, { id: 99 }), /Only the Velorn editor/)
+    await assert.rejects(h.call('export:cancel', undefined, { id: 99 }), /Only the Belrog editor/)
     assert.equal(h.registry.get(owner).status, 'running')
     assert.equal((await h.call('export:cancel')).cancelled, true)
     h.emit('export:workerReady')

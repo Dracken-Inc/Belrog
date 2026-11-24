@@ -201,7 +201,7 @@ function createToolResultStore({ maxStoredBytes = LIMITS.storedBytes, maxResults
     // caller-supplied IDs, offsets, paths, or exception messages into feedback.
     const messages = {
       LOCAL_TOOL_RESULT_NOT_FOUND: 'That result ID is not retained in this turn. Copy an exact resultId from an excerpt or availableResults below.',
-      LOCAL_TOOL_RESULT_ARGUMENTS: 'Use resultId and, if seeking, an in-range integer offset. Omit offset to read the next unread page. Velorn manages the bounded page size.',
+      LOCAL_TOOL_RESULT_ARGUMENTS: 'Use resultId and, if seeking, an in-range integer offset. Omit offset to read the next unread page. Belrog manages the bounded page size.',
       LOCAL_TOOL_RESULT_DISPOSED: 'This turn has ended. Its result pages are no longer available.',
       LOCAL_TOOL_RESULT_NOT_ADVERTISED: 'The page reader was not available to this prediction. It only becomes available after a result is retained for paging.',
     }

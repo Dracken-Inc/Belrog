@@ -355,7 +355,7 @@ test('authenticated bundled access action is one-use without a second phone conf
   assert.equal((await f.invoke('preference')).enabled,false)
 })
 
-test('LM Studio phone controls expose and dispatch Full Velorn access', async t => {
+test('LM Studio phone controls expose and dispatch Full Belrog access', async t => {
   const f = await fixture(t, true), snapshot = controlSnapshot({ protocol: 3, provider: 'lmstudio' })
   const status = await f.enable(FIRST_SCOPE, snapshot)
   const token = (await request(status, '/api/pair', { value: { code: status.pairingCode } })).body.token

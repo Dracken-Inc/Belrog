@@ -75,7 +75,7 @@ function isDesktopRuntime() {
 async function analyzeNative(source, options) {
   const bridge = window.electronAPI
   if (typeof bridge?.analyzeAudio !== 'function') {
-    throw new Error('Native audio analysis is unavailable. Restart or update Velorn and try again.')
+    throw new Error('Native audio analysis is unavailable. Restart or update Belrog and try again.')
   }
   const response = await bridge.analyzeAudio({ source, options })
   if (!response?.success || !response.analysis || typeof response.analysis !== 'object' || Array.isArray(response.analysis)) {
@@ -95,12 +95,12 @@ async function fetchBrowserSourceBytes(url) {
   const declaredLength = Number(response.headers?.get?.('content-length'))
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BROWSER_SOURCE_BYTES) {
     await response.body?.cancel?.()
-    throw new Error('Browser audio analysis is limited to 32 MiB sources. Use the Velorn desktop app.')
+    throw new Error('Browser audio analysis is limited to 32 MiB sources. Use the Belrog desktop app.')
   }
   // Read incrementally so a missing or inaccurate Content-Length cannot cause
   // an unbounded renderer allocation. Modern fetch responses expose a stream.
   if (!response.body?.getReader) {
-    throw new Error('Bounded browser audio loading is unavailable. Use the Velorn desktop app.')
+    throw new Error('Bounded browser audio loading is unavailable. Use the Belrog desktop app.')
   }
   const reader = response.body.getReader()
   const chunks = []
@@ -112,7 +112,7 @@ async function fetchBrowserSourceBytes(url) {
       length += value.byteLength
       if (length > MAX_BROWSER_SOURCE_BYTES) {
         await reader.cancel()
-        throw new Error('Browser audio analysis is limited to 32 MiB sources. Use the Velorn desktop app.')
+        throw new Error('Browser audio analysis is limited to 32 MiB sources. Use the Belrog desktop app.')
       }
       chunks.push(value)
     }
@@ -142,7 +142,7 @@ async function analyzeBrowser(source, options) {
     }
     if (!Number.isFinite(buffer.duration) || buffer.duration > MAX_ANALYSIS_SECONDS ||
         buffer.numberOfChannels > 2 || buffer.sampleRate > 48000) {
-      throw new Error('Browser audio analysis needs a source of at most 10 minutes and two channels. Use the Velorn desktop app.')
+      throw new Error('Browser audio analysis needs a source of at most 10 minutes and two channels. Use the Belrog desktop app.')
     }
     return analyzeAudioBuffer(buffer, options)
   } finally {

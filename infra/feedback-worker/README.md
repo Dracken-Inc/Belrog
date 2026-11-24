@@ -1,4 +1,4 @@
-# Velorn Feedback Relay
+# Belrog Feedback Relay
 
 A tiny Cloudflare Worker that receives feedback from the in-app **Settings >
 Send Feedback** form and forwards it to a private Discord channel. The Discord

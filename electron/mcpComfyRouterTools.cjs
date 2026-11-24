@@ -16,12 +16,12 @@ const previewToolNames = new Set(writableTools)
 const tools = [
   {
     name: 'get_comfy_router_status',
-    description: 'Read Velorn\'s cached Comfy Router readiness and image jobs. This does not contact Comfy, verify an account, reveal a key, generate, refresh jobs, download media or import outputs. Existing Cloud account checks do not prove Router readiness.',
+    description: 'Read Belrog\'s cached Comfy Router readiness and image jobs. This does not contact Comfy, verify an account, reveal a key, generate, refresh jobs, download media or import outputs. Existing Cloud account checks do not prove Router readiness.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
     name: 'generate_comfy_router_image',
-    description: 'Preview one image from Velorn\'s fixed Comfy Router preset using a prompt, then apply the returned planId in a separate call. Preview is the default and does not generate or spend. Preview with only planId is a pure review of that exact existing plan; it cannot replace its prompt, renew it or create another plan. Apply requires previewOnly:false and only the original planId, not a new prompt. Every paid apply requires native human confirmation regardless of agent access; denial prevents submission. No arbitrary model, URL, workflow, key or spending-policy change is supported. Generation does not import the image into the project.',
+    description: 'Preview one image from Belrog\'s fixed Comfy Router preset using a prompt, then apply the returned planId in a separate call. Preview is the default and does not generate or spend. Preview with only planId is a pure review of that exact existing plan; it cannot replace its prompt, renew it or create another plan. Apply requires previewOnly:false and only the original planId, not a new prompt. Every paid apply requires native human confirmation regardless of agent access; denial prevents submission. No arbitrary model, URL, workflow, key or spending-policy change is supported. Generation does not import the image into the project.',
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
@@ -38,7 +38,7 @@ const tools = [
   },
   {
     name: 'get_create_models',
-    description: 'Read the models of Velorn\'s Visuals and Sound tabs (Visuals was called Create before) that run through Comfy Router: picture, video, voice and sound-effect models, with each model\'s id, kind, choices (sizes, lengths, resolutions), recorded prices in US dollars, and the voice list. This reads a list kept in Velorn: it does not contact Comfy, reveal a key, check credits, generate or spend. Use the ids with generate_create_media.',
+    description: 'Read the models of Belrog\'s Visuals and Sound tabs (Visuals was called Create before) that run through Comfy Router: picture, video, voice and sound-effect models, with each model\'s id, kind, choices (sizes, lengths, resolutions), recorded prices in US dollars, and the voice list. This reads a list kept in Belrog: it does not contact Comfy, reveal a key, check credits, generate or spend. Use the ids with generate_create_media.',
     inputSchema: { type: 'object', additionalProperties: false, properties: {} },
   },
   {
@@ -74,7 +74,7 @@ const tools = [
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['jobId', 'operation'],
       properties: {
-        jobId: { ...id, description: 'Exact Velorn Router job ID from the cached status snapshot.' },
+        jobId: { ...id, description: 'Exact Belrog Router job ID from the cached status snapshot.' },
         operation: { type: 'string', enum: ['refresh', 'cancel'] },
         previewOnly,
       },
@@ -82,11 +82,11 @@ const tools = [
   },
   {
     name: 'import_comfy_router_image',
-    description: 'Preview or retrieve and import one completed Comfy Router image into the active Velorn project using its normal asset/checkpoint path. Preview reads cached state only. Apply retrieves the image through the native fixed-provider result route, then imports it; this is separate from paid generation. Only a known jobId is accepted, never an arbitrary URL, model or key. It does not generate a new image or modify provider settings. It also works for clips and sounds made with generate_create_media. Once imported, the result is shown in your reply and on the person\'s paired phone by itself: a picture as a still, a clip or sound as a player. To show an older picture, clip or sound again, use get_assets with its assetId and showInChat:true.',
+    description: 'Preview or retrieve and import one completed Comfy Router image into the active Belrog project using its normal asset/checkpoint path. Preview reads cached state only. Apply retrieves the image through the native fixed-provider result route, then imports it; this is separate from paid generation. Only a known jobId is accepted, never an arbitrary URL, model or key. It does not generate a new image or modify provider settings. It also works for clips and sounds made with generate_create_media. Once imported, the result is shown in your reply and on the person\'s paired phone by itself: a picture as a still, a clip or sound as a player. To show an older picture, clip or sound again, use get_assets with its assetId and showInChat:true.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['jobId'],
       properties: {
-        jobId: { ...id, description: 'Exact Velorn Router job ID whose completed image should be retrieved and imported.' },
+        jobId: { ...id, description: 'Exact Belrog Router job ID whose completed image should be retrieved and imported.' },
         previewOnly,
       },
     },
@@ -189,7 +189,7 @@ async function dispatchComfyRouterTool({ comfyRouter, name, args = {} } = {}) {
     : name === 'generate_create_media' ? [payload.previewOnly ? Object.hasOwn(payload, 'planId') ? 'inspectPlan' : 'previewCreate' : 'submit']
       : [payload.previewOnly ? 'list' : payload.operation]
   if (!comfyRouter || methods.some((method) => typeof comfyRouter[method] !== 'function')) {
-    return failure('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router is unavailable. Restart Velorn and try again.')
+    return failure('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router is unavailable. Restart Belrog and try again.')
   }
   try {
     if (name === 'get_comfy_router_status') {

@@ -32,7 +32,7 @@ const DISCOVERY_TOOL = Object.freeze({ type: 'function', function: {
 } })
 const CALL_TOOL = Object.freeze({ type: 'function', function: {
   name: 'call_velorn_tool',
-  description: 'Call any named Velorn tool immediately with its native arguments object. No discovery or loading step is required; the selected access mode and native argument validation apply.',
+  description: 'Call any named Belrog tool immediately with its native arguments object. No discovery or loading step is required; the selected access mode and native argument validation apply.',
   parameters: { type: 'object', properties: {
     name: { type: 'string', description: 'Exact native tool name from the available-tool list.' },
     arguments: { type: 'object', additionalProperties: true, description: 'Native tool arguments as a JSON object, not a string. Use the typed signature; optional full documentation is available through discover_velorn_tools.' },
@@ -95,7 +95,7 @@ function createLocalToolCatalog(catalog, initialToolNames = []) {
   const validated = validateCatalog(catalog)
   const entries = new Map()
   for (const tool of validated) {
-    if (RESERVED_NAMES.has(tool.name)) throw fault('INVALID_TOOL_CATALOG', `The Velorn tool catalog uses a reserved helper name: ${tool.name}.`)
+    if (RESERVED_NAMES.has(tool.name)) throw fault('INVALID_TOOL_CATALOG', `The Belrog tool catalog uses a reserved helper name: ${tool.name}.`)
     entries.set(tool.name, { tool, definition: compactToolDefinition(tool) })
   }
   // Retain the legacy argument's validation for callers, but it no longer
@@ -103,11 +103,11 @@ function createLocalToolCatalog(catalog, initialToolNames = []) {
   if (!Array.isArray(initialToolNames)
     || initialToolNames.some(name => typeof name !== 'string' || !entries.has(name))
     || new Set(initialToolNames).size !== initialToolNames.length) {
-    throw fault('INVALID_INITIAL_TOOL_SELECTION', 'Initial local tools must be distinct exact names from the current Velorn catalog.')
+    throw fault('INVALID_INITIAL_TOOL_SELECTION', 'Initial local tools must be distinct exact names from the current Belrog catalog.')
   }
   const directNames = CORE_NAMES.filter(name => entries.has(name))
   const documented = new Set()
-  const instructions = 'Every native Velorn tool is available immediately. Call a directly supplied function or use call_velorn_tool with {"name":"exact_native_name","arguments":{...}}. No tool discovery or loading step is required. The list below gives other tools and their native argument signatures: ! means required, ? means optional, [type] means an array, and object means a JSON object. Supply the named arguments, not this signature text. Full constraints and argument documentation are available through optional discover_velorn_tools; lookup never executes an action or changes availability or permissions. Native tools retain their original validation and the selected access mode. Follow CURRENT ACCESS above.\n'
+  const instructions = 'Every native Belrog tool is available immediately. Call a directly supplied function or use call_velorn_tool with {"name":"exact_native_name","arguments":{...}}. No tool discovery or loading step is required. The list below gives other tools and their native argument signatures: ! means required, ? means optional, [type] means an array, and object means a JSON object. Supply the named arguments, not this signature text. Full constraints and argument documentation are available through optional discover_velorn_tools; lookup never executes an action or changes availability or permissions. Native tools retain their original validation and the selected access mode. Follow CURRENT ACCESS above.\n'
     + validated.filter(tool => !directNames.includes(tool.name)).map(tool => `${tool.name}(${toolSignature(tool)}): ${entries.get(tool.name).definition.function.description}`).join('\n')
   // Do not repeat the entire catalog in every helper result. All names remain
   // available through the router, independent of direct schema presentation.
@@ -142,7 +142,7 @@ function createLocalToolCatalog(catalog, initialToolNames = []) {
           || args.names.some(name => typeof name !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(name))
           || new Set(args.names).size !== args.names.length) return failure('INVALID_DISCOVERY_ARGUMENTS', 'Supply distinct exact names of available tools.')
         const unknown = args.names.filter(name => !entries.has(name))
-        if (unknown.length) return failure('UNKNOWN_TOOL', 'Some requested names are not in the current Velorn catalog. Check the supplied tools; no action was executed.', { unknown })
+        if (unknown.length) return failure('UNKNOWN_TOOL', 'Some requested names are not in the current Belrog catalog. Check the supplied tools; no action was executed.', { unknown })
         selected = args.names.slice(); matchCount = selected.length
       } else {
         if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > LIMITS.queryChars) return failure('INVALID_DISCOVERY_ARGUMENTS', 'Supply a nonempty search query of at most 256 characters.')
@@ -151,7 +151,7 @@ function createLocalToolCatalog(catalog, initialToolNames = []) {
         const matches = validated.filter(tool => words.every(word => searchText(`${tool.name} ${tool.description || ''}`).includes(word)))
           .sort((a, b) => Number(searchText(b.name) === query) - Number(searchText(a.name) === query)
             || Number(searchText(b.name).includes(query)) - Number(searchText(a.name).includes(query)))
-        if (!matches.length) return failure('NO_MATCH', 'No Velorn tools match that query. Use exact names of available tools or a simpler query.')
+        if (!matches.length) return failure('NO_MATCH', 'No Belrog tools match that query. Use exact names of available tools or a simpler query.')
         matchCount = matches.length; selected = matches.map(tool => tool.name)
       }
       const newlyDirect = selected.filter(name => !directNames.includes(name))

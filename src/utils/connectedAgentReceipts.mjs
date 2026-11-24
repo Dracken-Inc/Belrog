@@ -30,7 +30,7 @@ export function missingAgentReplyText(value) {
   const receipts = sanitizeAgentToolReceipts(value)
   const applied = receipts?.entries.filter(entry => entry.outcome === 'applied').length || 0
   const headline = applied
-    ? `Velorn recorded ${applied} applied action${applied === 1 ? '' : 's'}, but the agent did not provide a final reply.`
+    ? `Belrog recorded ${applied} applied action${applied === 1 ? '' : 's'}, but the agent did not provide a final reply.`
     : 'The agent did not provide a final reply.'
   return `${headline}\n\n${receipts ? 'Recorded tool results are listed below. They do not confirm that the entire request finished.'
     : 'No verified tool receipts are available for this turn.'}\n\nNo tool actions were automatically retried. Inspect the current state before repeating an edit.`

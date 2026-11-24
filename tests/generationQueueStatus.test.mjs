@@ -192,7 +192,7 @@ test('registered completion preserves managed identity and can be polled by eith
     mcpBatch: { id: 'managed-batch', promptLabel: 'One image' },
     resultAssetIds: ['existing-image'] })
   const native = { id: 'native-run-uuid', promptId: legacy.promptId, origin: 'velorn',
-    workflowLabel: 'Velorn generation', status: 'done', progress: 100,
+    workflowLabel: 'Belrog generation', status: 'done', progress: 100,
     resultAssetIds: ['existing-image', 'new-image'], error: null,
     outputs: [{ filename: 'result.png', subfolder: 'image', type: 'output', nodeId: '9', mediaType: 'image' }],
     importState: 'pending', recipeAvailable: true, outputCount: 1 }

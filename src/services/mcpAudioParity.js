@@ -304,7 +304,7 @@ async function listFonts(payload = {}) {
   const query = String(payload.query || '').trim().toLocaleLowerCase()
   const families = result.families.filter(family => !query || family.toLocaleLowerCase().includes(query))
   return { action: 'list_fonts', status: result.status, source: result.source, error: result.error || null,
-    families, count: families.length, note: 'Uses the same system-font catalog and curated fallback as the Velorn font selector.' }
+    families, count: families.length, note: 'Uses the same system-font catalog and curated fallback as the Belrog font selector.' }
 }
 
 export const MCP_AUDIO_ACTIONS = Object.freeze({

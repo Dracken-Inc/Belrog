@@ -64,7 +64,7 @@ export default function ExportProgressOverlay() {
           <Film aria-hidden="true" className="h-5 w-5 text-sf-accent" />
           <h2 id="export-priority-title" className="text-lg font-semibold text-sf-text-primary">{cancelling ? 'Stopping export…' : 'Exporting'}</h2>
         </div>
-        <p id="export-priority-description" className="text-sm text-sf-text-secondary">Editing and playback are temporarily paused so Velorn can focus on your export. You can minimize this window.</p>
+        <p id="export-priority-description" className="text-sm text-sf-text-secondary">Editing and playback are temporarily paused so Belrog can focus on your export. You can minimize this window.</p>
         <p className="mt-5 truncate text-xs text-sf-text-secondary" title={progress.status || local?.status}>{progress.status || local?.status || 'Preparing export…'}</p>
         <div role="progressbar" aria-label="Export progress" aria-valuemin={0} aria-valuemax={100}
           aria-valuenow={percent === null ? undefined : Math.round(percent)} className="my-3 h-2 overflow-hidden rounded-full bg-sf-dark-700">

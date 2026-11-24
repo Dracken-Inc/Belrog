@@ -222,7 +222,7 @@ test('new remembered consent restores a fresh native-scoped grant without reusin
   assert.equal(f.sessions.length, 1); assert.equal(f.sessions[0].cwd, await fs.realpath(f.folder))
 })
 
-test('phone bundle 1 preserves Velorn tools but never remembers or grants desktop computer access', async t => {
+test('phone bundle 1 preserves Belrog tools but never remembers or grants desktop computer access', async t => {
   const f = await fixture(t); f.context.projectKey = 'synthetic-unsaved'; f.setConfirmation(phoneApproval())
   const grant = await f.enable({ fromPhone: true })
   assert.equal(grant.enabled, true); assert.equal(grant.remembered, false)

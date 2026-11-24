@@ -2,7 +2,7 @@ const previewOnly = { type: 'boolean', default: true, description: 'Preview by d
 const imageOptions = { includeImage: { type: 'boolean', default: true }, maxWidth: { type: 'integer', minimum: 64, maximum: 1920, default: 960 } }
 module.exports = {
   tools: [
-    { name: 'get_transport_state', description: 'Read live Velorn playback, rate, loop, In/Out, Play Around and seek-error state.', inputSchema: { type: 'object', properties: {} } },
+    { name: 'get_transport_state', description: 'Read live Belrog playback, rate, loop, In/Out, Play Around and seek-error state.', inputSchema: { type: 'object', properties: {} } },
     { name: 'control_transport', description: 'Preview/apply the same playback controls as the UI: forward/reverse 1/8x–8x, pause, frame step, looping and Play Around. Does not alter clip speed or document history.', inputSchema: { type: 'object', properties: {
       operation: { type: 'string', enum: ['play', 'pause', 'stop', 'step', 'rate', 'loop', 'play_around', 'cancel_play_around'] },
       rate: { type: 'number', enum: [-8, -4, -2, -1, -0.5, -0.25, -0.125, 0.125, 0.25, 0.5, 1, 2, 4, 8] },

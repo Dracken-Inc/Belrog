@@ -49,7 +49,7 @@ async function main() {
     const baseline = (await snapshot()).authored
     await button('Assistant').click(); await composer.waitFor()
     assert.equal(await ask.isChecked(), true); assert.equal(await auto.isDisabled(), true)
-    await openSettings(); await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check()
+    await openSettings(); await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check()
     await auto.check(); await button('Back to chat').click()
     const initialChat = await page.getByRole('combobox', { name: 'Conversation', exact: true }).inputValue()
     const workflow = '{"1":{"class_type":"Fixture","inputs":{"text":"PRIVATE_JSON_CONTENT_7391"}}}'
@@ -113,7 +113,7 @@ async function main() {
     await settle(third)
     pass('Dropped JSON can be removed; ordinary text stays editable')
 
-    await openSettings(); await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).uncheck()
+    await openSettings(); await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).uncheck()
     await button('Back to chat').click(); assert.equal(await ask.isChecked(), true)
     await button('Assistant settings').click(); await page.getByLabel('Assistant selection', { exact: true }).selectOption('lmstudio'); if (await page.getByRole('group', { name: 'Confirm assistant switch' }).count()) await page.getByRole('group', { name: 'Confirm assistant switch' }).getByRole('button', { name: /^Start .* chat$/ }).click()
     // Provider changes start a fresh chat and close settings. Reopen the new

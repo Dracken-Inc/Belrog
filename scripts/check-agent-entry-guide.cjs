@@ -73,7 +73,7 @@ async function main() {
       await page.waitForFunction(() => window.connectedAgentTest.snapshot().calls.some(c => c.method === 'inspect' && c.options.provider === 'luna'))
       if (available) await page.getByText('Velo ready', { exact: true }).waitFor()
       else {
-        await button('Sign in to Velorn').waitFor()
+        await button('Sign in to Belrog').waitFor()
         assert.equal(await button('Send message').isDisabled(), true)
       }
       assert.equal(JSON.parse((await snapshot()).storage[settingsKey]).provider, 'luna')

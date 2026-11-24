@@ -27,7 +27,7 @@ function createCaptionEngineSetup({ service, platform = process.platform, arch =
       ready: Boolean(status.binaryPath && installed), downloads,
       knownApproxDownloadBytes: downloads.reduce((sum, item) => sum + (item.approxBytes || 0), 0),
       hasUnknownDownloadSize: downloads.some(item => item.approxBytes === null),
-      destination: 'Velorn application data / caption-engine (not ComfyUI or the project)',
+      destination: 'Belrog application data / caption-engine (not ComfyUI or the project)',
       note: 'Sizes are estimates; optional speech-detector size and unpacked disk usage are not included. Installation does not select a UI preference or start transcription.',
       busy: Boolean(status.installInFlight || status.transcribeInFlight) }
   }

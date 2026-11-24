@@ -115,7 +115,7 @@ async function main() {
       const before = await original()
       const dialog = await openReadyHelper('comfycloud')
       await dialog.getByText(/Luna only read that result/).waitFor()
-      await dialog.getByText(/Hosted generation is not enabled in Velorn yet/).waitFor()
+      await dialog.getByText(/Hosted generation is not enabled in Belrog yet/).waitFor()
       await page.screenshot({ path: path.join(output, `cloud-completion-${settings ? 'local-selected' : 'codex'}.png`), fullPage: true })
       await dialog.getByRole('button', { name: 'Finish setup — keep current assistant', exact: true }).click()
       await dialog.waitFor({ state: 'detached' })

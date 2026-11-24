@@ -43,9 +43,9 @@ function createDesktopClose({ app, ipcMain, dialog, getWindow, getOwnedLauncher,
         state.action = 'detach'
         if (stopOnQuit()) {
           const choice = await dialog.showMessageBox(state.win, {
-            type: 'question', title: 'Quit Velorn?', message: 'ComfyUI is still running.',
+            type: 'question', title: 'Quit Belrog?', message: 'ComfyUI is still running.',
             buttons: ['Stop ComfyUI & quit', 'Leave ComfyUI running', 'Cancel'], defaultId: 0, cancelId: 2,
-            detail: 'Velorn started ComfyUI. Stopping it cancels any in-flight generations. Leaving it running keeps those jobs going. Nothing stops if you cancel closing Velorn.',
+            detail: 'Belrog started ComfyUI. Stopping it cancels any in-flight generations. Leaving it running keeps those jobs going. Nothing stops if you cancel closing Belrog.',
           })
           if (choice.response !== 0 && choice.response !== 1) { cancel(state); return }
           state.action = choice.response === 0 ? 'stop' : 'detach'
@@ -60,9 +60,9 @@ function createDesktopClose({ app, ipcMain, dialog, getWindow, getOwnedLauncher,
       log.warn('[desktopClose] Close cancelled:', error?.message || error)
       if (!state.win.isDestroyed()) {
         await dialog.showMessageBox(state.win, {
-          type: 'warning', title: 'Velorn is still open', message: 'Could not finish saving before closing.',
+          type: 'warning', title: 'Belrog is still open', message: 'Could not finish saving before closing.',
           detail: 'Your window and ComfyUI have been left open. Save your project and try closing again. If the editor is still loading or busy, wait for it to finish first.',
-          buttons: ['Keep Velorn open'], defaultId: 0, cancelId: 0,
+          buttons: ['Keep Belrog open'], defaultId: 0, cancelId: 0,
         }).catch(() => {})
         cancel(state)
       }
@@ -78,9 +78,9 @@ function createDesktopClose({ app, ipcMain, dialog, getWindow, getOwnedLauncher,
     } catch (error) {
       log.warn('[desktopClose] Launcher quit action unconfirmed:', error?.message || error)
       await dialog.showMessageBox({ type: 'warning', title: 'Check ComfyUI',
-        message: 'Velorn closed, but could not confirm ComfyUI’s status.',
-        detail: 'ComfyUI may still be running. Check it before starting another copy. Velorn will not force-stop it or repeat the action.',
-        buttons: ['Quit Velorn'], defaultId: 0, cancelId: 0 }).catch(() => {})
+        message: 'Belrog closed, but could not confirm ComfyUI’s status.',
+        detail: 'ComfyUI may still be running. Check it before starting another copy. Belrog will not force-stop it or repeat the action.',
+        buttons: ['Quit Belrog'], defaultId: 0, cancelId: 0 }).catch(() => {})
     } finally {
       state.phase = 'finished'
       if (quitRequested || platform !== 'darwin') { quitting = true; app.quit() }
@@ -104,8 +104,8 @@ function createDesktopClose({ app, ipcMain, dialog, getWindow, getOwnedLauncher,
         choice = dialog.showMessageBoxSync(win, {
           type: 'warning', title: 'Unsaved page changes',
           message: 'ComfyUI or another embedded page has unsaved changes.',
-          detail: 'Your Velorn project has been saved. Keep Velorn open to save your workflow changes, or close without saving those page changes.',
-          buttons: ['Keep Velorn open', 'Close without saving page changes'], defaultId: 0, cancelId: 0,
+          detail: 'Your Belrog project has been saved. Keep Belrog open to save your workflow changes, or close without saving those page changes.',
+          buttons: ['Keep Belrog open', 'Close without saving page changes'], defaultId: 0, cancelId: 0,
         })
       } catch (error) { log.warn('[desktopClose] Could not show unsaved-page confirmation:', error?.message) }
       // Electron requires a synchronous decision. This ignores the page's veto

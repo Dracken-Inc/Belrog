@@ -281,7 +281,7 @@ function Fixture() {
   React.useEffect(() => { window.storyboardTest.ready = true }, [])
   return <div className="h-screen min-w-0 flex flex-col bg-sf-dark-950 text-sf-text-primary" data-testid="storyboard-fixture">
     <header className="shrink-0 flex flex-wrap items-center gap-3 border-b border-sf-dark-700 p-3 text-xs">
-      <span>Velorn · isolated {standaloneStoryboard ? 'Storyboard' : 'read-only reference board'}</span>
+      <span>Belrog · isolated {standaloneStoryboard ? 'Storyboard' : 'read-only reference board'}</span>
       {!standaloneStoryboard && <button onClick={() => reset({ empty: true })}>Clear synthetic board</button>}
       <button onClick={() => reset()}>Reset synthetic demo</button>
       <span className="text-sf-text-muted">Synthetic media · RAM only · resets on refresh · no real files, generation or app settings</span>

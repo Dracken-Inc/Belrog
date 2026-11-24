@@ -15,7 +15,7 @@ for (const [kind, build, save] of [['picture', buildPictureStarter, 'VELORN_OUTP
     assert.equal(new Set(titles).size, titles.length, 'no name twice')
     assert.ok(titles.includes(save))
     assert.ok(titles.includes('VELORN_PROMPT'))
-    // Every name is one Velorn really looks for.
+    // Every name is one Belrog really looks for.
     for (const title of titles) assert.ok(comfy.includes(`'${title}'`), title)
     // A note for each node, plus the heading and "your model goes here".
     assert.equal(notes(graph).length, named(graph).length + 2)

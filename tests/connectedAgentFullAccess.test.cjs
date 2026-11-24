@@ -769,7 +769,7 @@ test('production desktop confirmation remains native even with a paired phone an
     assert.equal(options.defaultId, 0)
     assert.equal(options.cancelId, 0)
     assert.equal(options.buttons[0], 'Cancel')
-    assert.match(options.detail, /Includes image sharing and the current Velorn view/)
+    assert.match(options.detail, /Includes image sharing and the current Belrog view/)
     assert.match(options.detail, /Generation spending settings stay separate/)
     assert.match(options.detail, /data loss or unexpected costs/)
     assert.equal(confirmed.remember, false)
@@ -806,7 +806,7 @@ test('production phone confirmation includes images only after approval and reta
     assert.equal(options.window, window)
     assert.equal(options.kind, 'full-access')
     assert.equal(options.requiresRiskAcknowledgement, false)
-    assert.match(options.detail, /Includes image sharing and the current Velorn view/)
+    assert.match(options.detail, /Includes image sharing and the current Belrog view/)
     assert.equal(result.remember, false)
   }
 })

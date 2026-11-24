@@ -84,7 +84,7 @@ function generationSpendingPolicy(value) {
   return value?.success === true && value.scope === 'velorn-managed'
     && ['local-only', 'ask-cloud'].includes(value.policy) ? value.policy : null
 }
-const SPENDING_UNAVAILABLE = 'Generation spending protection could not be verified. Fully quit and reopen Velorn before generating.'
+const SPENDING_UNAVAILABLE = 'Generation spending protection could not be verified. Fully quit and reopen Belrog before generating.'
 
 function RequestedModel({ value, provider, effort }) {
   const model = sanitizeConnectedAgentRequestedModel(value)
@@ -431,9 +431,9 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
   const activityState = pendingApprovalId ? 'approval' : submittingDecision ? 'decision'
     : preparing ? 'preparing' : fundedLuna && serviceWaiting ? 'service-wait' : runningTool ? 'tool' : 'working'
   const activityLabel = { approval: 'Waiting for your approval', decision: 'Submitting your decision…',
-    preparing: 'Preparing message…', 'service-wait': 'Waiting for Velo…', tool: fullAccessEnabled ? 'Using tools…' : 'Using Velorn tools…', working: 'Working…' }[activityState]
+    preparing: 'Preparing message…', 'service-wait': 'Waiting for Velo…', tool: fullAccessEnabled ? 'Using tools…' : 'Using Belrog tools…', working: 'Working…' }[activityState]
   const activityDetail = activityState === 'approval' ? 'Review the action and warnings in the conversation.'
-    : activityState === 'decision' ? 'Waiting for Velorn to accept your decision.'
+    : activityState === 'decision' ? 'Waiting for Belrog to accept your decision.'
     : activityState === 'preparing' ? 'Preparing project context and any shared images.'
     : activityState === 'service-wait' ? status
     : activityState === 'tool' ? ({ wait_for_comfyui_runs: 'Waiting for generation results.',
@@ -727,9 +727,9 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     setFullAccessEnabled(false); setFullAccessChanging(false); setFullAccessError('')
     if (hadGrant || forget) return api?.setFullAccess?.({ enabled: false, provider, conversationId: conversations.activeId, ...(forget ? { forget: true } : {}) }).then(result => {
       if (mounted.current && conversations.activeId === activeChatId.current && result?.success && forget) setFullAccessPreference({ scope: fullAccessScope, checked: true, remembered: false })
-      if (mounted.current && !result?.success) setFullAccessError(result?.error || 'Full access could not be revoked. Stop the response and restart Velorn before continuing.')
+      if (mounted.current && !result?.success) setFullAccessError(result?.error || 'Full access could not be revoked. Stop the response and restart Belrog before continuing.')
       return result
-    }).catch(() => { if (mounted.current) setFullAccessError('Full access could not be revoked. Stop the response and restart Velorn before continuing.') })
+    }).catch(() => { if (mounted.current) setFullAccessError('Full access could not be revoked. Stop the response and restart Belrog before continuing.') })
   }
   const rememberSetup = (mode, shareImagesAndView = preferredSetup.shareImagesAndView) => {
     const accessSetups = accessSetupPreferences(readSettings(), provider, { mode, shareImagesAndView })
@@ -761,7 +761,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     : !toolsEnabled ? 'Chat only' : autoApproveEdits ? 'Auto-approve editing' : 'Ask before changes'
   const approvalHelp = fullAccessEnabled
     ? 'Requested actions run automatically, without edit approval, mandatory preview or checkpoint steps. Normal timeline Undo remains available. File changes may not be undoable. Generation spending stays separate. Stop to interrupt.'
-    : !toolsEnabled ? 'Choose Work in Velorn above to enable editing tools.'
+    : !toolsEnabled ? 'Choose Work in Belrog above to enable editing tools.'
       : autoApproveEdits ? 'This chat session: supported undoable edits only. Generation, spending, downloads and file changes still ask. Stop to interrupt.'
         : 'Ask before changes. Auto-approve covers supported undoable edits only, for this chat session.'
   const openApprovalSettings = () => {
@@ -787,8 +787,8 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     if (busy || loading || fullAccessPending.current || executableMutation.current || spendingMutation.current || isExportBusy()) return
     if (!enabled) return revokeFullAccess({ forget: true })
     if (veloFullAccessComingSoon && !fromPhone) { setFullAccessError(''); return { success: false, error: comingSoonText } }
-    if (!toolsEnabled && !bundle) { setFullAccessError('Enable Velorn tools first, or use Full access.'); return }
-    if (!api?.setFullAccess) { setFullAccessError('Fully quit and reopen Velorn to enable Full access.'); return }
+    if (!toolsEnabled && !bundle) { setFullAccessError('Enable Belrog tools first, or use Full access.'); return }
+    if (!api?.setFullAccess) { setFullAccessError('Fully quit and reopen Belrog to enable Full access.'); return }
     const epoch = ++fullAccessEpoch.current, conversationId = conversations.activeId
     fullAccessRestoreAttempt.current = fullAccessScope
     const ownsRequest = () => mounted.current && epoch === fullAccessEpoch.current && conversationId === activeChatId.current
@@ -814,7 +814,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       }
       if (typeof result.token !== 'string' || !result.token || result.token.length > 100) {
         void api.setFullAccess({ enabled: false, provider, conversationId }).catch(() => {})
-        throw new Error('The native confirmation returned no valid session grant. Full access remains off; restart Velorn and try again.')
+        throw new Error('The native confirmation returned no valid session grant. Full access remains off; restart Belrog and try again.')
       }
       fullAccessGrant.current = { token: result.token, conversationId, scope: result.scope, version: result.version }
       setFullAccessEnabled(true)
@@ -826,7 +826,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         setAutoApproveEdits(false); approvalModes.current.clear()
         setShareImages(images); setShareView(images)
         rememberSetup('full', images)
-        if (typeof result.shareImagesAndView !== 'boolean') setAccessNotice('Full access is enabled. Automatic image sharing stayed off; restart Velorn for the image-sharing confirmation, or use Access options.')
+        if (typeof result.shareImagesAndView !== 'boolean') setAccessNotice('Full access is enabled. Automatic image sharing stayed off; restart Belrog for the image-sharing confirmation, or use Access options.')
       } else if (typeof result.shareImagesAndView === 'boolean') {
         setShareImages(result.shareImagesAndView); setShareView(result.shareImagesAndView)
       }
@@ -961,7 +961,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     && getStoryboardProjectKey(useProjectStore.getState().currentProject, useProjectStore.getState().currentProjectHandle) === projectKey
   async function refreshCodexExecutable() {
     if (provider !== 'codex') return
-    if (!api?.codexExecutable) { setExecutableError('Fully quit and reopen Velorn to choose or detect the Codex executable.'); return }
+    if (!api?.codexExecutable) { setExecutableError('Fully quit and reopen Belrog to choose or detect the Codex executable.'); return }
     const epoch = ++executableEpoch.current, chatId = conversations.activeId
     const current = () => epoch === executableEpoch.current && connectionContextIsCurrent(chatId)
     // Background status refreshes must not erase an explicit picker failure.
@@ -971,7 +971,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       if (!current()) return
       if (!result?.success) throw new Error(result?.error || 'Codex installation could not be checked. Try Check connection again.')
       const info = codexExecutableInfo(result.executable)
-      if (!info) throw new Error('Codex installation details were unavailable. Restart Velorn and try again.')
+      if (!info) throw new Error('Codex installation details were unavailable. Restart Belrog and try again.')
       setCodexExecutable(info)
     } catch (failure) { if (current()) { setCodexExecutable(null); setExecutableError(failure.message) } }
     finally { if (current()) setExecutableReading(false) }
@@ -979,7 +979,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
   async function changeCodexExecutable(action) {
     if (provider !== 'codex' || busy || checking || executableReading || executableMutation.current
       || fullAccessPending.current || fullAccessPreferencePending || spendingMutation.current || loading || isExportBusy()) return
-    if (!api?.codexExecutable) { setExecutableError('Fully quit and reopen Velorn to choose or detect the Codex executable.'); return }
+    if (!api?.codexExecutable) { setExecutableError('Fully quit and reopen Belrog to choose or detect the Codex executable.'); return }
     const operation = { chatId: conversations.activeId }
     executableMutation.current = operation
     setExecutableChanging(true); setExecutableError(''); setCodexLoginError('')
@@ -1006,7 +1006,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       revokeFullAccess()
       setFullAccessPreference({ scope: fullAccessScope, checked: true, remembered: false })
       const info = codexExecutableInfo(result.executable)
-      if (!info) throw new Error('The Codex installation changed, but its details were unavailable. Restart Velorn before continuing.')
+      if (!info) throw new Error('The Codex installation changed, but its details were unavailable. Restart Belrog before continuing.')
       setCodexExecutable(info); setModels([]); setModelCatalogError(''); setConnection('')
       // Retain the exact selected model, even if absent in the new catalog.
       await checkConnection()
@@ -1072,7 +1072,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
   }
   async function performConnectionCheck(checkEndpoint = endpoint) {
     if (provider === 'codex') checkedCodexModels.current = true
-    if (!api) { setConnection('Fully quit and reopen Velorn to enable the native agent connection.'); return }
+    if (!api) { setConnection('Fully quit and reopen Belrog to enable the native agent connection.'); return }
     const epoch = ++connectionEpoch.current, chatId = conversations.activeId, choiceEpoch = modelChoiceEpoch.current
     const accountKey = lunaAccountKey.current
     const current = () => epoch === connectionEpoch.current && connectionContextIsCurrent(chatId)
@@ -1367,7 +1367,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     approvalRecords.current.set(approvalId, { ...approval, state: 'answered' })
     setApprovals(previous => previous.map(item => item.approvalId === approvalId ? { ...item, state: 'sending' } : item))
     try {
-      if (!api?.approveTool) throw new Error('Restart Velorn to enable tool approvals.')
+      if (!api?.approveTool) throw new Error('Restart Belrog to enable tool approvals.')
       const result = await api.approveTool({ requestId: approval.requestId, approvalId, approved })
       if (!mounted.current || activeRequest.current !== approval.requestId) return
       if (!result?.success) throw new Error(result?.error || 'This tool approval is no longer available.')
@@ -1388,7 +1388,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
   async function send(event, phoneText, phoneSharing) {
     event?.preventDefault()
     const fromPhone = typeof phoneText === 'string'
-    if (fundedLuna && fromPhone && !phoneSharing) return { success: false, error: 'Velo requires an updated phone AI-sharing permission for Velorn and OpenAI. No message was sent.' }
+    if (fundedLuna && fromPhone && !phoneSharing) return { success: false, error: 'Velo requires an updated phone AI-sharing permission for Belrog and OpenAI. No message was sent.' }
     if (phoneSharing && (!fromPhone || api?.aiSharingVersion !== 1 || phoneSharing.consent?.provider !== provider
       || JSON.stringify(phoneSharing.capabilities) !== JSON.stringify(aiSharingCapabilities))) {
       return { success: false, error: 'AI sharing settings changed. No message was sent. Review the permission on your phone and try again.' }
@@ -1397,7 +1397,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     const outgoingAttachments = fromPhone ? [] : attachments
     if (busy || activeRequest.current || fullAccessPending.current || fullAccessPreferencePending || executableMutation.current || spendingMutation.current || loading || attachmentRead.current || isExportBusy() || (!fromPhone && (!visible || settingsOpen)) || deleteChatId || (!outgoingDraft.trim() && !outgoingAttachments.length)) return { success: false, error: 'The desktop is busy or unavailable. No message was sent.' }
     entryGuide.acknowledge()
-    if (!api?.send) { setError('Fully quit and reopen Velorn to enable the native agent connection.'); return }
+    if (!api?.send) { setError('Fully quit and reopen Belrog to enable the native agent connection.'); return }
     if (fundedLuna && (!lunaConnection.available || lunaConnection.accountKey !== lunaAccountKey.current || checking)) {
       const message = checking || lunaConnection.accountKey !== lunaAccountKey.current
         ? 'Checking Velo availability. Please try again once it is ready.' : lunaConnection.message
@@ -1410,7 +1410,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       setModelPickerOpen(true); setError(CODEX_SETUP_REQUIRED)
       return { success: false, error: 'Codex needs setup on the desktop. No message was sent.' }
     }
-    if (provider === 'codex' && api.reasoningControlVersion !== 1) { setError('Fully quit and reopen Velorn before using Thinking level. The running native connection cannot apply this setting yet; no message was sent.'); return }
+    if (provider === 'codex' && api.reasoningControlVersion !== 1) { setError('Fully quit and reopen Belrog before using Thinking level. The running native connection cannot apply this setting yet; no message was sent.'); return }
     if (provider === 'lmstudio' && !model.trim()) { entryGuide.observe({ success: true, available: false }); setError('Choose a loaded LM Studio model in Assistant settings first.'); return }
     if (outgoingAttachments.some(item => item.kind === 'image') && provider === 'lmstudio' && !localVision) { setError('Enable a vision-capable LM Studio model in Assistant settings, or remove the attached images.'); return }
     const requestId = `review-${crypto.randomUUID()}`
@@ -1509,7 +1509,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       context.mobileVideoReview = {
         supported: mobile.available === true, sharingEnabled: mobile.enabled === true,
         phonePaired: mobile.connection?.paired === true, shareMediaEnabled: shareImages,
-        delivery: 'The local phone companion attaches completed native Velorn video exports to the agent reply that started them when paired and Share images is enabled. Saved review stills and export references are restored from the project after desktop restarts; no duplicate render or upload is needed. Other saved exports are under Settings > Project exports. This is not confirmation that the phone received or played a video. If absent, check Project exports, sharing, and any file-unavailable message, then refresh the phone page; do not recommend cloud upload or re-export as the first step. Direct shell exports and exports made before durable review history was introduced are not automatically listed.',
+        delivery: 'The local phone companion attaches completed native Belrog video exports to the agent reply that started them when paired and Share images is enabled. Saved review stills and export references are restored from the project after desktop restarts; no duplicate render or upload is needed. Other saved exports are under Settings > Project exports. This is not confirmation that the phone received or played a video. If absent, check Project exports, sharing, and any file-unavailable message, then refresh the phone page; do not recommend cloud upload or re-export as the first step. Direct shell exports and exports made before durable review history was introduced are not automatically listed.',
       }
       context.mobileAudioReview = {
         supported: mobile.available === true, sharingEnabled: mobile.enabled === true,
@@ -1818,7 +1818,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     {message.role === 'assistant' && message.turnId && <AgentReviewGallery frames={reviewFrames.filter(frame => frame.chatId === conversations.activeId && frame.turnId === message.turnId)} onShow={showReviewFrame} disabled={busy || exportBusy || loading} />}
     </>
     return <article key={key} className={`ca-message ca-${message.role}`}>
-    <strong>{message.role === 'user' ? 'You' : agentStatusMessage(message) ? 'Velorn status' : fundedLuna ? 'Velo' : 'Velorn Assistant'}</strong>
+    <strong>{message.role === 'user' ? 'You' : agentStatusMessage(message) ? 'Belrog status' : fundedLuna ? 'Velo' : 'Belrog Assistant'}</strong>
     {agentStatusMessage(message) ? <span className="ca-status-label">{message.deliveryStatus === 'reply-unavailable' ? 'Final reply unavailable · not an agent reply' : 'Request status · not an agent reply'}</span> : message.role === 'assistant' && <RequestedModel value={message.requestedModel} provider={provider} effort={message.requestedReasoningEffort} />}
     {hasReplyMedia ? <AgentPlayableMedia key={`${conversations.activeId}:${message.turnId}`} items={playable.items.filter(item => item.turnId === message.turnId)} candidates={playable.candidates}
       onAttach={ids => playable.attach(message.turnId, ids)} disabled={busy || exportBusy || loading}>{content}</AgentPlayableMedia> : content(null)}
@@ -1829,8 +1829,8 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
 
   const veeAccess = <section aria-label="Velo access" className="ca-vee-access">
     <p role="status">{veloAllowanceNotice(veloAllowance.result) || (lunaConnection.available ? 'Velo is ready. Uses your Velo allowance, not generation credits.'
-      : !mobile.connection?.guided?.registered ? 'Sign in to your Velorn account to check Velo access.' : lunaConnection.message)}</p>
-    {!lunaConnection.available && <button type="button" disabled={selectionDisabled} onClick={openAccount}>{mobile.connection?.guided?.registered ? 'View Velo access' : 'Sign in to Velorn'}</button>}
+      : !mobile.connection?.guided?.registered ? 'Sign in to your Belrog account to check Velo access.' : lunaConnection.message)}</p>
+    {!lunaConnection.available && <button type="button" disabled={selectionDisabled} onClick={openAccount}>{mobile.connection?.guided?.registered ? 'View Velo access' : 'Sign in to Belrog'}</button>}
   </section>
   const modelControls = <>
           {setupModelHandoff && provider === 'lmstudio' && <p className="ca-note" role="status">{provider === 'lmstudio'
@@ -1874,7 +1874,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
                 <option value="__custom__">Enter model ID…</option>
               </select></label>
               {customModelMode && <label>Custom model ID<input aria-label="Custom model ID" value={customModelDraft} maxLength={256} disabled={selectionDisabled} placeholder="Enter an LM Studio model ID" onChange={event => setCustomModelDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); changeModel(customModelDraft) } }} /><button type="button" disabled={selectionDisabled || !customModelDraft.trim() || customModelDraft.trim() === model} onClick={() => changeModel(customModelDraft)}>Use model</button></label>}
-              <p>Choose the model Velorn uses here. Changing the selection in LM Studio does not change this choice.</p>
+              <p>Choose the model Belrog uses here. Changing the selection in LM Studio does not change this choice.</p>
               {checking ? <p role="status">Loading LM Studio models…</p> : loadedModelStatus === 'available'
                 ? <p>{selectedCatalogModel?.loaded === true ? `Loaded at last check${selectedCatalogModel.contextLength ? ` · ${selectedCatalogModel.contextLength.toLocaleString('en-US')} context` : ''}.`
                   : selectedCatalogModel?.loaded === false ? 'This model is not loaded. Sending may load it; choose a Loaded model above to use one already in memory.'
@@ -1913,10 +1913,10 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
           <div className="ca-access-options" role="group" aria-label="Assistant access mode">
             <button type="button" aria-label="Chat only" aria-pressed={!toolsEnabled && !fullAccessEnabled} disabled={accessBusy} onClick={() => applyAccessMode('chat')}>
               <strong>Chat only</strong><span>Discuss your project without running tools.</span></button>
-            <button ref={accessStart} type="button" aria-label="Work in Velorn" aria-pressed={toolsEnabled && !fullAccessEnabled} disabled={accessBusy} onClick={() => applyAccessMode('work')}>
-              <strong>Work in Velorn</strong><span>Chat, edit and create with Velorn tools.</span></button>
+            <button ref={accessStart} type="button" aria-label="Work in Belrog" aria-pressed={toolsEnabled && !fullAccessEnabled} disabled={accessBusy} onClick={() => applyAccessMode('work')}>
+              <strong>Work in Belrog</strong><span>Chat, edit and create with Belrog tools.</span></button>
             {<button type="button" className="ca-full-mode" aria-label={fullSetupLabel} aria-pressed={accessMode === 'full'} disabled={accessBusy || fullSetupComplete || !api?.setFullAccess || veloFullAccessComingSoon} data-coming-soon={veloFullAccessComingSoon || undefined} onClick={() => applyAccessMode('full')}>
-              <strong>{fullSetupLabel}{veloFullAccessComingSoon && <em className="ca-coming-soon">Coming soon</em>}</strong><span>{veloFullAccessComingSoon ? `${comingSoonText} Chat and Work in Velorn work today.` : computerAccessProvider ? 'Velorn tools, files, commands, network and images.' : 'All Velorn tools, files and shared previews.'} Actions run automatically.</span></button>}
+              <strong>{fullSetupLabel}{veloFullAccessComingSoon && <em className="ca-coming-soon">Coming soon</em>}</strong><span>{veloFullAccessComingSoon ? `${comingSoonText} Chat and Work in Belrog work today.` : computerAccessProvider ? 'Belrog tools, files, commands, network and images.' : 'All Belrog tools, files and shared previews.'} Actions run automatically.</span></button>}
           </div>
           {!fullAccessEnabled && <div className="ca-access-summary">
             <div>
@@ -1925,15 +1925,15 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
                 onClick={openApprovalSettings}><Settings size={11} aria-hidden="true" />{approvalStatus}</button>}
             </div>
           </div>}
-          {provider === 'lmstudio' && <p className="ca-note">Full access enables automatic Velorn actions. LM Studio does not include a computer-command tool.</p>}
-          {!api?.setFullAccess && <p className="ca-note">Restart Velorn to load the native full-access confirmation.</p>}
+          {provider === 'lmstudio' && <p className="ca-note">Full access enables automatic Belrog actions. LM Studio does not include a computer-command tool.</p>}
+          {!api?.setFullAccess && <p className="ca-note">Restart Belrog to load the native full-access confirmation.</p>}
           {(fullAccessChanging || fullAccessPreferencePending) && <p role="status">{fullAccessRemembered ? 'Restoring remembered Full access…' : fullAccessChanging ? 'Waiting for native confirmation…' : 'Checking remembered access…'}</p>}
           {fullAccessError && <p className="ca-access-risk" role="alert">{fullAccessError}</p>}
           {accessNotice && <p className="ca-note" role="status">{accessNotice}</p>}
         </section>
         <section hidden={fullAccessEnabled} ref={editingApprovals} id={`${settingsId}-editing-approvals`} className="ca-settings-section ca-editing-approvals" tabIndex={-1} aria-labelledby={`${settingsId}-editing-approvals-title`}>
           <h3 id={`${settingsId}-editing-approvals-title`}>When should it ask?</h3>
-          <p className="ca-note">{fullAccessEnabled ? 'Full access · automatic actions' : !toolsEnabled ? 'Chat only · no tool actions' : 'Work in Velorn · this chat session'}</p>
+          <p className="ca-note">{fullAccessEnabled ? 'Full access · automatic actions' : !toolsEnabled ? 'Chat only · no tool actions' : 'Work in Belrog · this chat session'}</p>
           {!fullAccessEnabled && <fieldset className="ca-approval-mode" disabled={accessBusy || !toolsEnabled} aria-describedby={`${settingsId}-approval-help`}>
             <legend>Editing approvals</legend>
             <label><input type="radio" name={`${settingsId}-approval`} checked={!autoApproveEdits} onChange={() => setAutoApproveEdits(false)} />Ask first</label>
@@ -1959,27 +1959,27 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         </details>}
         <details className="ca-advanced-permissions" open={accessOptionsOpen} onToggle={event => setAccessOptionsOpen(event.currentTarget.open)}><summary>Access options</summary>
         <section className="ca-settings-section ca-tools-consent"><h3>Editing access</h3>
-          <label className="ca-check"><input type="checkbox" checked={toolsEnabled} disabled={busy || fullAccessChanging || fullAccessPreferencePending} onChange={event => { setToolsEnabled(event.target.checked); if (!event.target.checked) { void revokeFullAccess({ forget: true }); setResearchEnabled(false); setAutoApproveEdits(false); approvalModes.current.clear() } }} />Velorn tools</label>
+          <label className="ca-check"><input type="checkbox" checked={toolsEnabled} disabled={busy || fullAccessChanging || fullAccessPreferencePending} onChange={event => { setToolsEnabled(event.target.checked); if (!event.target.checked) { void revokeFullAccess({ forget: true }); setResearchEnabled(false); setAutoApproveEdits(false); approvalModes.current.clear() } }} />Belrog tools</label>
           <p>{fullAccessEnabled
-            ? 'Requested Velorn actions run automatically. Normal timeline Undo remains available. Generation spending stays separate.'
-            : 'Allow MCP tools across Velorn to inspect the project. Changes ask for your approval unless you enable supported editing auto-approval. Unrelated accounts and connected apps are not inherited.'}</p>
+            ? 'Requested Belrog actions run automatically. Normal timeline Undo remains available. Generation spending stays separate.'
+            : 'Allow MCP tools across Belrog to inspect the project. Changes ask for your approval unless you enable supported editing auto-approval. Unrelated accounts and connected apps are not inherited.'}</p>
           {<div className="ca-research-consent">
             <label className="ca-check"><input type="checkbox" checked={toolsEnabled && researchEnabled} disabled={accessBusy || !toolsEnabled} aria-describedby={`${settingsId}-research-details`} onChange={event => setResearchEnabled(toolsEnabled && event.target.checked)} />Research &amp; setup</label>
             <div id={`${settingsId}-research-details`}>
-              <p>Read public websites and search GitHub / Hugging Face for workflow and model sources. Requires Velorn tools.</p>
+              <p>Read public websites and search GitHub / Hugging Face for workflow and model sources. Requires Belrog tools.</p>
               <p>{fullAccessEnabled ? `Full access permits supported downloads and installs without per-action prompts.${fullComputerAccessEnabled ? ` ${connectedAgentProviderLabel(provider)} can also use computer commands outside the configured models folder.` : ''}` : 'Model downloads are limited to the configured ComfyUI models folder. Downloads and installs ask for your approval.'}</p>
-              <p>No terminal, connected accounts, or full computer access are granted by Research &amp; setup alone. Existing Velorn workflow setup tools remain available with Velorn tools alone.</p>
+              <p>No terminal, connected accounts, or full computer access are granted by Research &amp; setup alone. Existing Belrog workflow setup tools remain available with Belrog tools alone.</p>
               {provider === 'lmstudio' && <p className="ca-research-warning">With LM Studio, inference stays local, but research sends search queries to public websites.</p>}
             </div>
           </div>}
         </section>
         {<section className="ca-settings-section ca-full-access-consent" aria-labelledby={`${settingsId}-full-access-title`}>
           <h3 id={`${settingsId}-full-access-title`}>Full access</h3>
-          <label className="ca-check"><input type="checkbox" checked={computerAccessProvider ? fullComputerAccessEnabled : fullAccessEnabled} disabled={accessBusy || !toolsEnabled || veloFullAccessComingSoon} aria-describedby={`${settingsId}-full-access-details`} onChange={event => void changeFullAccess(event.target.checked)} />{computerAccessProvider ? 'Full computer access (experimental)' : 'Full Velorn access'}</label>
+          <label className="ca-check"><input type="checkbox" checked={computerAccessProvider ? fullComputerAccessEnabled : fullAccessEnabled} disabled={accessBusy || !toolsEnabled || veloFullAccessComingSoon} aria-describedby={`${settingsId}-full-access-details`} onChange={event => void changeFullAccess(event.target.checked)} />{computerAccessProvider ? 'Full computer access (experimental)' : 'Full Belrog access'}</label>
           <div id={`${settingsId}-full-access-details`}>
             <p>Giving an agent full access can be dangerous. It may change or delete files.</p>
             <button type="button" onClick={openFullAccessDetails}>Learn more about Full access</button>
-            {veloFullAccessComingSoon ? <p>{comingSoonText}</p> : !toolsEnabled ? <p>Enable Velorn tools first, or use Full access above.</p> : !api?.setFullAccess && <p>Fully quit and reopen Velorn to enable Full access.</p>}
+            {veloFullAccessComingSoon ? <p>{comingSoonText}</p> : !toolsEnabled ? <p>Enable Belrog tools first, or use Full access above.</p> : !api?.setFullAccess && <p>Fully quit and reopen Belrog to enable Full access.</p>}
           </div>
           {fullAccessEnabled && <p className="ca-full-access-active">Full access · automatic{fullAccessRemembered ? ' · Remembered on this desktop' : ' for this chat session'}.</p>}
           {busy && fullAccessEnabled && <p>Stop the response before changing this permission.</p>}
@@ -1987,18 +1987,18 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         {<section className="ca-settings-section"><h3>Image sharing</h3>
           {provider === 'lmstudio' && <><label className="ca-check"><input type="checkbox" checked={localVision} disabled={accessBusy} onChange={event => setLocalVision(event.target.checked)} />Vision-capable model</label><p className="ca-note">Enable vision only if the loaded model accepts images. Review media can still be shared with your phone without model vision.</p></>}
           <div className="ca-image-options"><label className="ca-check"><input type="checkbox" checked={shareImages} disabled={accessBusy} onChange={event => setShareImages(event.target.checked)} />Share images</label>{shareImages && <label className="ca-check"><input type="checkbox" checked={shareView} disabled={accessBusy} onChange={event => setShareView(event.target.checked)} />Include current view</label>}</div>
-          <p className="ca-note">{shareImages ? provider === 'lmstudio' && !localVision ? 'Review media sharing is on. Images are not sent to the text-only local model.' : `Shares up to 4 referenced or visible storyboard stills on Send.${toolsEnabled ? ' Also permits images returned by Velorn tools.' : ''}` : fullComputerAccessEnabled ? 'Automatic image sharing is off. Full computer access can still read accessible image and other media files directly.' : 'Text context only. Enable images for visual feedback.'}</p>
-          {fullComputerAccessEnabled && shareImages && <p className="ca-note">These switches control automatic attachments and Velorn tool images only, not direct file reads through full computer access.</p>}
+          <p className="ca-note">{shareImages ? provider === 'lmstudio' && !localVision ? 'Review media sharing is on. Images are not sent to the text-only local model.' : `Shares up to 4 referenced or visible storyboard stills on Send.${toolsEnabled ? ' Also permits images returned by Belrog tools.' : ''}` : fullComputerAccessEnabled ? 'Automatic image sharing is off. Full computer access can still read accessible image and other media files directly.' : 'Text context only. Enable images for visual feedback.'}</p>
+          {fullComputerAccessEnabled && shareImages && <p className="ca-note">These switches control automatic attachments and Belrog tool images only, not direct file reads through full computer access.</p>}
           {shareImages && shareView && <p className="ca-note">Current-view snapshots are available only in Editor and Storyboard. Other workspaces share project context and any referenced storyboard stills.</p>}
           {lastShared && <details className="ca-shared"><summary>Last message: {lastShared.count} image{lastShared.count === 1 ? '' : 's'} · {lastShared.tab}</summary>{lastShared.labels.map(label => <p key={label}>{label}</p>)}{lastShared.missing.length > 0 && <p>Unavailable: {lastShared.missing.join(', ')}</p>}</details>}
         </section>}
           {fullAccessRemembered && <div className="ca-access-remembered"><span>Remembered on this desktop</span><button type="button" disabled={accessBusy} onClick={() => void revokeFullAccess({ forget: true })}>Turn off and forget</button></div>}
           {<details ref={fullAccessDetails} className="ca-full-access-details" open={fullAccessLearnMoreOpen} onToggle={event => setFullAccessLearnMoreOpen(event.currentTarget.open)}>
             <summary>Learn more about Full access</summary>
-            <p>Requested Velorn actions run automatically without mandatory edit approvals, previews or checkpoints. Normal timeline Undo remains available; direct file changes may not be undoable. {computerAccessProvider ? `${connectedAgentProviderLabel(provider)} can also run local commands, read and change files, install software and use network services with your normal OS user permissions, not administrator/root privileges.` : 'LM Studio can use Velorn’s tools, but does not receive an arbitrary computer-command tool.'}</p>
-            <p>Remember on this desktop keeps your choice for this provider across restarts. Choosing Chat only or Work in Velorn clears that choice. You can also turn off Full access under Access options. Images and the current view are included for vision-capable models, and review media is shared with your phone. This is not continuous streaming.</p>
-            <p>Velorn-managed generation still follows Generation spending. {computerAccessProvider && 'Direct computer commands and third-party services can bypass those controls and incur costs. Full access is not a global spending cap. '}Stop interrupts the response, but does not undo completed actions or necessarily cancel external jobs.</p>
-            {fundedLuna && <p>No Codex installation or sign-in is needed. Shared context, images, file content and command output go through Velorn to OpenAI. Your Velo inference allowance still applies; Full access does not add or refill it. Earlier tool-only approval does not grant computer access; fresh confirmation is required.</p>}
+            <p>Requested Belrog actions run automatically without mandatory edit approvals, previews or checkpoints. Normal timeline Undo remains available; direct file changes may not be undoable. {computerAccessProvider ? `${connectedAgentProviderLabel(provider)} can also run local commands, read and change files, install software and use network services with your normal OS user permissions, not administrator/root privileges.` : 'LM Studio can use Belrog’s tools, but does not receive an arbitrary computer-command tool.'}</p>
+            <p>Remember on this desktop keeps your choice for this provider across restarts. Choosing Chat only or Work in Belrog clears that choice. You can also turn off Full access under Access options. Images and the current view are included for vision-capable models, and review media is shared with your phone. This is not continuous streaming.</p>
+            <p>Belrog-managed generation still follows Generation spending. {computerAccessProvider && 'Direct computer commands and third-party services can bypass those controls and incur costs. Full access is not a global spending cap. '}Stop interrupts the response, but does not undo completed actions or necessarily cancel external jobs.</p>
+            {fundedLuna && <p>No Codex installation or sign-in is needed. Shared context, images, file content and command output go through Belrog to OpenAI. Your Velo inference allowance still applies; Full access does not add or refill it. Earlier tool-only approval does not grant computer access; fresh confirmation is required.</p>}
             {provider === 'codex' && <p>Your message is sent as typed, including paths and links. Avoid including secrets. Codex keeps local session files for continuity; turning off access does not erase those files.</p>}
           </details>}
         </details>
@@ -2012,7 +2012,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
             {codexExecutable && <>
               <p>{codexExecutable.mode === 'custom' ? 'Chosen executable' : 'Automatic detection'}{codexExecutable.source ? ` · ${codexExecutable.source}` : ''}</p>
               {codexExecutable.path && <code aria-label="Codex executable path">{codexExecutable.path}</code>}
-              {!codexExecutable.available && <p className="ca-installation-warning" role="status">Codex CLI was not found or is unavailable. Install it separately, then choose its executable or retry Check connection. Velorn does not install it automatically.</p>}
+              {!codexExecutable.available && <p className="ca-installation-warning" role="status">Codex CLI was not found or is unavailable. Install it separately, then choose its executable or retry Check connection. Belrog does not install it automatically.</p>}
               {codexExecutable.error && <p className="ca-installation-warning">{codexExecutable.error}</p>}
             </>}
             <div className="ca-installation-actions">
@@ -2021,7 +2021,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
             </div>
             <p>This device only; the executable path is not sent in chat or project context. Changing installation turns off Full computer access.</p>
             {(executableReading || executableChanging) && <p role="status">{executableChanging ? 'Updating Codex installation…' : 'Checking Codex installation…'}</p>}
-            {(!api?.codexExecutable || executableError) && <p className="ca-installation-warning" role="alert">{executableError || 'Fully quit and reopen Velorn to choose or detect the Codex executable.'}</p>}
+            {(!api?.codexExecutable || executableError) && <p className="ca-installation-warning" role="alert">{executableError || 'Fully quit and reopen Belrog to choose or detect the Codex executable.'}</p>}
           </section>}
           {!fundedLuna && <p className="ca-privacy">{provider === 'codex' ? 'Send shares your message and project context with Codex. Uses your Codex account and limits.' : researchEnabled ? 'Model inference uses your local LM Studio server. Research queries also go to public websites. No cloud model fallback.' : 'Messages go only to your local LM Studio server. No cloud fallback.'}</p>}
           </details>
@@ -2035,10 +2035,10 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         <section className="ca-settings-section ca-generation-spending" aria-labelledby={`${settingsId}-spending-title`}>
           <h3 id={`${settingsId}-spending-title`}>Generation spending</h3>
           <p className="ca-note">Image, video and audio generation — separate from Velo’s chat allowance and your Codex account.</p>
-          <p className="ca-note">{!spendingPolicy ? 'Spending protection is unverified; restart before generating.' : 'Velorn shows the price and asks before anything is spent.'} Direct computer commands are outside these controls.</p>
+          <p className="ca-note">{!spendingPolicy ? 'Spending protection is unverified; restart before generating.' : 'Belrog shows the price and asks before anything is spent.'} Direct computer commands are outside these controls.</p>
           <details className="ca-settings-disclosure" id={`${settingsId}-spending-details`}><summary>Spending details</summary>
-            <p>Paid or unverified generation always needs your approval first. If a saved workflow has unfamiliar nodes, Velorn shows which ones before it runs. Unrecognized does not mean paid.</p>
-            <p>Saved on this device across chats and providers. Applies to all Velorn-managed generation in all projects, not Codex chat billing. Does not change chat-model billing. This is not a global spending cap; unrestricted shell, network and direct ComfyUI calls can bypass it.</p>
+            <p>Paid or unverified generation always needs your approval first. If a saved workflow has unfamiliar nodes, Belrog shows which ones before it runs. Unrecognized does not mean paid.</p>
+            <p>Saved on this device across chats and providers. Applies to all Belrog-managed generation in all projects, not Codex chat billing. Does not change chat-model billing. This is not a global spending cap; unrestricted shell, network and direct ComfyUI calls can bypass it.</p>
           </details>
           {spendingChanging && <p role="status">Waiting for native confirmation…</p>}
           {spendingNotice && <p role="status">{spendingNotice}</p>}
@@ -2096,14 +2096,14 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         <h3>Choose your assistant</h3>
         <p>Optional. You can edit without an assistant and change your choice later.</p>
         <div className="ca-assistant-choices">
-          <button type="button" aria-label="Choose Velo" disabled={selectionDisabled} onClick={() => chooseFirstAssistant('luna')}><strong>Velo</strong><span>Velorn’s built-in AI assistant. Sign in to use your available allowance.</span></button>
+          <button type="button" aria-label="Choose Velo" disabled={selectionDisabled} onClick={() => chooseFirstAssistant('luna')}><strong>Velo</strong><span>Belrog’s built-in AI assistant. Sign in to use your available allowance.</span></button>
           <button type="button" aria-label="Choose Codex" disabled={selectionDisabled} onClick={() => chooseFirstAssistant('codex')}><strong>Codex</strong><span>Use your own Codex account.</span></button>
           <button type="button" aria-label="Choose LM Studio" disabled={selectionDisabled} onClick={() => chooseFirstAssistant('lmstudio')}><strong>LM Studio</strong><span>Use a local model on your computer.</span></button>
           <button type="button" aria-label="Not now" disabled={selectionDisabled} onClick={() => { entryGuide.skip(); focusComposer.current = true }}><strong>Not now</strong><span>Keep editing without an assistant.</span></button>
         </div>
       </section>}
       {showEntryGuide && !showAssistantChoice && provider === 'codex' && <section className="ca-entry-guide" aria-label="Codex connection help">
-        <h3>Set up Codex</h3><p>Use your ChatGPT account in Velorn.</p>
+        <h3>Set up Codex</h3><p>Use your ChatGPT account in Belrog.</p>
         <div className="ca-entry-guide-actions"><button type="button" disabled={selectionDisabled} onClick={openCodexSetup}>Set up Codex</button><button type="button" onClick={() => entryGuide.skip()}>Not now</button></div>
       </section>}
       {showEntryGuide && !showAssistantChoice && provider === 'lmstudio' && <section className="ca-entry-guide" aria-label="LM Studio connection help">
@@ -2122,7 +2122,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
         notice={starterNotice.chatId === conversations.activeId ? starterNotice.text : ''} fullAccessEnabled={fullAccessEnabled} computerAccessEnabled={fullComputerAccessEnabled} toolsEnabled={toolsEnabled} />}
       {(lastActivityReply ? messages.slice(0, -1) : messages).map(messageNode)}
       {lastActivityReply && messageNode(lastActivityReply, 'activity-final-reply')}
-      {busy && (!liveActivity.length || partial) && <article className="ca-message ca-assistant" aria-busy="true"><strong>{fundedLuna ? 'Velo' : 'Velorn Assistant'}</strong><RequestedModel value={requestModel} provider={provider} effort={requestThinking} /><AgentMessageContent text={formatConnectedAgentResponse(partial, currentContext(), { allowPublicUrls: true }).text || status} /></article>}
+      {busy && (!liveActivity.length || partial) && <article className="ca-message ca-assistant" aria-busy="true"><strong>{fundedLuna ? 'Velo' : 'Belrog Assistant'}</strong><RequestedModel value={requestModel} provider={provider} effort={requestThinking} /><AgentMessageContent text={formatConnectedAgentResponse(partial, currentContext(), { allowPublicUrls: true }).text || status} /></article>}
       {busy && <AgentReviewGallery frames={reviewFrames.filter(frame => frame.chatId === conversations.activeId && frame.turnId === activeRequest.current)} onShow={showReviewFrame} disabled />}
       {busy && <AgentPlayableMedia items={playable.items.filter(item => item.turnId === activeRequest.current)} />}
       {busy && !messages.some(message => message.role === 'assistant' && message.turnId === activeRequest.current) && setupDownloadCards(activeRequest.current)}
@@ -2146,7 +2146,7 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
     }}>
       {error && <p role="alert" className="ca-error">{error}</p>}
       {!busy && status && <p role="status" className="ca-note">{status}</p>}
-      <div className="ca-selected-model" aria-label={fundedLuna ? 'Selected assistant' : 'Selected model'} title={fundedLuna ? 'Velo is Velorn’s built-in AI assistant. It uses Light reasoning. Model details are in About Velo and sharing.' : 'This selection is sent with your next message. Requested model labels are not server-confirmed execution or billing.'}>
+      <div className="ca-selected-model" aria-label={fundedLuna ? 'Selected assistant' : 'Selected model'} title={fundedLuna ? 'Velo is Belrog’s built-in AI assistant. It uses Light reasoning. Model details are in About Velo and sharing.' : 'This selection is sent with your next message. Requested model labels are not server-confirmed execution or billing.'}>
         <div><span>{fundedLuna ? 'Assistant' : provider === 'lmstudio' ? 'Requested model' : 'Selected model'}</span>{!fundedLuna && <span>{provider === 'lmstudio' ? 'LM Studio · local' : connectedAgentProviderLabel(provider)}</span>}</div>
         <strong>{fundedLuna ? 'Velo' : selectedModelLabel}{!fundedLuna && provider !== 'lmstudio' && !codexNeedsSetup ? ` · ${THINKING_LABELS[busy ? requestThinking : thinkingLevel] || THINKING_LABELS[thinkingLevel]}` : ''}</strong>
         <button type="button" className="ca-change-model" aria-expanded={modelPickerOpen || codexSetupOpen || lmStudioSetupOpen} aria-controls={codexNeedsSetup || (provider === 'lmstudio' && !model) ? undefined : `${settingsId}-chat-models`} disabled={selectionDisabled} onClick={() => { if (codexNeedsSetup) { openCodexSetup(); return } if (provider === 'lmstudio' && !model) { openLmStudioSetup(); return } setPendingProvider(null); setCustomModelDraft(model); setModelPickerOpen(open => !open) }}>{codexNeedsSetup ? 'Set up Codex' : provider === 'lmstudio' && !model ? 'Connect LM Studio' : fundedLuna ? 'Change assistant' : 'Change assistant or model'}</button>
@@ -2156,8 +2156,8 @@ function Conversation({ projectKey, provider, onProviderChange, settingsOpen, se
       {fundedLuna && !modelPickerOpen && (lunaConnection.available ? !busy && <p className="ca-note" role="status">{veloAllowanceNotice(veloAllowance.result) || 'Velo ready'}</p> : veeAccess)}
       {fundedLuna && mobile.connection?.guided?.registered && <VeloAllowance {...veloAllowance} />}
       <div className={`ca-spending-badge${spendingPolicy ? '' : ' ca-spending-unknown'}`} role="status" aria-label="Generation spending status"
-        title={spendingPolicy ? 'This device · all Velorn-managed generation only. Not Codex chat billing or a global spending cap. Direct computer tools can bypass it.' : SPENDING_UNAVAILABLE}>
-        {spendingPolicy ? `Velorn-managed generation · ${spendingPolicy === 'local-only' ? 'Local only' : 'Ask before cloud'}`
+        title={spendingPolicy ? 'This device · all Belrog-managed generation only. Not Codex chat billing or a global spending cap. Direct computer tools can bypass it.' : SPENDING_UNAVAILABLE}>
+        {spendingPolicy ? `Belrog-managed generation · ${spendingPolicy === 'local-only' ? 'Local only' : 'Ask before cloud'}`
           : spendingReading ? 'Generation spending · checking…' : 'Generation spending · restart required'}
       </div>
       {attachments.length > 0 && <ul className="ca-attachments" aria-label="Message attachments">{attachments.map(item => <li key={item.id}>
@@ -2247,10 +2247,10 @@ export default function ConnectedAgentPanel({ activeTab, onClose, onShowShot, on
   }, [pendingModelPicker, visible, loading, key, provider])
   useEffect(() => { setSettingsOpen(false) }, [setSettingsOpen])
   const backToChat = () => { setSettingsOpen(false); settingsButton.current?.focus() }
-  const renderHeader = (onNewChat, newChatDisabled = true, confirming = false) => <header className="ca-header"><MessageSquare size={16} /><h2>Velorn Assistant</h2>
+  const renderHeader = (onNewChat, newChatDisabled = true, confirming = false) => <header className="ca-header"><MessageSquare size={16} /><h2>Belrog Assistant</h2>
     <button type="button" aria-label="New chat" title="New chat" disabled={newChatDisabled} onClick={onNewChat}><Plus size={16} /></button>
     <button ref={settingsButton} type="button" className="ca-settings-toggle" aria-label="Assistant settings" title="Assistant settings" aria-expanded={settingsOpen} aria-controls={project && !loading ? settingsId : undefined} disabled={!project || loading || confirming} onClick={() => settingsOpen ? backToChat() : setSettingsOpen(true)}><Settings size={16} /></button>{!docked && <button type="button" aria-label="Close assistant panel" title="Close assistant panel" onClick={onClose}><X size={16} /></button>}</header>
-  return <aside className={`connected-agent-panel${docked ? ' ca-docked' : ''}`} aria-label="Velorn Assistant" data-editor-keyboard-scope="text" style={docked ? undefined : { '--ca-width': `${width}px` }} onContextMenu={event => {
+  return <aside className={`connected-agent-panel${docked ? ' ca-docked' : ''}`} aria-label="Belrog Assistant" data-editor-keyboard-scope="text" style={docked ? undefined : { '--ca-width': `${width}px` }} onContextMenu={event => {
     const text = selectedTextWithin(event.currentTarget)
     if (!text || !window.electronAPI?.showTextCopyMenu) return
     event.preventDefault(); event.stopPropagation(); setClipboardError('')

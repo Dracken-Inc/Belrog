@@ -131,7 +131,7 @@ async function main() {
 
     await load({ scenario: 'missing-api' })
     await page.getByRole('button', { name: 'Find running ComfyUI', exact: true }).click()
-    await page.getByText(/(?:restart Velorn|quit and reopen Velorn)/i).first().waitFor()
+    await page.getByText(/(?:restart Belrog|quit and reopen Belrog)/i).first().waitFor()
     noWrites(await capture('restart-guidance'))
     pass('An older native bridge shows restart guidance rather than a broken discovery action')
 
@@ -140,7 +140,7 @@ async function main() {
       await scan()
       await page.getByRole('button', { name: 'Connect to ComfyUI on port 8189', exact: true }).waitFor()
       noWrites(await capture(`darwin-${surface}-discovery`))
-      await page.getByText('Let Velorn start ComfyUI (optional)', { exact: true }).click()
+      await page.getByText('Let Belrog start ComfyUI (optional)', { exact: true }).click()
       const appCandidate = page.getByRole('button', { name: /Fixture ComfyUI\.app/ })
       await appCandidate.click()
       await page.waitForFunction(() => window.comfySetupTest.snapshot().config.launcherMode === 'mac-app')

@@ -362,7 +362,7 @@ test('phone requests are marked beside the job record, not in it, and the mark s
   const fromDesktop = (await manager.submitCreate({ planId: own.planId })).job.jobId
   const marks = async () => Object.fromEntries((await manager.list({})).jobs.map(job => [job.jobId, job.fromPhone === true]))
   assert.deepEqual(await marks(), { [fromPhone]: true, [fromDesktop]: false })
-  // The job record keeps the shape an older Velorn reads.
+  // The job record keeps the shape an older Belrog reads.
   const ledger = JSON.parse(await fs.readFile(path.join(storageDir, 'comfy-router-jobs.json'), 'utf8'))
   assert.deepEqual(Object.keys(ledger).sort(), ['jobs', 'version'])
   for (const record of ledger.jobs) assert.equal(Object.keys(record).some(key => /phone|origin/i.test(key)), false)

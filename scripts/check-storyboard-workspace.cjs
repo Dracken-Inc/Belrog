@@ -47,7 +47,7 @@ async function main() {
     assert.ok(preview.suggestedApplyPayload.previewToken && preview.suggestedApplyPayload.expectedContext)
     return rpc('edit_storyboard', preview.suggestedApplyPayload)
   }
-  const openFromMenu = async () => { await button('Velorn').click(); await button('Open storyboard').click(); await wall().waitFor() }
+  const openFromMenu = async () => { await button('Belrog').click(); await button('Open storyboard').click(); await wall().waitFor() }
   const capture = name => page.screenshot({ path: path.join(output, `${name}.png`), fullPage: true, animations: 'disabled' })
   const viewUnchanged = async before => {
     const after = await snapshot()
@@ -70,9 +70,9 @@ async function main() {
     assert.equal((await workspace()).activeTab, 'editor')
     assert.equal(await tab('Storyboard').count(), 0)
     assert.equal(empty.raw, undefined); assert.equal(empty.historyCount, 0); assert.equal(empty.dirty, false)
-    await button('Velorn').click(); await button('Open storyboard').waitFor(); await button('Velorn').click()
+    await button('Belrog').click(); await button('Open storyboard').waitFor(); await button('Belrog').click()
     await viewUnchanged(empty)
-    pass('A project without storyboard content starts in Editor with no Storyboard tab; the Velorn menu always offers Open storyboard')
+    pass('A project without storyboard content starts in Editor with no Storyboard tab; the Belrog menu always offers Open storyboard')
 
     await openFromMenu()
     await page.getByText('Your references and storyboard will appear here.', { exact: true }).waitFor()
@@ -161,7 +161,7 @@ async function main() {
     await page.evaluate(() => window.storyboardWorkspaceTest.close())
     await page.getByTestId('project-selection').waitFor()
     assert.equal(await tab('Storyboard').count(), 0)
-    await button('Velorn').click(); assert.equal(await button('Open storyboard').count(), 0); await button('Velorn').click()
+    await button('Belrog').click(); assert.equal(await button('Open storyboard').count(), 0); await button('Belrog').click()
     await page.evaluate(() => window.storyboardWorkspaceTest.reopen())
     await tab('Storyboard').waitFor()
     assert.equal((await workspace()).activeTab, 'editor', 'Reopening a populated project does not reopen a prior selected board')
@@ -197,7 +197,7 @@ async function main() {
     assert.equal(await tab('Storyboard').isDisabled(), true)
     await page.evaluate(() => window.storyboardWorkspaceTest.selectTab('storyboard'))
     assert.equal((await workspace()).activeTab, 'editor')
-    await button('Velorn').click(); assert.equal(await button('Open storyboard').count(), 0); await button('Velorn').click()
+    await button('Belrog').click(); assert.equal(await button('Open storyboard').count(), 0); await button('Belrog').click()
     await page.evaluate(() => window.storyboardWorkspaceTest.setDisabled(false))
     await page.waitForFunction(() => !window.storyboardWorkspaceTest.workspace().disabled)
     await tab('Storyboard').click(); await cards().nth(7).waitFor()

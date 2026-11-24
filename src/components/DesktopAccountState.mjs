@@ -45,8 +45,8 @@ export function desktopVeeStatus(result) {
 export function desktopAccountStatus(connection) {
   const guided = connection?.guided
   if (guided?.phase === 'sign-in') return 'Finish signing in in your browser.'
-  if (guided?.phase === 'confirm-account') return 'Confirm your Velorn account in the desktop prompt.'
-  if (guided?.phase === 'account-unavailable') return 'Reconnect your Velorn account.'
+  if (guided?.phase === 'confirm-account') return 'Confirm your Belrog account in the desktop prompt.'
+  if (guided?.phase === 'account-unavailable') return 'Reconnect your Belrog account.'
   if (!guided?.registered) return 'Sign in for Velo access and phone connections. Velo availability depends on your account.'
   if (!guided.enabled) return connection?.legacyEnabled === true
     ? 'Account phone sharing is off. Private-link phone sharing is on.'

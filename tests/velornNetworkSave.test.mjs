@@ -1,12 +1,12 @@
-// A clip from the Velorn network is saved into the open project once, and only
+// A clip from the Belrog network is saved into the open project once, and only
 // when it is what it says it is.
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createVelornNetworkSaver } from '../src/services/velornNetworkSave.mjs'
+import { createBelrogNetworkSaver } from '../src/services/velornNetworkSave.mjs'
 
 function fixture({ project = { currentProject: { name: 'Beach' }, currentProjectHandle: '/projects/beach' }, busy = false } = {}) {
   const state = { project, assets: [], imported: [], preview: null }
-  const save = createVelornNetworkSaver({
+  const save = createBelrogNetworkSaver({
     getProject: () => state.project, isBusy: () => busy,
     getAssets: () => ({ assets: state.assets, addAsset: asset => { const made = { id: `asset-${state.assets.length + 1}`, ...asset }; state.assets.push(made); return made }, setPreview: asset => { state.preview = asset.id } }),
     importFile: async (handle, file, category) => { state.imported.push({ handle, name: file.name, type: file.type, size: file.size, category }); return { path: `assets/video/${file.name}` } },
@@ -53,7 +53,7 @@ test('a picture from the network becomes one image asset, and its name must matc
 
 test('a song becomes one sound asset with its length, and is not set as the picture preview', async () => {
   const state = { project: { currentProject: { name: 'Beach' }, currentProjectHandle: '/projects/beach' }, assets: [], imported: [], preview: null }
-  const save = createVelornNetworkSaver({
+  const save = createBelrogNetworkSaver({
     getProject: () => state.project, measureDuration: async url => (url.endsWith('.mp3') ? 211.4 : null),
     getAssets: () => ({ assets: state.assets, addAsset: asset => { const made = { id: `asset-${state.assets.length + 1}`, ...asset }; state.assets.push(made); return made }, setPreview: asset => { state.preview = asset.id } }),
     importFile: async (handle, file, category) => { state.imported.push({ name: file.name, type: file.type, category }); return { path: `assets/audio/${file.name}` } },

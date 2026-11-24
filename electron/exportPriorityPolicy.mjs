@@ -14,7 +14,7 @@ const lightweightReads = new Set([
   // Reads only native credential presence/session validation; no key or network.
   'get_comfy_cloud_setup_status',
   'get_comfy_router_status',
-  // A list kept in Velorn, and this session's local voice jobs: no network, nothing started.
+  // A list kept in Belrog, and this session's local voice jobs: no network, nothing started.
   'get_create_models', 'get_local_voice_status',
   // Native Runs reads use only the manager's cached local snapshot/record;
   // they never poll ComfyUI, decode outputs, submit work, or import assets.

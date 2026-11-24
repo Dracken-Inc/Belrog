@@ -74,7 +74,7 @@ export default function LocalModelSetup({ workflowId, name, about = '', terms = 
           <span>{flow.progress.currentLabel ? `Now: ${flow.progress.currentLabel}` : restarting ? 'This usually takes under a minute.' : 'Starting…'}</span>
           {total > 0 && !restarting && <span>{done > 0 ? `${formatDownloadSize(done)} of ${formatDownloadSize(total)}` : formatDownloadSize(total)}</span>}
         </div>
-        <p className="mt-2 text-sf-text-muted">You can keep working. Keep Velorn open until it finishes: a download that is interrupted starts that file again.</p>
+        <p className="mt-2 text-sf-text-muted">You can keep working. Keep Belrog open until it finishes: a download that is interrupted starts that file again.</p>
       </section>
     )
   }
@@ -89,7 +89,7 @@ export default function LocalModelSetup({ workflowId, name, about = '', terms = 
     return (
       <section className={CARD} role="status">
         <h3 className={TITLE}>ComfyUI isn't running</h3>
-        <p className="mt-1">{name} runs in ComfyUI on your computer. Start ComfyUI from the menu at the top right of Velorn, then check again.</p>
+        <p className="mt-1">{name} runs in ComfyUI on your computer. Start ComfyUI from the menu at the top right of Belrog, then check again.</p>
         <div className="mt-3 flex flex-wrap gap-2">{again}</div>
       </section>
     )
@@ -113,7 +113,7 @@ export default function LocalModelSetup({ workflowId, name, about = '', terms = 
     return (
       <section className={CARD} role="status">
         <h3 className={TITLE}>Where is your ComfyUI folder?</h3>
-        <p className="mt-1">{name} isn't on this computer yet. Velorn needs to know where ComfyUI lives so the download goes to the right place.</p>
+        <p className="mt-1">{name} isn't on this computer yet. Belrog needs to know where ComfyUI lives so the download goes to the right place.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button type="button" className={GO} onClick={flow.chooseComfyFolder}><FolderSearch aria-hidden="true" className="h-4 w-4" />Choose ComfyUI folder</button>
         </div>
@@ -162,8 +162,8 @@ export default function LocalModelSetup({ workflowId, name, about = '', terms = 
       <h3 className={TITLE}>{name} can't run here yet</h3>
       <p className="mt-1">
         {check.missingNodes?.length ? 'Your ComfyUI is missing parts this model needs. Update ComfyUI to its latest version, then check again.'
-          : check.status === 'error' ? 'Velorn could not check this model. Make sure ComfyUI has finished starting, then check again.'
-            : 'This model needs a step Velorn cannot do for you yet.'}
+          : check.status === 'error' ? 'Belrog could not check this model. Make sure ComfyUI has finished starting, then check again.'
+            : 'This model needs a step Belrog cannot do for you yet.'}
       </p>
       <div className="mt-3 flex flex-wrap gap-2">{again}</div>
     </section>

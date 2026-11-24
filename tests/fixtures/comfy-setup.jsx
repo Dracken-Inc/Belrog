@@ -100,7 +100,7 @@ function Fixture() {
   React.useEffect(() => { window.comfySetupTest.ready = true }, [])
   return <main className="min-h-screen bg-sf-dark-950 p-6 text-sf-text-primary">
     <header className="mx-auto mb-6 max-w-3xl border-b border-sf-dark-700 pb-4">
-      <h1 className="text-lg font-semibold">Velorn · isolated ComfyUI setup</h1>
+      <h1 className="text-lg font-semibold">Belrog · isolated ComfyUI setup</h1>
       <p className="mt-1 text-xs text-sf-text-muted">{platform} / {surface} / {scenario} · synthetic responses only; no real server or settings access</p>
     </header>
     <section id="fixture-surface" className={`mx-auto ${surface === 'chip' || surface === 'compact' ? 'max-w-md' : 'max-w-3xl'}`}>

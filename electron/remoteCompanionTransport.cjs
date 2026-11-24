@@ -5,7 +5,7 @@
     module.exports = factory(require('./remoteCompanionCrypto.cjs'), url => new WebSocket(url, {
       perMessageDeflate: false, maxPayload: 1536 * 1024,
     }));
-  } else root.VelornRemoteTransport = factory(root.VelornRemoteCrypto, url => new root.WebSocket(url));
+  } else root.BelrogRemoteTransport = factory(root.BelrogRemoteCrypto, url => new root.WebSocket(url));
 }(typeof globalThis !== 'undefined' ? globalThis : this, function factory(crypto, defaultSocket) {
   'use strict';
   const LIMITS = Object.freeze({ frame: 1536 * 1024, queued: 4 * 1024 * 1024, pending: 8,
@@ -14,7 +14,7 @@
   const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
   const validId = v => typeof v === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(v);
   const error = (code, message) => Object.assign(new Error(message), { code });
-  const unavailable = () => error('REMOTE_DISCONNECTED', 'Connection lost. Delivery may be uncertain; inspect Velorn before resending.');
+  const unavailable = () => error('REMOTE_DISCONNECTED', 'Connection lost. Delivery may be uncertain; inspect Belrog before resending.');
   function endpoint(value, allowLocalTest) {
     const url = new URL(value);
     const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);

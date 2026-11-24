@@ -9,10 +9,10 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
  const browser=await chromium.launch({headless:true,executablePath:'/usr/bin/google-chrome'}),page=await browser.newPage({viewport:{width:1280,height:1000}}),errors=[],blocked=[]
  page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message))
  await page.route('**/*',r=>new URL(r.request().url()).origin===origin?r.continue():(blocked.push(r.request().url()),r.abort()))
- const panel=page.getByRole('dialog',{name:'Your Velorn account'}),button=name=>panel.getByRole('button',{name,exact:true})
+ const panel=page.getByRole('dialog',{name:'Your Belrog account'}),button=name=>panel.getByRole('button',{name,exact:true})
  const calls=()=>page.evaluate(()=>window.desktopAccountFixture.calls)
  const mutations=async()=> (await calls()).filter(c=>c.method==='desktop-account')
- const open=async()=>{if(!await panel.count())await page.getByRole('button',{name:'Velorn account',exact:true}).click()}
+ const open=async()=>{if(!await panel.count())await page.getByRole('button',{name:'Belrog account',exact:true}).click()}
  const state=async(mode,project=false)=>{await page.evaluate(([m,p])=>window.desktopAccountFixture.setState(m,p),[mode,project]);await open()}
  try {
   await page.goto(origin+'/tests/fixtures/desktop-account.html?independent=1');await open()
@@ -68,7 +68,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE_PATH || 'playwright')
   console.log('PASS: Cancelled account actions preserve identity; confirmed sign-out keeps the computer name')
   await state('busy',true);assert.equal(await button('Sign out').isDisabled(),true)
   await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'})
-  assert.equal(await page.getByRole('button',{name:'Velorn account',exact:true}).evaluate(e=>e===document.activeElement),true)
+  assert.equal(await page.getByRole('button',{name:'Belrog account',exact:true}).evaluate(e=>e===document.activeElement),true)
   assert.deepEqual(errors,[]);assert.deepEqual(blocked,[])
   assert.deepEqual(await page.evaluate(()=>window.desktopAccountFixture.forbiddenCalls),[])
   console.log('PASS: Busy protection and dialog focus retained; no inference or unrelated operations. Artifacts: '+output)

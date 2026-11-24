@@ -20,8 +20,8 @@ function fixture() {
 test('clipboard UI exposes only bounded text write and Copy menu with exact main-frame ownership', () => {
   const f = fixture()
   assert.deepEqual([...f.handlers.keys()], ['text-clipboard:write', 'text-clipboard:menu'])
-  assert.deepEqual(f.invoke('write', 'Velorn 🦋\nC:\\clips\\take 2.mov\n日本語'), { success: true })
-  assert.deepEqual(f.writes, ['Velorn 🦋\nC:\\clips\\take 2.mov\n日本語'])
+  assert.deepEqual(f.invoke('write', 'Belrog 🦋\nC:\\clips\\take 2.mov\n日本語'), { success: true })
+  assert.deepEqual(f.writes, ['Belrog 🦋\nC:\\clips\\take 2.mov\n日本語'])
   for (const owner of [{ sender: {}, senderFrame: f.event.senderFrame }, { sender: f.event.sender, senderFrame: {} },
     { sender: f.event.sender }, {}]) {
     for (const operation of ['write', 'menu']) assert.throws(() => f.invoke(operation, 'No', owner), /main frame/)

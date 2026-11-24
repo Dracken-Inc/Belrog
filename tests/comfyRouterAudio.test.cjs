@@ -194,7 +194,7 @@ test('a sound of a kind this code does not know is kept; only a message is a fai
   assert.deepEqual(await g.files(), [])
 })
 
-test('recognises the sound files Velorn can play and nothing else', () => {
+test('recognises the sound files Belrog can play and nothing else', () => {
   const pad = head => Buffer.concat([head, Buffer.alloc(200)])
   assert.equal(audioHeader(MP3).extension, 'mp3')
   assert.equal(audioHeader(pad(Buffer.from([0xff, 0xfb, 0x90, 0x64]))).extension, 'mp3')
@@ -212,7 +212,7 @@ test('audio models keep their place in the catalog rules', () => {
   for (const id of ['eleven-v4', 'eleven-v4-turbo', 'eleven-sfx-v2']) assert.equal(getModel(id).delivery, 'sync')
   for (const id of ['pika-sfx', 'eleven-v3', 'sonilo', 'fish-s2-pro', 'heygen-starfish']) assert.equal(getModel(id), null)
   // Pika Music also runs only on the wait-for-the-result route and stays off the screen until a real request has worked.
-  // HeyGen was tried and left out (Jaime, 2026-11-18): Comfy hands back a link to HeyGen's own address, which Velorn does not collect from.
+  // HeyGen was tried and left out (Jaime, 2026-11-18): Comfy hands back a link to HeyGen's own address, which Belrog does not collect from.
   assert.equal(getModel('pika-music').delivery, 'sync'); assert.equal(getModel('pika-music').pending, true)
   assert.equal(listVoices({ model: getModel('eleven-v4') }).length, 10)
 })

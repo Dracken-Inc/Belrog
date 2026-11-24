@@ -202,8 +202,8 @@ function buildAudioDecodeArgs(inputPath, { startSeconds, durationSeconds, channe
 async function decodeAnalysisAudio({ inputPath, inputPaths = [inputPath], options, ffmpegPath, ffprobePath, state, spawnProcess }) {
   assertNotCancelled(state)
   for (const [label, binary] of [['FFmpeg', ffmpegPath], ['FFprobe', ffprobePath]]) {
-    if (!binary || typeof binary !== 'string') throw analysisError('AUDIO_ANALYSIS_NATIVE_UNAVAILABLE', `${label} is unavailable. Reinstall Velorn to restore audio analysis.`)
-    try { await fs.access(binary) } catch { throw analysisError('AUDIO_ANALYSIS_NATIVE_UNAVAILABLE', `${label} is missing. Reinstall Velorn to restore audio analysis.`) }
+    if (!binary || typeof binary !== 'string') throw analysisError('AUDIO_ANALYSIS_NATIVE_UNAVAILABLE', `${label} is unavailable. Reinstall Belrog to restore audio analysis.`)
+    try { await fs.access(binary) } catch { throw analysisError('AUDIO_ANALYSIS_NATIVE_UNAVAILABLE', `${label} is missing. Reinstall Belrog to restore audio analysis.`) }
   }
   let resolvedPath
   for (const candidate of inputPaths) {

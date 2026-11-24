@@ -81,7 +81,7 @@ function Fixture() {
   }, [])
   return <div className="flex h-screen flex-col bg-sf-dark-950 text-sf-text-primary">
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-sf-dark-700 px-4">
-      <span>Velorn · isolated asset browser</span>
+      <span>Belrog · isolated asset browser</span>
       <button className="rounded bg-sf-dark-700 p-2" onClick={() => setEditor(value => !value)}>{editor ? 'Switch workspace' : 'Return to editor'}</button>
       <button className="rounded bg-sf-dark-700 p-2" onClick={() => setLayout(value => value + 1)}>Remount layout</button>
     </header>

@@ -991,7 +991,7 @@ test('already-aborted sends never spawn or create gateway', async () => {
 })
 
 // Explicit opt-in only: this consumes the signed-in ChatGPT account's Codex
-// allowance. It never installs/downloads models or touches a Velorn project.
+// allowance. It never installs/downloads models or touches a Belrog project.
 test('optional real-provider full-access smoke uses only disposable JSON, owned loopback HTTP and synthetic MCP',
   { skip: process.env.VELORN_CODEX_FULL_ACCESS_SMOKE !== '1', timeout: 240000 }, async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-full-access-smoke-'))
@@ -1012,7 +1012,7 @@ test('optional real-provider full-access smoke uses only disposable JSON, owned 
         },
       }
       const result = await sendFullAccessCodex(request({ workingDirectory: directory, model: process.env.VELORN_CODEX_FULL_ACCESS_SMOKE_MODEL || 'gpt-5.6-luna',
-        messages: [{ role: 'user', content: `This is an explicitly authorized disposable runtime smoke test. Work only inside ${directory}. Use your native shell/files tools to create proof.json with {"marker":"file-smoke-ok","reviewed":false}, then edit that same file to reviewed:true and read it back. Fetch the owned loopback JSON endpoint ${endpoint} via a native shell command. Call the provided inspect_smoke_project Velorn tool. Report the three marker values and what actually completed. Do not use any other filesystem directory, external site, account, downloads, models, ComfyUI, or application. Do not create extra scripts or files. Do not seek elevated privileges.` }] }),
+        messages: [{ role: 'user', content: `This is an explicitly authorized disposable runtime smoke test. Work only inside ${directory}. Use your native shell/files tools to create proof.json with {"marker":"file-smoke-ok","reviewed":false}, then edit that same file to reviewed:true and read it back. Fetch the owned loopback JSON endpoint ${endpoint} via a native shell command. Call the provided inspect_smoke_project Belrog tool. Report the three marker values and what actually completed. Do not use any other filesystem directory, external site, account, downloads, models, ComfyUI, or application. Do not create extra scripts or files. Do not seek elevated privileges.` }] }),
       { timeoutMs: 210000, toolSession, requestApproval: async () => false, onEvent: event => { if (event.type === 'tool') activity.push(event) } })
       assert.equal(result.success, true)
       assert.deepEqual(JSON.parse(await fs.readFile(path.join(directory, 'proof.json'), 'utf8')), { marker: 'file-smoke-ok', reviewed: true })

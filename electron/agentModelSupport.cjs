@@ -54,14 +54,14 @@ function qualificationEvidenceValid(profile) {
 }
 function getLocalModelSupport(config = {}, registry = MODEL_SUPPORT_REGISTRY) {
   const fallback = { status: 'experimental', label: 'Experimental',
-    summary: 'Connected does not mean verified for editing. This exact local model setup has not completed Velorn qualification.', tier: null, profileId: null }
+    summary: 'Connected does not mean verified for editing. This exact local model setup has not completed Belrog qualification.', tier: null, profileId: null }
   if (!object(registry) || registry.schemaVersion !== 1 || !Array.isArray(registry.localProfiles)) return fallback
   const profiles = registry.localProfiles.filter(profile => object(profile) && nonempty(profile.id) && sameConfiguration(profile.configuration, config))
   // Conflicting reviewed records must not produce an arbitrary recommendation.
   if (profiles.length !== 1) return fallback
   const profile = profiles[0], tier = ['small', 'medium', 'large'].includes(profile.tier) ? profile.tier : null
   if (profile.status === 'unavailable') return { status: 'unavailable', label: 'Unavailable',
-    summary: 'This exact setup is not currently available for Velorn qualification. Choose another model or configuration.', tier, profileId: profile.id }
+    summary: 'This exact setup is not currently available for Belrog qualification. Choose another model or configuration.', tier, profileId: profile.id }
   if (profile.status === 'recommended' && qualificationEvidenceValid(profile)) return { status: 'recommended', label: 'Recommended',
     summary: 'This exact setup passed repeated clean tool tests and reviewed editing, undo, export, phone review and GPU-handoff acceptance.', tier, profileId: profile.id }
   return { ...fallback, tier, profileId: profile.id }

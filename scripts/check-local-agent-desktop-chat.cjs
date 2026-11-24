@@ -164,7 +164,7 @@ function seed() {
  const pictures=[3,4,4,3,3,3].map((duration,i)=>{const c={id:`clip-${i+1}`,name:`Picture ${i+1}`,assetId:`asset-${i+1}`,type:'video',trackId:'v1',
   startTime:start,duration,trimStart:0,trimEnd:duration,sourceDuration:10,sourceTimeScale:1,timelineFps:24,sourceFps:24,speed:1,reverse:false,url:`memory:picture-${i+1}`};start+=duration;return c})
  const clips=[...pictures,{id:'title-opening',name:'Opening title',type:'text',trackId:'titles',startTime:0,duration:3,textProperties:{text:'A different perspective'},transform:{opacity:100},keyframes:{}},
- {id:'title-closing',name:'Closing title',type:'text',trackId:'titles',startTime:17,duration:3,textProperties:{text:'Made in Velorn'},transform:{opacity:100},keyframes:{}},
+ {id:'title-closing',name:'Closing title',type:'text',trackId:'titles',startTime:17,duration:3,textProperties:{text:'Made in Belrog'},transform:{opacity:100},keyframes:{}},
  {id:'music',name:'Music',assetId:'asset-music',type:'audio',trackId:'a1',startTime:0,duration:20,trimStart:0,trimEnd:20,sourceDuration:30,url:'memory:music'}]
  timeline.setState({...initialTimeline,timelineSessionId:timeline.getState().timelineSessionId+1,clips,
   tracks:[{id:'v1',name:'Picture',type:'video',visible:true,muted:false,locked:false},{id:'titles',name:'Titles',type:'video',visible:true,muted:false,locked:false},{id:'a1',name:'Music',type:'audio',visible:true,muted:false,locked:false}],
@@ -283,7 +283,7 @@ function stepReadEvidence(r){
 }
 const stepPrefix='Call get_timeline to inspect the actual timeline. Identify the last picture clip and its observed start, duration and end. '
 const stepTarget='Preview a normal end trim so that this clip ends at 19.5 seconds and lasts 2.5 seconds, preserving its 17 second start and source-in, with no ripple and every other clip unchanged. '
-const stepApply='Then apply that trim once through Velorn’s normal approval and safety checkpoint process. '
+const stepApply='Then apply that trim once through Belrog’s normal approval and safety checkpoint process. '
 const stepCases=[
  {id:12,name:'step-1-inspect',stage:1,writes:[],previewOnly:true,prompt:stepPrefix+'Report those observed values; make no edits.'},
  {id:13,name:'step-2-inspect-preview',stage:2,writes:trimTools,previewOnly:true,prompt:stepPrefix+stepTarget+'Report the proposed timing. Do not apply or request approval.'},

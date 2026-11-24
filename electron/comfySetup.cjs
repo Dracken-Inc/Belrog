@@ -103,7 +103,7 @@ function createComfySetup({ platform = process.platform, homeDir = os.homedir(),
         ['run_cpu.bat', 'Windows portable CPU launcher']]
       : [['run_nvidia_gpu.sh', 'NVIDIA GPU launcher'], ['run_cpu.sh', 'CPU launcher'],
         ['run_comfyui.sh', 'ComfyUI launcher'], ['run_comfyui.command', 'ComfyUI launcher'],
-        ['run-velorn-comfyui.sh', 'ComfyUI launcher for Velorn']]
+        ['run-velorn-comfyui.sh', 'ComfyUI launcher for Belrog']]
     const add = (value, label, launcherMode) => {
       const normalized = absolute(value)
       if (!normalized || requests.has(pathKey(normalized))) return

@@ -177,7 +177,7 @@ test('tools: fresh empty-answer recovery preserves the user request and role alt
   assert.deepEqual(calls, [])
   for (const body of bodies) assertOrdinaryRoles(body.messages, ['system', 'user'])
   assert.ok(bodies[1].messages[1].content.startsWith(bodies[0].messages[1].content))
-  assert.match(bodies[1].messages[1].content, /Velorn answer recovery/)
+  assert.match(bodies[1].messages[1].content, /Belrog answer recovery/)
   assert.deepEqual(bodies[1].tools, [])
   assert.equal(bodies[1].tool_choice, 'none')
 })
@@ -238,10 +238,10 @@ for (const toolImages of [false, true]) {
     if (toolImages) {
       assert.deepEqual(bodies[2].messages.slice(1, -1), bodies[1].messages.slice(1, -1))
       assert.deepEqual(bodies[2].messages.at(-1).content.slice(0, -1), bodies[1].messages.at(-1).content)
-      assert.match(bodies[2].messages.at(-1).content.at(-1).text, /Velorn answer recovery/)
+      assert.match(bodies[2].messages.at(-1).content.at(-1).text, /Belrog answer recovery/)
     } else {
       assert.deepEqual(bodies[2].messages.slice(1, -1), bodies[1].messages.slice(1), 'Recovery must preserve prior native tool envelopes exactly.')
-      assert.match(bodies[2].messages.at(-1).content, /Velorn answer recovery/)
+      assert.match(bodies[2].messages.at(-1).content, /Belrog answer recovery/)
     }
     assert.doesNotMatch(JSON.stringify({ bodies, events, result }), /PRIVATE_REASONING_MUST_NOT_ENTER_MESSAGES/)
   })

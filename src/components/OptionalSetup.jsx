@@ -92,7 +92,7 @@ export default function OptionalSetup({ onSkip, onFinish, onChooseAgentModel, on
           <p>This enables supported Partner/API nodes through local ComfyUI, not a directly hosted Comfy Cloud connection. No credits are bought and no generation starts.</p></>
           : comfyControls ? <section aria-label="ComfyUI controls" className="optional-setup-launcher">
             <h2>ComfyUI controls</h2>
-            <p>These are Velorn’s existing connection and startup controls. Opening them does not start, stop or restart ComfyUI, save its configuration, or generate media. Refresh status or choose an action when you are ready.</p>
+            <p>These are Belrog’s existing connection and startup controls. Opening them does not start, stop or restart ComfyUI, save its configuration, or generate media. Refresh status or choose an action when you are ready.</p>
             <p className="optional-setup-hint">Launcher status is not a fresh setup verification. After making changes, return to Luna and explicitly check the connection again. Local paths and logs shown here are not sent to Luna.</p>
             <ComfyLauncherSettingsSection refreshOnMount={false} />
           </section>
@@ -113,7 +113,7 @@ export default function OptionalSetup({ onSkip, onFinish, onChooseAgentModel, on
   return wrap(<section className="optional-setup guided-setup" aria-label="Guided setup">
     <p className="guided-setup-eyebrow">Connect tools · optional</p>
     <h2>{view === 'complete' ? 'Setup check complete' : view === 'skipped' ? 'You can keep editing' : 'What would you like help setting up?'}</h2>
-    <p>{view === 'complete' ? 'Your current editing assistant, model and chats are unchanged. You can keep editing, or connect another tool later.' : 'Edit, caption and export without an agent, ComfyUI or a Velorn account. Nothing is installed or connected until you choose it.'}</p>
+    <p>{view === 'complete' ? 'Your current editing assistant, model and chats are unchanged. You can keep editing, or connect another tool later.' : 'Edit, caption and export without an agent, ComfyUI or a Belrog account. Nothing is installed or connected until you choose it.'}</p>
     {['skipped', 'complete'].includes(view) ? <button type="button" onClick={() => setView('start')}>Back to setup</button> : <>
       <div className="guided-setup-choices">
         <button type="button" aria-label="Set up an editing assistant" onClick={() => setView('agent')}><MessageSquare size={19} aria-hidden="true" /><span><strong>Set up an editing assistant</strong><small>Connect your own Codex account or a local model in LM Studio.</small></span></button>
@@ -174,7 +174,7 @@ export function ManualToolSetup({ integrations }) {
   }
 
   const inspect = async (integration, current) => {
-    if (!api?.optionalSetup?.inspect) throw new Error('Fully quit and reopen Velorn to enable tool setup.')
+    if (!api?.optionalSetup?.inspect) throw new Error('Fully quit and reopen Belrog to enable tool setup.')
     const result = await api.optionalSetup.inspect({ integration })
     if (!current()) return
     if (!result?.success) {
@@ -195,7 +195,7 @@ export function ManualToolSetup({ integrations }) {
     if (result?.success === false) throw new Error(`Open ${GUIDES[integration]} in your browser for the official guide.`)
   })
   const changeExecutable = action => run('codex', action, async current => {
-    if (!api?.connectedAgent?.codexExecutable) throw new Error('Fully quit and reopen Velorn to choose or detect Codex.')
+    if (!api?.connectedAgent?.codexExecutable) throw new Error('Fully quit and reopen Belrog to choose or detect Codex.')
     // An attempted installation change can fail after native authority has
     // already been cleared. Do not keep a previous Ready result in that case.
     setResults(previous => ({ ...previous, codex: null }))
@@ -205,7 +205,7 @@ export function ManualToolSetup({ integrations }) {
     await inspect('codex', current)
   })
   const signIn = () => run('codex', 'login', async (current, token) => {
-    if (!api?.connectedAgent?.codexLogin) throw new Error('Fully quit and reopen Velorn to enable guided sign-in.')
+    if (!api?.connectedAgent?.codexLogin) throw new Error('Fully quit and reopen Belrog to enable guided sign-in.')
     loginOperation.current = token
     try {
       const result = await api.connectedAgent.codexLogin({ action: 'start' })
@@ -256,7 +256,7 @@ export function ManualToolSetup({ integrations }) {
   return <section className="optional-setup" aria-label="Optional tools">
     <div className="optional-setup-intro">
       <h2>{integrations?.length === 1 ? `${TOOLS.find(tool => tool.id === integrations[0])?.name || 'Tool'} setup` : integrations ? 'Choose your editing assistant' : 'Connect tools'}</h2>
-      <p>{integrations?.length === 1 ? 'Check this tool or use its setup controls below. Nothing will switch your current editing assistant or start generation.' : integrations ? 'Use your own ChatGPT account with Codex, or run a local model with LM Studio. Check only the one you want to use; nothing will switch your current agent.' : 'Optional extras, whenever you need them. Edit, caption and export without an agent, ComfyUI or a Velorn account.'}</p>
+      <p>{integrations?.length === 1 ? 'Check this tool or use its setup controls below. Nothing will switch your current editing assistant or start generation.' : integrations ? 'Use your own ChatGPT account with Codex, or run a local model with LM Studio. Check only the one you want to use; nothing will switch your current agent.' : 'Optional extras, whenever you need them. Edit, caption and export without an agent, ComfyUI or a Belrog account.'}</p>
     </div>
     <div className="optional-setup-cards">
       {TOOLS.filter(tool => !integrations || integrations.includes(tool.id)).map(({ id, name, icon: Icon, description }) => {
@@ -319,7 +319,7 @@ export function ManualToolSetup({ integrations }) {
               <p>A local connection does not mean every workflow is free. Paid generation still needs confirmation.</p>
             </>}
             <button type="button" disabled={Boolean(pending)} onClick={() => void guide(id)}>Open {name} guide</button>
-            <p>The official guide opens in your browser. Velorn does not install software automatically.</p>
+            <p>The official guide opens in your browser. Belrog does not install software automatically.</p>
           </details>
           {notices[id] && <p className="optional-setup-result" role="status">{notices[id]}</p>}
           {errors[id] && <p className="optional-setup-error" role="alert">{errors[id]}</p>}

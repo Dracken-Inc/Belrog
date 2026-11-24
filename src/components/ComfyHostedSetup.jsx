@@ -37,7 +37,7 @@ export default function ComfyHostedSetup() {
   useEffect(() => {
     const current = ++revision.current
     if (!api?.status) {
-      setError('Hosted account checks are available in the updated Velorn desktop app.')
+      setError('Hosted account checks are available in the updated Belrog desktop app.')
       setPending('')
       return () => { revision.current++ }
     }
@@ -116,14 +116,14 @@ export default function ComfyHostedSetup() {
       <div className="space-y-2">
         <h3 id="comfy-hosted-title" className="text-sm font-semibold text-sf-text-primary">Hosted Comfy Cloud</h3>
         <p className="text-xs leading-relaxed text-sf-text-secondary">Check access to Comfy’s hosted service, separate from your local ComfyUI and its Partner/API nodes. Comfy Cloud API access requires a paid Comfy Cloud subscription.</p>
-        <p className="text-xs leading-relaxed text-sf-text-muted">Account check only: hosted generation is not enabled in Velorn yet. This does not upload media, run a workflow, purchase credits, or change your local connection or editing assistant.</p>
+        <p className="text-xs leading-relaxed text-sf-text-muted">Account check only: hosted generation is not enabled in Belrog yet. This does not upload media, run a workflow, purchase credits, or change your local connection or editing assistant.</p>
       </div>
 
       <div role="status" aria-live="polite" className={`rounded-md border p-3 text-xs leading-relaxed ${verified ? 'border-emerald-500/40 bg-emerald-500/5 text-emerald-300' : 'border-sf-dark-700 text-sf-text-secondary'}`}>
         <p className="font-medium">{pending === 'loading' ? 'Reading saved setup…' : pending === 'check' ? 'Checking account access…' : pending === 'clear' ? 'Forgetting hosted key…' : title}</p>
         {!pending && <p className="mt-1">{changed ? 'Check this key to verify its account access.' : STATES[state][1]}</p>}
         {checkNote && !pending && <p className="mt-1">{checkNote}</p>}
-        {status?.configured && !changed && !pending && <p className="mt-1 text-sf-text-muted">{status.remembered ? 'Key remembered on this device using OS-protected storage.' : 'Key kept only for this Velorn session. It will be forgotten when Velorn quits.'}</p>}
+        {status?.configured && !changed && !pending && <p className="mt-1 text-sf-text-muted">{status.remembered ? 'Key remembered on this device using OS-protected storage.' : 'Key kept only for this Belrog session. It will be forgotten when Belrog quits.'}</p>}
       </div>
 
       <form onSubmit={check} className="space-y-3">
@@ -149,7 +149,7 @@ export default function ComfyHostedSetup() {
       </form>
 
       {confirmForget && <div className="space-y-2 rounded-md border border-sf-dark-600 p-3 text-xs text-sf-text-secondary">
-        <p>Forget this hosted key in Velorn? This removes its local saved copy and session copy. It does not revoke the key at Comfy or change your Partner/API key.</p>
+        <p>Forget this hosted key in Belrog? This removes its local saved copy and session copy. It does not revoke the key at Comfy or change your Partner/API key.</p>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={buttonClass} onClick={() => { setKey(''); void perform('clear') }}>Forget key</button>
           <button type="button" className={buttonClass} onClick={() => setConfirmForget(false)}>Cancel</button>

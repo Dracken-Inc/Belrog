@@ -1,4 +1,4 @@
-// Isolated hidden-window crash test. Never attaches to the user's Velorn app.
+// Isolated hidden-window crash test. Never attaches to the user's Belrog app.
 const { app, BrowserWindow, crashReporter } = require('electron')
 const fs = require('node:fs')
 const os = require('node:os')

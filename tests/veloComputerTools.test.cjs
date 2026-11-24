@@ -611,13 +611,13 @@ test('Windows: PowerShell is started with a fixed script; the command travels on
   assert.equal(Buffer.from(args[8], 'base64').toString('utf16le'), WINDOWS_BOOTSTRAP)
   assert.ok(!args.join(' ').includes('tricky'), 'The user command is never on the command line')
   assert.equal(options.env[WINDOWS_COMMAND_VARIABLE], command)
-  assert.equal(options.detached, false, 'Not detached: Windows then ends the shell if Velorn itself dies')
+  assert.equal(options.detached, false, 'Not detached: Windows then ends the shell if Belrog itself dies')
   assert.equal(options.shell, false); assert.equal(options.windowsHide, true)
   assert.equal(options.env.NODE_OPTIONS, undefined); assert.equal(options.env.PSModulePath, undefined); assert.equal(options.env.VELO_SERVICE_TOKEN, undefined)
   assert.equal(f.executor.tools, WINDOWS_TOOLS)
   // The start-up script must contain the command only after the job is in place.
   assert.ok(WINDOWS_BOOTSTRAP.indexOf('AssignProcessToJobObject(job, GetCurrentProcess())') > 0)
-  assert.ok(WINDOWS_BOOTSTRAP.indexOf('[Velorn.CommandJob]::Contain()') < WINDOWS_BOOTSTRAP.indexOf('& $velornBlock'))
+  assert.ok(WINDOWS_BOOTSTRAP.indexOf('[Belrog.CommandJob]::Contain()') < WINDOWS_BOOTSTRAP.indexOf('& $velornBlock'))
   assert.match(WINDOWS_BOOTSTRAP, /0x2000/, 'Kill-on-close limit')
   assert.deepEqual(commandEnvironment({ Path: 'C:\\x', PATH: 'dup', SystemRoot: 'C:\\Windows', UserProfile: 'C:\\Users\\a', ELECTRON_RUN_AS_NODE: '1', OPENAI_API_KEY: 'k' }, 'win32'),
     { Path: 'C:\\x', SystemRoot: 'C:\\Windows', UserProfile: 'C:\\Users\\a' })

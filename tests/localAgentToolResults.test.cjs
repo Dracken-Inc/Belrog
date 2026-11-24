@@ -233,7 +233,7 @@ test('page failures give bounded machine-readable recovery metadata without echo
   assert.equal(invalid.requestedResult.nextUnreadOffset, LIMITS.excerptChars)
   assert.equal(invalid.requestedResult.maxChars, LIMITS.pageChars)
   assert.match(invalid.error.message, /Omit offset to read the next unread page/)
-  assert.match(invalid.error.message, /Velorn manages the bounded page size/)
+  assert.match(invalid.error.message, /Belrog manages the bounded page size/)
   assert.doesNotMatch(invalid.error.message, /maxChars|page size from|1 to 12000/)
   assert.doesNotMatch(JSON.stringify(invalid), /Timeline data/)
   for (let i = 0; i < 6; i++) packed(store, large(), `extra_${i}`)

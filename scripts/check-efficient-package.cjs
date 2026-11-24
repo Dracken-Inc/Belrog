@@ -108,7 +108,7 @@ async function launch(round) {
     assert.equal(await bar.getAttribute('aria-valuenow'), '97.3')
     assert.doesNotMatch(await page.locator('.velo-allowance').innerText(), /\$|USD|dollar/i)
     await page.getByRole('button', { name: 'Assistant settings', exact: true }).click()
-    await page.getByRole('button', { name: 'Work in Velorn', exact: true }).click()
+    await page.getByRole('button', { name: 'Work in Belrog', exact: true }).click()
     await page.getByRole('button', { name: 'Back to chat', exact: true }).click()
     await page.getByRole('textbox', { name: 'Message your agent' }).fill('Synthetic UI animation only.')
     await page.getByRole('button', { name: 'Send message', exact: true }).click()

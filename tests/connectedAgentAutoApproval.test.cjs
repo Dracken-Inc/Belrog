@@ -143,7 +143,7 @@ test('all eligible explicit edits preview and checkpoint before mutation in revi
     } else {
       assert.equal(f.approvals[0].toolName, name)
       assert.deepEqual(f.approvals[0].arguments, f.calls[3].args, 'Approval covers the exact frozen edit operands.')
-      assert.match(f.approvals[0].warnings.join(' '), /also creates an in-memory Velorn safety checkpoint/)
+      assert.match(f.approvals[0].warnings.join(' '), /also creates an in-memory Belrog safety checkpoint/)
       assert.ok(f.events.every(event => !event.autoApproved))
     }
   }
@@ -176,9 +176,9 @@ test('a model-requested checkpoint without native apply proof cannot replace the
   const checkpoints = f.calls.filter(call => call.name === 'create_project_checkpoint' && call.args.previewOnly === false)
   assert.equal(checkpoints.length, 2, 'The separate prerequisite must be confirmed even if an earlier result claimed success.')
   assert.equal(checkpoints[0].args.label, 'Model-requested checkpoint')
-  assert.equal(checkpoints[1].args.label, 'Velorn Agent — before approved undoable edits')
+  assert.equal(checkpoints[1].args.label, 'Belrog Agent — before approved undoable edits')
   assert.deepEqual(f.approvals.map(item => item.toolName), ['create_project_checkpoint', 'add_timeline_markers'])
-  assert.match(f.approvals[1].warnings.join(' '), /also creates an in-memory Velorn safety checkpoint/)
+  assert.match(f.approvals[1].warnings.join(' '), /also creates an in-memory Belrog safety checkpoint/)
 })
 
 test('dangerous, unknown, mixed and side-effectful preview tools still require manual approval', async () => {

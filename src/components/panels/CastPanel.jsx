@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useAssetLibraryStore, allLibraryEntries, libraryCounts } from '../../stores/assetLibraryStore'
 import { requestAssetLibraryReference } from '../../services/assetLibraryBridge'
-import { buildReferencePrompt, referenceNegative } from '../../services/scriptGapDetection'
+import { buildReferencePrompt, buildRegenerateAllPreview, referenceNegative } from '../../services/scriptGapDetection'
 import useAssetsStore from '../../stores/assetsStore'
 
 /**
@@ -23,6 +23,10 @@ function slug(value = '', { fallback = 'entry', maxLength = 48 } = {}) {
   const base = s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return (base || fallback).slice(0, maxLength)
 }
+
+// One click on "Generate all" must never flood the ComfyUI queue. Anything past
+// this stays queued in Cast and is offered again on the next click.
+const REGENERATE_ALL_CAP = 50
 
 const KIND_ICON = { character: User, prop: Box, location: MapPin }
 const KIND_LABEL = { character: 'Character', prop: 'Prop', location: 'Location' }
@@ -136,27 +140,38 @@ export default function CastPanel({ isActive = true }) {
     })
   }, [setNotice])
 
+  // "Generate all" goes through the same preview the tests cover: a queue cap,
+  // an explicit count left over, and skipped-with-reason for entries that have
+  // no description yet (§A.5.5 — generating from nothing just wastes a job).
   const handleRegenerateAll = useCallback(() => {
-    const items = entries.filter((e) => !e.assetId && buildReferencePrompt(e))
-    if (items.length === 0) {
-      const skipped = entries.filter((e) => !e.assetId && !buildReferencePrompt(e)).length
+    const preview = buildRegenerateAllPreview({ library, cap: REGENERATE_ALL_CAP })
+    if (preview.items.length === 0) {
       setNotice({
         tone: 'info',
-        text: skipped > 0
-          ? `Nothing to regenerate. ${skipped} need a description first.`
+        text: preview.skipped.length > 0
+          ? `Nothing to regenerate. ${preview.skipped.length} need${preview.skipped.length === 1 ? 's' : ''} a description first.`
           : 'Every entry already has a reference.',
       })
       return
     }
     let queued = 0
-    for (const e of items) {
+    for (const item of preview.items) {
       if (requestAssetLibraryReference({
-        entryId: e.id, kind: e._kind, name: e.name,
-        prompt: buildReferencePrompt(e), negative: referenceNegative(e._kind),
+        entryId: item.id, kind: item.kind, name: item.name,
+        prompt: item.prompt, negative: item.negative,
       })) queued += 1
     }
-    setNotice({ tone: 'success', text: `Queued ${queued} reference image${queued === 1 ? '' : 's'}. Switch to the Generate tab to watch them.` })
-  }, [entries, setNotice])
+    const overflow = preview.remaining > 0
+      ? ` ${preview.remaining} more ${preview.remaining === 1 ? 'entry is' : 'entries are'} waiting — run it again after these.`
+      : ''
+    const skipped = preview.skipped.length > 0
+      ? ` ${preview.skipped.length} skipped: no description yet.`
+      : ''
+    setNotice({
+      tone: 'success',
+      text: `Queued ${queued} reference image${queued === 1 ? '' : 's'}. Switch to the Generate tab to watch them.${overflow}${skipped}`,
+    })
+  }, [library, setNotice])
 
   // ── Export / Import ─────────────────────────────────────────────────────
   const handleExport = useCallback(() => {

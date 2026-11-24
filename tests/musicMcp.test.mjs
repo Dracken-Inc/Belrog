@@ -181,7 +181,7 @@ test('unknown or malformed explicit backends are rejected before queueing', asyn
 test('queueing either backend requires an open saved project', async () => {
   for (const backend of ['ace-step', 'yue2']) {
     const harness = createHarness({ project: false })
-    await assert.rejects(harness.handleGenerateMusic({ backend, tags: 'warm piano', previewOnly: false }), /saved Velorn project/)
+    await assert.rejects(harness.handleGenerateMusic({ backend, tags: 'warm piano', previewOnly: false }), /saved Belrog project/)
     assert.equal(harness.calls.queue.length, 0)
   }
 })

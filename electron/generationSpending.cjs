@@ -215,7 +215,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
     const window = getMainWindow()
     if (disposed || !window || window.isDestroyed() || !event?.sender || event.sender.isDestroyed()
       || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
-      throw fault('UNAUTHORIZED', 'Managed generation is restricted to the main Velorn window.')
+      throw fault('UNAUTHORIZED', 'Managed generation is restricted to the main Belrog window.')
     }
     bind(window)
     return window
@@ -223,7 +223,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
   function assertWindow(task) {
     checkAbort(task.controller.signal)
     if (disposed || getMainWindow() !== task.window || task.window.isDestroyed() || task.window.webContents.isDestroyed()
-      || task.event.senderFrame !== task.window.webContents.mainFrame) throw fault('STALE_CONTEXT', 'The Velorn window changed; review a new request.')
+      || task.event.senderFrame !== task.window.webContents.mainFrame) throw fault('STALE_CONTEXT', 'The Belrog window changed; review a new request.')
   }
   async function timed(task, milliseconds, operation) {
     const timer = setTimeout(() => task.controller.abort('timeout'), milliseconds)
@@ -272,7 +272,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
   }
   function failure(error, task) {
     if (task?.postStarted) return { success: false, code: 'GENERATION_SPENDING_SUBMISSION_UNCERTAIN',
-      error: 'The workflow may already have been submitted. Inspect the ComfyUI queue or history before making another request; Velorn will not retry automatically.',
+      error: 'The workflow may already have been submitted. Inspect the ComfyUI queue or history before making another request; Belrog will not retry automatically.',
       submissionState: 'unknown', retryAllowed: false }
     return { success: false, code: error?.publicMessage ? error.code : 'GENERATION_SPENDING_UNAVAILABLE',
       error: error?.publicMessage || 'Managed generation is unavailable. Check the connection and try a new request.', submissionState: 'not-started' }
@@ -344,7 +344,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
       try {
         authorize(event)
         if (!record(payload) || Object.keys(payload).length !== 1 || typeof payload.id !== 'string') throw fault('INVALID_REQUEST', 'Choose a remembered local workflow to remove.')
-        if (!localWorkflowTrust) throw fault('UNAVAILABLE', 'Remembered local workflows are unavailable. Restart Velorn.')
+        if (!localWorkflowTrust) throw fault('UNAVAILABLE', 'Remembered local workflows are unavailable. Restart Belrog.')
         task = claim(event, 'local-trust')
         await timed(task, contextTimeoutMs, () => localWorkflowTrust.revoke(payload.id, writeAuthority(task)))
         assertWindow(task)
@@ -365,7 +365,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
         await initialize(task)
         if (nextPolicy === task.policy) return { ...(await getStatus()), busy: false }
         if (nextPolicy === 'ask-cloud') {
-          if (typeof confirmPolicyChange !== 'function') throw fault('UNAVAILABLE', 'Native spending-policy confirmation is unavailable. Restart Velorn.')
+          if (typeof confirmPolicyChange !== 'function') throw fault('UNAVAILABLE', 'Native spending-policy confirmation is unavailable. Restart Belrog.')
           await recheck(task)
           // Do not release serialization while an uncancellable native dialog remains open.
           const confirmed = await confirmPolicyChange({ window: task.window, policy: nextPolicy, previousPolicy: task.policy, signal: task.controller.signal })
@@ -456,7 +456,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
         // ordinary approve-once is never sufficient in this mode.
         if (!local && task.policy !== 'ask-cloud' && !(assessment.risk === 'unknown' && localTrust.eligible)) {
           const reason = assessment.risk === 'unknown'
-            ? `Velorn could not verify these nodes as local: ${[...new Set(assessment.unknownNodes.map(node => node.classType))].join(', ') || 'Unidentified nodes'}. Unrecognized does not mean paid. ${localTrust.reason} Then request the saved workflow again to review it, or choose Ask before cloud in Generation spending for one-submission approval.`
+            ? `Belrog could not verify these nodes as local: ${[...new Set(assessment.unknownNodes.map(node => node.classType))].join(', ') || 'Unidentified nodes'}. Unrecognized does not mean paid. ${localTrust.reason} Then request the saved workflow again to review it, or choose Ask before cloud in Generation spending for one-submission approval.`
             : 'Local only blocks workflows with cloud/API or pricing evidence. Choose Ask before cloud in Generation spending to review a submission; no spending is approved by changing that setting.'
           throw fault('LOCAL_ONLY', reason)
         }
@@ -473,7 +473,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
         }
         if (!local && !priced && !covered) {
           const batchCount = shape && payload.batchCount ? payload.batchCount : 0
-          if (typeof confirmSpend !== 'function') throw fault('UNAVAILABLE', 'Native spending confirmation is unavailable. Restart Velorn.')
+          if (typeof confirmSpend !== 'function') throw fault('UNAVAILABLE', 'Native spending confirmation is unavailable. Restart Belrog.')
           const confirmed = await confirmSpend({ window: task.window, assessment, endpoint: task.endpoint, fingerprint, submissionCount: 1, batchCount,
             localTrust, policy: task.policy, signal: task.controller.signal })
           await recheck(task)
@@ -582,7 +582,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
       try {
         const window = getMainWindow()
         if (disposed || !window || window.isDestroyed?.() || !window.webContents || window.webContents.isDestroyed?.()
-          || !window.webContents.mainFrame) throw fault('UNAUTHORIZED', 'Managed generation is restricted to the main Velorn window.')
+          || !window.webContents.mainFrame) throw fault('UNAUTHORIZED', 'Managed generation is restricted to the main Belrog window.')
         return await handlers.queue({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, payload)
       } catch (error) { return failure(error) }
     },

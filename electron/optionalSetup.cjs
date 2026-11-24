@@ -15,13 +15,13 @@ const optionalNotice = 'Agents and ComfyUI are optional. Editing, captions and e
 const tools = Object.freeze([
   {
     name: 'get_setup_status',
-    description: 'Read-only, bounded check of one optional Velorn integration: Codex CLI/ChatGPT sign-in, the local LM Studio server/model readiness, or running local ComfyUI connections. Works without a project. Never signs in, installs, loads models, changes settings or sends a prompt. A service not responding does not prove software is missing.',
+    description: 'Read-only, bounded check of one optional Belrog integration: Codex CLI/ChatGPT sign-in, the local LM Studio server/model readiness, or running local ComfyUI connections. Works without a project. Never signs in, installs, loads models, changes settings or sends a prompt. A service not responding does not prove software is missing.',
     inputSchema: { type: 'object', properties: { integration: { type: 'string', enum: INTEGRATIONS } }, required: ['integration'], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   {
     name: 'guide_agent_setup',
-    description: 'Check Codex or LM Studio readiness and explain the next explicit user actions in Velorn Settings > Connections > Connect tools. Read only; does not select an agent/model, authenticate, install software or change settings. For ComfyUI connection changes use guide_comfyui_setup. All agent setup is optional.',
+    description: 'Check Codex or LM Studio readiness and explain the next explicit user actions in Belrog Settings > Connections > Connect tools. Read only; does not select an agent/model, authenticate, install software or change settings. For ComfyUI connection changes use guide_comfyui_setup. All agent setup is optional.',
     inputSchema: { type: 'object', properties: { provider: { type: 'string', enum: ['codex', 'lmstudio'] } }, required: ['provider'], additionalProperties: false },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -55,7 +55,7 @@ function codexStatus(result) {
   if (['CODEX_LOGIN_REQUIRED', 'CODEX_CHATGPT_REQUIRED'].includes(result?.code)
     || result?.installed === true && (result?.signedIn === false || result?.authMode && result.authMode !== 'chatgpt')) {
     return { state: 'signin', summary: 'Codex CLI needs sign-in through ChatGPT. No prompt was sent and API-key billing is not enabled.',
-      nextActions: ['Choose Sign in with ChatGPT in Connect tools and complete the browser sign-in yourself.', 'Return to Velorn and check the connection again.'] }
+      nextActions: ['Choose Sign in with ChatGPT in Connect tools and complete the browser sign-in yourself.', 'Return to Belrog and check the connection again.'] }
   }
   return { state: 'problem', summary: 'Codex CLI could not be verified. No sign-in or prompt was started.',
     nextActions: ['Open Connect tools to check the installation and view its setup help. A failed process launch does not prove the CLI is missing.'] }
@@ -63,13 +63,13 @@ function codexStatus(result) {
 
 function localStatus(result) {
   if (result?.success !== true) return { state: 'unavailable', summary: 'The local LM Studio server could not be verified on port 1234. It may be stopped or require configuration; this does not show whether LM Studio is installed.',
-    nextActions: ['Open LM Studio and check its local server configuration on port 1234. Velorn uses the local /v1 endpoint.', 'If LM Studio requires authentication, this Velorn connection does not supply a token. Do not expose the server to the internet or turn off required authentication to make setup work.', 'Check again after reviewing the server configuration.'] }
+    nextActions: ['Open LM Studio and check its local server configuration on port 1234. Belrog uses the local /v1 endpoint.', 'If LM Studio requires authentication, this Belrog connection does not supply a token. Do not expose the server to the internet or turn off required authentication to make setup work.', 'Check again after reviewing the server configuration.'] }
   const models = safeModels(result.models)
   if (!models.length || result.loadedModelStatus === 'available' && !models.some(model => model.loaded === true)) {
     return { state: 'needs-model', summary: models.length ? 'LM Studio is responding, but no loaded chat model was found.' : 'LM Studio is responding, but no chat model was found.', models,
-      nextActions: ['Choose and load a chat model in LM Studio, then check again. This check does not download or load a model.', 'Select the model explicitly in Velorn Agent settings when you are ready.'] }
+      nextActions: ['Choose and load a chat model in LM Studio, then check again. This check does not download or load a model.', 'Select the model explicitly in Belrog Agent settings when you are ready.'] }
   }
-  if (result.loadedModelStatus !== 'available') return { state: 'problem', summary: 'LM Studio is responding, but Velorn could not verify which chat model is loaded.', models,
+  if (result.loadedModelStatus !== 'available') return { state: 'problem', summary: 'LM Studio is responding, but Belrog could not verify which chat model is loaded.', models,
     nextActions: ['Check the loaded model in LM Studio, then refresh. No inference request was made to test it.', 'Review the model in Agent settings before sending a message.'] }
   return { state: 'ready', summary: 'LM Studio is responding with a loaded chat model. No inference request was made; model capabilities have not been tested.', models,
     nextActions: ['Choose LM Studio and its model explicitly in Agent settings when you want to use it. Your current agent and chat are unchanged.'] }
@@ -81,13 +81,13 @@ function createOptionalSetup({ inspectProvider, comfySetup, getConfiguredPort } 
     if (integration !== 'comfyui') {
       const result = await inspectProvider?.({ provider: integration })
       if (['BUSY', 'CANCELLED', 'UNAUTHORIZED'].includes(result?.code)) return failure(result.code,
-        result.code === 'BUSY' ? 'Another provider check or setup change is running. Try again when it finishes.' : 'The setup check was cancelled or the Velorn connection closed.')
+        result.code === 'BUSY' ? 'Another provider check or setup change is running. Try again when it finishes.' : 'The setup check was cancelled or the Belrog connection closed.')
       const status = integration === 'codex' ? codexStatus(result) : localStatus(result)
       return { success: true, integration, ...status }
     }
     const configuredPort = await getConfiguredPort?.()
     if (!validPort(configuredPort)) return failure('SETUP_UNAVAILABLE', 'The saved local ComfyUI port could not be read. No settings were changed.')
-    if (typeof comfySetup?.discoverRunning !== 'function') return failure('SETUP_UNAVAILABLE', 'ComfyUI setup inspection is unavailable. Restart Velorn.')
+    if (typeof comfySetup?.discoverRunning !== 'function') return failure('SETUP_UNAVAILABLE', 'ComfyUI setup inspection is unavailable. Restart Belrog.')
     const found = await comfySetup.discoverRunning({ configuredPort })
     const connections = (Array.isArray(found) ? found : []).slice(0, 4).flatMap(value => validPort(value?.port) ? [{
       port: value.port, httpBase: `http://127.0.0.1:${value.port}`,
@@ -114,7 +114,7 @@ function createOptionalSetup({ inspectProvider, comfySetup, getConfiguredPort } 
     if (!object(payload) || Object.keys(payload).some(key => key !== 'provider') || !['codex', 'lmstudio'].includes(payload.provider)) return INVALID()
     const status = await inspect({ integration: payload.provider })
     return status.success ? { ...status, optional: true, notice: optionalNotice,
-      location: 'Velorn Settings > Connections > Connect tools',
+      location: 'Belrog Settings > Connections > Connect tools',
       changesMade: false, userActionRequired: status.state !== 'ready',
     } : status
   }
@@ -129,9 +129,9 @@ function registerOptionalSetupIpc({ ipcMain, app, getMainWindow, setup }) {
       && event.sender === window.webContents && event.senderFrame && event.senderFrame === window.webContents.mainFrame
   }
   ipcMain.handle(CHANNEL, async (event, payload) => {
-    if (!authorized(event)) return failure('UNAUTHORIZED', 'Setup checks are restricted to the main Velorn window.')
+    if (!authorized(event)) return failure('UNAUTHORIZED', 'Setup checks are restricted to the main Belrog window.')
     const result = await setup.inspect(payload)
-    return authorized(event) ? result : failure('UNAUTHORIZED', 'The Velorn setup window changed.')
+    return authorized(event) ? result : failure('UNAUTHORIZED', 'The Belrog setup window changed.')
   })
   const dispose = () => { disposed = true; ipcMain.removeHandler(CHANNEL); app?.removeListener('will-quit', dispose) }
   app?.on('will-quit', dispose)

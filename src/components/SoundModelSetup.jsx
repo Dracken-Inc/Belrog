@@ -59,7 +59,7 @@ export default function SoundModelSetup({ model, what, onReady, onUseCloud }) {
         <span>{flow.progress.currentLabel ? `Now: ${flow.progress.currentLabel}` : flow.mode === 'restarting' ? 'This usually takes under a minute.' : 'Starting…'}</span>
         {total > 0 && flow.mode !== 'restarting' && <span>{done > 0 ? `${gigabytes(done)} of ${gigabytes(total)}` : gigabytes(total)}</span>}
       </div>
-      <p>You can keep working, and Cloud still works while this runs. Keep Velorn open until it finishes.</p>
+      <p>You can keep working, and Cloud still works while this runs. Keep Belrog open until it finishes.</p>
     </section>
   }
 
@@ -67,7 +67,7 @@ export default function SoundModelSetup({ model, what, onReady, onUseCloud }) {
 
   if (connected === false) return <section className="vc-setup" role="status">
     <h2>ComfyUI isn't running</h2>
-    <p>Local models run in ComfyUI, a free program on your computer. Start it from the ComfyUI menu at the top right of Velorn, then check again. If you have never set it up, open the ComfyUI tab to get started.</p>
+    <p>Local models run in ComfyUI, a free program on your computer. Start it from the ComfyUI menu at the top right of Belrog, then check again. If you have never set it up, open the ComfyUI tab to get started.</p>
     <div className="vc-row">{again}{cloud}</div>
   </section>
 
@@ -80,7 +80,7 @@ export default function SoundModelSetup({ model, what, onReady, onUseCloud }) {
 
   if (flow.mode === 'choose-root') return <section className="vc-setup" role="status">
     <h2>Where is your ComfyUI folder?</h2>
-    <p>{model.name} isn't on this computer yet. Velorn needs to know where ComfyUI lives so the download goes to the right place.</p>
+    <p>{model.name} isn't on this computer yet. Belrog needs to know where ComfyUI lives so the download goes to the right place.</p>
     <div className="vc-row"><button type="button" className="vc-go" onClick={flow.chooseComfyFolder}><FolderSearch aria-hidden="true" size={16} />Choose ComfyUI folder</button>{cloud}</div>
     {flow.error && <p className="vc-alert" role="alert"><AlertTriangle aria-hidden="true" size={17} />{flow.error}</p>}
   </section>
@@ -115,12 +115,12 @@ export default function SoundModelSetup({ model, what, onReady, onUseCloud }) {
     </section>
   }
 
-  // The check found something Velorn cannot fix by downloading.
+  // The check found something Belrog cannot fix by downloading.
   return <section className="vc-setup" role="status">
     <h2>{model.name} can't run here yet</h2>
     <p>{check.missingNodes?.length ? 'Your ComfyUI is missing parts this model needs. Update ComfyUI to its latest version, then check again.'
-      : check.status === 'error' ? 'Velorn could not check this model. Make sure ComfyUI has finished starting, then check again.'
-        : 'This model needs a step Velorn cannot do for you yet.'}</p>
+      : check.status === 'error' ? 'Belrog could not check this model. Make sure ComfyUI has finished starting, then check again.'
+        : 'This model needs a step Belrog cannot do for you yet.'}</p>
     <div className="vc-row">{again}{cloud}</div>
   </section>
 }

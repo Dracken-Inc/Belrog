@@ -531,7 +531,7 @@ export function useComfyUI() {
       const baseWorkflow = cachedWorkflows['mask-generation'];
       
       // Step 4: Modify workflow with our parameters
-      const outputPrefix = `VelornMask_${Date.now()}`;
+      const outputPrefix = `BelrogMask_${Date.now()}`;
       const workflow = modifyMaskWorkflow(baseWorkflow, {
         inputFilename: uploadResult.name,
         textPrompt: textPrompt,

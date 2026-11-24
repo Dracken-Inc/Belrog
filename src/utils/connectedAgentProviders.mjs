@@ -9,7 +9,7 @@ export function fundedLunaModels() {
   return [{ id: FUNDED_LUNA_MODEL, displayName: 'GPT-6 Luna', defaultReasoningEffort: FUNDED_LUNA_REASONING,
     supportedReasoningEfforts: [{ reasoningEffort: FUNDED_LUNA_REASONING }] }]
 }
-export const FUNDED_LUNA_DISCLOSURE = 'Send shares your message, relevant chat history, project context, selected images and enabled tool results with the Velorn service and OpenAI for GPT-6 Luna processing. Available only to accounts with a funded allowance; no personal Codex login is used. No automatic fallback.'
+export const FUNDED_LUNA_DISCLOSURE = 'Send shares your message, relevant chat history, project context, selected images and enabled tool results with the Belrog service and OpenAI for GPT-6 Luna processing. Available only to accounts with a funded allowance; no personal Codex login is used. No automatic fallback.'
 export function connectedAgentProviderLabel(provider) {
   return ({ codex: 'Codex', lmstudio: 'LM Studio', luna: 'Velo' })[provider] || 'Unknown provider'
 }
@@ -24,7 +24,7 @@ export function fundedLunaAvailability(result) {
     'not-eligible': 'This account does not have Velo access yet. Open View Velo access for account details and help.',
     exhausted: 'Your Velo allowance is used up. There are no automatic refills. Open View Velo access for details.',
   }
-  return { available: false, message: messages[result?.status] || 'Velo access could not be checked. Open your Velorn account to refresh it. No other agent will be used automatically.' }
+  return { available: false, message: messages[result?.status] || 'Velo access could not be checked. Open your Belrog account to refresh it. No other agent will be used automatically.' }
 }
-export const VELO_DESCRIPTION = 'Velorn’s built-in AI assistant.'
+export const VELO_DESCRIPTION = 'Belrog’s built-in AI assistant.'
 

@@ -42,7 +42,7 @@ async function main() {
       const target = slider(property)
       await target.focus()
       const start = Number(await target.inputValue()), step = Number(await target.getAttribute('step')) || 1
-      // Velorn reserves Left/Right for frame stepping even on a range input.
+      // Belrog reserves Left/Right for frame stepping even on a range input.
       const key = value >= start ? 'ArrowUp' : 'ArrowDown'
       for (let i = 0; i < Math.round(Math.abs(value - start) / step); i++) await page.keyboard.down(key)
       await page.keyboard.up(key); await target.blur()

@@ -50,7 +50,7 @@ test('hidden-page veto defaults to keep-open; repeated attempts remain usable', 
 for (const choice of [0, 1]) test(`launcher option ${choice} is deferred until page consent; Cancel performs neither`, async () => {
   const f = fixture({ owned: true, stopOnQuit: true, choice, veto: true })
   f.win.close(); f.win.close(); await tick()
-  assert.equal(f.records.filter(x => x === 'Quit Velorn?').length, 1)
+  assert.equal(f.records.filter(x => x === 'Quit Belrog?').length, 1)
   assert.ok(!f.records.includes('stop')); assert.ok(!f.records.includes('detach'))
   f.options.confirm = 1; f.win.close(); await tick()
   assert.equal(f.records.filter(x => x === (choice === 0 ? 'stop' : 'detach')).length, 1)
@@ -61,7 +61,7 @@ test('launcher Cancel does not save, close or detach', async () => {
 })
 test('failed save is visible, leaves launcher untouched, permits retry', async () => {
   const f = fixture({ owned: true, saveOk: false }); f.win.close(); await tick()
-  assert.ok(f.records.includes('Velorn is still open')); assert.equal(f.destroyed, false)
+  assert.ok(f.records.includes('Belrog is still open')); assert.equal(f.destroyed, false)
   assert.ok(!f.records.includes('detach')); f.options.saveOk = true; f.win.close(); await tick(); assert.equal(f.destroyed, true)
 })
 test('save timeout is visible; foreign renderer, subframe and stale acknowledgements cannot approve', async () => {
@@ -70,7 +70,7 @@ test('save timeout is visible; foreign renderer, subframe and stale acknowledgem
     f.ipcMain.emit('window:closePrepared', { sender, senderFrame }, { id, ok: true })
   }
   await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(f.destroyed, false)
-  assert.ok(f.records.includes('Velorn is still open')); f.options.noReply = false; f.win.close(); await tick(); assert.equal(f.destroyed, true)
+  assert.ok(f.records.includes('Belrog is still open')); f.options.noReply = false; f.win.close(); await tick(); assert.equal(f.destroyed, true)
 })
 test('history flush failure keeps window and ComfyUI open', async () => {
   const f = fixture({ owned: true, flush() { throw Error('disk full') } }); f.win.close(); await tick()

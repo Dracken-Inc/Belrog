@@ -1,5 +1,5 @@
 'use strict'
-// Opt-in real inference, synthetic tool results only. Never connects to Velorn's
+// Opt-in real inference, synthetic tool results only. Never connects to Belrog's
 // live MCP/renderer, Pexels, or media files; never loads/unloads a model.
 const assert = require('node:assert/strict')
 const { sendLocalWithTools } = require('../electron/connectedAgentLocalTools.cjs')

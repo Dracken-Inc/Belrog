@@ -132,8 +132,8 @@ function psSource({ execFileImpl, execFileSyncImpl }) {
 // process into a new Windows job marked "kill everything when the job closes".
 // The only handle to the job lives inside that PowerShell process, and child
 // programs can neither inherit it nor leave the job. So the moment the
-// PowerShell process ends, by finishing, by Stop, or because Velorn itself
-// ended, Windows terminates everything the command started. Velorn stops the
+// PowerShell process ends, by finishing, by Stop, or because Belrog itself
+// ended, Windows terminates everything the command started. Belrog stops the
 // shell through the process handle Node keeps, so a reused process number can
 // never be hit. If the job cannot be set up, the command is not run at all.
 // The user's command travels in an environment variable, never on the command
@@ -148,7 +148,7 @@ try {
   # Load the two everyday modules by name. Otherwise the first cmdlet makes
   # PowerShell examine every installed module, which can take many seconds.
   Import-Module Microsoft.PowerShell.Utility, Microsoft.PowerShell.Management -ErrorAction Stop
-  Add-Type -Namespace Velorn -Name CommandJob -MemberDefinition @'
+  Add-Type -Namespace Belrog -Name CommandJob -MemberDefinition @'
 [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
 [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetInformationJobObject(IntPtr job, int infoClass, IntPtr info, uint length);
 [DllImport("kernel32.dll", SetLastError = true)] static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
@@ -165,9 +165,9 @@ public static bool Contain() {
   return ok;
 }
 '@
-  if (-not [Velorn.CommandJob]::Contain()) { throw 'The Windows job could not be created.' }
+  if (-not [Belrog.CommandJob]::Contain()) { throw 'The Windows job could not be created.' }
 } catch {
-  [Console]::Error.WriteLine('Velorn could not set up its Stop guarantee for this command, so the command was NOT run. Nothing was changed. Detail: ' + $_.Exception.Message)
+  [Console]::Error.WriteLine('Belrog could not set up its Stop guarantee for this command, so the command was NOT run. Nothing was changed. Detail: ' + $_.Exception.Message)
   exit ${WINDOWS_NOT_CONTAINED_EXIT}
 }
 try {
@@ -178,11 +178,11 @@ try {
 } catch { }
 # One extra last line records whether the command's own last statement
 # succeeded; from outside the block PowerShell reports success regardless.
-try { $velornBlock = [scriptblock]::Create($velornCommand + "${'`'}n" + '$global:VelornLastStatementOk = $?') } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
+try { $velornBlock = [scriptblock]::Create($velornCommand + "${'`'}n" + '$global:BelrogLastStatementOk = $?') } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 $global:LASTEXITCODE = 0
-$global:VelornLastStatementOk = $true
+$global:BelrogLastStatementOk = $true
 try { & $velornBlock } catch { [Console]::Error.WriteLine($_.ToString() + "${'`'}n" + $_.ScriptStackTrace); exit 1 }
-if ($global:VelornLastStatementOk) { exit 0 }
+if ($global:BelrogLastStatementOk) { exit 0 }
 if ($LASTEXITCODE) { exit $LASTEXITCODE }
 exit 1
 `

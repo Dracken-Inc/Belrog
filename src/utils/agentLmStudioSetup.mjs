@@ -100,7 +100,7 @@ export function createAgentLmStudioSetupTracker({ api, projectPath, chatId, poll
     actions.set(jobId, operation)
     emit({ pendingById: { ...state.pendingById, [jobId]: method }, actionErrors: { ...state.actionErrors, [jobId]: '' } })
     try {
-      if (typeof api?.[method] !== 'function') throw new Error('Reopen the latest Velorn build to manage this model setup.')
+      if (typeof api?.[method] !== 'function') throw new Error('Reopen the latest Belrog build to manage this model setup.')
       const result = await api[method]({ jobId })
       if (!current(token)) return
       if (result?.success !== true || result.jobId && result.jobId !== jobId) throw new Error(errorText(result?.error,

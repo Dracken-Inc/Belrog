@@ -60,7 +60,7 @@ function createComfyConsoleLog({ logDir, record, onLine = () => {}, onWarning = 
     }
   } catch (error) {
     closeDescriptors(); entries.length = 0; savedRecord = null
-    warn(`ComfyUI console capture is unavailable (${error.message}); output will be discarded so it can still survive Velorn closing.`)
+    warn(`ComfyUI console capture is unavailable (${error.message}); output will be discarded so it can still survive Belrog closing.`)
   }
   // Copy the numeric descriptors: closing the parent's copies after spawn
   // never closes the independent handles inherited by the child.
@@ -105,7 +105,7 @@ function createComfyConsoleLog({ logDir, record, onLine = () => {}, onWarning = 
       }
       // Never rename an active console file: inherited descriptors would keep
       // writing its old inode. O_APPEND resumes at the new end after truncation.
-      // While Velorn is absent these durable files may grow; cap them on return.
+      // While Belrog is absent these durable files may grow; cap them on return.
       if (stat.size > limits.maxBytes) {
         if (entry.carry && !entry.skipFirstLine) emit(entry.stream, entry.carry)
         await handle.truncate(0)

@@ -70,7 +70,7 @@ function Fixture() {
   const [mounted, setMounted] = useState(true), [scope, setScope] = useState(initialScope), [exportBusy, setExport] = useState(false)
   updateMounted = setMounted; updateScope = setScope; updateExport = setExport
   return <main className="connected-agent-panel" style={{ width: 'min(570px, 100%)', boxSizing: 'border-box', margin: '0 auto', minHeight: '100vh' }}>
-    <h1 style={{ padding: 12 }}>Velorn · LM Studio model setup</h1>
+    <h1 style={{ padding: 12 }}>Belrog · LM Studio model setup</h1>
     {mounted && <Conversation scope={scope} exportBusy={exportBusy} />}
     <p style={{ padding: 12 }}>Existing selected agent, model, draft and project stay unchanged.</p>
   </main>

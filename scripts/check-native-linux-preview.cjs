@@ -27,7 +27,7 @@ for (const file of files.filter(file => file.startsWith('/dist/') && !file.endsW
   const source = path.join(root, file.slice(1))
   if (fs.existsSync(source) && fs.statSync(source).isFile()) assert.deepEqual(asar.extractFile(archive, file.slice(1)), fs.readFileSync(source), file)
 }
-const deb = path.join(root, 'release/Velorn-' + expected.version + '-linux-amd64.deb')
+const deb = path.join(root, 'release/Belrog-' + expected.version + '-linux-amd64.deb')
 const field = name => execFileSync('dpkg-deb', ['--field', deb, name], { encoding: 'utf8' }).trim()
 assert.equal(field('Package'), 'velorn'); assert.equal(field('Architecture'), 'amd64')
 assert.match(field('Depends'), /\bbubblewrap\b/)

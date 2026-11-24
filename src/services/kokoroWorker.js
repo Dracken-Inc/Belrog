@@ -1,7 +1,7 @@
 // Speaks text with the built-in Kokoro voice model, off the main thread.
 //
 // The model's library expects to fetch its files from the internet. Here they
-// come from Velorn's own checked copy instead: every request for a model file
+// come from Belrog's own checked copy instead: every request for a model file
 // is answered with bytes the page hands over (it gets them from the main
 // process, which verified them). Nothing is fetched from the network here.
 import { splitForSpeech } from './voiceText.mjs'
@@ -20,7 +20,7 @@ const fileFromPage = path => new Promise((resolve, reject) => {
   self.postMessage({ type: 'file', id, path })
 })
 
-// The model's library reads downloads with `for await` over a stream. Velorn's Electron
+// The model's library reads downloads with `for await` over a stream. Belrog's Electron
 // version (Chromium 120) cannot do that yet, and without this the library waits forever.
 if (typeof ReadableStream !== 'undefined' && !ReadableStream.prototype[Symbol.asyncIterator]) {
   ReadableStream.prototype[Symbol.asyncIterator] = async function* () {
@@ -74,7 +74,7 @@ async function speak({ id, text, voice }) {
   const tts = await load()
   // Long text is spoken a sentence or two at a time and joined, which this model needs.
   // The library's own streaming helper is not used: it relies on a browser feature
-  // that Velorn's Electron version does not have, and it then waits forever.
+  // that Belrog's Electron version does not have, and it then waits forever.
   const pieces = splitForSpeech(text)
   const gap = new Float32Array(Math.round(RATE * 0.12)) // a short breath between pieces
   const parts = []

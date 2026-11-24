@@ -39,7 +39,7 @@ window.electronAPI = { comfyRouter: {
   submitCreate: () => later(failures[scenario] || { success: true, job: { jobId: 'job', status: 'IN_QUEUE', kind: state.kind || 'image', modelLabel: 'Pretend model', retryAfterMs: 0 } }),
   refresh: () => later({ success: true, job: { jobId: 'job', status: ++state.polls > 3 ? 'COMPLETED' : 'IN_PROGRESS', kind: state.kind || 'image', modelLabel: 'Pretend model', chargedUsd: 0.0569, chargedCredits: 12 } }),
   cancel: () => later({ success: true }),
-  // ?as=leftover pretends a clip was still being made when Velorn was last closed.
+  // ?as=leftover pretends a clip was still being made when Belrog was last closed.
   list: () => later({ success: true, jobs: scenario === 'leftover' ? [{ jobId: 'job', create: true, status: 'IN_PROGRESS', kind: 'video', modelLabel: 'Pretend model',
     canRefresh: true, needsReconnect: false, createdAt: Date.now() - 20 * 60 * 1000, retryAfterMs: 0 }] : [] }),
   output: () => later({ success: false, error: 'This is the harness: there is no real result to save.' }),

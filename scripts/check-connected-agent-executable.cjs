@@ -46,7 +46,7 @@ async function main() {
   const refresh = async () => { await openSettings(); await button('Check connection').click(); await ready() }
   const full = () => checkbox('Full computer access (experimental)')
   const enableFull = async () => {
-    await openSettings(); await ready(); await checkbox('Velorn tools').check(); await full().check(); await frame()
+    await openSettings(); await ready(); await checkbox('Belrog tools').check(); await full().check(); await frame()
     assert.equal(await full().isChecked(), true)
   }
   const send = async text => {
@@ -151,7 +151,7 @@ async function main() {
     await page.evaluate(() => window.connectedAgentTest.setExportBusy(true)); await frame()
     assert.equal(await choose().isDisabled(), true)
     await page.evaluate(() => window.connectedAgentTest.setExportBusy(false)); await frame()
-    await checkbox('Velorn tools').check()
+    await checkbox('Belrog tools').check()
     await page.evaluate(() => { window.connectedAgentTest.setHoldFullAccess(true); window.connectedAgentTest.setFullAccessResponse({ success: true, enabled: false }) })
     await full().click(); await frame(); assert.equal(await choose().isDisabled(), true)
     await page.evaluate(() => { window.connectedAgentTest.releaseFullAccess(); window.connectedAgentTest.setHoldFullAccess(false) })
@@ -207,7 +207,7 @@ async function main() {
     assert.deepEqual((await snapshot()).authored, baseline)
     await page.evaluate(() => { delete window.electronAPI.connectedAgent.codexExecutable })
     await button('Check connection').click()
-    await installation.getByRole('alert').filter({ hasText: 'Fully quit and reopen Velorn' }).waitFor()
+    await installation.getByRole('alert').filter({ hasText: 'Fully quit and reopen Belrog' }).waitFor()
     assert.equal(await choose().isDisabled(), true)
     pass('Older preload bridge reports restart requirement without exposing a renderer path override')
 

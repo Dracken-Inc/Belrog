@@ -1,6 +1,6 @@
 import { parseLocalComfyPortInput, saveLocalComfyConnectionPort } from './localComfyConnection.js'
 
-const unavailable = 'Fully quit and reopen Velorn to enable connection discovery. You can still enter the port in ComfyUI Connection settings.'
+const unavailable = 'Fully quit and reopen Belrog to enable connection discovery. You can still enter the port in ComfyUI Connection settings.'
 const bridge = () => globalThis.window?.electronAPI?.comfyLauncher
 
 export async function discoverRunningComfy() {
@@ -18,7 +18,7 @@ function assertCanSwitch(state, port) {
   let currentPort
   try { currentPort = Number(new URL(state.httpBase).port) } catch { /* fail closed below */ }
   if (currentPort !== port) {
-    throw new Error('Velorn is managing another ComfyUI connection. Stop it before switching ports, or keep the current connection.')
+    throw new Error('Belrog is managing another ComfyUI connection. Stop it before switching ports, or keep the current connection.')
   }
 }
 

@@ -110,7 +110,7 @@ test('unavailable console storage falls back to ignore, never parent-owned pipes
   const logs = createComfyConsoleLog({ logDir, onWarning: text => warnings.push(text) })
   assert.deepEqual(logs.stdio, ['ignore', 'ignore', 'ignore'])
   assert.equal(logs.record, null)
-  assert.match(warnings[0], /capture is unavailable.*survive Velorn closing/)
+  assert.match(warnings[0], /capture is unavailable.*survive Belrog closing/)
   await logs.stop()
 })
 

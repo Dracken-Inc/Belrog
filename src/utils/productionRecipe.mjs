@@ -3,7 +3,7 @@
 const RECIPE = {
   version: 1,
   id: 'conversation-led-production',
-  purpose: 'Collaborate through conversation, show references and storyboard images together, and deliver an editable timeline in Velorn.',
+  purpose: 'Collaborate through conversation, show references and storyboard images together, and deliver an editable timeline in Belrog.',
   applicability: ['music-video', 'ad', 'ugc', 'short-film'],
   execution: {
     kind: 'advisory-metadata',
@@ -19,7 +19,7 @@ const RECIPE = {
     reviewSurface: 'native-velorn-viewer-and-timeline',
     exportByDefault: false,
     exportRequiresExplicitUserRequest: true,
-    message: 'Your edit is ready for review in Velorn. Identify the exact timeline so the user can play, scrub, revise it, or ask for changes.',
+    message: 'Your edit is ready for review in Belrog. Identify the exact timeline so the user can play, scrub, revise it, or ask for changes.',
     preserve: ['original-edit', 'approved-animatic', 'original-song', 'previous-takes', 'user-edits'],
   },
   conversation: {
@@ -36,9 +36,9 @@ const RECIPE = {
     creativeApproval: 'Agree on the idea before creating characters or locations. Show proposed references and storyboard stills, and wait for approval or revisions before proceeding unless that stage is explicitly delegated.',
     board: {
       mode: 'read-only-visual-board',
-      navigation: 'The Storyboard workspace appears beside Editor when the current project has storyboard content. To inspect an empty board, use the Velorn menu → Open storyboard. Opening or browsing the board does not author project data. Review animatics and final edits in Editor.',
+      navigation: 'The Storyboard workspace appears beside Editor when the current project has storyboard content. To inspect an empty board, use the Belrog menu → Open storyboard. Opening or browsing the board does not author project data. Review animatics and final edits in Editor.',
       sections: ['characters', 'locations', 'other-references', 'storyboard'],
-      controls: 'No required forms, selectable cards, approval buttons, stage tabs, board-embedded chat or separate animatic player. Discuss the board with an external assistant or the separate Velorn Agent dock.',
+      controls: 'No required forms, selectable cards, approval buttons, stage tabs, board-embedded chat or separate animatic player. Discuss the board with an external assistant or the separate Belrog Agent dock.',
       addressing: 'Read the shared presentation labels and exact IDs. Map a request such as Shot 09 to its immutable shot ID; do not derive identity from array position or renumber surviving shots.',
       missingReference: 'A missing approved reference is a problem to resolve, not permission to silently substitute another image.',
     },
@@ -104,13 +104,13 @@ const RECIPE = {
     },
     {
       id: 'animatic',
-      goal: 'Review timing as an ordinary editable Velorn timeline.',
+      goal: 'Review timing as an ordinary editable Belrog timeline.',
       actions: [
         'Inspect project and timeline state, create a checkpoint, then use native MCP preview/apply tools to create a separate named animatic with the approved images and exact song excerpt.',
         'Round cut boundaries to project FPS, preserve the original edit, and record exact timeline/clip links to each immutable shot ID.',
         'Inspect the result in the native viewer and timeline. Add shot markers or overlays only when requested; playback and timing belong in the editor.',
       ],
-      review: 'Let the user play and scrub the animatic in Velorn, request timing changes, and approve it before production. No export is needed.',
+      review: 'Let the user play and scrub the animatic in Belrog, request timing changes, and approve it before production. No export is needed.',
     },
     {
       id: 'audition',
@@ -120,7 +120,7 @@ const RECIPE = {
         'Record the exact source audio range, approved cut range, generated duration and any handles separately; a longer generated clip does not authorize a longer cut or altered song.',
         'Generate a bounded representative test with the approved settings. Inspect moving lips, identity, costume, framing, continuity and alignment to the actual song.',
       ],
-      review: 'Show the audition in Velorn and obtain approval before the remaining batch unless already explicitly delegated. A successful job is not evidence of acceptable quality.',
+      review: 'Show the audition in Belrog and obtain approval before the remaining batch unless already explicitly delegated. A successful job is not evidence of acceptable quality.',
     },
     {
       id: 'production',
@@ -146,13 +146,13 @@ const RECIPE = {
     },
     {
       id: 'ready-for-review',
-      goal: 'Hand over the editable timeline in Velorn, not an unnecessary exported file.',
+      goal: 'Hand over the editable timeline in Belrog, not an unnecessary exported file.',
       actions: [
         'Check native timeline integrity, missing assets, intended duration, source audio alignment and representative viewer frames at cuts and corrections.',
         'Review playback where tools support it and distinguish observed moving-image review from sampled stills or technical checks. Do not claim phoneme-perfect lip-sync from stills.',
-        'Save the project and record the exact final timeline ID/name and any known limitations. The user can play, scrub and edit it in Velorn.',
+        'Save the project and record the exact final timeline ID/name and any known limitations. The user can play, scrub and edit it in Belrog.',
       ],
-      review: 'Stop at ready for review in Velorn. Export only after an explicit user request for a deliverable file; publishing is a separate authorization.',
+      review: 'Stop at ready for review in Belrog. Export only after an explicit user request for a deliverable file; publishing is a separate authorization.',
     },
   ],
   resumeProtocol: {

@@ -1,7 +1,7 @@
 'use strict'
 // An owner's own workflows for GPU sharing.
 //
-// A person picks one of the workflows saved in Velorn's library. Velorn looks
+// A person picks one of the workflows saved in Belrog's library. Belrog looks
 // inside it and finds, by plain rules, where the description goes in, where a
 // picture goes in (if any) and which node saves the result. That makes it one
 // of five shapes: text to picture, picture edit, picture to video, text to
@@ -69,23 +69,23 @@ function describeGraph(graph, bindings) {
   const saves = kind => nodes.filter(([, node]) => kind.test(node.class_type)).map(([nodeId]) => nodeId)
   const pictures = saves(SAVE_PICTURE), videos = saves(SAVE_VIDEO), sounds = saves(SAVE_AUDIO)
   const results = pictures.length + videos.length + sounds.length
-  if (nodes.some(([, node]) => SAVE_OTHER.test(node.class_type))) problems.push('It saves something other than a picture, a video or a sound. Velorn can only share picture, video and music workflows.')
-  if (results === 0) problems.push('Velorn could not find where the result is saved. It looks for a Save Image, Save Video or Save Audio node.')
-  else if (results > 1) problems.push(`It saves ${results} results. Velorn can share a workflow that saves one.`)
+  if (nodes.some(([, node]) => SAVE_OTHER.test(node.class_type))) problems.push('It saves something other than a picture, a video or a sound. Belrog can only share picture, video and music workflows.')
+  if (results === 0) problems.push('Belrog could not find where the result is saved. It looks for a Save Image, Save Video or Save Audio node.')
+  else if (results > 1) problems.push(`It saves ${results} results. Belrog can share a workflow that saves one.`)
   const music = sounds.length === 1 && results === 1
   const outputId = videos[0] || pictures[0] || sounds[0] || null
-  if (outputId && typeof graph[outputId].inputs.filename_prefix !== 'string') problems.push('The node that saves the result has no file name setting, so Velorn cannot tell its result apart.')
+  if (outputId && typeof graph[outputId].inputs.filename_prefix !== 'string') problems.push('The node that saves the result has no file name setting, so Belrog cannot tell its result apart.')
   const loaders = (bindings?.assets || []).filter(item => item.assetType === 'image')
-  if (nodes.some(([, node]) => LOAD_OTHER.test(node.class_type))) problems.push('It starts from a video, a sound or another file. Velorn can only share workflows that start from a description or one picture.')
-  if (loaders.length > 1) problems.push(`It starts from ${loaders.length} pictures. Velorn can share a workflow that starts from one, or from none.`)
-  if (music && loaders.length) problems.push('It makes a sound but starts from a picture. Velorn can share a music workflow that starts from a description.')
+  if (nodes.some(([, node]) => LOAD_OTHER.test(node.class_type))) problems.push('It starts from a video, a sound or another file. Belrog can only share workflows that start from a description or one picture.')
+  if (loaders.length > 1) problems.push(`It starts from ${loaders.length} pictures. Belrog can share a workflow that starts from one, or from none.`)
+  if (music && loaders.length) problems.push('It makes a sound but starts from a picture. Belrog can share a music workflow that starts from a description.')
   // Words to sing: a text box named "lyrics". Its neighbour on the same part is the natural place for the description.
   const lyricsAt = music ? nodes.find(([, node]) => typeof node.inputs.lyrics === 'string') : null
   const lyrics = lyricsAt ? { nodeId: lyricsAt[0], inputKey: 'lyrics' } : null
   const choices = textSpots(graph)
   const guess = (lyrics && choices.find(item => item.nodeId === lyrics.nodeId))
     || (spot(bindings?.prompt) && choices.find(item => item.nodeId === bindings.prompt.nodeId && item.inputKey === bindings.prompt.inputKey))
-  if (!choices.length) problems.push('Velorn could not find a place for the description. It looks for a text box that holds the prompt.')
+  if (!choices.length) problems.push('Belrog could not find a place for the description. It looks for a text box that holds the prompt.')
   const video = Boolean(videos.length), picture = loaders.length === 1 ? loaders[0] : null
   const shape = music ? 'text-to-music' : video ? (picture ? 'picture-to-video' : 'text-to-video') : picture ? 'picture-edit' : 'text-to-picture'
   return { shape, kind: music ? 'audio' : video ? 'video' : 'image', problems, lyrics,
@@ -191,10 +191,10 @@ function createGpuShareOwnWorkflows({ dir, library, runner, now = Date.now, make
     try { ready = await library.prepare({ workflowId }) } catch (error) { ready = { success: false, code: error?.code } }
     // The library answers with a reason rather than throwing.
     if (ready?.success !== true) {
-      throw refuse(ready?.code === 'NEEDS_API_CAPTURE' ? 'Open this workflow in the ComfyUI tab and save it to Velorn again. Velorn needs the copy it makes then.'
-        : ready?.code === 'NOT_FOUND' ? 'That workflow is no longer in your saved workflows.' : 'Velorn could not read this saved workflow. It may be too large, or hold a file path or a key.', 'GPU_SHARE_OWN_UNREADABLE')
+      throw refuse(ready?.code === 'NEEDS_API_CAPTURE' ? 'Open this workflow in the ComfyUI tab and save it to Belrog again. Belrog needs the copy it makes then.'
+        : ready?.code === 'NOT_FOUND' ? 'That workflow is no longer in your saved workflows.' : 'Belrog could not read this saved workflow. It may be too large, or hold a file path or a key.', 'GPU_SHARE_OWN_UNREADABLE')
     }
-    if (!plain(ready?.workflow) || !/^[a-f0-9]{64}$/.test(ready.graphFingerprint || '')) throw refuse('Velorn could not read this saved workflow.', 'GPU_SHARE_OWN_UNREADABLE')
+    if (!plain(ready?.workflow) || !/^[a-f0-9]{64}$/.test(ready.graphFingerprint || '')) throw refuse('Belrog could not read this saved workflow.', 'GPU_SHARE_OWN_UNREADABLE')
     return ready
   }
 
@@ -206,7 +206,7 @@ function createGpuShareOwnWorkflows({ dir, library, runner, now = Date.now, make
       .map(item => ({ workflowId: item.id, title: String(item.title || item.label || 'Untitled').slice(0, 120), ready: item.savedRunsReady === true, added: taken.has(item.id) })) }
   }
 
-  // What Velorn found in one saved workflow, for the person to look at before adding it.
+  // What Belrog found in one saved workflow, for the person to look at before adding it.
   async function inspect({ workflowId } = {}) {
     const ready = await prepared(workflowId)
     const found = describeGraph(ready.workflow, ready.bindings)
@@ -219,7 +219,7 @@ function createGpuShareOwnWorkflows({ dir, library, runner, now = Date.now, make
       try { verdict = await runner.check(entry.bind(ready.workflow, entry.normalize({ prompt: 'check' }), { imageName: 'check.png', prefix: 'velorn_network/check', randomSeed: () => 1 }).workflow) }
       catch (error) { verdict = { ok: false, reason: error?.publicMessage || 'ComfyUI on this computer did not answer.' } }
       if (!verdict.ok) problems.push(verdict.code === 'GPU_SHARE_NOT_LOCAL' && verdict.unknownNodes?.length
-        ? `It uses parts Velorn does not know yet, so it cannot be shared for now: ${verdict.unknownNodes.slice(0, 8).join(', ')}.`
+        ? `It uses parts Belrog does not know yet, so it cannot be shared for now: ${verdict.unknownNodes.slice(0, 8).join(', ')}.`
         : `${verdict.reason}${verdict.missingModels?.length ? ` Missing: ${verdict.missingModels.slice(0, 8).join(', ')}.` : ''}`)
     }
     return { workflowId, title: String(ready.title || '').slice(0, 120), shape: found.shape, shapeLabel: SHAPES[found.shape], kind: found.kind, canAdd: problems.length === 0, problems,
@@ -235,7 +235,7 @@ function createGpuShareOwnWorkflows({ dir, library, runner, now = Date.now, make
     if (records.some(record => record.name.toLowerCase() === title.toLowerCase())) throw refuse('Another of your workflows already has that name.')
     const found = await inspect({ workflowId })
     if (!found.canAdd) throw refuse(found.problems[0] || 'This workflow cannot be shared.')
-    // The person may choose another of the places Velorn listed for the description, never one of their own making.
+    // The person may choose another of the places Belrog listed for the description, never one of their own making.
     const chosen = prompt === undefined ? found.prompt : found.promptChoices.find(item => spot(prompt) && item.nodeId === prompt.nodeId && item.inputKey === prompt.inputKey)
     if (!chosen) throw refuse('Choose one of the listed places for the description.')
     const ready = await prepared(workflowId)
@@ -368,10 +368,10 @@ function createGpuShareOwnWorkflows({ dir, library, runner, now = Date.now, make
   return { list: async () => ({ workflows: (await load()).map(shown), testing: Boolean(testing) }), candidates, inspect, add, remove, rename, test, example, resolve, share, offered, resolveShared, reviewPackage, reviewGraph, setEveryone }
 }
 
-// Only the main Velorn window may use these. Adding, removing and testing need a real click (checked in the preload).
+// Only the main Belrog window may use these. Adding, removing and testing need a real click (checked in the preload).
 const CHANNELS = ['gpu-share-own:list', 'gpu-share-own:candidates', 'gpu-share-own:inspect', 'gpu-share-own:add', 'gpu-share-own:remove', 'gpu-share-own:rename', 'gpu-share-own:test', 'gpu-share-own:example', 'gpu-share-own:share']
 const REVIEW_CHANNELS = ['gpu-share-own:offer', 'gpu-review:list', 'gpu-review:example', 'gpu-review:graph', 'gpu-review:try', 'gpu-review:decide', 'gpu-review:ban', 'gpu-review:dismiss', 'gpu-review:evidence']
-// `network` is the Velorn network client (review requests travel through it); `getMaker` gives the name the owner goes by.
+// `network` is the Belrog network client (review requests travel through it); `getMaker` gives the name the owner goes by.
 function registerGpuShareOwnIpc({ ipcMain, getMainWindow, own, onChanged = () => {}, network = null, getMaker = async () => '' }) {
   const allowed = event => {
     const window = getMainWindow()
@@ -380,7 +380,7 @@ function registerGpuShareOwnIpc({ ipcMain, getMainWindow, own, onChanged = () =>
   for (const channel of CHANNELS) {
     const action = channel.slice('gpu-share-own:'.length)
     ipcMain.handle(channel, async (event, payload) => {
-      if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
+      if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
       try {
         let result = await own[action](plain(payload) ? payload : {})
         // The list also says where each one stands with the review, and whether this account is a reviewer.
@@ -398,8 +398,8 @@ function registerGpuShareOwnIpc({ ipcMain, getMainWindow, own, onChanged = () =>
     })
   }
   const handle = (channel, action) => ipcMain.handle(channel, async (event, payload) => {
-    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
-    if (!network) return { success: false, error: 'The Velorn network is not available here.' }
+    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
+    if (!network) return { success: false, error: 'The Belrog network is not available here.' }
     try { return { success: true, ...(await action(plain(payload) ? payload : {})) } }
     catch (error) { return { success: false, code: typeof error?.code === 'string' ? error.code : 'GPU_SHARE_OWN_FAILED', error: error?.publicMessage || 'That could not be done.' } }
   })

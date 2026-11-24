@@ -60,7 +60,7 @@ async function main() {
     const disclosure = await learnMore.locator('..').innerText()
     assert.match(disclosure, /Your message is sent as typed, including paths and links/)
     assert.match(disclosure, /Codex keeps local session files for continuity; turning off access does not erase those files/)
-    await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check()
     await button('Back to chat').click()
     const first = await send('Synthetic public timing test; do not execute anything.')
     await emit(first, { type: 'timing', phase: 'setup', durationMs: 123, continuity: 'continued', reasoning: 'TIMING_PRIVATE_ONLY' })

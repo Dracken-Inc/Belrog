@@ -274,7 +274,7 @@ test('legacy rejected records remain readable and cannot acquire a misleading no
   const result = await f.manager.refresh({ jobId: rejected.job.jobId })
   assert.equal(result.success, true); assert.equal(result.cached, true); assert.equal(result.job.status, 'FAILED')
   assert.equal(result.job.submissionRejected, true); assert.equal(result.job.canRefresh, false)
-  assert.match(result.summary, /earlier Velorn version did not retain/)
+  assert.match(result.summary, /earlier Belrog version did not retain/)
   assert.equal(result.job.diagnostics, undefined); assert.equal(f.requests.length, before)
 })
 

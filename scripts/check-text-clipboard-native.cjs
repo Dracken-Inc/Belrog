@@ -28,7 +28,7 @@ async function runElectron() {
     await app.whenReady()
     server = require('node:http').createServer((request, response) => {
       response.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; script-src 'none'" })
-      response.end('<!doctype html><html><body><p>Velorn clipboard fixture</p>' + (request.url === '/' ? '<iframe src="/child"></iframe>' : '') + '</body></html>')
+      response.end('<!doctype html><html><body><p>Belrog clipboard fixture</p>' + (request.url === '/' ? '<iframe src="/child"></iframe>' : '') + '</body></html>')
     })
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
     const origin = `http://127.0.0.1:${server.address().port}`
@@ -50,7 +50,7 @@ async function runElectron() {
     assert.match(await run('window.electronAPI.writeClipboardText("not a gesture").then(()=>"unexpected", error=>error.message)'), /user gesture/)
     assert.deepEqual(writes, [])
     pass('Sandboxed real preload is write-only and refuses background calls without a gesture')
-    const text = 'Velorn reply\n**Markdown**\nC:\\clips\\shot 02.mov\n日本語 🦋'
+    const text = 'Belrog reply\n**Markdown**\nC:\\clips\\shot 02.mov\n日本語 🦋'
     assert.deepEqual(await run(`window.electronAPI.writeClipboardText(${JSON.stringify(text)})`, true), { success: true })
     assert.deepEqual(writes, [text])
     pass('Renderer user activation crosses the real isolated preload and writes exact UTF-8 text into the injected sink')

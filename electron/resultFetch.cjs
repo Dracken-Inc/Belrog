@@ -4,7 +4,7 @@
 // Electron's `net.fetch` throws an uncaught TypeError ("Cannot convert argument to a ByteString")
 // when a server sends a header whose value has a character above 255, and the fetch then never
 // settles. Seen on 2026-11-19 from a model maker's storage: the clip had been made and paid for,
-// and Velorn waited for it forever. `net.request` hands the headers over as plain strings, so a
+// and Belrog waited for it forever. `net.request` hands the headers over as plain strings, so a
 // result download goes through it, and the header values are cleaned here before a Response is
 // built. It still uses Chromium's network stack, so a system proxy keeps working.
 const clean = value => String(value).replace(/[^\x20-\x7e\t]/g, '')

@@ -61,8 +61,8 @@ test('both roles mutually authenticate then exchange private JSON', async () => 
 test('unchanged UMD source runs as a browser script and interoperates with CommonJS', async () => {
   const sandbox = vm.createContext({ crypto: webcrypto, TextEncoder, TextDecoder, btoa, atob });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../electron/remoteCompanionCrypto.cjs'), 'utf8'), sandbox);
-  assert.equal(typeof sandbox.VelornRemoteCrypto.createSession, 'function');
-  const { desktop, phone } = await handshake(crypto.createPairingSecret(), sandbox.VelornRemoteCrypto);
+  assert.equal(typeof sandbox.BelrogRemoteCrypto.createSession, 'function');
+  const { desktop, phone } = await handshake(crypto.createPairingSecret(), sandbox.BelrogRemoteCrypto);
   assert.deepEqual(await desktop.decrypt(await phone.encrypt({ client: 'browser', unicode: 'こんにちは' })),
     { client: 'browser', unicode: 'こんにちは' });
   assert.equal(JSON.stringify(await phone.decrypt(await desktop.encrypt({ client: 'desktop' }))), '{"client":"desktop"}');
@@ -71,8 +71,8 @@ test('unchanged UMD source runs as a browser script and interoperates with Commo
 test('insecure browser contexts fail explicitly without weak random fallback', async () => {
   const sandbox = vm.createContext({ crypto: { getRandomValues() {} }, TextEncoder, TextDecoder, btoa, atob });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../electron/remoteCompanionCrypto.cjs'), 'utf8'), sandbox);
-  assert.throws(() => sandbox.VelornRemoteCrypto.createPairingSecret(), { code: 'CRYPTO_UNAVAILABLE' });
-  await assert.rejects(sandbox.VelornRemoteCrypto.createSession({ role: 'phone', secret: crypto.createPairingSecret() }),
+  assert.throws(() => sandbox.BelrogRemoteCrypto.createPairingSecret(), { code: 'CRYPTO_UNAVAILABLE' });
+  await assert.rejects(sandbox.BelrogRemoteCrypto.createSession({ role: 'phone', secret: crypto.createPairingSecret() }),
     { code: 'CRYPTO_UNAVAILABLE' });
 });
 
@@ -271,11 +271,11 @@ test('destroy during actual asynchronous derivation, encryption, or decryption c
     let pending;
     if (method === 'deriveKey') {
       desktop = await crypto.createSession({ role: 'desktop', secret });
-      phone = await sandbox.VelornRemoteCrypto.createSession({ role: 'phone', secret });
+      phone = await sandbox.BelrogRemoteCrypto.createSession({ role: 'phone', secret });
       gateEnabled = true;
       pending = phone.acceptHello(desktop.hello());
     } else {
-      ({ desktop, phone } = await handshake(secret, sandbox.VelornRemoteCrypto));
+      ({ desktop, phone } = await handshake(secret, sandbox.BelrogRemoteCrypto));
       gateEnabled = true;
       pending = method === 'encrypt' ? phone.encrypt({ pending: true })
         : phone.decrypt(await desktop.encrypt({ pending: true }));

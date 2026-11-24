@@ -422,5 +422,5 @@ export function inspectProductionRun(value, { board, assets = [], timelines = []
       reportedCompletedCount: attempts.filter(attempt => attempt.state === 'completed').length,
       needsReconciliationCount: attempts.filter(attempt => ['submitted', 'running', 'uncertain'].includes(attempt.state)).length,
       linkedCount: bindings.filter(binding => binding.status === 'linked').length,
-      reviewInVelorn: true, exportRequired: false, generationAuthorized: false, statesVerified: false } }
+      reviewInBelrog: true, exportRequired: false, generationAuthorized: false, statesVerified: false } }
 }

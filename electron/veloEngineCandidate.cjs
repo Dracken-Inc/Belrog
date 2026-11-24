@@ -72,7 +72,9 @@ function assertIsolation() {
       || marker.stateRoot !== '/state' || marker.runtimeRoot !== '/runtime'
       || marker.workspaceRoot !== '/workspace'
       || Object.keys(os.networkInterfaces()).some(name => name !== 'lo')
-      || fs.existsSync('/opt/Velorn/resources/app.asar')
+      // Installed-app path, current and pre-rename spelling: either one means the
+      // host app is mounted inside the candidate and isolation is a lie.
+      || fs.existsSync('/opt/Belrog/resources/app.asar') || fs.existsSync('/opt/Velorn/resources/app.asar')
       || fs.existsSync('/usr/lib/chatgpt/resources/codex')) {
     throw new Error('Use the isolated candidate launcher. Host profiles and direct network access are not allowed in this build.')
   }
@@ -127,7 +129,7 @@ function initializeCandidate(app) {
     : 'Offline engine candidate · Scripted test responses · No real accounts or paid requests' })
   const profile = '/state/velorn-profile'
   fs.mkdirSync(profile, { recursive: true, mode: 0o700 })
-  app.setName('Velorn Engine Candidate')
+  app.setName('Belrog Engine Candidate')
   app.setPath('userData', profile)
   app.setPath('sessionData', path.join(profile, 'session'))
   let services, closing = false

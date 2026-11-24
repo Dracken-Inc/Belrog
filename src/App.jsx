@@ -5,7 +5,7 @@ import TitleBar from './components/TitleBar'
 import { DesktopAccountProvider } from './components/DesktopAccount'
 import AgentComfyCloudSetup from './components/AgentComfyCloudSetup'
 import PhoneCreateSaver from './components/PhoneCreateSaver'
-import VelornNetworkSaver from './components/VelornNetworkSaver'
+import BelrogNetworkSaver from './components/BelrogNetworkSaver'
 import ExportPanel from './components/ExportPanel'
 import ExportProgressOverlay from './components/ExportProgressOverlay'
 import useExportActivityStore, { isExportBusy } from './stores/exportActivityStore'
@@ -180,6 +180,10 @@ function AppWorkspace({ accountAgentRequested = false }) {
   // posted into the iframe as { type: 'belrog-director-brief', brief }.
   const [directorIframeNonce, setDirectorIframeNonce] = useState(0)
   const [directorScriptStatus, setDirectorScriptStatus] = useState('')
+  // 'checking' while we wait for the page to prove itself, 'live' once it posts
+  // anything back, 'blocked' when it never does (perchance.org sends
+  // X-Frame-Options: SAMEORIGIN, which stops the embed cold).
+  const [directorFrameState, setDirectorFrameState] = useState('checking')
   const directorIframeRef = useRef(null)
   const reloadComfyIframe = useCallback(() => {
     setComfyIframeNonce((n) => n + 1)
@@ -264,8 +268,10 @@ function AppWorkspace({ accountAgentRequested = false }) {
   const openComfyExternal = useCallback(() => {
     const url = comfyIframeUrl || getLocalComfyHttpBaseSync()
     if (!url) return
-    if (window?.electronAPI?.openExternal) {
-      window.electronAPI.openExternal(url).catch(() => {})
+    // openExternalUrl is the name the preload actually exposes; openExternal
+    // never existed, so this button fell through to a popup the app blocks.
+    if (window?.electronAPI?.openExternalUrl) {
+      window.electronAPI.openExternalUrl(url).catch(() => window.open(url, '_blank', 'noopener,noreferrer'))
     } else {
       window.open(url, '_blank', 'noopener,noreferrer')
     }
@@ -347,7 +353,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
     return () => { try { stop?.() } catch (_) { /* ignore */ } }
   }, [])
 
-  // ComfyUI's own Download button for a missing model: the frame asks, Velorn
+  // ComfyUI's own Download button for a missing model: the frame asks, Belrog
   // saves the file into the right models folder (electron/comfyModelDownload.cjs).
   useEffect(() => {
     const onMessage = async (event) => {
@@ -364,7 +370,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
       try {
         event.source.postMessage({
           source: 'velorn-host', type: 'download-model-answer', id: data.id,
-          ok: Boolean(answer?.success), error: answer?.error || (answer ? '' : 'Model downloads need the Velorn desktop app.'),
+          ok: Boolean(answer?.success), error: answer?.error || (answer ? '' : 'Model downloads need the Belrog desktop app.'),
         }, '*')
       } catch { /* the frame was reloaded meanwhile */ }
     }
@@ -539,10 +545,26 @@ function AppWorkspace({ accountAgentRequested = false }) {
   const [hasOpenedGpuSharing, setHasOpenedGpuSharing] = useState(false)
   const [gpuShareAsk, setGpuShareAsk] = useState(0) // counts requests to show the owner's side of the GPU sharing tab
   useEffect(() => { if (mainTab === 'gpu-sharing') setHasOpenedGpuSharing(true) }, [mainTab])
-  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script'
+  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script' || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'gpu-sharing' || mainTab === 'comfyui'
+  // Waiting for the planner to prove it loaded, but not forever: if it never
+  // answers, say what happened and hand over a button that works.
+  useEffect(() => {
+    if (mainTab !== 'director-script') return undefined
+    setDirectorFrameState((prev) => (prev === 'live' ? prev : 'checking'))
+    const timer = setTimeout(() => {
+      setDirectorFrameState((prev) => (prev === 'live' ? prev : 'blocked'))
+    }, 8000)
+    return () => clearTimeout(timer)
+  }, [mainTab, directorIframeNonce])
   useEffect(() => {
     const onMessage = (event) => {
       if (!event || !event.data || typeof event.data !== 'object') return
+      // Anything coming back from the planner proves it really loaded. Perchance
+      // sends X-Frame-Options: SAMEORIGIN, so the frame can be blocked outright
+      // and leave nothing but a black rectangle - this is how we notice.
+      if (typeof event.origin === 'string' && event.origin.includes('perchance.org')) {
+        setDirectorFrameState('live')
+      }
       if (event.data.type !== 'belrog-director-script') return
       const frame = directorIframeRef.current
       if (!frame || event.source !== frame.contentWindow) return
@@ -581,8 +603,16 @@ function AppWorkspace({ accountAgentRequested = false }) {
     setDirectorScriptStatus('Reloading the planner…')
   }, [])
   const handleOpenDirectorExternal = useCallback(() => {
-    window.open('https://perchance.org/belrog', '_blank', 'noopener,noreferrer')
-  }, []) || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'gpu-sharing' || mainTab === 'comfyui'
+    // Same path the ComfyUI tab uses. window.open() alone is a no-op here: the
+    // main process denies popup windows, which is why "Open in browser" used to
+    // look like a dead button on a blocked planner tab.
+    const url = 'https://perchance.org/belrog'
+    if (window?.electronAPI?.openExternalUrl) {
+      window.electronAPI.openExternalUrl(url).catch(() => window.open(url, '_blank', 'noopener,noreferrer'))
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
+  }, [])
   // Editor layout insets used by the editor content shell.
   const editorLeftInset = leftPanelExpanded ? ICON_BAR_WIDTH + leftPanelWidth : ICON_BAR_WIDTH
   const editorRightInset = inspectorExpanded ? ICON_BAR_WIDTH + inspectorWidth : ICON_BAR_WIDTH
@@ -1023,7 +1053,16 @@ function AppWorkspace({ accountAgentRequested = false }) {
           style={{ display: mainTab === 'director-script' ? 'flex' : 'none' }}
         >
           <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs">
-            <span className="font-mono truncate">https://perchance.org/belrog</span>
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              directorFrameState === 'live' ? 'bg-emerald-500'
+                : directorFrameState === 'blocked' ? 'bg-red-500'
+                  : 'bg-amber-400 animate-pulse'
+            }`} />
+            <span className="text-sf-text-muted">
+              {directorFrameState === 'live' ? 'Planner connected'
+                : directorFrameState === 'blocked' ? 'Planner did not load — perchance.org blocks embedding'
+                  : 'Loading planner…'}
+            </span>
             {directorScriptStatus && (
               <span className="max-w-[520px] truncate">{directorScriptStatus}</span>
             )}
@@ -1053,14 +1092,48 @@ function AppWorkspace({ accountAgentRequested = false }) {
               Open in browser
             </button>
           </div>
-          <iframe
-            key={`director-iframe-${directorIframeNonce}`}
-            ref={directorIframeRef}
-            src="https://perchance.org/belrog"
-            title="DirectorScript"
-            className="flex-1 w-full min-h-0 border-0"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
-          />
+          <div className="relative flex-1 min-h-0 min-w-0">
+            <iframe
+              key={`director-iframe-${directorIframeNonce}`}
+              ref={directorIframeRef}
+              src="https://perchance.org/belrog"
+              title="DirectorScript"
+              className="absolute inset-0 w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
+            />
+            {directorFrameState === 'blocked' && (
+              // Not a stub: perchance.org answers with X-Frame-Options: SAMEORIGIN,
+              // so the frame can never render inside Belrog. Say that, and give the
+              // one action that works, instead of leaving a black rectangle.
+              <div className="absolute inset-0 flex items-center justify-center bg-sf-dark-950/95 px-6">
+                <div className="max-w-md text-center space-y-3">
+                  <h3 className="text-sm font-semibold text-sf-text-primary">The planner will not show inside Belrog</h3>
+                  <p className="text-xs text-sf-text-secondary leading-relaxed">
+                    perchance.org tells browsers not to display it inside another app, so this
+                    frame stays empty no matter how many times it reloads. The planner itself is
+                    fine - open it in your browser. Send Brief still hands your brief to it, and
+                    a script you save there comes back into Belrog the same way.
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenDirectorExternal}
+                      className="px-3 py-1.5 rounded bg-sf-accent hover:bg-sf-accent/90 text-xs text-white transition-colors"
+                    >
+                      Open planner in browser
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleReloadDirector}
+                      className="px-3 py-1.5 rounded bg-sf-dark-700 hover:bg-sf-dark-600 text-xs text-sf-text-secondary transition-colors"
+                    >
+                      Try loading it here again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         {/* Generate stays mounted after first use so its existing jobs survive
             tab switches and hiding the tab. Older MCP adapters can still
@@ -1503,6 +1576,6 @@ export default function App() {
     <AppWorkspace accountAgentRequested={accountAgentRequested} />
     <AgentComfyCloudSetup />
     <PhoneCreateSaver />
-    <VelornNetworkSaver />
+    <BelrogNetworkSaver />
   </DesktopAccountProvider>
 }

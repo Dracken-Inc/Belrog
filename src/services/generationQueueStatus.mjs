@@ -178,10 +178,10 @@ export function readGenerationQueueStatus(snapshot = {}, payload = {}, storage, 
   let source = live ? 'live' : 'unavailable'
   let note = live
     ? runsLive && legacyLive
-      ? 'Current app-wide Velorn managed and registered-run snapshot; no service polling or job execution was triggered by this read.'
+      ? 'Current app-wide Belrog managed and registered-run snapshot; no service polling or job execution was triggered by this read.'
       : runsLive
-        ? 'Current app-wide Velorn registered-run snapshot; no service polling or job execution was triggered by this read.'
-        : 'Current app-wide Velorn queue snapshot, not filtered to the open project; no service polling or job execution was triggered.'
+        ? 'Current app-wide Belrog registered-run snapshot; no service polling or job execution was triggered by this read.'
+        : 'Current app-wide Belrog queue snapshot, not filtered to the open project; no service polling or job execution was triggered.'
     : 'Generate has not published a current queue snapshot. This does not establish that the ComfyUI queue is empty. Repeating this read will not start or restore Generate.'
   if (!live) {
     try {

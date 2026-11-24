@@ -87,7 +87,7 @@ function runWhisper(args, onPercent, { binary = request.whisperCliPath, needsCar
       : code === 0 ? resolve() : reject(new Error('The speech engine stopped: ' + tail.slice(-300)))))
   })
 }
-// Hears the words on the graphics card when Velorn has that version of the speech program, and on the processor
+// Hears the words on the graphics card when Belrog has that version of the speech program, and on the processor
 // otherwise or when the card version fails for any reason. What happened is reported with the result.
 const speech = { used: 'processor' }
 async function hearWords(args, onPercent, resultFile) {

@@ -9,7 +9,7 @@ const { randomUUID } = require('node:crypto')
 // user's opt-in, never a live permission token, project, chat or mobile binding.
 const CONSENT = Object.freeze({ version: 1, scope: 'velorn-full-computer-access', provider: 'codex', shareImagesAndView: true })
 const LOCAL_CONSENT = Object.freeze({ version: 1, scope: 'velorn-full-tool-access', provider: 'lmstudio', shareImagesAndView: true })
-// Velo's earlier remembered choice covered Velorn tools only. Never migrate
+// Velo's earlier remembered choice covered Belrog tools only. Never migrate
 // that opt-in into computer authority: fresh native confirmation is required.
 const VELO_CONSENT = Object.freeze({ version: 2, scope: 'velorn-velo-full-computer-access', provider: 'luna', shareImagesAndView: true })
 const MAX_BYTES = 2048
@@ -68,7 +68,7 @@ function createProviderPreference({ filePath, consent }) {
         // An explicit revocation may recover from an atomic-write failure by
         // removing this exact native preference file, never its directory.
         try { await fs.unlink(filePath) } catch (error) {
-          if (error.code !== 'ENOENT') throw Object.assign(new Error('Full access was revoked for this session, but its remembered choice could not be cleared. Check the application data folder before restarting Velorn.'), { code: 'FULL_ACCESS_PREFERENCE_FAILED' })
+          if (error.code !== 'ENOENT') throw Object.assign(new Error('Full access was revoked for this session, but its remembered choice could not be cleared. Check the application data folder before restarting Belrog.'), { code: 'FULL_ACCESS_PREFERENCE_FAILED' })
         }
       }
       blocked = false

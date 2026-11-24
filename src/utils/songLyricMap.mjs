@@ -141,7 +141,7 @@ export function formatClock(seconds) {
 
 // ---------- song parts (verse, chorus, ...) ----------
 // A part is { kind, firstLine }: it covers the lines from `firstLine` up to
-// the next part. Velorn guesses them; the user corrects them.
+// the next part. Belrog guesses them; the user corrects them.
 
 export const SONG_PART_KINDS = ['verse', 'chorus', 'bridge', 'intro', 'outro']
 

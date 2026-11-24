@@ -2,7 +2,7 @@
 
 // Native, project-aware bookkeeping for ComfyUI prompts.  This deliberately
 // does not try to be a global ComfyUI queue: prompts are only owned after a
-// Velorn-managed submission or an explicit adoption.  It never resubmits a
+// Belrog-managed submission or an explicit adoption.  It never resubmits a
 // graph while recovering a record.
 
 const fs = require('node:fs/promises')
@@ -93,13 +93,13 @@ function promptId(value) {
 function normalizeContext(value) {
   let context = value
   if (typeof context === 'string') {
-    try { context = JSON.parse(context) } catch { throw fault('CONTEXT_UNAVAILABLE', 'The current Velorn project context is unavailable.') }
+    try { context = JSON.parse(context) } catch { throw fault('CONTEXT_UNAVAILABLE', 'The current Belrog project context is unavailable.') }
     if (Array.isArray(context)) context = { session: context[0], projectKey: context[1], timelineId: context[2] }
   }
   if (!plain(context) || typeof context.session !== 'string' || !context.session || context.session.length > 512
     || !(context.projectKey === null || (typeof context.projectKey === 'string' && context.projectKey.length <= 8192))
     || !(context.timelineId == null || (typeof context.timelineId === 'string' && context.timelineId.length <= 512))) {
-    throw fault('CONTEXT_UNAVAILABLE', 'The current Velorn project context is unavailable.')
+    throw fault('CONTEXT_UNAVAILABLE', 'The current Belrog project context is unavailable.')
   }
   return { session: context.session, projectKey: context.projectKey, timelineId: context.timelineId ?? null }
 }
@@ -247,7 +247,7 @@ function outputSubfolder(value) {
   if (value === undefined || value === null || value === '') return ''
   // ComfyUI normally returns a relative POSIX-style subfolder. Reject both
   // native separators and drive-qualified paths so a malformed server reply
-  // cannot later be joined outside Velorn's configured output root on Windows.
+  // cannot later be joined outside Belrog's configured output root on Windows.
   if (typeof value !== 'string' || value.length > 1024 || /[\u0000-\u001f\\]/.test(value)
     || value.startsWith('/') || /^[A-Za-z]:/.test(value)) return null
   const parts = value.split('/')
@@ -262,7 +262,7 @@ function outputEligibility(type, mediaType) {
   const safeMediaType = text(mediaType, 24)?.toLowerCase()
   if (!['image', 'video', 'audio'].includes(safeMediaType)) return null
   // PreviewImage and other temporary ComfyUI results are useful to ComfyUI,
-  // but are not durable Velorn assets. They must not make the real saved
+  // but are not durable Belrog assets. They must not make the real saved
   // outputs look only partially imported.
   const safeType = type === undefined || type === null || type === '' ? 'output' : text(type, 96)?.toLowerCase()
   return safeType === 'output' ? { mediaType: safeMediaType, type: safeType } : null
@@ -556,7 +556,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
   }
 
   async function currentContext() {
-    if (typeof getContext !== 'function') throw fault('CONTEXT_UNAVAILABLE', 'The current Velorn project context is unavailable.')
+    if (typeof getContext !== 'function') throw fault('CONTEXT_UNAVAILABLE', 'The current Belrog project context is unavailable.')
     return normalizeContext(await getContext())
   }
 
@@ -600,10 +600,10 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
     if (response.body?.getReader) {
       const reader = response.body.getReader(); const chunks = []; let bytes = 0; let complete = false
       const read = async () => {
-        if (signal.aborted) throw fault('UNAVAILABLE', 'Velorn timed out while reading ComfyUI generation status.')
+        if (signal.aborted) throw fault('UNAVAILABLE', 'Belrog timed out while reading ComfyUI generation status.')
         let listener
         const aborted = new Promise((_, reject) => {
-          listener = () => reject(fault('UNAVAILABLE', 'Velorn timed out while reading ComfyUI generation status.'))
+          listener = () => reject(fault('UNAVAILABLE', 'Belrog timed out while reading ComfyUI generation status.'))
           signal.addEventListener('abort', listener, { once: true })
         })
         try { return await Promise.race([reader.read(), aborted]) }
@@ -645,7 +645,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       try { return { status: response.status, body: JSON.parse(raw) } } catch { throw fault('UNAVAILABLE', 'ComfyUI returned an invalid generation-status response.') }
     } catch (error) {
       if (error?.publicMessage) throw error
-      throw fault('UNAVAILABLE', 'Velorn could not contact the configured ComfyUI server.')
+      throw fault('UNAVAILABLE', 'Belrog could not contact the configured ComfyUI server.')
     } finally { clearTimeout(timerId) }
   }
 
@@ -682,7 +682,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       if (!candidates.length) return
       let queue
       try { queue = queueEntries((await requestJson(endpoint, '/queue')).body) }
-      catch (error) { await markUnknown(candidates, safeError(error, 'Velorn lost contact with ComfyUI before this job could be confirmed.')); return }
+      catch (error) { await markUnknown(candidates, safeError(error, 'Belrog lost contact with ComfyUI before this job could be confirmed.')); return }
       const byPrompt = new Map(queue.map(item => [item.promptId, item]))
       let changed = false, managedFinished = false
       for (const run of candidates) {
@@ -727,7 +727,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
             changed = true
           }
         } catch (error) {
-          updateTerminal(run, 'unknown', safeError(error, 'Velorn lost contact with ComfyUI before this job could be confirmed.'))
+          updateTerminal(run, 'unknown', safeError(error, 'Belrog lost contact with ComfyUI before this job could be confirmed.'))
           changed = true
         }
       }
@@ -755,7 +755,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
         // The pre-submit receipt intentionally exists before POST. If the app
         // stops between POST and the response there is no safe prompt ID to
         // poll, so preserve that uncertainty rather than submitting again.
-        for (const run of ambiguous) updateTerminal(run, 'unknown', 'Velorn restarted before ComfyUI acceptance could be confirmed. It was not resubmitted.')
+        for (const run of ambiguous) updateTerminal(run, 'unknown', 'Belrog restarted before ComfyUI acceptance could be confirmed. It was not resubmitted.')
         await persist()
         emit()
       }
@@ -798,7 +798,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
     run = {
       id: draft?.id || uuid(), requestId: id, promptId: null, endpoint: normalizedEndpoint,
       projectKey: normalizedContext.projectKey, timelineId: normalizedContext.timelineId,
-      origin: draft?.origin || 'velorn', adopted: false, label: draft?.label || 'Velorn generation', status: 'submitting',
+      origin: draft?.origin || 'velorn', adopted: false, label: draft?.label || 'Belrog generation', status: 'submitting',
       createdAt: draft?.createdAt || now(), startedAt: null, completedAt: null, progress: null, node: null, error: null,
       outputs: [], outputCount: 0, outputsTruncated: false, resultAssetIds: [], assessment: plain(assessment) ? copy(assessment) : null, importState: 'pending',
       inputAssetIds: draft?.inputAssetIds || [], targetShotId: draft?.targetShotId || null, recipe, pollAttempts: 0, missingAttempts: 0,
@@ -807,11 +807,11 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
     state.runs.push(run)
     // This await is intentionally before the broker's single POST call. If the
     // durable ledger cannot write, the broker receives a rejection and does not
-    // submit a prompt that Velorn cannot later identify.
+    // submit a prompt that Belrog cannot later identify.
     try { await persist() }
     catch (error) {
       // A receipt that never reached durable storage must not remain visible
-      // as though Velorn could recover it. The broker will reject before POST.
+      // as though Belrog could recover it. The broker will reject before POST.
       const index = state.runs.findIndex(item => item.id === run.id)
       if (index >= 0) state.runs.splice(index, 1)
       throw error
@@ -838,7 +838,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
     } else {
       // A timeout/disconnect after POST is intentionally not treated as a
       // rejection. Retrying could create duplicate paid or local work.
-      updateTerminal(run, 'unknown', 'Velorn could not confirm whether ComfyUI accepted this submission. It was not retried.')
+      updateTerminal(run, 'unknown', 'Belrog could not confirm whether ComfyUI accepted this submission. It was not retried.')
     }
     await persist()
     emit()
@@ -861,7 +861,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       let saved = null
       if (hasSavedSource) {
         if (args.workflow !== undefined || args.workflowJson !== undefined) throw fault('INVALID_REQUEST', 'Provide either a saved workflowId or one inline graph, never both.')
-        if (typeof resolveSavedWorkflow !== 'function') throw fault('UNAVAILABLE', 'Saved workflow reuse is unavailable. Restart Velorn.')
+        if (typeof resolveSavedWorkflow !== 'function') throw fault('UNAVAILABLE', 'Saved workflow reuse is unavailable. Restart Belrog.')
         saved = await resolveSavedWorkflow({ workflowId: args.workflowId, inputOverrides: args.inputOverrides,
           templateParameters: args.templateParameters, assetBindings: args.assetBindings })
         if (saved?.success !== true || saved?.ready !== true) throw fault('SAVED_WORKFLOW_NOT_READY', saved?.error || 'That saved workflow is not ready for reuse. Inspect it first.')
@@ -896,9 +896,9 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       if (contextIdentity(await currentContext()) !== expectedContext || await configuredEndpoint() !== endpoint) {
         throw fault('STALE_CONTEXT', 'The project or ComfyUI connection changed; review this generation again.')
       }
-      if (typeof submitManaged !== 'function') throw fault('UNAVAILABLE', 'The native managed-generation bridge is unavailable. Restart Velorn.')
+      if (typeof submitManaged !== 'function') throw fault('UNAVAILABLE', 'The native managed-generation bridge is unavailable. Restart Belrog.')
       if (saved?.preparedAssets?.length) {
-        if (typeof uploadSavedAssets !== 'function') throw fault('UNAVAILABLE', 'Reference upload support is unavailable. Restart Velorn.')
+        if (typeof uploadSavedAssets !== 'function') throw fault('UNAVAILABLE', 'Reference upload support is unavailable. Restart Belrog.')
         const assertCurrent = async () => {
           await assertReady()
           if (contextIdentity(await currentContext()) !== expectedContext || await configuredEndpoint() !== endpoint) throw fault('STALE_CONTEXT', 'The project or ComfyUI connection changed during reference preparation. Preview again; no generation was queued.')
@@ -917,20 +917,20 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
         ...(saved ? { savedWorkflowId: args.workflowId } : {}) }) }
       catch (error) {
         await preserveUncertainSubmission(state.runs.find(item => item.requestId === requestId),
-          'Velorn could not confirm the native submission result. It was not retried.')
+          'Belrog could not confirm the native submission result. It was not retried.')
         throw error
       } finally { pending.delete(requestId) }
       const run = state.runs.find(item => item.requestId === requestId)
       if (!plain(result) || typeof result.success !== 'boolean') {
-        await preserveUncertainSubmission(run, 'Velorn received an invalid native submission result. It was not retried.')
-        return failure('SUBMISSION_UNCERTAIN', 'Velorn could not confirm the native submission result. It was not retried.',
+        await preserveUncertainSubmission(run, 'Belrog received an invalid native submission result. It was not retried.')
+        return failure('SUBMISSION_UNCERTAIN', 'Belrog could not confirm the native submission result. It was not retried.',
           { requestId, runId: run?.id || null, submissionState: 'unknown', retryAllowed: false })
       }
       if (!run && result.success === true) {
         // The caller posted without the required native beforeSubmit hook. Do
         // not pretend that a durable pre-POST record exists; mark this
         // submission uncertain and require inspection instead of retrying.
-        return failure('SUBMISSION_UNCERTAIN', 'ComfyUI may have received the workflow, but Velorn did not receive its durable tracking receipt. It was not retried.',
+        return failure('SUBMISSION_UNCERTAIN', 'ComfyUI may have received the workflow, but Belrog did not receive its durable tracking receipt. It was not retried.',
           { requestId, runId: null, submissionState: 'unknown', retryAllowed: false })
       }
       if (result?.success === false) return { ...result, requestId, runId: run?.id || null }
@@ -951,7 +951,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
         return { promptId: entry.promptId, status: entry.status, label: run?.label || `External ComfyUI job ${entry.promptId.slice(0, 12)}`,
           runId: run?.id || null, origin: run?.origin || 'external' }
       })
-      // Refresh is explicit. It may recheck only prompt IDs Velorn already
+      // Refresh is explicit. It may recheck only prompt IDs Belrog already
       // owns after this read; it does not adopt arbitrary queue work, import
       // files, or submit anything. This lets a transient disconnect recover
       // without requiring an app restart while `list()` stays purely cached.
@@ -976,7 +976,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       const existing = runForPrompt(endpoint, id)
       if (existing) {
         if (!projectMatches(existing, context, false)) return failure('NOT_FOUND', 'That generation run is not available in this project.')
-        return { success: true, adopted: false, run: publicRun(existing), message: 'This ComfyUI prompt is already tracked by Velorn.' }
+        return { success: true, adopted: false, run: publicRun(existing), message: 'This ComfyUI prompt is already tracked by Belrog.' }
       }
       const queue = queueEntries((await requestJson(endpoint, '/queue')).body)
       const queued = queue.find(item => item.promptId === id)
@@ -994,7 +994,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       // Prefer the graph actually correlated by ComfyUI. A supplied graph is a
       // fallback only for history/queue variants that omit their prompt graph.
       const captured = observed || supplied
-      if (!captured) throw fault('WORKFLOW_REQUIRED', 'Adoption needs the API workflow so Velorn can retain a redacted recipe.')
+      if (!captured) throw fault('WORKFLOW_REQUIRED', 'Adoption needs the API workflow so Belrog can retain a redacted recipe.')
       const metadata = {
         label: text(args.label) || `Adopted ComfyUI job ${id.slice(0, 12)}`,
         inputAssetIds: optionalIds(args.inputAssetIds), targetShotId: args.targetShotId == null ? null : text(args.targetShotId, 512),
@@ -1011,7 +1011,7 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       }
       if (previewOnly) {
         return { success: true, previewOnly: true, adopted: false, candidate: publicRun(run),
-          message: 'ComfyUI prompt verified only; no Velorn run record was written.' }
+          message: 'ComfyUI prompt verified only; no Belrog run record was written.' }
       }
       // The observed prompt is not enough authority to attach it to whatever
       // project happened to become active while the network read was running.
@@ -1085,26 +1085,26 @@ function createGenerationRuns({ storageDir, getEndpoint, getContext, submitManag
       }
       if (operation === 'mark-import-failed') {
         if (args.previewOnly !== false) return { success: true, previewOnly: true, run: publicRun({ ...run, importState: 'failed',
-          error: safeError(args.error, 'Velorn could not import this generation result.') }),
+          error: safeError(args.error, 'Belrog could not import this generation result.') }),
           message: 'Import failure acknowledgement previewed only; no generation-run record was changed.' }
         await assertReady()
         if (contextIdentity(await currentContext()) !== contextIdentity(context)) throw fault('STALE_CONTEXT', 'The project changed; verify import acknowledgement again.')
         run.importState = 'failed'
-        run.error = safeError(args.error, 'Velorn could not import this generation result.')
+        run.error = safeError(args.error, 'Belrog could not import this generation result.')
         await persist(); emit()
         return { success: true, run: publicRun(run) }
       }
       if (operation === 'cancel') {
-        if (run.status === 'running') return failure('RUNNING_CANCEL_UNSUPPORTED', 'This prompt is already running. Velorn will not issue ComfyUI’s global interrupt because it can affect unrelated work.')
+        if (run.status === 'running') return failure('RUNNING_CANCEL_UNSUPPORTED', 'This prompt is already running. Belrog will not issue ComfyUI’s global interrupt because it can affect unrelated work.')
         if (run.status !== 'queued' || !run.promptId) return failure('NOT_QUEUED', 'Only a known queued ComfyUI prompt can be removed safely.')
         const endpoint = await configuredEndpoint()
         if (endpoint !== run.endpoint) return failure('STALE_CONNECTION', 'The configured ComfyUI connection changed; inspect this job before cancelling it.')
         const checkPending = async () => {
           // A durable card can be stale. Only the actual pending queue record
-          // is eligible for deletion; Velorn never calls global /interrupt.
+          // is eligible for deletion; Belrog never calls global /interrupt.
           const fresh = queueEntries((await requestJson(endpoint, '/queue')).body).find(item => item.promptId === run.promptId)
           if (!fresh) return failure('NOT_QUEUED', 'This prompt is no longer pending in the configured ComfyUI queue.')
-          if (fresh.status === 'running') return failure('RUNNING_CANCEL_UNSUPPORTED', 'This prompt is already running. Velorn will not issue ComfyUI’s global interrupt because it can affect unrelated work.')
+          if (fresh.status === 'running') return failure('RUNNING_CANCEL_UNSUPPORTED', 'This prompt is already running. Belrog will not issue ComfyUI’s global interrupt because it can affect unrelated work.')
           return null
         }
         const pendingError = await checkPending()

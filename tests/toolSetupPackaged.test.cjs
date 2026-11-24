@@ -148,7 +148,7 @@ test('archived installer/controller/preload closure preserves native approval, o
   const openedResult = await bridge.toolSetup.open({ jobId: job.jobId })
   assert.equal(openedResult.opened, true, JSON.stringify(openedResult))
   assert.equal(confirmations.length, 2); assert.equal(opened.length, 1)
-  assert.ok(opened[0].startsWith(path.join(downloads, 'Velorn Setup') + path.sep))
+  assert.ok(opened[0].startsWith(path.join(downloads, 'Belrog Setup') + path.sep))
   assert.equal((await fs.readFile(opened[0])).compare(bytes), 0)
   for (const config of confirmations) {
     assert.equal(config.defaultId, 0); assert.equal(config.cancelId, 0)

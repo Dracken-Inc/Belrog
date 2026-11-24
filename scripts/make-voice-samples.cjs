@@ -100,7 +100,7 @@ async function main() {
       if (job.status === 'UNCERTAIN' || job.status === 'SUBMITTING') { console.log('unclear'); console.log('Stopping: check your Comfy usage page before anything else is sent.'); break }
       if (job.status !== 'COMPLETED') { console.log(`failed (${job.diagnostics ? `HTTP ${job.diagnostics.httpStatus} ${job.diagnostics.errorType || ''}` : job.errorType || job.status})`); continue }
       const output = await router.output({ jobId: job.jobId })
-      if (!output.success || output.mimeType !== 'audio/mpeg') { console.log(`made, but not an MP3 Velorn could save (${output.code || output.mimeType})`); continue }
+      if (!output.success || output.mimeType !== 'audio/mpeg') { console.log(`made, but not an MP3 Belrog could save (${output.code || output.mimeType})`); continue }
       await fs.writeFile(path.join(OUT_DIR, `voice-${voice.id}.mp3`), Buffer.from(output.bytes), { flag: 'wx' })
       made++
       console.log(`ok · ${(output.bytes.length / 1024).toFixed(0)} KB · charged ${job.chargedUsd == null ? 'not reported' : '$' + job.chargedUsd.toFixed(4)}`)

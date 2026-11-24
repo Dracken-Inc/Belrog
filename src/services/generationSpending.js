@@ -7,7 +7,7 @@
 // so the native host can offer one approval for all of them.
 export async function submitManagedGeneration({ workflow, endpoint, clientId, priced = false, batchCount = 0 }, api = globalThis.window?.electronAPI?.generationSpending) {
   if (typeof api?.queue !== 'function') {
-    throw Object.assign(new Error('Generation spending protection is unavailable. Fully quit and reopen Velorn before generating. Browser-only previews cannot submit generations.'), { code: 'GENERATION_SPENDING_UNAVAILABLE' })
+    throw Object.assign(new Error('Generation spending protection is unavailable. Fully quit and reopen Belrog before generating. Browser-only previews cannot submit generations.'), { code: 'GENERATION_SPENDING_UNAVAILABLE' })
   }
   const requestId = globalThis.crypto.randomUUID()
   let result
@@ -16,7 +16,7 @@ export async function submitManagedGeneration({ workflow, endpoint, clientId, pr
   catch {
     // A lost IPC reply cannot establish whether the server accepted the POST.
     // Never fall back to HTTP, repeat the call, or carry on with a waiting batch.
-    throw Object.assign(new Error('The generation connection ended without a confirmed result. Inspect ComfyUI queue/history before trying again, and restart Velorn if its native bridge is unavailable.'), {
+    throw Object.assign(new Error('The generation connection ended without a confirmed result. Inspect ComfyUI queue/history before trying again, and restart Belrog if its native bridge is unavailable.'), {
       code: 'GENERATION_SPENDING_UNCERTAIN', submissionState: 'unknown', retryAllowed: false,
     })
   }

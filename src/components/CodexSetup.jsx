@@ -46,7 +46,7 @@ export default function CodexSetup({ state, checking, busy, loginPending, loginA
       guideReturn.current = true
       const result = await window.electronAPI.openExternalUrl(INSTALL_GUIDE)
       if (result?.success === false) throw new Error()
-      if (alive.current) setNotice('Follow the official installation instructions, then return here. Velorn will check again when you return.')
+      if (alive.current) setNotice('Follow the official installation instructions, then return here. Belrog will check again when you return.')
     } catch { guideReturn.current = false; if (alive.current) setLocalError('Open learn.chatgpt.com/docs/codex/cli in your browser for the official installation instructions.') }
   }
   function consume(result, token) {
@@ -124,7 +124,7 @@ export default function CodexSetup({ state, checking, busy, loginPending, loginA
       : job?.state === 'installing' ? 'Installing Codex…' : loginPending ? 'Finish signing in in your browser.'
         : needsLogin ? 'Codex is installed. Sign in with your ChatGPT account.'
           : state === 'problem' ? 'Codex could not connect. Check again, or open Troubleshooting below.'
-            : 'Install Codex once, then sign in with your ChatGPT account. No Velorn account is needed.'
+            : 'Install Codex once, then sign in with your ChatGPT account. No Belrog account is needed.'
   return <section className="ca-codex-setup" aria-label="Codex setup">
     <h3>{needsLogin || loginPending ? 'Sign in to Codex' : 'Set up Codex'}</h3>
     <p role="status">{step}</p>

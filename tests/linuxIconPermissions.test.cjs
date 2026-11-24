@@ -84,7 +84,7 @@ test('gate follows the packaged name instead of hard-coding one brand', () => {
 })
 
 test('artifact hook leaves other platforms untouched', async () => {
-  for (const file of ['Velorn.dmg', 'Velorn.exe', 'Velorn.AppImage']) await completed({ file })
+  for (const file of ['Belrog.dmg', 'Belrog.exe', 'Belrog.AppImage']) await completed({ file })
 })
 
 test('real DEB hook fails private icons and passes readable icons', { skip: process.platform !== 'linux' }, async t => {
@@ -94,7 +94,7 @@ test('real DEB hook fails private icons and passes readable icons', { skip: proc
   const iconDir = path.join(debRoot, 'usr/share/icons/hicolor/256x256/apps')
   const desktopDir = path.join(debRoot, 'usr/share/applications')
   for (const dir of [control, iconDir, desktopDir]) fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(control, 'control'), 'Package: velorn-icon-test\nVersion: 1.0\nArchitecture: all\nMaintainer: Velorn <opensource@velorn.ai>\nDescription: disposable icon permissions regression fixture\n')
+  fs.writeFileSync(path.join(control, 'control'), 'Package: velorn-icon-test\nVersion: 1.0\nArchitecture: all\nMaintainer: Belrog <opensource@velorn.ai>\nDescription: disposable icon permissions regression fixture\n')
   fs.writeFileSync(path.join(iconDir, 'velorn.png'), 'fixture', { mode: 0o600 })
   fs.writeFileSync(path.join(desktopDir, 'velorn.desktop'), '[Desktop Entry]\nIcon=velorn\n', { mode: 0o644 })
   const file = path.join(root, 'fixture.deb')

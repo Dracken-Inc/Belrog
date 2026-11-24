@@ -1,5 +1,5 @@
 'use strict'
-// The host's own choices for the Velorn network, and what this computer could
+// The host's own choices for the Belrog network, and what this computer could
 // offer right now. Sharing is OFF until the person switches it on, and even then
 // nothing here accepts a job: this module only keeps the settings and answers
 // "what would I offer, and am I idle?". The connection to the network's queue is
@@ -17,20 +17,20 @@ const DEFAULTS = Object.freeze({ version: 1, enabled: false, allowedWorkflows: O
   everyone: Object.freeze({ enabled: false, perPerson: 2, total: 20 }) })
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const invalid = message => Object.assign(new Error(message), { code: 'GPU_SHARE_SETTINGS_INVALID', publicMessage: message })
-// An invited person is named by the email of their Velorn account.
+// An invited person is named by the email of their Belrog account.
 const email = value => typeof value === 'string' && value.length <= LIMITS.email && /^[^\s@<>"',;:\\]+@[^\s@<>"',;:\\]+\.[A-Za-z]{2,}$/.test(value)
 
 // Returns a complete, checked settings object. Unknown keys and values are refused, not ignored.
 function normalizeSettings(input) {
   if (!plain(input)) throw invalid('The sharing settings could not be read.')
   const keys = ['version', 'enabled', 'allowedWorkflows', 'invited', 'askBeforeEach', 'dailyLimitPerPerson', 'displayName', 'everyone']
-  for (const key of Object.keys(input)) if (!keys.includes(key)) throw invalid('The sharing settings hold something this Velorn does not know.')
+  for (const key of Object.keys(input)) if (!keys.includes(key)) throw invalid('The sharing settings hold something this Belrog does not know.')
   const value = { ...DEFAULTS, ...input }
   if (value.version !== 1 || typeof value.enabled !== 'boolean' || typeof value.askBeforeEach !== 'boolean') throw invalid('The sharing settings could not be read.')
-  if (!Array.isArray(value.allowedWorkflows) || value.allowedWorkflows.some(id => !getApproved(id))) throw invalid('Only workflows on the Velorn network list can be shared.')
+  if (!Array.isArray(value.allowedWorkflows) || value.allowedWorkflows.some(id => !getApproved(id))) throw invalid('Only workflows on the Belrog network list can be shared.')
   if (!Array.isArray(value.invited) || value.invited.length > LIMITS.invited) throw invalid(`Up to ${LIMITS.invited} people can be invited.`)
   const invited = [...new Set(value.invited.map(item => typeof item === 'string' ? item.trim().toLowerCase() : item))]
-  if (invited.some(item => !email(item))) throw invalid('Invite people by the email of their Velorn account.')
+  if (invited.some(item => !email(item))) throw invalid('Invite people by the email of their Belrog account.')
   if (!Number.isInteger(value.dailyLimitPerPerson) || value.dailyLimitPerPerson < LIMITS.dailyMin || value.dailyLimitPerPerson > LIMITS.dailyMax) throw invalid(`The daily limit is ${LIMITS.dailyMin} to ${LIMITS.dailyMax} jobs per person.`)
   // The name people see on this owner's own workflows. Their choice; never the account's email or the computer's name.
   if (typeof value.displayName !== 'string' || value.displayName.length > 200) throw invalid('That name could not be saved.')
@@ -117,7 +117,7 @@ function createGpuShareHost({ settingsPath, runner, getEndpoint, isExportBusy = 
     const settings = await getSettings()
     const state = await idle()
     const card = state.comfyRunning ? await gpu() : null
-    // Velorn no longer offers workflows of its own (Jaime, 2026-11-16): owners share the ones they add themselves.
+    // Belrog no longer offers workflows of its own (Jaime, 2026-11-16): owners share the ones they add themselves.
     // The built-in bindings in gpuShareWorkflows.cjs stay for a job that names one, but none is listed or offered here.
     const offers = []
     // The owner's own workflows they chose to share, as far as they still run here.
@@ -128,13 +128,13 @@ function createGpuShareHost({ settingsPath, runner, getEndpoint, isExportBusy = 
       // What would be offered to the network: switched on, allowed by the person, and runnable here.
       offering: settings.enabled ? ownOffering.map(item => item.id) : [],
       // Replaced by the live connection's own account when there is one.
-      network: { connected: false, note: 'Not connected to the Velorn network.' } }
+      network: { connected: false, note: 'Not connected to the Belrog network.' } }
   }
 
   return { getSettings, updateSettings, status, idle }
 }
 
-// Only the main Velorn window may read or change these. A change needs a real click (checked in the preload).
+// Only the main Belrog window may read or change these. A change needs a real click (checked in the preload).
 function registerGpuShareIpc({ ipcMain, getMainWindow, host, getNetworkState = null, onUpdated = () => {}, report = null, openJob = null }) {
   // Once this computer is connected to the queue, say what is really happening there.
   const withNetwork = result => { const live = typeof getNetworkState === 'function' ? getNetworkState() : null; return live && result?.success ? { ...result, network: live } : result }
@@ -144,17 +144,17 @@ function registerGpuShareIpc({ ipcMain, getMainWindow, host, getNetworkState = n
     return Boolean(window && !window.isDestroyed() && event?.sender === window.webContents && event.senderFrame === window.webContents.mainFrame)
   }
   ipcMain.handle('gpu-share:status', async event => {
-    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
+    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
     try { return withNetwork(await host.status()) } catch { return { success: false, error: 'GPU sharing could not be read.' } }
   })
   ipcMain.handle('gpu-share:update', async (event, patch) => {
-    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
+    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
     try { await host.updateSettings(patch); try { await onUpdated() } catch { /* The next heartbeat catches up. */ } return withNetwork(await host.status()) }
     catch (error) { return { success: false, error: error?.publicMessage || 'That change could not be saved.' } }
   })
   // Report a job someone else sent to this computer. The window names only the job.
   ipcMain.handle('gpu-share:report', async (event, payload) => {
-    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
+    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
     const jobId = payload && typeof payload === 'object' ? payload.jobId : null
     if (typeof report !== 'function' || typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(jobId)) return { success: false, error: 'That job could not be reported.' }
     try { await report(jobId); return withNetwork(await host.status()) }
@@ -162,7 +162,7 @@ function registerGpuShareIpc({ ipcMain, getMainWindow, host, getNetworkState = n
   })
   // Show the picture and clip this computer kept of a job. The window names only the job.
   ipcMain.handle('gpu-share:open-job', async (event, payload) => {
-    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Velorn window.' }
+    if (!allowed(event)) return { success: false, error: 'Open GPU sharing in the main Belrog window.' }
     const jobId = payload && typeof payload === 'object' ? payload.jobId : null
     if (typeof openJob !== 'function' || typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(jobId)) return { success: false, error: 'That job\'s files could not be opened.' }
     try { return (await openJob(jobId)) === true ? { success: true } : { success: false, error: 'This computer no longer has that job\'s files.' } }

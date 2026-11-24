@@ -22,7 +22,7 @@ const CATALOG = Object.freeze({
     steps: ['Download the official Comfy Desktop installer after reviewing the source, size and destination.',
       'Open the downloaded DMG after a separate confirmation, drag Comfy Desktop into Applications, then launch it yourself.',
       'Create a local Standalone instance, choose its storage location and review the dependency downloads. Do not choose Cloud for local setup.',
-      'Launch that instance, return to Velorn and check its local connection. Choose its exact port if more than one server is found.',
+      'Launch that instance, return to Belrog and check its local connection. Choose its exact port if more than one server is found.',
       'Review any workflow, custom nodes and model downloads separately before generation.'],
     storage: 'Each ComfyUI instance needs at least 4.85 GB plus additional space for models and outputs. The installer download is not the complete installation.',
   }),
@@ -33,7 +33,7 @@ const CATALOG = Object.freeze({
       'Open the downloaded DMG after a separate confirmation, drag LM Studio into Applications, then launch it yourself.',
       'In Discover, review a suitable chat model, its license, download size and storage location before choosing to download it. Load that model explicitly.',
       'In Developer, start the local server on port 1234. Keep network sharing off; do not disable required authentication to work around a connection problem.',
-      'Return to Velorn and check setup, then explicitly choose LM Studio and its model in Agent settings.'],
+      'Return to Belrog and check setup, then explicitly choose LM Studio and its model in Agent settings.'],
     storage: 'Models are separate downloads and may use many GB of disk space and memory. Review the exact model, license, size and destination first.',
   }),
 })
@@ -103,7 +103,7 @@ async function publicFetch(urlString, { method, signal }) {
       servername: url.hostname, rejectUnauthorized: true, agent: false, family: selected.family, autoSelectFamily: false,
       maxHeaderSize: 16384, lookup: (_name, options, callback) => typeof options === 'function'
         ? options(null, selected.address, selected.family) : options?.all ? callback(null, [selected]) : callback(null, selected.address, selected.family),
-      headers: { Accept: 'application/octet-stream', 'Accept-Encoding': 'identity', 'User-Agent': 'Velorn-Optional-Setup/1.0' },
+      headers: { Accept: 'application/octet-stream', 'Accept-Encoding': 'identity', 'User-Agent': 'Belrog-Optional-Setup/1.0' },
     }, incoming => {
       response = incoming
       const connected = incoming.socket?.remoteAddress?.replace(/^::ffff:/, '')
@@ -158,7 +158,7 @@ function createToolSetupInstaller({ getDownloadsPath, optionalSetup, confirm, op
     const given = await getDownloadsPath?.()
     if (typeof given !== 'string' || !path.isAbsolute(given) || given.includes('\0')) throw fault('UNSAFE_DESTINATION', 'A valid desktop Downloads directory is required.')
     const root = await directory(path.resolve(given))
-    const folderPath = path.join(root.path, 'Velorn Setup')
+    const folderPath = path.join(root.path, 'Belrog Setup')
     const folder = await exists(folderPath) ? await directory(folderPath) : null
     return { root, folder }
   }
@@ -274,7 +274,7 @@ function createToolSetupInstaller({ getDownloadsPath, optionalSetup, confirm, op
         readiness: object(readiness) ? readiness : { success: false, state: 'problem', summary: 'The existing connection could not be checked.' },
         installation: { found: found.length > 0, summary: found.length ? 'An app was found in a standard Applications location; its running state is checked separately.' : 'No app was found in the checked standard locations. It may be installed elsewhere.' },
         download: { supported, sourceUrl: supported ? source : catalog.guide, bytes, maxBytes: LIMITS.maxBytes,
-          destination: `Downloads/Velorn Setup/${filename}`, canDownload },
+          destination: `Downloads/Belrog Setup/${filename}`, canDownload },
         guideUrl: catalog.guide, steps: found.length || serviceFound
           ? ['Use the detected app or responding local service first; downloading another installer is disabled.',
             ...(Array.isArray(readiness?.nextActions) ? readiness.nextActions : []), ...catalog.steps.slice(2)]
@@ -295,7 +295,7 @@ function createToolSetupInstaller({ getDownloadsPath, optionalSetup, confirm, op
   async function prepareFolder(job) {
     await sameRoot(job.snapshot)
     if (!job.snapshot.folder) {
-      const folderPath = path.join(job.snapshot.root.path, 'Velorn Setup')
+      const folderPath = path.join(job.snapshot.root.path, 'Belrog Setup')
       try { await fs.mkdir(folderPath, { mode: 0o700 }) }
       catch { throw fault('DESTINATION_CHANGED', 'The setup directory could not be created safely. Review a new plan.') }
       const actual = await rootSnapshot()
@@ -347,7 +347,7 @@ function createToolSetupInstaller({ getDownloadsPath, optionalSetup, confirm, op
       // openable final DMG. Hard-link promotion preserves the quarantine xattr.
       try {
         if (typeof markQuarantine !== 'function') throw new Error('Unavailable')
-        const marked = await abortable(markQuarantine(job.partial, `0083;${Math.floor(now() / 1000).toString(16)};Velorn;${randomUUID()}`), signal)
+        const marked = await abortable(markQuarantine(job.partial, `0083;${Math.floor(now() / 1000).toString(16)};Belrog;${randomUUID()}`), signal)
         if (marked === false) throw new Error('Not marked')
       } catch {
         checkAbort(signal)
@@ -390,7 +390,7 @@ function createToolSetupInstaller({ getDownloadsPath, optionalSetup, confirm, op
     try {
       await sameRoot(plan.snapshot); await unused(plan.snapshot, plan.filename); await space(plan.snapshot, plan.bytes)
       await live(owner, 'download')
-      const destination = path.join(plan.snapshot.root.path, 'Velorn Setup', plan.filename)
+      const destination = path.join(plan.snapshot.root.path, 'Belrog Setup', plan.filename)
       const approved = await confirm?.({ owner, action: 'download', plan: structuredClone(plan.view), destination, sourceUrl: plan.source, bytes: plan.bytes })
       await live(owner, 'download')
       if (approved !== true) throw fault('DECLINED', 'Installer download was not approved. Nothing was downloaded.')

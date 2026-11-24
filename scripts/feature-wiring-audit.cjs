@@ -1,6 +1,6 @@
 // Feature wiring audit.
 //
-// Why this exists: the Velorn 0.4.1 merge took four large "container" files from
+// Why this exists: the Belrog 0.4.1 merge took four large "container" files from
 // one side or the other instead of merging both. GenerateWorkspace.jsx became
 // byte-identical to upstream, which silently deleted Belrog's two-person keyframe
 // call sites, and three other containers kept Belrog's copy, which silently dropped

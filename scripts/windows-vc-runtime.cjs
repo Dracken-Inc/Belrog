@@ -2,7 +2,7 @@
 // The song listening engine (onnxruntime-node) is built with Microsoft's C++
 // compiler and needs the Visual C++ runtime files. Windows does not ship them,
 // so on a PC where nothing else installed them the engine cannot be loaded
-// (ERR_DLOPEN_FAILED). Velorn therefore carries its own copies, placed beside
+// (ERR_DLOPEN_FAILED). Belrog therefore carries its own copies, placed beside
 // the engine: Windows looks in the folder of the file being loaded first.
 //
 // The copies come from the "Redist" folder of the Visual Studio that is on the

@@ -282,7 +282,7 @@ export function buildMcpSnapshot() {
     return {
       schemaVersion: SNAPSHOT_VERSION,
       generatedAt: new Date().toISOString(),
-      app: { name: 'Velorn' },
+      app: { name: 'Belrog' },
       context: captureMcpContext(),
       project: null,
       storyboard: null,
@@ -345,7 +345,7 @@ export function buildMcpSnapshot() {
   return {
     schemaVersion: SNAPSHOT_VERSION,
     generatedAt: new Date().toISOString(),
-    app: { name: 'Velorn' },
+    app: { name: 'Belrog' },
     context: captureMcpContext(),
     editingContext: {
       rootTimelineId: currentTimeline.id,

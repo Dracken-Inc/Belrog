@@ -3,7 +3,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const http = require('node:http')
 const { createMcpGateway, LIMITS } = require('../electron/connectedAgentMcpGateway.cjs')
-const catalog = Array.from({ length: 162 }, (_, i) => ({ name: `tool_${i}`, description: `Velorn tool ${i}`, inputSchema: { type: 'object', properties: { value: { type: 'string' } } } }))
+const catalog = Array.from({ length: 162 }, (_, i) => ({ name: `tool_${i}`, description: `Belrog tool ${i}`, inputSchema: { type: 'object', properties: { value: { type: 'string' } } } }))
 const result = { content: [{ type: 'text', text: 'Done' }] }
 async function rpc(gateway, message, overrides = {}) {
   return fetch(gateway.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${gateway.bearerToken}`, ...overrides.headers }, body: typeof message === 'string' ? message : JSON.stringify(message), ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== 'headers')) })

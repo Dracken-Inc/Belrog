@@ -212,7 +212,7 @@ async function main() {
     assert.equal(await count('probeConnection'), beforeOwned)
     assert.equal((await snapshot()).settings.comfyConnection.port, 8000)
     await preserved(baseline)
-    pass('Velorn-owned running ComfyUI cannot be switched underneath its launcher')
+    pass('Belrog-owned running ComfyUI cannot be switched underneath its launcher')
 
     await page.evaluate(() => window.optionalSetupTest.setLauncher({ ownership: 'external', state: 'running', httpBase: 'http://127.0.0.1:8000' }))
     await card('ComfyUI').locator('summary').click()

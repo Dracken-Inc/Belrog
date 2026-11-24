@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(__dirname, '../electron/main.js'), 'utf
 const spendingStart = source.indexOf('const generationSpending = registerGenerationSpendingIpc({')
 assert.ok(spendingStart > 0)
 const start = source.indexOf('  confirmSpend: async (', spendingStart)
-const end = source.indexOf('\n})\n// Only the main Velorn renderer', start)
+const end = source.indexOf('\n})\n// Only the main Belrog renderer', start)
 assert.ok(start > 0 && end > start)
 const { approvalOnPhoneAndDesktop } = require('../electron/approvalOnPhoneAndDesktop.cjs')
 // With a paired phone the computer's prompt opens too and nobody answers it

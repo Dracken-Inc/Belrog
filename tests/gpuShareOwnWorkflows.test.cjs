@@ -1,5 +1,5 @@
 'use strict'
-// An owner's own workflows for GPU sharing: what Velorn finds in a saved
+// An owner's own workflows for GPU sharing: what Belrog finds in a saved
 // workflow, what it turns down, and that a job can only fill the found spots.
 const test = require('node:test')
 const assert = require('node:assert/strict')
@@ -39,7 +39,7 @@ async function fixture(t, { graphs = { 'my-workflow:text': TEXT, 'my-workflow:ed
   return { dir, state, own: make(), make }
 }
 
-test('Velorn names the shape from what a workflow starts with and what it saves', () => {
+test('Belrog names the shape from what a workflow starts with and what it saves', () => {
   const shape = graph => describeGraph(graph, bindings(graph))
   assert.deepEqual([shape(TEXT).shape, shape(EDIT).shape, shape(VIDEO).shape, shape({ ...VIDEO, 8: node('PrimitiveInt', { value: 1 }) }).shape], ['text-to-picture', 'picture-edit', 'picture-to-video', 'text-to-video'])
   const found = shape(EDIT)
@@ -179,10 +179,10 @@ test('adding: the owner sees what was found, may pick another listed text box, a
 
 test('what cannot be shared is turned down with the reason, before anything is stored', async t => {
   const old = await fixture(t, { graphs: { 'my-workflow:old': 'old' } })
-  await assert.rejects(old.own.inspect({ workflowId: 'my-workflow:old' }), error => /save it to Velorn again/.test(error.publicMessage))
+  await assert.rejects(old.own.inspect({ workflowId: 'my-workflow:old' }), error => /save it to Belrog again/.test(error.publicMessage))
   const custom = await fixture(t, { check: { ok: false, code: 'GPU_SHARE_NOT_LOCAL', reason: 'x', unknownNodes: ['FancyNode', 'OtherNode'] } })
   const found = await custom.own.inspect({ workflowId: 'my-workflow:text' })
-  assert.equal(found.canAdd, false); assert.match(found.problems[0], /parts Velorn does not know yet.*FancyNode, OtherNode/)
+  assert.equal(found.canAdd, false); assert.match(found.problems[0], /parts Belrog does not know yet.*FancyNode, OtherNode/)
   await assert.rejects(custom.own.add({ workflowId: 'my-workflow:text', name: 'T' }), error => /does not know yet/.test(error.publicMessage))
   const missing = await fixture(t, { check: { ok: false, code: 'GPU_SHARE_MODELS_MISSING', reason: 'This computer does not have all the model files this workflow needs.', missingModels: ['model.safetensors'] } })
   assert.match((await missing.own.inspect({ workflowId: 'my-workflow:text' })).problems[0], /does not have all the model files.*Missing: model\.safetensors/)

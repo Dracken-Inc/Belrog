@@ -44,7 +44,7 @@ function createSongMapEngine({
 } = {}) {
   let active = null
   let installing = null
-  // Set when the graphics-card version of the speech program found no card or failed: it is not tried again until Velorn restarts.
+  // Set when the graphics-card version of the speech program found no card or failed: it is not tried again until Belrog restarts.
   let cardGaveUp = false
 
   const modelsDir = () => path.join(app.getPath('userData'), ENGINE_DIR_NAME, 'models')
@@ -72,7 +72,7 @@ function createSongMapEngine({
     try { speech = captionService?.getStatus?.() } catch { speech = null }
     if (speech?.binaryPath && fs.existsSync(speech.binaryPath)) pieces.whisperCliPath = speech.binaryPath
     else missing.push('speech engine')
-    // The graphics-card version, when there is one and it has not already let us down since Velorn started.
+    // The graphics-card version, when there is one and it has not already let us down since Belrog started.
     if (!cardGaveUp && speech?.gpuBinaryPath && fs.existsSync(speech.gpuBinaryPath)) pieces.whisperGpuCliPath = speech.gpuBinaryPath
     const installed = Array.isArray(speech?.models) ? speech.models : []
     const model = SPEECH_MODEL_PREFERENCE.map((id) => installed.find((entry) => entry.id === id && entry.path)).find(Boolean) || installed.find((entry) => entry.path)
@@ -93,7 +93,7 @@ function createSongMapEngine({
 
   function status() {
     const { pieces, missing } = resolvePieces()
-    // ffmpeg ships with Velorn; if it is missing a download cannot fix it.
+    // ffmpeg ships with Belrog; if it is missing a download cannot fix it.
     const canInstall = missing.length > 0 && !missing.includes('ffmpeg') && typeof captionService?.install === 'function'
     return { success: true, ready: missing.length === 0, missing, speechModelId: pieces.speechModelId, modelsDir: modelsDir(), busy: Boolean(active),
       installing: Boolean(installing), canInstall, downloadBytes: missing.length ? downloadBytes(missing) : 0 }
@@ -104,7 +104,7 @@ function createSongMapEngine({
     if (!installing) installing = (async () => {
       try {
         let { missing } = resolvePieces()
-        if (missing.includes('ffmpeg')) return failure('SONG_MAP_INSTALL_FAILED', 'Velorn is missing a built-in part it needs for listening. Reinstall Velorn.')
+        if (missing.includes('ffmpeg')) return failure('SONG_MAP_INSTALL_FAILED', 'Belrog is missing a built-in part it needs for listening. Reinstall Belrog.')
         if (missing.includes('speech engine') || missing.includes('speech model')) {
           if (typeof captionService?.install !== 'function') return failure('SONG_MAP_INSTALL_FAILED', 'The speech model cannot be downloaded on this computer.')
           notify({ step: 'speech', doneBytes: 0, totalBytes: 0 })
@@ -135,12 +135,12 @@ function createSongMapEngine({
   }
 
   function analyze(options = {}, sender) {
-    if (active) return Promise.resolve(failure('SONG_MAP_BUSY', 'Velorn is already listening to a song. Wait for it to finish.'))
+    if (active) return Promise.resolve(failure('SONG_MAP_BUSY', 'Belrog is already listening to a song. Wait for it to finish.'))
     const inputPath = typeof options.inputPath === 'string' ? options.inputPath : ''
     if (!inputPath || !path.isAbsolute(inputPath) || !SONG_EXTENSIONS.has(path.extname(inputPath).toLowerCase())) {
-      return Promise.resolve(failure('SONG_MAP_INVALID', 'This file is not a song Velorn can listen to.'))
+      return Promise.resolve(failure('SONG_MAP_INVALID', 'This file is not a song Belrog can listen to.'))
     }
-    if (!fs.existsSync(inputPath)) return Promise.resolve(failure('SONG_MAP_NOT_FOUND', 'Velorn could not find this song file.'))
+    if (!fs.existsSync(inputPath)) return Promise.resolve(failure('SONG_MAP_NOT_FOUND', 'Belrog could not find this song file.'))
     const { pieces, missing } = resolvePieces()
     if (missing.length) return Promise.resolve({ ...failure('SONG_MAP_NOT_READY', 'Listening is not set up on this computer yet.'), missing })
 
@@ -227,7 +227,7 @@ function createSongMapEngine({
     })
     // A graphics card can also take the whole worker down with it, which the worker cannot catch itself.
     // So a listen that stopped while the card was allowed is tried once more on the processor alone, and
-    // the card is left alone until Velorn restarts.
+    // the card is left alone until Belrog restarts.
     return attempt(request).then((first) => {
       const { stopped, ...answer } = first
       if (!stopped || request.useCard === false) return answer

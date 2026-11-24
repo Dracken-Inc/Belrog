@@ -15,8 +15,8 @@ const SERVICE_ERRORS = Object.freeze({ not_eligible: 'LUNA_NOT_ELIGIBLE', allowa
   request_already_used: 'LUNA_RESPONSE_UNCERTAIN', request_conflict: 'LUNA_RESPONSE_UNCERTAIN' });
 const MESSAGES = Object.freeze({
   CANCELLED: 'Velo request cancelled.',
-  LUNA_AUTH_REQUIRED: 'The Velo service rejected this computer’s account connection. Check the Velorn account connection.',
-  LUNA_NOT_ELIGIBLE: 'This Velorn account does not have Velo access.',
+  LUNA_AUTH_REQUIRED: 'The Velo service rejected this computer’s account connection. Check the Belrog account connection.',
+  LUNA_NOT_ELIGIBLE: 'This Belrog account does not have Velo access.',
   LUNA_EXHAUSTED: 'The funded allowance for Velo has been used up.',
   LUNA_BUSY: 'Velo is busy.',
   LUNA_REQUEST_LIMIT: 'This message exceeds the Velo request limit.',

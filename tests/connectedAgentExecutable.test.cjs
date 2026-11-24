@@ -70,7 +70,7 @@ const expected = (path, source = 'PATH', mode = 'automatic') => ({ path, source,
 test('Linux managed Codex is a last fallback and never supersedes PATH, common or custom choices', async () => {
   const managedPath = '/users/creator/.local/share/velorn/tools/codex/codex'
   const only = fileSystem(); only.native(managedPath)
-  assert.deepEqual(await resolveCodexExecutable(options(only)), expected(managedPath, 'Velorn managed installation'))
+  assert.deepEqual(await resolveCodexExecutable(options(only)), expected(managedPath, 'Belrog managed installation'))
   for (const choice of ['/chosen/codex', '/users/creator/.cargo/bin/codex', '/usr/lib/chatgpt/resources/codex']) {
     const fixture = fileSystem(); fixture.native(managedPath); fixture.native(choice)
     const found = await resolveCodexExecutable(options(fixture, { environment: { PATH: '/chosen' } }))

@@ -329,7 +329,7 @@ test('EMPTY_RESPONSE retains proven Undo/Redo receipts through both provider rou
     assert.equal(f.events.findLast(value => value.type === 'timing' && value.phase === 'total').outcome, 'failed')
     const status = { role: 'assistant', text: missingAgentReplyText(result.toolReceipts),
       deliveryStatus: result.deliveryStatus, toolReceipts: result.toolReceipts }
-    assert.match(status.text, /Velorn recorded 1 applied action, but the agent did not provide a final reply/)
+    assert.match(status.text, /Belrog recorded 1 applied action, but the agent did not provide a final reply/)
     assert.match(status.text, /do not confirm that the entire request finished/)
     const data = new Map(), storage = { getItem: key => data.get(key) ?? null,
       setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }

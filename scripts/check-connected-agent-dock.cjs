@@ -279,7 +279,7 @@ async function main() {
       await capture(`01-narrow-${width}`)
       await openSettings()
       for (const target of [page.getByLabel('Assistant selection', { exact: true }), page.getByLabel('Model', { exact: true }),
-        button('Check connection'), page.getByRole('checkbox', { name: 'Velorn tools', exact: true }),
+        button('Check connection'), page.getByRole('checkbox', { name: 'Belrog tools', exact: true }),
         page.getByRole('checkbox', { name: 'Share images', exact: true }), button('Back to chat')]) {
         await target.scrollIntoViewIfNeeded()
         const reachable = await target.evaluate(node => {

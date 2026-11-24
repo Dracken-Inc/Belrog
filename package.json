@@ -11,6 +11,8 @@
     "test:audio-analysis": "node --test ./src/services/audioAnalysis.test.mjs ./src/utils/audioAnalysisDsp.test.mjs ./src/utils/beatMarkers.test.mjs ./tests/audioAnalysisMcp.test.mjs ./tests/audioAnalysisNative.test.cjs",
     "test:audio-intake": "node --test ./src/services/audioScriptIntake.test.mjs ./src/services/sunoIntake.test.mjs ./src/services/h3OneShot.test.mjs",
     "oneshot:audio": "node scripts/oneshot/run-audio-to-oneshots.mjs",
+    "test:ssh-tunnel": "node --test tests/sshTunnelPortFallback.test.cjs tests/sshTunnelEndToEnd.test.cjs",
+    "test:cast-gap-detection": "node --test tests/castGapDetection.test.cjs src/services/scriptGapDetection.test.mjs",
     "check:audio-analysis": "node ./scripts/check-audio-analysis.cjs",
     "test:timeline-hotfixes": "node --test ./src/utils/closeTimelineGap.test.mjs ./src/utils/closeTimelineGapStore.test.mjs ./src/utils/timelineSplitTarget.test.mjs ./src/utils/audioClipSplit.test.js ./src/utils/clipSplit.test.mjs ./src/utils/clipSplitStore.test.mjs ./src/utils/playheadEditsStore.test.mjs ./src/utils/timecodeInput.test.mjs ./src/utils/framePlayhead.test.mjs",
     "check:timeline-hotfixes": "node ./scripts/check-timeline-hotfixes.cjs",
@@ -121,7 +123,7 @@
     "test:discover-catalog": "node --test ./src/services/discoverCatalog.test.mjs",
     "test:pexels-stock": "node --test ./src/services/pexelsStock.test.mjs",
     "test:png-sequence-export": "node --test ./src/services/pngSequenceExport.test.mjs",
-    "test:qwen3-tts-workflow": "node --test --test-isolation=none ./tests/qwen3TtsWorkflowCompatibility.test.mjs",
+    "test:qwen3-tts-workflow": "node --test --experimental-test-isolation=none ./tests/qwen3TtsWorkflowCompatibility.test.mjs",
     "test:transition-clip-moves": "node ./src/utils/transitionClipMoves.test.mjs",
     "test:multi-clip-trim": "node --test ./src/utils/multiClipTrim.test.mjs",
     "test:export-frame-source": "node --test ./src/services/exportFrameSource.test.js",
@@ -327,7 +329,7 @@
       ],
       "icon": "build/icons",
       "category": "Video",
-      "maintainer": "Velorn contributors <opensource@velorn.ai>",
+      "maintainer": "Belrog contributors <opensource@velorn.ai>",
       "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "deb": {

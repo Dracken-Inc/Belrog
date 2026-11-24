@@ -71,7 +71,7 @@ test('research consent is explicit, boolean, and cannot exist without editor too
   assert.equal(validateSend(payload()).researchEnabled, false)
   assert.equal(validateSend(payload({ researchEnabled: true })).researchEnabled, true)
   for (const value of ['true', 1, {}, null]) assert.throws(() => validateSend(payload({ researchEnabled: value })))
-  assert.throws(() => validateSend(payload({ researchEnabled: true, toolsEnabled: false })), /requires Velorn tools/)
+  assert.throws(() => validateSend(payload({ researchEnabled: true, toolsEnabled: false })), /requires Belrog tools/)
 })
 
 test('private catalog extends but never mutates or registers tools on the external MCP server', () => {

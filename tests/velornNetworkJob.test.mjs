@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createVelornNetworkFollower, networkModels, NETWORK_STAGE } from '../src/services/velornNetworkJob.mjs'
+import { createBelrogNetworkFollower, networkModels, NETWORK_STAGE } from '../src/services/velornNetworkJob.mjs'
 
 const JOB = { jobId: 'job_12345678', hostName: 'Creator Computer', prompt: 'waves' }
 // A pretend main process: `steps` are the answers to "current", in order; the last one repeats.
@@ -17,7 +17,7 @@ function fake(steps, { collect = { success: true, filename: 'velorn-network-abc.
 }
 const noSleep = async () => {}
 
-test('Velorn offers no workflows of its own: a computer that still lists the old built-in ones gives no card', async () => {
+test('Belrog offers no workflows of its own: a computer that still lists the old built-in ones gives no card', async () => {
   const { NETWORK_STATE } = await import('../src/services/velornNetworkJob.mjs')
   assert.deepEqual(networkModels([
     { hostId: 'h1', name: 'Creator Computer', sameAccount: true, idle: true, workflows: ['ltx23-i2v', 'ltx23-t2v', 'h3-t2i', 'h3-edit'] },
@@ -43,7 +43,7 @@ test('a sent job is followed, its clip saved once, and only then cleared from th
     { success: true, job: JOB, state: { status: 'done' } },
   ])
   const saved = [], seen = []
-  const follower = createVelornNetworkFollower({ getApi: () => api, sleep: noSleep, save: async clip => { saved.push(clip); return { success: true, assetId: 'asset-1' } } })
+  const follower = createBelrogNetworkFollower({ getApi: () => api, sleep: noSleep, save: async clip => { saved.push(clip); return { success: true, assetId: 'asset-1' } } })
   follower.subscribe(state => seen.push(state.phase + (state.text ? `:${state.text}` : '')))
   const sent = await follower.send({ hostId: 'h1' })
   assert.equal(sent.success, true)
@@ -60,7 +60,7 @@ test('a sent job is followed, its clip saved once, and only then cleared from th
 test('a save that fails is tried again without fetching the clip twice, and nothing is cleared until it works', async () => {
   const { api, calls } = fake([{ success: true, job: JOB, state: { status: 'done' } }])
   let tries = 0
-  const follower = createVelornNetworkFollower({ getApi: () => api, sleep: noSleep, save: async () => (++tries < 3 ? { success: false, retry: true, error: 'Wait for the export to finish, then save the clip.' } : { success: true, assetId: 'a' }) })
+  const follower = createBelrogNetworkFollower({ getApi: () => api, sleep: noSleep, save: async () => (++tries < 3 ? { success: false, retry: true, error: 'Wait for the export to finish, then save the clip.' } : { success: true, assetId: 'a' }) })
   await follower.resume()
   assert.equal(tries, 3)
   assert.equal(calls.filter(call => call === 'collect').length, 1)
@@ -71,7 +71,7 @@ test('a save that fails is tried again without fetching the clip twice, and noth
 test('with no project open the clip is not fetched; it waits', async () => {
   const { api, calls } = fake([{ success: true, job: JOB, state: { status: 'done' } }])
   let open = false, looks = 0
-  const follower = createVelornNetworkFollower({ getApi: () => api, hasProject: () => open, save: async () => ({ success: true, assetId: 'a' }),
+  const follower = createBelrogNetworkFollower({ getApi: () => api, hasProject: () => open, save: async () => ({ success: true, assetId: 'a' }),
     sleep: async () => { if (++looks === 2) { assert.equal(calls.includes('collect'), false); assert.match(follower.state().text, /Open a project/); open = true } } })
   await follower.resume()
   assert.equal(follower.state().phase, 'done')
@@ -79,32 +79,32 @@ test('with no project open the clip is not fetched; it waits', async () => {
 
 test('a failed or cancelled job is cleared and reported; a vanished one too', async () => {
   const failed = fake([{ success: true, job: JOB, state: { status: 'failed', error: 'The other computer ran out of memory.' } }])
-  const one = createVelornNetworkFollower({ getApi: () => failed.api, sleep: noSleep, save: async () => assert.fail('nothing to save') })
+  const one = createBelrogNetworkFollower({ getApi: () => failed.api, sleep: noSleep, save: async () => assert.fail('nothing to save') })
   await one.resume()
   assert.deepEqual(one.state(), { phase: 'failed', job: JOB, cancelled: false, error: 'The other computer ran out of memory.' })
   assert.ok(failed.calls.includes('forget'))
 
   const stopped = fake([{ success: true, job: JOB, state: { status: 'cancelled' } }])
-  const two = createVelornNetworkFollower({ getApi: () => stopped.api, sleep: noSleep, save: async () => ({}) })
+  const two = createBelrogNetworkFollower({ getApi: () => stopped.api, sleep: noSleep, save: async () => ({}) })
   await two.resume()
   assert.equal(two.state().cancelled, true)
 
   const gone = fake([{ success: true, job: JOB, state: { status: 'running' } }, { success: true, job: null, lost: JOB }])
-  const three = createVelornNetworkFollower({ getApi: () => gone.api, sleep: noSleep, save: async () => ({}) })
+  const three = createBelrogNetworkFollower({ getApi: () => gone.api, sleep: noSleep, save: async () => ({}) })
   await three.resume()
-  assert.equal(three.state().phase, 'failed'); assert.match(three.state().error, /no longer on the Velorn network/)
+  assert.equal(three.state().phase, 'failed'); assert.match(three.state().error, /no longer on the Belrog network/)
 })
 
 test('nothing in flight: resume is quiet, and a second job cannot be sent over a running one', async () => {
   const quiet = fake([{ success: true, job: null }])
-  const idle = createVelornNetworkFollower({ getApi: () => quiet.api, sleep: noSleep, save: async () => ({}) })
+  const idle = createBelrogNetworkFollower({ getApi: () => quiet.api, sleep: noSleep, save: async () => ({}) })
   await idle.resume()
   assert.deepEqual(idle.state(), { phase: 'idle' })
-  assert.deepEqual(createVelornNetworkFollower({ getApi: () => null, save: async () => ({}) }).state(), { phase: 'idle' })
+  assert.deepEqual(createBelrogNetworkFollower({ getApi: () => null, save: async () => ({}) }).state(), { phase: 'idle' })
 
   let release
   const busy = fake([{ success: true, job: JOB, state: { status: 'running' } }])
-  const follower = createVelornNetworkFollower({ getApi: () => busy.api, save: async () => ({}), sleep: () => new Promise(resolve => { release = resolve }) })
+  const follower = createBelrogNetworkFollower({ getApi: () => busy.api, save: async () => ({}), sleep: () => new Promise(resolve => { release = resolve }) })
   assert.equal((await follower.send({ hostId: 'h1' })).success, true)
   const second = await follower.send({ hostId: 'h1' })
   assert.equal(second.success, false); assert.match(second.error, /already have a job/)
@@ -115,7 +115,7 @@ test('nothing in flight: resume is quiet, and a second job cannot be sent over a
 test('a refused send leaves nothing behind', async () => {
   const { api } = fake([{ success: true, job: null }])
   api.send = async () => ({ success: false, error: 'That computer is not sharing right now.' })
-  const follower = createVelornNetworkFollower({ getApi: () => api, sleep: noSleep, save: async () => ({}) })
+  const follower = createBelrogNetworkFollower({ getApi: () => api, sleep: noSleep, save: async () => ({}) })
   assert.deepEqual(await follower.send({ hostId: 'h1' }), { success: false, error: 'That computer is not sharing right now.' })
   assert.equal(follower.state().phase, 'idle')
 })
@@ -126,7 +126,7 @@ test('a picture job is followed like a clip, but the words say picture', async (
     { collect: { success: true, filename: 'velorn-network-abc.png', mimeType: 'image/png', bytes: new Uint8Array([1, 2, 3]) } })
   api.send = async () => ({ success: true, job })
   const seen = [], saved = []
-  const follower = createVelornNetworkFollower({ getApi: () => api, sleep: noSleep, save: async file => { saved.push(file); return { success: true, assetId: 'asset-1' } } })
+  const follower = createBelrogNetworkFollower({ getApi: () => api, sleep: noSleep, save: async file => { saved.push(file); return { success: true, assetId: 'asset-1' } } })
   follower.subscribe(state => { if (state.text) seen.push(state.text) })
   await follower.send({ hostId: 'h2' }); await follower.idle()
   assert.ok(seen.includes('Almost done. The picture is on its way back.'), seen.join(' | '))
@@ -143,7 +143,7 @@ test('a creator\'s own workflow is its own line with the maker\'s name, and live
   assert.deepEqual(models.map(m => [m.name, m.kind, m.state, m.own === true]), [['Sam\'s cats', 'image', 'ready', true], ['City flyover', 'video', 'ready', true], ['Product shots', 'image', 'busy', true]])
   const [mine, , theirs] = models
   assert.deepEqual([mine.id, mine.ownId, mine.maker, mine.needsImage, mine.note], ['network-own:h1:own-0123456789abcdef', cats.id, 'Sam', true, 'By Sam. Changes a picture you add. Free, on their shared GPU.'])
-  assert.match(theirs.note, /^By A Velorn creator\. .*Busy right now/)
+  assert.match(theirs.note, /^By A Belrog creator\. .*Busy right now/)
   assert.equal(/Studio PC|Other PC/.test(models.map(m => m.name + m.note).join(' ')), false, 'no computer is named before the job')
   assert.deepEqual(networkCandidates(mine, cats.id).map(h => h.hostId), ['h1']); assert.deepEqual(networkCandidates(mine, 'own-1111111111111111'), [])
   assert.equal(networkModels([{ hostId: 'h1', maker: 'Sam', idle: true, workflows: [], own: [cats], remainingToday: 0 }])[0].state, 'unavailable')

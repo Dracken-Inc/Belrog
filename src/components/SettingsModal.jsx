@@ -42,6 +42,7 @@ import {
   parseLocalComfyPortInput,
   saveLocalComfyConnectionPort,
 } from '../services/localComfyConnection'
+import { sshKeyPathPlaceholder } from '../utils/platformLabels'
 import {
   generatePlaybackCachesForAllVideos,
   hasUsablePlaybackCache,
@@ -289,8 +290,9 @@ function GeneralTab({ initialSection = null }) {
     tunnelLocalPort: 8188,
     tunnelRemotePort: 8188,
   })
-  const [tunnelStatus, setTunnelStatus] = useState({ active: false, connecting: false })
+  const [tunnelStatus, setTunnelStatus] = useState({ active: false, connecting: false, localPort: null, switchedPort: false })
   const [tunnelConnectError, setTunnelConnectError] = useState('')
+  const [tunnelNotice, setTunnelNotice] = useState('')
   const [remoteModels, setRemoteModels] = useState([])
   const [remoteNodes, setRemoteNodes] = useState([])
   const [remoteModelsLoading, setRemoteModelsLoading] = useState(false)
@@ -662,7 +664,14 @@ function GeneralTab({ initialSection = null }) {
       await window.electronAPI.invoke('belrog:saveRemoteServerSettings', remoteServerSettings)
       const result = await window.electronAPI.invoke('belrog:connect')
       if (result.success) {
-        setTunnelStatus({ active: true, connecting: false })
+        // The tunnel may have landed on 8189 because 8188 was busy. Show (and
+        // later use) the port it really bound, not the one we asked for.
+        setTunnelStatus({
+          active: true,
+          connecting: false,
+          localPort: result.localPort ?? null,
+          switchedPort: Boolean(result.switchedPort),
+        })
       } else {
         setTunnelConnectError(result.error || 'Connection failed')
         setTunnelStatus({ active: false, connecting: false })
@@ -676,11 +685,32 @@ function GeneralTab({ initialSection = null }) {
   const handleDisconnectRemote = async () => {
     if (!window.electronAPI) return
     try {
-      await window.electronAPI.invoke('belrog:disconnect')
-      setTunnelStatus({ active: false, connecting: false })
+      const result = await window.electronAPI.invoke('belrog:disconnect')
+      setTunnelStatus({ active: false, connecting: false, localPort: null, switchedPort: false })
       setTunnelConnectError('')
+      if (result?.releasedPort) setTunnelNotice(`Local port ${result.releasedPort} released.`)
     } catch (err) {
       console.error('Disconnect failed:', err)
+      setTunnelConnectError(`Could not close the tunnel: ${err?.message || err}`)
+    }
+  }
+
+  // A tunnel that never answered the disconnect keepalive still looks "active"
+  // here, and a forwarder left over from an earlier attempt can keep the port.
+  // This force-closes both from the main process and lets you Connect again
+  // without hunting the port down by hand.
+  const handleResetRemoteTunnel = async () => {
+    if (!window.electronAPI) return
+    setTunnelConnectError('')
+    try {
+      const released = await window.electronAPI.invoke('belrog:disconnect')
+      await window.electronAPI.invoke('belrog:getTunnelStatus')
+      setTunnelStatus({ active: false, connecting: false, localPort: null, switchedPort: false })
+      setTunnelNotice(released?.releasedPort
+        ? `Tunnel reset. Port ${released.releasedPort} released - Connect again.`
+        : 'Tunnel reset. Connect again.')
+    } catch (err) {
+      setTunnelConnectError(`Reset failed: ${err?.message || err}`)
     }
   }
 
@@ -1481,7 +1511,7 @@ function GeneralTab({ initialSection = null }) {
                   type="text"
                   value={remoteServerSettings.sshKeyPath}
                   onChange={(e) => handleRemoteServerFieldChange('sshKeyPath', e.target.value)}
-                  placeholder="C:\Users\...\.ssh\id_ed25519"
+                  placeholder={sshKeyPathPlaceholder()}
                   className="flex-1 min-w-0 bg-sf-dark-800 border border-sf-dark-600 rounded px-3 py-2 text-sm text-sf-text-primary focus:outline-none focus:border-sf-accent truncate"
                 />
                 <button
@@ -1569,12 +1599,30 @@ function GeneralTab({ initialSection = null }) {
                     Connect
                   </button>
                 )}
+                {/* Always available: closes a half-open tunnel and releases the
+                    local port when the app thinks nothing is connected. */}
+                <button
+                  type="button"
+                  onClick={handleResetRemoteTunnel}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sf-dark-700 hover:bg-sf-dark-600 rounded text-xs text-sf-text-secondary transition-colors"
+                  title="Force-close the SSH tunnel and release its local port"
+                >
+                  <RefreshCcw className="h-3 w-3" />
+                  Reset connection
+                </button>
               </div>
             </div>
 
-            {tunnelStatus.active && (
-              <div className="text-[10px] text-sf-text-muted">
-                Tunnel active: localhost:{remoteServerSettings.tunnelLocalPort || 8188} → {remoteServerSettings.sshHost}:{remoteServerSettings.tunnelRemotePort || 8188}
+            {(tunnelNotice || tunnelStatus.active) && (
+              <div className="text-[10px] text-sf-text-muted space-y-1">
+                {tunnelStatus.active && (
+                  <div>
+                    Tunnel active: localhost:{tunnelStatus.localPort || remoteServerSettings.tunnelLocalPort || 8188} → {remoteServerSettings.sshHost}:{remoteServerSettings.tunnelRemotePort || 8188}
+                    {tunnelStatus.switchedPort && ` (moved: ${remoteServerSettings.tunnelLocalPort || 8188} was busy)`}
+                  </div>
+                )}
+                {tunnelNotice && <div className="text-emerald-400">{tunnelNotice}</div>}
+                <div>If generation stops working, use Reset connection and Connect again. You do not need to close Belrog or find the port yourself.</div>
               </div>
             )}
           </div>

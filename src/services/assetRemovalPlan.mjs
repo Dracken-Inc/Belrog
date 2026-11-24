@@ -83,7 +83,7 @@ export function describeAssetRemovalPlan(plan) {
   const external = plan.files.some(file => file.external)
   const lines = [
     `Remove ${plan.assetIds.length} asset${plan.assetIds.length === 1 ? '' : 's'} from this project and move ${plan.files.length} file${plan.files.length === 1 ? '' : 's'} to the system Trash / Recycle Bin?`,
-    'Files can be recovered through your operating system. Velorn cannot undo this file operation.',
+    'Files can be recovered through your operating system. Belrog cannot undo this file operation.',
   ]
   if (external) lines.push('WARNING: This includes original files OUTSIDE the project folder. Other projects or applications may use them.')
   if (plan.sharedPaths.length) lines.push(`${plan.sharedPaths.length} shared file(s) will be kept because other assets in this project still refer to them.`)
@@ -93,7 +93,7 @@ export function describeAssetRemovalPlan(plan) {
 
 export async function trashAssetRemovalPlan(plan, api = globalThis.window?.electronAPI) {
   if (!plan.files.length) return { success: true, results: [] }
-  if (typeof api?.trashAssetFiles !== 'function') throw new Error('Safe Trash is unavailable. Fully quit and reopen the updated Velorn desktop app, or choose Remove from project to keep the files.')
+  if (typeof api?.trashAssetFiles !== 'function') throw new Error('Safe Trash is unavailable. Fully quit and reopen the updated Belrog desktop app, or choose Remove from project to keep the files.')
   const paths = plan.files.map(file => file.path)
   const response = await api.trashAssetFiles({ paths, protectedPaths: plan.protectedPaths })
   // Do not remove project entries on partial, malformed or ambiguous results.

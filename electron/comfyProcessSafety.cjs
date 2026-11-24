@@ -21,7 +21,7 @@ function parseNetstatPid(stdout, port) {
     if (fields[0]?.toUpperCase() !== 'TCP' || fields[3]?.toUpperCase() !== 'LISTENING') continue
     const match = fields[1]?.match(/^(.*):(\d+)$/)
     if (!match || Number(match[2]) !== port) continue
-    // Velorn's connection is IPv4 loopback. A listener bound solely to a
+    // Belrog's connection is IPv4 loopback. A listener bound solely to a
     // different interface cannot own that endpoint; IPv6 wildcard can.
     if (!['127.0.0.1', '0.0.0.0', '[::]', '[::ffff:127.0.0.1]'].includes(match[1])) continue
     if (fields.length !== 5 || !/^\d+$/.test(fields[4])) return null

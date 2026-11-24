@@ -78,11 +78,11 @@ function createToolSetupController({ ipcMain, app, getMainWindow, dialog, shell,
   function currentDocument(event, source) {
     const window = getMainWindow()
     if (disposed || !window || window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) {
-      throw fault('TOOL_SETUP_UNAUTHORIZED', 'Tool setup is available in the main Velorn window.')
+      throw fault('TOOL_SETUP_UNAUTHORIZED', 'Tool setup is available in the main Belrog window.')
     }
     const contents = window.webContents, frame = contents.mainFrame
     if (!frame || source === 'desktop' && (!event?.sender || event.sender !== contents || event.senderFrame !== frame)) {
-      throw fault('TOOL_SETUP_UNAUTHORIZED', 'Tool setup is restricted to the main Velorn window, not embedded pages.')
+      throw fault('TOOL_SETUP_UNAUTHORIZED', 'Tool setup is restricted to the main Belrog window, not embedded pages.')
     }
     if (document && !documentCurrent(document)) invalidate(document)
     if (!document) {
@@ -109,7 +109,7 @@ function createToolSetupController({ ipcMain, app, getMainWindow, dialog, shell,
   function contextFor(owner) {
     const context = calls.getStore(), binding = owners.get(owner)
     if (!context || context.owner !== owner || !binding || binding.record !== context.record || !documentCurrent(binding.record)) {
-      throw fault('TOOL_SETUP_CONTEXT_CHANGED', 'The Velorn window changed. Reopen tool setup before continuing.')
+      throw fault('TOOL_SETUP_CONTEXT_CHANGED', 'The Belrog window changed. Reopen tool setup before continuing.')
     }
     return context
   }
@@ -143,16 +143,16 @@ function createToolSetupController({ ipcMain, app, getMainWindow, dialog, shell,
     if (url.protocol !== 'https:' || url.username || url.password || url.hash) throw fault('TOOL_SETUP_INVALID_REQUEST', 'The installer source must be a verified HTTPS download.')
     await assertCanStart({ owner, action })
     if (confirming) throw fault('TOOL_SETUP_BUSY', 'Finish the current installer review before starting another one.')
-    if (typeof dialog?.showMessageBox !== 'function') throw fault('TOOL_SETUP_UNAVAILABLE', 'Native installer confirmation is unavailable. Restart Velorn.')
+    if (typeof dialog?.showMessageBox !== 'function') throw fault('TOOL_SETUP_UNAVAILABLE', 'Native installer confirmation is unavailable. Restart Belrog.')
     const context = contextFor(owner)
     const tool = NAMES[plan?.integration || job?.integration] || 'tool'
     const opening = action === 'open'
     confirming = true
     try {
       const answer = await dialog.showMessageBox(context.record.window, {
-        type: 'question', title: 'Velorn tool setup',
+        type: 'question', title: 'Belrog tool setup',
         message: `${opening ? 'Open' : 'Download'} the ${tool} installer?`,
-        detail: `Source: ${sourceUrl}\n\n${opening ? 'Installer' : 'Save to'}: ${destination}\n\nSize: ${bytes.toLocaleString('en-US')} bytes\n\nThis is the application installer only. Operating system installation, dependencies, accounts and model downloads are separate steps. Velorn does not run unattended install commands or bypass operating system security prompts.`,
+        detail: `Source: ${sourceUrl}\n\n${opening ? 'Installer' : 'Save to'}: ${destination}\n\nSize: ${bytes.toLocaleString('en-US')} bytes\n\nThis is the application installer only. Operating system installation, dependencies, accounts and model downloads are separate steps. Belrog does not run unattended install commands or bypass operating system security prompts.`,
         buttons: ['Cancel', opening ? 'Open installer' : 'Download installer'], defaultId: 0, cancelId: 0, noLink: true,
       })
       await assertCanStart({ owner, action })
@@ -165,8 +165,8 @@ function createToolSetupController({ ipcMain, app, getMainWindow, dialog, shell,
   async function openPath(destination, { owner, beforeOpen } = {}) {
     await assertCanStart({ owner, action: 'open' })
     const context = contextFor(owner)
-    if (!context.openApprovals.delete(destination)) throw fault('TOOL_SETUP_UNAUTHORIZED', 'Confirm opening this exact installer in Velorn first.')
-    if (typeof shell?.openPath !== 'function') throw fault('TOOL_SETUP_UNAVAILABLE', 'Opening installers is unavailable. Restart Velorn.')
+    if (!context.openApprovals.delete(destination)) throw fault('TOOL_SETUP_UNAUTHORIZED', 'Confirm opening this exact installer in Belrog first.')
+    if (typeof shell?.openPath !== 'function') throw fault('TOOL_SETUP_UNAVAILABLE', 'Opening installers is unavailable. Restart Belrog.')
     if (typeof beforeOpen !== 'function') throw fault('TOOL_SETUP_UNAVAILABLE', 'Final installer verification is unavailable. Make a new setup plan.')
     // The trusted manager owns this callback; renderer payloads contain only
     // opaque IDs. Run its file/root/hash verification AFTER the last asynchronous

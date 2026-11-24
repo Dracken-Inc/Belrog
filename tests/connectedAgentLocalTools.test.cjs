@@ -7,7 +7,7 @@ test('Full access zero duration has no wall-clock timer even across waits', () =
   timer.setWaiting(true);timer.setWaiting(false);timer.dispose()
 })
 const { parseModelTransport, unpackLocalUserMessage } = require('./helpers/localAgentTransport.cjs')
-const catalog = Array.from({ length: 162 }, (_, i) => ({ name: i === 1 ? 'get_timeline' : `tool_${i}`, description: `Velorn tool ${i}`, inputSchema: { type: 'object', properties: { value: { type: 'string' } } } }))
+const catalog = Array.from({ length: 162 }, (_, i) => ({ name: i === 1 ? 'get_timeline' : `tool_${i}`, description: `Belrog tool ${i}`, inputSchema: { type: 'object', properties: { value: { type: 'string' } } } }))
 const request = overrides => ({ model: 'local-model', endpoint: 'http://127.0.0.1:1234/v1', context: '{}', messages: [{ role: 'user', content: 'Inspect and edit.' }], images: [], ...overrides })
 const call = (id, name = 'get_timeline', args = '{}') => ({ id, type: 'function', function: { name, arguments: args } })
 const reply = message => new Response(JSON.stringify({ choices: [{ message, finish_reason: message.tool_calls?.length ? 'tool_calls' : 'stop' }] }), { headers: { 'Content-Type': 'application/json' } })
@@ -454,7 +454,7 @@ test('current access is explicit and all accepted history survives beyond the fo
   const deps = mock([{ content: 'Ready to inspect.' }])
   await sendLocalWithTools(request({ messages }), deps)
   const sent = deps.requests[0].body.messages
-  assert.match(sent[0].content, /CURRENT ACCESS: Velorn tools are enabled/)
+  assert.match(sent[0].content, /CURRENT ACCESS: Belrog tools are enabled/)
   assert.doesNotMatch(sent[0].content, /older chat messages were omitted/)
   assert.equal(sent.at(-1).role, messages.at(-1).role)
   assert.equal(unpackLocalUserMessage(sent.at(-1)).content, messages.at(-1).content)
@@ -551,7 +551,7 @@ test('markup explanations in code, quotations, or escaped text remain unchanged 
   const markup = '<tool_call><function=rename_timeline></function></tool_call>'
   for (const content of [
     'I inspected the timeline; no changes were needed.',
-    `The server returned \`${markup}\`; Velorn did not execute it.`,
+    `The server returned \`${markup}\`; Belrog did not execute it.`,
     `The example contains a backtick: \`\`<tool_call>\`literal\`</tool_call>\`\`.`,
     `Here is an example:\n\n\`\`\`xml\n${markup}\n\`\`\`\nIt is text, not an executed tool.`,
     `~~~xml\n${markup}\n~~~~\nThis is a quoted example.`,
@@ -643,7 +643,7 @@ test('structured calls win over duplicate public markup and answer recovery neve
   await assert.rejects(sendLocalWithTools(request(), recovery), { code: 'INVALID_RESPONSE' })
   assert.equal(recovery.calls.length, 1)
   assert.equal(recovery.requests.at(-1).body.messages.at(-1).role, 'user')
-  assert.match(recovery.requests.at(-1).body.messages.at(-1).content, /Velorn answer recovery/)
+  assert.match(recovery.requests.at(-1).body.messages.at(-1).content, /Belrog answer recovery/)
 })
 
 test('tool denial and failures reach model without fabricated success or private exception text', async () => {

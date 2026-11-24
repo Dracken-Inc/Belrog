@@ -238,7 +238,7 @@ function createSetupInstalledApps({ app, platform = process.platform, fs = nativ
       if (!current(isCurrent)) return result('stale', 'The setup view changed. Nothing was selected.')
       if (!value) return result('unavailable', 'Select the existing LM Studio application, not an installer, script or launcher with custom arguments.')
       selected = value
-      return result('selected', 'LM Studio was selected for this Velorn session. It has not been opened or connected.')
+      return result('selected', 'LM Studio was selected for this Belrog session. It has not been opened or connected.')
     } catch { return result('unavailable', 'The selected LM Studio application could not be verified. Nothing was opened.') }
     finally { busy = false }
   }
@@ -273,7 +273,7 @@ function createSetupInstalledApps({ app, platform = process.platform, fs = nativ
         child.once('error', reject)
         child.once('spawn', () => { child.unref(); resolve() })
       })
-      return result('opened', 'LM Studio was opened. Its existing startup preferences may apply. Check its local server next; no model or server command was sent by Velorn.')
+      return result('opened', 'LM Studio was opened. Its existing startup preferences may apply. Check its local server next; no model or server command was sent by Belrog.')
     } catch { return result('failed', 'LM Studio could not be opened. Use its normal desktop launcher; no server or model command was sent.') }
     finally { busy = false }
   }

@@ -1,4 +1,4 @@
-// Where "Velorn is listening to this song" is remembered.
+// Where "Belrog is listening to this song" is remembered.
 //
 // It lives outside the Song screen on purpose. Listening takes about as long
 // as the song, and the person may look at the other steps meanwhile. The

@@ -29,7 +29,7 @@ test('marks a prompt-driven saved image workflow as MCP ready', () => {
     { id: 3, type: 'SaveImage', title: 'VELORN_OUTPUT_IMAGE' },
   ])
 
-  const entry = createMyWorkflowCatalogEntry(record, 'C:/Velorn/custom-workflows/portrait-look.json')
+  const entry = createMyWorkflowCatalogEntry(record, 'C:/Belrog/custom-workflows/portrait-look.json')
 
   assert.equal(entry.id, 'my-workflow:portrait-look')
   assert.equal(entry.source, 'my-workflows')

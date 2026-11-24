@@ -95,7 +95,7 @@ async function main() {
     await button('Assistant').click(); await input().waitFor()
     assert.equal(await live().count(), 0); assert.equal(await indicator().count(), 0)
     await openSettings()
-    await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check()
+    await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check()
     await page.getByRole('checkbox', { name: 'Full computer access (experimental)', exact: true }).check()
     await page.waitForFunction(() => Boolean(window.connectedAgentTest.snapshot().fullAccessGrant))
     assert.match(await page.locator('.ca-full-access-active').innerText(), /^Full access · automatic/)

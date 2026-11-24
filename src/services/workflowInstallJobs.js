@@ -91,7 +91,7 @@ export async function buildInstallPlanForWorkflow(workflowId) {
         checked: true,
         isValid: false,
         normalizedPath: '',
-        error: 'No ComfyUI folder is configured in Velorn yet — set it in Settings first.',
+        error: 'No ComfyUI folder is configured in Belrog yet — set it in Settings first.',
       }
     } else {
       const validation = await api.validateWorkflowSetupRoot(stored)

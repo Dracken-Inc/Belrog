@@ -28,7 +28,7 @@ export default function GpuSharingWorkspace({ openShare = 0 }) {
         <header className="flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h2 className="text-lg font-semibold">Share my GPU</h2>
-            <p className="text-sm text-sf-text-secondary max-w-2xl">Lend your graphics card to other Velorn creators when you are not using it. It costs nothing, and you choose what runs and who may use it.</p>
+            <p className="text-sm text-sf-text-secondary max-w-2xl">Lend your graphics card to other Belrog creators when you are not using it. It costs nothing, and you choose what runs and who may use it.</p>
           </div>
           <button type="button" className={button} onClick={() => setView('use')}><ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />Back to shared GPUs</button>
         </header>

@@ -17,7 +17,7 @@ import { firstListenFor, useSongListen, writeSongListen } from '../../services/s
 // them in `songMap` ({ parts, unsure, assetId }), saved with the project.
 // `assetId` records which song the lyrics belong to.
 //
-// When a song has no lyrics yet, Velorn listens to it (electron/songMapEngine)
+// When a song has no lyrics yet, Belrog listens to it (electron/songMapEngine)
 // and fills them in. Where listening is not set up, or it fails, the lyrics
 // can still come from a file ("Use a lyrics file").
 
@@ -112,8 +112,8 @@ export default function SongStep({
         ? getAbsoluteFileUrl(audioAsset.absolutePath)
         : audioAsset.path && projectHandle ? getProjectFileUrl(projectHandle, audioAsset.path) : Promise.resolve('')
       Promise.resolve(lookup)
-        .then((url) => { if (!cancelled) { setSongUrl(url || ''); if (!url) setPlayError('Velorn could not find this song file.') } })
-        .catch(() => { if (!cancelled) setPlayError('Velorn could not find this song file.') })
+        .then((url) => { if (!cancelled) { setSongUrl(url || ''); if (!url) setPlayError('Belrog could not find this song file.') } })
+        .catch(() => { if (!cancelled) setPlayError('Belrog could not find this song file.') })
     }
     return () => { cancelled = true }
   }, [audioAsset?.id, audioAsset?.url, audioAsset?.absolutePath, audioAsset?.path, projectHandle])
@@ -225,7 +225,7 @@ export default function SongStep({
         return
       }
       const heard = readLyricFile(JSON.stringify({ rows: result.lines || [] }))
-      if (heard.error) { setListen({ status: 'error', step: 'voice', percent: 0, error: 'Velorn could not hear any lyrics in this song.' }); return }
+      if (heard.error) { setListen({ status: 'error', step: 'voice', percent: 0, error: 'Belrog could not hear any lyrics in this song.' }); return }
       onLyricsChange?.(formatSrtLines(heard.lines))
       onSongMapChange?.({ parts: guessSongParts(heard.lines), unsure: heard.unsure, assetId: audioAsset.id })
       setShifted(0)
@@ -440,10 +440,10 @@ export default function SongStep({
             {listen.status === 'error'
               ? listen.error
               : cannotListen && setup.canInstall
-                ? `Velorn can listen to the song and write the lyrics down. It needs to download its listening tools once${setup.bytes > 0 ? ` (${downloadSize(setup.bytes)})` : ''}. After that it works offline and is free. Or you can bring the lyrics as a file with timings.`
+                ? `Belrog can listen to the song and write the lyrics down. It needs to download its listening tools once${setup.bytes > 0 ? ` (${downloadSize(setup.bytes)})` : ''}. After that it works offline and is free. Or you can bring the lyrics as a file with timings.`
                 : cannotListen
                   ? 'Listening is not set up on this computer yet. You can bring the lyrics as a file with timings.'
-                  : 'Velorn can listen to the song and write the lyrics down, or you can bring them as a file with timings.'}
+                  : 'Belrog can listen to the song and write the lyrics down, or you can bring them as a file with timings.'}
           </p>
           {setup.installing && (
             <div className="mt-3" role="status">
@@ -456,7 +456,7 @@ export default function SongStep({
                   <div className="h-full rounded-full bg-sf-accent transition-all" style={{ width: `${Math.min(100, Math.round((setup.doneBytes / setup.totalBytes) * 100))}%` }} />
                 </div>
               )}
-              <p className="mt-2 text-[11px] text-sf-text-muted">Keep Velorn open until it finishes.</p>
+              <p className="mt-2 text-[11px] text-sf-text-muted">Keep Belrog open until it finishes.</p>
             </div>
           )}
           {setup.error && !setup.installing && <p className="mt-3 text-xs text-sf-error">{setup.error}</p>}
@@ -544,14 +544,14 @@ export default function SongStep({
       </div>
 
       </div>
-      {/* Why this step matters, said once, whether or not Velorn is unsure. */}
+      {/* Why this step matters, said once, whether or not Belrog is unsure. */}
       <p className="mt-4 text-xs leading-5 text-sf-text-secondary">
         <span className="font-semibold text-sf-text-primary">Check the words and the parts.</span>{' '}
         The video is planned from them: each line becomes a shot, and verses and choruses get different looks.
       </p>
       {unsure.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-yellow-500/10 px-3 py-2 text-xs text-yellow-200" role="status">
-          <span>Velorn wasn't sure about {unsure.length} {unsure.length === 1 ? 'line' : 'lines'}.</span>
+          <span>Belrog wasn't sure about {unsure.length} {unsure.length === 1 ? 'line' : 'lines'}.</span>
           <button type="button" onClick={showFirstUnsure} className={`${smallButton} border-yellow-500/50 text-yellow-200`}>Show me the first one</button>
         </div>
       )}

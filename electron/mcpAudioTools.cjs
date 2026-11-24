@@ -56,7 +56,7 @@ const tools = [
   },
   {
     name: 'list_fonts',
-    description: 'Read the same installed-font catalog and curated fallback used by the Velorn font selector. Returns status/source so fallback names are not mistaken for confirmed installed fonts.',
+    description: 'Read the same installed-font catalog and curated fallback used by the Belrog font selector. Returns status/source so fallback names are not mistaken for confirmed installed fonts.',
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Optional case-insensitive family-name search.' }, forceRefresh: { type: 'boolean' } } },
   },
   {

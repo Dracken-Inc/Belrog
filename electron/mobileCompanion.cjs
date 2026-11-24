@@ -146,7 +146,7 @@ function sanitizeReply(value) {
   }
   if (value.status !== undefined && !['declined', 'cancelled', 'busy', 'error'].includes(value.status)) throw invalid()
   return { success: false, status: value.status || 'error', error: sharedText(value.error, LIMITS.statusBytes)
-    || 'The desktop did not send this message. Review it in Velorn.' }
+    || 'The desktop did not send this message. Review it in Belrog.' }
 }
 
 function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clientRoot, apiOnly = false,
@@ -261,7 +261,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
     const window = getMainWindow()
     if (disposed || !window || window.isDestroyed() || !event?.sender || event.sender.isDestroyed()
       || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
-      throw fault('MOBILE_COMPANION_UNAUTHORIZED', 'Mobile sharing is available only in the main Velorn window.')
+      throw fault('MOBILE_COMPANION_UNAUTHORIZED', 'Mobile sharing is available only in the main Belrog window.')
     }
     bind(event.sender)
     return { window, sender: event.sender, frame: event.senderFrame }
@@ -293,7 +293,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
     if (!current() || message?.scope !== owner.scope) { void invalidate('desktop-context-changed'); return Promise.resolve(cancelled()) }
     // The legacy text-only route has no provider-bound sharing envelope. It
     // must not bypass the dual-recipient permission required by funded Luna.
-    if (!message?.kind && publication?.provider === 'luna') return Promise.resolve({ success: false, status: 'error', error: 'Velo requires an updated phone AI-sharing permission for Velorn and OpenAI. No message was sent.' })
+    if (!message?.kind && publication?.provider === 'luna') return Promise.resolve({ success: false, status: 'error', error: 'Velo requires an updated phone AI-sharing permission for Belrog and OpenAI. No message was sent.' })
     const command = message.kind ? require('./mobileCompanionControl.cjs').validateCommand(Object.fromEntries(Object.entries(message).filter(([k]) => !['scope', 'signal'].includes(k))), effectiveSnapshot()) : null
     if (command?.kind === 'native-approval') return Promise.resolve(reviews.decide(command))
     if (typeof message.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(message.id)
@@ -301,7 +301,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
       || Buffer.byteLength(message.text) > LIMITS.phoneTextBytes || /\u0000/.test(message.text)
       )) || message.signal?.aborted) return Promise.resolve({ success: false, status: 'error', error: 'The phone message is invalid.' })
     if (!['approval', 'stop'].includes(command?.kind) && (pending.size || !publication?.available || publication.busy || publication.awaitingApproval)) {
-      return Promise.resolve({ success: false, status: 'busy', error: 'Velorn is busy or unavailable. Wait before sending another message.' })
+      return Promise.resolve({ success: false, status: 'busy', error: 'Belrog is busy or unavailable. Wait before sending another message.' })
     }
     return new Promise(resolve => {
       const record = { id: message.id, scope: owner.scope, owner, resolve, accepted: false, signal: message.signal, command, accessRevision }
@@ -368,11 +368,11 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
         }
       }
       const answer = await dialog.showMessageBox(candidate.window, {
-        type: 'question', title: device ? 'Connect this phone to Velorn?' : automatic && upgrade ? 'Enable phone access?' : 'Connect this computer to your Velorn account?',
-        message: device ? `Connect “${details.deviceName}” to “${details.computerName}”?` : automatic && upgrade ? `Enable phone access to “${details.computerName}”?` : `Connect “${details.computerName}” to your Velorn account?`,
-        detail: device ? `Account: ${details.accountDisplayName}\n\nCheck that your phone displays this code: ${details.fingerprint}\n\nApprove only your own phone. It can use your desktop agent, projects and shared media. Paid generations still ask. You can disconnect this device in Velorn.`
-          : automatic ? `${upgrade ? 'Use the Velorn account already linked to this computer.' : `Velorn account: ${details.accountDisplayName}`}\n\nThis connects your computer for Velo access when available for your account, and enables phone access. Phones signed into this same account can connect automatically and use your desktop agent, projects and shared media without asking you to approve each phone here. This permission is remembered when Velorn restarts. Paid generations still ask. Stop all phone sharing turns access off; you can also disconnect individual devices. Desktop editing, your own Codex, and local LM Studio do not require a Velorn account.`
-            : `Velorn account: ${details.accountDisplayName}\n\nApprove only the account you just signed into. This connects your computer for Velo access when available for your account.${details.phoneAccess === false ? ' Signing in does not enable phone sharing; existing sharing settings are unchanged.' : ' Phone access is also enabled.'} Desktop editing, your own Codex, and local LM Studio do not require a Velorn account.`,
+        type: 'question', title: device ? 'Connect this phone to Belrog?' : automatic && upgrade ? 'Enable phone access?' : 'Connect this computer to your Belrog account?',
+        message: device ? `Connect “${details.deviceName}” to “${details.computerName}”?` : automatic && upgrade ? `Enable phone access to “${details.computerName}”?` : `Connect “${details.computerName}” to your Belrog account?`,
+        detail: device ? `Account: ${details.accountDisplayName}\n\nCheck that your phone displays this code: ${details.fingerprint}\n\nApprove only your own phone. It can use your desktop agent, projects and shared media. Paid generations still ask. You can disconnect this device in Belrog.`
+          : automatic ? `${upgrade ? 'Use the Belrog account already linked to this computer.' : `Belrog account: ${details.accountDisplayName}`}\n\nThis connects your computer for Velo access when available for your account, and enables phone access. Phones signed into this same account can connect automatically and use your desktop agent, projects and shared media without asking you to approve each phone here. This permission is remembered when Belrog restarts. Paid generations still ask. Stop all phone sharing turns access off; you can also disconnect individual devices. Desktop editing, your own Codex, and local LM Studio do not require a Belrog account.`
+            : `Belrog account: ${details.accountDisplayName}\n\nApprove only the account you just signed into. This connects your computer for Velo access when available for your account.${details.phoneAccess === false ? ' Signing in does not enable phone sharing; existing sharing settings are unchanged.' : ' Phone access is also enabled.'} Desktop editing, your own Codex, and local LM Studio do not require a Belrog account.`,
         buttons: ['Cancel', device ? 'Connect phone' : automatic ? 'Enable phone access' : 'Link computer'], defaultId: 0, cancelId: 0, noLink: true,
       })
       if (!isCurrent()) throw stale()
@@ -382,7 +382,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
   async function startConnection(candidate, scope, snapshot, restoreOnly = false, guidedOnly = false) {
       if (!available) throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Phone connections are not available in this build.')
       if (enabling) throw fault('MOBILE_COMPANION_BUSY', 'A mobile sharing confirmation is already open.')
-      if (administrativeOwner) throw fault('MOBILE_COMPANION_BUSY', 'Velorn account removal is in progress.')
+      if (administrativeOwner) throw fault('MOBILE_COMPANION_BUSY', 'Belrog account removal is in progress.')
       if (owner && current() && owner.scope === scope && server.getStatus().enabled) return { success: true, status: server.getStatus() }
       enabling = true
       try {
@@ -393,13 +393,13 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
         assertConsent()
         configureGuidedContext(candidate, scope)
         if (!restoreOnly && !guidedOnly) {
-          if (typeof dialog?.showMessageBox !== 'function') throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Restart Velorn to load native mobile-sharing confirmation.')
+          if (typeof dialog?.showMessageBox !== 'function') throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Restart Belrog to load native mobile-sharing confirmation.')
           const remoteConfigured = await server.hasRemoteConfiguration?.() === true
           assertConsent()
           const answer = await dialog.showMessageBox(candidate.window, {
-          type: 'warning', title: 'Enable Velorn mobile companion?',
-          message: deviceStore ? (remoteConfigured ? 'Let your paired phone work with Velorn through the configured remote connection and trusted Wi-Fi?' : 'Let one paired phone work with Velorn on your trusted Wi-Fi?') : 'Share this project’s current chat and preview with one paired phone?',
-          detail: deviceStore ? `${remoteConfigured ? 'Remote beta is configured: an outbound encrypted connection also permits phone access outside your network. Anyone with the private pairing link and phone credential can use this access. Trust the remote website operator; the browser code is delivered by that website. ' : ''}Shares recent chat, project names, models, action arguments (including file paths), and optional still previews. With Share images enabled, project review media is playable on the phone. Your paired phone can use the desktop agent, switch projects, approve tools and paid submissions, and explicitly enable Full access. Normal model usage applies. The separate local HTTP connection is UNENCRYPTED: others on the network may read or alter traffic and control the computer. Use only trusted private Wi-Fi; never expose the local HTTP address to the internet. The phone is remembered until Forget phone.${preference ? ' Sharing automatically resumes when Velorn reopens a project, until Stop sharing.' : ''} Stopping sharing revokes phone-enabled full access but does not undo completed work or cancel every external job.` : 'Shares recent chat and previews over unencrypted HTTP. Use only a trusted private network. Phone messages require desktop review. Never expose this service to the internet.',
+          type: 'warning', title: 'Enable Belrog mobile companion?',
+          message: deviceStore ? (remoteConfigured ? 'Let your paired phone work with Belrog through the configured remote connection and trusted Wi-Fi?' : 'Let one paired phone work with Belrog on your trusted Wi-Fi?') : 'Share this project’s current chat and preview with one paired phone?',
+          detail: deviceStore ? `${remoteConfigured ? 'Remote beta is configured: an outbound encrypted connection also permits phone access outside your network. Anyone with the private pairing link and phone credential can use this access. Trust the remote website operator; the browser code is delivered by that website. ' : ''}Shares recent chat, project names, models, action arguments (including file paths), and optional still previews. With Share images enabled, project review media is playable on the phone. Your paired phone can use the desktop agent, switch projects, approve tools and paid submissions, and explicitly enable Full access. Normal model usage applies. The separate local HTTP connection is UNENCRYPTED: others on the network may read or alter traffic and control the computer. Use only trusted private Wi-Fi; never expose the local HTTP address to the internet. The phone is remembered until Forget phone.${preference ? ' Sharing automatically resumes when Belrog reopens a project, until Stop sharing.' : ''} Stopping sharing revokes phone-enabled full access but does not undo completed work or cancel every external job.` : 'Shares recent chat and previews over unencrypted HTTP. Use only a trusted private network. Phone messages require desktop review. Never expose this service to the internet.',
           buttons: ['Cancel', deviceStore ? 'Enable local companion' : 'Enable for this chat'], defaultId: 0, cancelId: 0, noLink: true,
           checkboxLabel: 'I am on a trusted private network and will not port-forward this unencrypted connection.', checkboxChecked: false,
           })
@@ -431,7 +431,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
   const handlers = {
     async enable(event, payload) {
       const candidate = authorize(event)
-      if (!legacyAvailable) throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Use Enable phone access to connect through your Velorn account.')
+      if (!legacyAvailable) throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Use Enable phone access to connect through your Belrog account.')
       const scope = request(payload, ['scope', 'snapshot'])
       const snapshot = readPublication(payload.snapshot)
       return startConnection(candidate, scope, snapshot)
@@ -525,7 +525,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
           if (publication?.busy || publication?.awaitingApproval || reviews.snapshot().length) throw fault('MOBILE_COMPANION_BUSY', 'Wait for the current activity to finish before changing accounts.')
           const switching = action === 'switch-account'
           const answer = await dialog.showMessageBox(candidate.window, { type: 'question',
-            title: switching ? 'Switch Velorn account?' : 'Sign out of Velorn on this computer?',
+            title: switching ? 'Switch Belrog account?' : 'Sign out of Belrog on this computer?',
             message: switching ? 'Sign out, then choose another account?' : 'Sign out and disconnect this computer’s account-linked phones?',
             detail: 'This stops Velo here and disconnects this computer’s account-linked phones. Your projects, local chats, other computers and allowances stay unchanged. Google, Apple and browser sessions are not signed out.' + (switching ? ' If you cancel the new sign-in, this computer stays signed out.' : ''),
             buttons: ['Cancel', switching ? 'Switch account' : 'Sign out'], defaultId: 0, cancelId: 0, noLink: true })
@@ -541,7 +541,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
     },
     async accountRequests(event, payload) {
       const candidate = authorize(event), scope = request(payload, ['scope'])
-      if (!legacyAvailable) throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Use Enable phone access to connect through your Velorn account.')
+      if (!legacyAvailable) throw fault('MOBILE_COMPANION_UNAVAILABLE', 'Use Enable phone access to connect through your Belrog account.')
       assertOwner(candidate, scope)
       if (!server.getStatus().enabled || !server.reviewPhoneAccountRequests || typeof dialog?.showMessageBox !== 'function') throw stale()
       const version = epoch
@@ -549,9 +549,9 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
       const result = await server.reviewPhoneAccountRequests({ isCurrent, confirm: async ({ accountDisplayName, computerName }) => {
         if (!isCurrent()) throw stale()
         // Deliberately native-only: a remote phone cannot approve its own link.
-        const answer = await dialog.showMessageBox(candidate.window, { type: 'question', title: 'Link this computer to your Velorn account?',
-          message: `Link “${computerName}” to this Velorn account?`,
-          detail: `Velorn account: ${accountDisplayName}\n\nApprove only if you just requested this link from your signed-in phone. This adds the existing paired connection to My computers; it does not change your pairing or require a desktop login.`,
+        const answer = await dialog.showMessageBox(candidate.window, { type: 'question', title: 'Link this computer to your Belrog account?',
+          message: `Link “${computerName}” to this Belrog account?`,
+          detail: `Belrog account: ${accountDisplayName}\n\nApprove only if you just requested this link from your signed-in phone. This adds the existing paired connection to My computers; it does not change your pairing or require a desktop login.`,
           buttons: ['Decline', 'Link computer'], defaultId: 0, cancelId: 0, noLink: true })
         if (!isCurrent()) throw stale()
         return answer?.response === 1
@@ -594,7 +594,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
         || /[\u0000-\u001f\u007f]/.test(computerName) || !server.beginGuidedSetup || !server.startGuided
         || !nextSnapshot.available || nextSnapshot.busy || nextSnapshot.awaitingApproval)) throw invalid()
       if (!server.unregisterGuided || !dialog?.showMessageBox) throw invalid()
-      if (administrativeOwner) throw fault('MOBILE_COMPANION_BUSY', 'Velorn account removal is already being reviewed.')
+      if (administrativeOwner) throw fault('MOBILE_COMPANION_BUSY', 'Belrog account removal is already being reviewed.')
       const version = epoch, paused = !owner
       const isCurrent = () => current(candidate) && version === epoch && (paused
         ? !owner && !server.getStatus().enabled
@@ -605,7 +605,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
       administrativeOwner = candidate
       try {
         const answer = await dialog.showMessageBox(candidate.window, { type: 'question',
-          title: switching ? 'Switch Velorn account?' : action === 'sign-out' ? 'Sign out of Velorn on this computer?' : 'Disconnect Velorn account?',
+          title: switching ? 'Switch Belrog account?' : action === 'sign-out' ? 'Sign out of Belrog on this computer?' : 'Disconnect Belrog account?',
           message: switching ? 'Sign out of this computer, then choose another account?' : 'Disconnect this computer and all its account-linked phones?',
           detail: action ? 'This stops Velo access here and disconnects this computer from its account-linked phones. Your projects, local chats, other computers, account and allowances are not deleted or changed. You stay signed in to Google, Apple and your browser.'
             + (switching ? '\n\nBrowser sign-in opens after sign-out is confirmed. If you cancel that sign-in, this computer stays signed out. Phones will need to connect again under the selected account.' : '\n\nYou can sign in again later; phones will need to reconnect to this computer.')

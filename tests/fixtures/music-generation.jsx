@@ -74,7 +74,7 @@ window.musicTest = { queued, jobs: getMusicJobs, refresh: refreshMusicJobs, asse
 function Harness() {
   const [open, setOpen] = useState(true)
   return <div className="min-h-screen bg-sf-dark-950 text-sf-text-primary p-8">
-    <h1 className="text-xl">Velorn · Music generator test</h1>
+    <h1 className="text-xl">Belrog · Music generator test</h1>
     <button onClick={() => setOpen(true)}>Open music</button>
     {open && <GenerateMusicPopover onClose={() => setOpen(false)} anchorRect={{ left: 60, top: 90, bottom: 110 }} />}
   </div>

@@ -10,7 +10,7 @@ const { loadMyWorkflowCatalog } = require('./myWorkflowCatalog.js')
 const { loadManagedWorkflowCatalog, readBounded } = require('./managedApiWorkflows.cjs')
 const { resolveRunInputs, describeRunInputs } = require('./workflowRunInputs.cjs')
 const LIMITS = Object.freeze({ recordBytes: 4 * 1024 * 1024, uiBytes: 2 * 1024 * 1024, entries: 200, overrides: 128 })
-const legacyMessage = 'Open this workflow in ComfyUI and save it to Velorn again to enable agent runs. Its older saved copy contains only the editor layout; inspecting it will not replace your open graph.'
+const legacyMessage = 'Open this workflow in ComfyUI and save it to Belrog again to enable agent runs. Its older saved copy contains only the editor layout; inspecting it will not replace your open graph.'
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const clean = (value, limit = 240) => typeof value === 'string' ? value.replace(/[\x00-\x1f]/g, ' ').slice(0, limit) : ''
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -134,13 +134,13 @@ function registerSavedWorkflowLibraryIpc({ ipcMain, getMainWindow, getLibrary })
     const window = getMainWindow()
     const authorized = () => window && getMainWindow() === window && !window.isDestroyed() && !window.webContents.isDestroyed()
       && event?.sender === window.webContents && event.senderFrame && event.senderFrame === window.webContents.mainFrame
-    if (!authorized()) return { success: false, code: 'SAVED_WORKFLOW_UNAUTHORIZED', error: 'Saved workflows are available in the main Velorn window.' }
+    if (!authorized()) return { success: false, code: 'SAVED_WORKFLOW_UNAUTHORIZED', error: 'Saved workflows are available in the main Belrog window.' }
     if (!plain(payload) || Object.keys(payload).some(key => !['workflowId'].includes(key))) {
       return { success: false, code: 'SAVED_WORKFLOW_INVALID_REQUEST', error: 'Choose a saved workflow ID, not a file path.' }
     }
     try {
       const result = await getLibrary()[method](payload)
-      return authorized() ? result : { success: false, error: 'The Velorn window changed. Inspect the workflow again.' }
+      return authorized() ? result : { success: false, error: 'The Belrog window changed. Inspect the workflow again.' }
     } catch { return { success: false, error: 'The saved workflow could not be read.' } }
   })
   return { dispose() { for (const channel of Object.values(CHANNELS)) ipcMain.removeHandler?.(channel) } }

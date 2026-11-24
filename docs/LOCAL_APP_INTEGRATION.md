@@ -78,11 +78,11 @@ After promotion to the regular folder, app code matched `7e0529a` exactly. The p
 
 This integration has not been packaged on Windows/macOS or published. Simulated platform tests and prior maintainer approval of fullscreen on all three systems do not replace fresh packaged-platform verification before a release. Real RIFE/model generation was not repeated. The native Trash lease coordinates playback/proxy preparation, not every possible external filesystem writer. Export UI suspension does not claim exclusive hardware ownership or cancel already-running background preparation.
 
-For interactive review, save and fully quit other Velorn development sessions first. In a terminal:
+For interactive review, save and fully quit other Belrog development sessions first. In a terminal:
 
 ```bash
 cd velorn
 npm run electron:dev
 ```
 
-No runtime override or sandbox-disabling flag is needed in the regular folder. The app uses normal Velorn settings/projects when you launch it, so use a test project or a saved copy for hands-on checks. Future merge/push/release work needs separate authorization and the normal release/CLA/platform-build process.
+No runtime override or sandbox-disabling flag is needed in the regular folder. The app uses normal Belrog settings/projects when you launch it, so use a test project or a saved copy for hands-on checks. Future merge/push/release work needs separate authorization and the normal release/CLA/platform-build process.

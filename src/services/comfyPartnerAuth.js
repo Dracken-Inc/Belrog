@@ -65,7 +65,7 @@ export async function getComfyPartnerApiKey({ nativeOnly = false } = {}) {
       if (normalized || nativeOnly) return normalized
     }
   } catch (_) {
-    if (nativeOnly) throw new Error('Could not read the saved key from Velorn settings.')
+    if (nativeOnly) throw new Error('Could not read the saved key from Belrog settings.')
     // Ignore and fall back to localStorage.
   }
   if (nativeOnly) return ''
@@ -85,8 +85,8 @@ export async function saveComfyPartnerApiKey(rawKey) {
   if (native) {
     let result
     try { result = await window.electronAPI.setSetting(SETTING_KEY, normalized) }
-    catch { throw new Error('Could not save the key in Velorn settings. Nothing was changed in the local fallback.') }
-    if (result?.success !== true) throw new Error('Could not save the key in Velorn settings. Nothing was changed in the local fallback.')
+    catch { throw new Error('Could not save the key in Belrog settings. Nothing was changed in the local fallback.') }
+    if (result?.success !== true) throw new Error('Could not save the key in Belrog settings. Nothing was changed in the local fallback.')
   }
   try {
     if (!native && typeof localStorage === 'undefined') throw new Error('Browser storage unavailable')

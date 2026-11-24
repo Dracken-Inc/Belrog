@@ -13,7 +13,7 @@ const USER_WAIT_TOOLS = new Set([CLOUD_SETUP_REQUEST, 'download_lmstudio_model',
 const ROUTER_PLAN_TOOLS = new Set(['generate_comfy_router_image', 'generate_create_media'])
 
 // This is a safety classification, not a second tool catalog. Definitions and
-// dispatch always come from the running Velorn MCP server. New tools default to
+// dispatch always come from the running Belrog MCP server. New tools default to
 // approval; neither a name prefix nor an MCP annotation grants authority.
 const READ_TOOLS = new Set([
   ...require('./optionalSetup.cjs').names,
@@ -109,7 +109,7 @@ function requireContext(guard) {
   if (!plainObject(context) || !context.session || !Number.isFinite(context.revision)
     || !Object.hasOwn(context, 'projectKey') || !Object.hasOwn(context, 'timelineId')
     || !Object.hasOwn(context, 'timelineSessionId') || !Object.hasOwn(context, 'compoundClipId')) {
-    throw new Error('The live Velorn project context is unavailable. Inspect the project and start a new message.')
+    throw new Error('The live Belrog project context is unavailable. Inspect the project and start a new message.')
   }
   return context
 }
@@ -296,13 +296,13 @@ function warningFor(name, args, depth = 0) {
   }
   if (LIVE_CAPTURE_TOOLS.has(name) && args.includeImage !== false) warnings.push('Frame inspection can temporarily seek the live viewer, then restore the playhead. Still images will be shared with the connected model.')
   if (/^(queue_|generate_|regenerate_)/.test(name)) warnings.push('Applying this request can start local generation or spend cloud credits. Review the exact workflow, count and settings.')
-  if (name === 'track_comfyui_prompt') warnings.push('Applying this request records a supplied existing ComfyUI prompt in the active Velorn project. It is correlation, not proof of who originally submitted that prompt.')
+  if (name === 'track_comfyui_prompt') warnings.push('Applying this request records a supplied existing ComfyUI prompt in the active Belrog project. It is correlation, not proof of who originally submitted that prompt.')
   if (name === 'control_comfyui_run' && args.operation === 'retry') warnings.push('Retry submits a fresh managed ComfyUI job and can start local generation or spend cloud credits. Review the new explicit graph; stored recipes are not replayed automatically.')
-  if (name === 'control_comfyui_run' && args.operation === 'cancel') warnings.push('Cancellation affects only a known prompt that is still queued. Velorn will not interrupt a running job or the global ComfyUI queue.')
+  if (name === 'control_comfyui_run' && args.operation === 'cancel') warnings.push('Cancellation affects only a known prompt that is still queued. Belrog will not interrupt a running job or the global ComfyUI queue.')
   if (name === 'import_comfyui_run_outputs') warnings.push('Applying this request imports the Run\'s recorded output files as project assets. It does not start or retry ComfyUI work.')
   if (name === 'install_workflow_setup') warnings.push('Applying this request can install third-party node code or download model files.')
   if (name === 'install_caption_engine') warnings.push('Downloads the local caption engine/model to this device. Review the size; a native confirmation is required. Installation is not a timeline Undo action.')
-  if (name === 'download_agent_model') warnings.push('Downloads a model file into the configured ComfyUI models folder, up to the displayed byte limit. No overwrite or automatic execution. Completed downloads are not undone by Velorn Undo. Review source, destination, size and checksum before approving.')
+  if (name === 'download_agent_model') warnings.push('Downloads a model file into the configured ComfyUI models folder, up to the displayed byte limit. No overwrite or automatic execution. Completed downloads are not undone by Belrog Undo. Review source, destination, size and checksum before approving.')
   if (name === 'cancel_agent_download') warnings.push('Cancels only this project’s selected model-download job and removes its incomplete file. Completed files are kept.')
   if (name === 'run_mcp_action_plan') {
     warnings.push('This preview validates tool names, not each edit. Review every step; the existing MCP action-plan checkpoint/stop-on-error behavior is preserved.')
@@ -397,7 +397,7 @@ async function createAgentToolSession({ getServer, signal, expectedContext, allo
   async function readCatalog() {
     assertActive()
     const server = getServer()
-    if (!server || !Array.isArray(server.tools)) throw new Error('The Velorn MCP tool catalog is not available.')
+    if (!server || !Array.isArray(server.tools)) throw new Error('The Belrog MCP tool catalog is not available.')
     const catalog = cloneBounded(server.tools, limits.catalogBytes, 'Tool catalog')
     toolReceipts.allow(catalog.map(tool => tool.name))
     return catalog
@@ -545,7 +545,7 @@ async function createAgentToolSession({ getServer, signal, expectedContext, allo
       if (editCheckpointId) return
       const checkpointTool = (await listTools()).find(tool => tool.name === 'create_project_checkpoint')
       if (!checkpointTool?.inputSchema?.properties?.previewOnly) throw new Error('The safety checkpoint tool is unavailable.')
-      const checkpointArgs = { label: 'Velorn Agent — before approved undoable edits', previewOnly: true }
+      const checkpointArgs = { label: 'Belrog Agent — before approved undoable edits', previewOnly: true }
       const preview = await dispatch('create_project_checkpoint', checkpointArgs, guard, false)
       const previewDetail = parseResult(preview)
       if (failedResult(preview) || (previewDetail?.previewOnly !== true && previewDetail?.result?.previewOnly !== true)) {
@@ -569,7 +569,7 @@ async function createAgentToolSession({ getServer, signal, expectedContext, allo
     assertActive()
     if (typeof name !== 'string' || name.length > 160) throw new Error('A valid tool name is required.')
     const definition = (await readCatalog()).find(tool => tool.name === name)
-    if (!definition) throw new Error(`Unknown Velorn tool: ${name}. Read the current tool catalog.`)
+    if (!definition) throw new Error(`Unknown Belrog tool: ${name}. Read the current tool catalog.`)
     if (!plainObject(supplied)) return toolArgumentFailure(name, [{ field: '$', code: 'object_required', message: 'Tool arguments must be a JSON object.' }])
     let args = cloneBounded(supplied, limits.argumentBytes, 'Tool arguments')
     if (ROUTER_PLAN_TOOLS.has(name)) {
@@ -641,17 +641,17 @@ async function createAgentToolSession({ getServer, signal, expectedContext, allo
       if (autoApproveEdits && needsEditCheckpoint) {
         await ensureEditCheckpoint(guard, callId, name)
         autoApprovedCalls.add(callId)
-        emit(callId, name, 'running', `Auto-approved undoable edit; safety checkpoint ${editCheckpointId}. Applying through Velorn Undo.`)
-        notes.push(`Auto-approved under this message's undoable-edit permission. Safety checkpoint: ${editCheckpointId}. Existing Velorn Undo remains available.`)
+        emit(callId, name, 'running', `Auto-approved undoable edit; safety checkpoint ${editCheckpointId}. Applying through Belrog Undo.`)
+        notes.push(`Auto-approved under this message's undoable-edit permission. Safety checkpoint: ${editCheckpointId}. Existing Belrog Undo remains available.`)
       } else {
         const applyWarnings = warningFor(name, args)
         if (needsEditCheckpoint) applyWarnings.push(editCheckpointId
-          ? 'This edit is covered by the in-memory safety checkpoint already created in this message. Existing Velorn Undo remains available.'
-          : 'Approving this edit also creates an in-memory Velorn safety checkpoint before it is applied. Existing Velorn Undo remains available.')
+          ? 'This edit is covered by the in-memory safety checkpoint already created in this message. Existing Belrog Undo remains available.'
+          : 'Approving this edit also creates an in-memory Belrog safety checkpoint before it is applied. Existing Belrog Undo remains available.')
         if (!await approve(name, args, guard, preview, callId, applyWarnings)) return errorResult('The user declined this apply request. The preview did not authorize the edit.')
         if (needsEditCheckpoint) {
           await ensureEditCheckpoint(guard, callId, name)
-          notes.push(`Safety checkpoint: ${editCheckpointId}. Existing Velorn Undo remains available.`)
+          notes.push(`Safety checkpoint: ${editCheckpointId}. Existing Belrog Undo remains available.`)
         }
       }
       applied.add(key)
@@ -707,7 +707,7 @@ async function createAgentToolSession({ getServer, signal, expectedContext, allo
             : confirmedPrequeueRefusal(name, result)
             ? 'Not queued: workflow dependencies need attention. No generation or setup started; inspect the dependency report and repair before retrying.'
             : `${autoApprovedCalls.has(callId) ? 'Auto-approved edit: ' : ''}The tool reported an error. Review its result.`
-          : autoApprovedCalls.has(callId) ? 'Auto-approved undoable edit completed. Velorn Undo and the safety checkpoint remain available.'
+          : autoApprovedCalls.has(callId) ? 'Auto-approved undoable edit completed. Belrog Undo and the safety checkpoint remain available.'
             : trustedApprovedCalls.has(callId) ? 'Completed with Full access.' : 'Tool response received.')
         return result
       } catch (error) {

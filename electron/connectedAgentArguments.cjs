@@ -39,13 +39,13 @@ function validateConnectedAgentArguments(name, args, definition, currentContext,
   }
   for (const field of ['previewToken', 'exportPlanToken']) {
     if (own(args, field) && (typeof args[field] !== 'string' || !args[field].trim())) {
-      add(field, 'token_required', 'Use the exact nonempty token returned by Velorn. Do not construct a token.')
+      add(field, 'token_required', 'Use the exact nonempty token returned by Belrog. Do not construct a token.')
     }
   }
   if (own(args, 'expectedContext')) {
     const expected = args.expectedContext
     const keys = object(currentContext) ? Object.keys(currentContext) : []
-    if (!object(expected)) add('expectedContext', 'object_required', 'expectedContext must be the complete unmodified context object returned by Velorn.')
+    if (!object(expected)) add('expectedContext', 'object_required', 'expectedContext must be the complete unmodified context object returned by Belrog.')
     else if (!keys.length || keys.some(key => !own(expected, key))) {
       add('expectedContext', 'incomplete_context', 'expectedContext is incomplete. For a new host-managed preview, omit this optional field; never supply an empty or reconstructed context.')
     } else if (Object.keys(expected).some(key => !own(currentContext, key))) {
@@ -59,7 +59,7 @@ function validateConnectedAgentArguments(name, args, definition, currentContext,
       if (Array.isArray(current)) return !Array.isArray(value)
       if (object(current)) return !object(value)
       return current === null ? value !== null : typeof value !== typeof current
-    })) add('expectedContext', 'invalid_context_shape', 'expectedContext field types do not match the context returned by Velorn. Do not reconstruct it.')
+    })) add('expectedContext', 'invalid_context_shape', 'expectedContext field types do not match the context returned by Belrog. Do not reconstruct it.')
   }
   const properties = definition?.inputSchema?.properties || {}
   const single = (field, value) => {
@@ -169,10 +169,10 @@ function projectConnectedAgentTool(definition, { trustedFullAccess = false } = {
   const { expectedContext, previewToken, ...properties } = schema.properties
   const required = schema.required?.filter(key => !['expectedContext', 'previewToken'].includes(key))
   return { ...definition,
-    description: `${definition.description || ''} For connected agents, Velorn manages fresh previews, tokens and context checks; supply editing operands and previewOnly, not reconstructed control fields.`,
+    description: `${definition.description || ''} For connected agents, Belrog manages fresh previews, tokens and context checks; supply editing operands and previewOnly, not reconstructed control fields.`,
     inputSchema: { ...schema, properties: { ...properties,
       previewOnly: { ...properties.previewOnly,
-        description: 'True previews only. False asks Velorn to create/check the preview, obtain required approval, and apply it. Preview tokens and context are managed by Velorn.' },
+        description: 'True previews only. False asks Belrog to create/check the preview, obtain required approval, and apply it. Preview tokens and context are managed by Belrog.' },
       ...(definition.name === 'edit_trim' && properties.edge ? { edge: { ...properties.edge,
         description: 'Required for normal and ripple modes: start or end (left/right aliases accepted). Choose the edge explicitly; it is not inferred.' } } : {}),
     }, ...(required ? { required } : {}) } }

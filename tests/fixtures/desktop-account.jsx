@@ -32,7 +32,7 @@ const status=()=>({
     computer:registered() ? {id:'synthetic-computer',name:computerName} : null,
     computerName,
     devices:registered() ? clone(devices) : [],
-    message:mode==='waiting' ? 'Finish signing in in your browser.' : mode==='confirm-account' ? 'Confirm phone access in Velorn.' : mode==='error' ? 'Synthetic phone setup failed. Try again.' : '',
+    message:mode==='waiting' ? 'Finish signing in in your browser.' : mode==='confirm-account' ? 'Confirm phone access in Belrog.' : mode==='error' ? 'Synthetic phone setup failed. Try again.' : '',
   },
 })
 const preference=()=>({success:true,available:mode!=='unavailable',guidedAvailable:mode!=='unavailable',legacyAvailable:false,enabled:status().guided.enabled,status:status()})
@@ -120,7 +120,7 @@ function Fixture() {
   return <I18nProvider><DesktopAccountProvider hasProject={configuration.hasProject} onRequestAgent={()=>{calls.push({method:'request-agent'});setConfig(previous=>({...previous,bridge:true}))}}>
     <div className="h-screen flex flex-col bg-sf-dark-950 text-sf-text-primary">
       <TitleBar projectName={configuration.hasProject ? 'Synthetic project' : undefined} activeTab="editor" showStoryboardTab onTabChange={tab=>calls.push({method:'tab',tab})} onEditorLayoutChange={layout=>calls.push({method:'layout',layout})} exportBusy={configuration.mode==='export'} />
-      <main id="fixture-editor" className="flex-1 p-8"><h1 className="text-2xl font-semibold">{configuration.hasProject ? 'Synthetic editor' : 'Welcome to Velorn'}</h1>
+      <main id="fixture-editor" className="flex-1 p-8"><h1 className="text-2xl font-semibold">{configuration.hasProject ? 'Synthetic editor' : 'Welcome to Belrog'}</h1>
         <p className="mt-3 text-sf-text-muted">Account controls fixture. No real projects or accounts are loaded.</p>
         <button id="outside-button" className="mt-8 rounded border border-sf-dark-600 px-4 py-2" onClick={()=>calls.push({method:'outside'})}>Synthetic editor action</button>
       </main>

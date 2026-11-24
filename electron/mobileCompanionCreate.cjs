@@ -35,7 +35,7 @@ const refuse = (code, error) => ({ success: false, code, error })
 const invalid = () => refuse('CREATE_INVALID', 'That Create request could not be read. Reload the page and try again.')
 // Manager failures already carry wording written for the person; pass only that.
 const failed = result => refuse(typeof result?.code === 'string' ? result.code.slice(0, 64) : 'CREATE_FAILED',
-  typeof result?.error === 'string' && result.error ? result.error.slice(0, 600) : 'Velorn could not finish that. Check Create on the computer before trying again.')
+  typeof result?.error === 'string' && result.error ? result.error.slice(0, 600) : 'Belrog could not finish that. Check Create on the computer before trying again.')
 
 // `shared` (mobileCompanionSharedGpu.cjs) adds free jobs on other creators' GPUs through the same routes: its actions
 // start with `shared-`, it borrows the photo upload, and its results are served by the same opaque media ids.
@@ -151,13 +151,13 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
   const ACTIONS = { catalog: input => exact(input, ['action']) ? catalog() : invalid(), quote, generate, jobs, cancel }
   async function handle(input) {
     if (object(input) && shared?.handles(input.action)) {
-      if (isBusy() && input.action === 'shared-send') return refuse('CREATE_EXPORT_BUSY', 'Velorn is exporting on the computer. Try again when the export has finished.')
+      if (isBusy() && input.action === 'shared-send') return refuse('CREATE_EXPORT_BUSY', 'Belrog is exporting on the computer. Try again when the export has finished.')
       return shared.handle(input, { takePhoto })
     }
     if (!object(input) || !Object.hasOwn(ACTIONS, input.action)) return invalid()
-    if (isBusy() && ['quote', 'generate'].includes(input.action)) return refuse('CREATE_EXPORT_BUSY', 'Velorn is exporting on the computer. Try again when the export has finished.')
+    if (isBusy() && ['quote', 'generate'].includes(input.action)) return refuse('CREATE_EXPORT_BUSY', 'Belrog is exporting on the computer. Try again when the export has finished.')
     try { return await ACTIONS[input.action](input) }
-    catch { return refuse('CREATE_FAILED', 'Velorn could not finish that. Check Create on the computer before trying again.') }
+    catch { return refuse('CREATE_FAILED', 'Belrog could not finish that. Check Create on the computer before trying again.') }
   }
 
   // One photo arrives as a few numbered pieces, in order. A repeated piece is
@@ -187,7 +187,7 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
     return { success: true, received: photo.pieces.length, complete: Boolean(photo.data) }
   }
 
-  // Collects a finished result from Comfy once and keeps it in Velorn's own
+  // Collects a finished result from Comfy once and keeps it in Belrog's own
   // data folder for the phone. The project gets its own copy when the Create
   // tab imports the request; this cache is only what the phone is shown.
   // Files left by an earlier run are not tracked any more; remove them once.

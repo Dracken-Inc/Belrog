@@ -73,7 +73,7 @@ async function downloadResponse(value, { signal, initial = value, redirects = 0 
       signal, maxHeaderSize: 16384, family: address.family, autoSelectFamily: false,
       lookup: (_name, options, cb) => typeof options === 'function' ? options(null, address.address, address.family)
         : options?.all ? cb(null, [address]) : cb(null, address.address, address.family),
-      headers: { Accept: 'application/octet-stream', 'Accept-Encoding': 'identity', 'User-Agent': 'Velorn-Codex-Setup/1.0' },
+      headers: { Accept: 'application/octet-stream', 'Accept-Encoding': 'identity', 'User-Agent': 'Belrog-Codex-Setup/1.0' },
     }, incoming => {
       if (incoming.socket.remoteAddress?.replace(/^::ffff:/, '') !== address.address.replace(/^::ffff:/, '')) {
         incoming.destroy(); reject(fault('BLOCKED_SOURCE', 'The download connection could not be verified.')); return
@@ -246,7 +246,7 @@ function createCodexSetupInstaller({ getHomeDirectory, inspectExisting, confirm,
       payload(args, 'planId'); await checked(owner, 'install')
       const plan = plans.get(args.planId)
       if (!plan || plan.owner !== owner || plan.expires < now()) throw fault('STALE_PLAN', 'Check installation again before continuing.')
-      if (busy || jobs.size >= LIMITS.jobs) throw fault('BUSY', 'Finish the current setup or reopen Velorn before trying again.')
+      if (busy || jobs.size >= LIMITS.jobs) throw fault('BUSY', 'Finish the current setup or reopen Belrog before trying again.')
       busy = true
       try {
         await same(plan.root); await noExisting()

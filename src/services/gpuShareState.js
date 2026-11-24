@@ -1,4 +1,4 @@
-// This computer's Velorn network sharing state, read once and shared by the
+// This computer's Belrog network sharing state, read once and shared by the
 // Network tab and the dot on its button. It is read again whenever the main
 // process says something changed (a job arrived, started, ended).
 const api = () => (typeof window !== 'undefined' ? window.electronAPI?.gpuShare : null)

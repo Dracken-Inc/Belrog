@@ -28,7 +28,7 @@ function publicAccount(value) {
 }
 const digest = value => createHash('sha256').update(value).digest('hex');
 const random = () => randomBytes(32).toString('base64url');
-const unavailable = () => Error('Phone setup is unavailable. Check the connection and try again in Velorn.');
+const unavailable = () => Error('Phone setup is unavailable. Check the connection and try again in Belrog.');
 function serviceOrigin(value = 'https://connect.velorn.ai', allowLocalTest = false) {
   const parsed = new URL(value);
   if (parsed.origin !== value || parsed.username || parsed.password ||
@@ -241,7 +241,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     const approved = await currentContext.confirm(details); assertLive(version); return approved === true;
   }
   function readyMessage() {
-    if (!state.enabled) return 'Signed in to Velorn. Phone sharing is off; Velo access is independent.';
+    if (!state.enabled) return 'Signed in to Belrog. Phone sharing is off; Velo access is independent.';
     if (state.automaticAccountAccess !== true) return 'Choose this computer in My computers on your phone and approve the connection here.';
     return presenceSupported === false ? 'Phone access enabled. This service needs an update for automatic connections; manual phone approval is still available.'
       : 'Phone access enabled. Sign in on your phone with the same account to connect.';
@@ -400,7 +400,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     state.computerName = state.computer?.name || state.computerName || 'My computer';
     state.computer = null; state.setup = null; state.account = null; state.devices = []; state.enabled = false; state.automaticAccountAccess = false; delete state.unregisterPending;
     revokeFundedAuthority();
-    await save(); phase = 'idle'; message = 'Computer disconnected from the Velorn account.';
+    await save(); phase = 'idle'; message = 'Computer disconnected from the Belrog account.';
   }
   function schedule(delay = pollMs) {
     clearTimeout(timer);
@@ -433,7 +433,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
         revokeFundedAuthority();
         for (const record of state.devices) await stopDevice(record.id, 'account-unavailable');
         await save().catch(() => {});
-        phase = 'account-unavailable'; message = 'Account connection is unavailable. Reconnect from Velorn to continue.';
+        phase = 'account-unavailable'; message = 'Account connection is unavailable. Reconnect from Belrog to continue.';
       } else if ([401, 403, 404].includes(error.status) && state?.setup) {
         state.setup = null; state.account = null; await save().catch(() => {});
         phase = 'idle'; message = 'Sign-in expired. Choose Sign in to start again.';
@@ -450,7 +450,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     try {
       try { await load(); } catch (error) {
         if (!includeLegacy) throw error;
-        stateUnavailable = true; phase = 'unavailable'; message = 'Velorn account settings could not be read. Older pairing is unchanged.';
+        stateUnavailable = true; phase = 'unavailable'; message = 'Belrog account settings could not be read. Older pairing is unchanged.';
       }
       assertLive(version);
       if (includeLegacy && !legacyRunning) { await legacy.start(nextScope, value); assertLive(version); legacyRunning = true; }
@@ -485,7 +485,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     const check = () => {
       const ownerCurrent = accountOwner ? accountOwner === accountContext && accountOwner.isCurrent?.() === true : live(version) && state.enabled;
       if (!ownerCurrent || signal?.aborted || authority.signal.aborted || state.unregisterPending || phase === 'account-unavailable' || !computer || state.computer !== computer) {
-        throw Object.assign(new Error('Connect this computer to your Velorn account before using Velo.'), { code: 'LUNA_UNAVAILABLE' });
+        throw Object.assign(new Error('Connect this computer to your Belrog account before using Velo.'), { code: 'LUNA_UNAVAILABLE' });
       }
     };
     check();
@@ -503,7 +503,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
       // exposed through preload/status/IPC, and invalidated by the same lease.
       nativeEngineAuthority: () => {
         check();
-        if (origin !== 'https://connect.velorn.ai') throw Error('The private native engine requires the existing Velorn relay.');
+        if (origin !== 'https://connect.velorn.ai') throw Error('The private native engine requires the existing Belrog relay.');
         return Object.freeze({
           baseUrl: origin + '/account/desktop/luna/native-test/v1',
           computerId: computer.id, token: computer.token,
@@ -513,7 +513,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
       status: ({ signal: childSignal } = {}) => request('status', {}, childSignal),
       respond: (payload, { signal: childSignal } = {}) => request('respond', payload, childSignal) });
   }
-  // Velorn network (GPU sharing): one call to the queue as this registered
+  // Belrog network (GPU sharing): one call to the queue as this registered
   // computer. The route is one of a fixed list and the credential never leaves
   // this module.
   async function gpuNetworkRequest(route, payload = {}, { signal } = {}) {
@@ -521,7 +521,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     const computer = state.computer, authority = fundedAuthority;
     const check = () => {
       if (!computer || state.computer !== computer || state.unregisterPending || phase === 'account-unavailable' || authority.signal.aborted || signal?.aborted) {
-        throw Object.assign(new Error('Sign in to your Velorn account on this computer first.'), { code: 'GPU_NETWORK_SIGNED_OUT', publicMessage: 'Sign in to your Velorn account on this computer first.' });
+        throw Object.assign(new Error('Sign in to your Belrog account on this computer first.'), { code: 'GPU_NETWORK_SIGNED_OUT', publicMessage: 'Sign in to your Belrog account on this computer first.' });
       }
     };
     check();
@@ -531,7 +531,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
     return result;
   }
   return {
-    // Only called by native Velorn network code. No preload/IPC method exposes the credential.
+    // Only called by native Belrog network code. No preload/IPC method exposes the credential.
     gpuNetwork: Object.freeze({ request: gpuNetworkRequest, registered: () => Boolean(state?.computer && !state.unregisterPending), computerName: () => state?.computer?.name || state?.computerName || 'My computer' }),
     // Only called by the native connected-agent broker. No preload/IPC method
     // exposes these operations or the saved credential to browser code.

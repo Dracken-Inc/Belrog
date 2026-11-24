@@ -108,7 +108,7 @@ function BoardSession({ projectName, workspace, onBackToEditor, highlightShotIds
         : <button ref={expandRef} type="button" aria-label={expanded ? 'Collapse board' : 'Expand board'} title={expanded ? 'Collapse board (Esc)' : 'Expand board'} onClick={() => expanded ? collapse() : setExpanded(true)}>{expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>}
     </header>
     <div className="pr-board-scroll" ref={scrollRef} role="region" tabIndex={0} aria-label="References and storyboard">
-      {loading ? <p className="pr-board-notice" role="status">Opening the project…</p> : readError ? <div className="pr-board-notice" role="alert"><h2>This board needs a compatible version of Velorn.</h2><p>{readError}</p><p>Your saved board has not been changed.</p></div> : board && <>
+      {loading ? <p className="pr-board-notice" role="status">Opening the project…</p> : readError ? <div className="pr-board-notice" role="alert"><h2>This board needs a compatible version of Belrog.</h2><p>{readError}</p><p>Your saved board has not been changed.</p></div> : board && <>
         <div className="pr-board-heading"><div><h1>{board.title && board.title !== 'Storyboard' ? board.title : projectName}</h1>
           <p>Talk to your assistant. Use the names and shot labels below to ask for changes.</p></div>
           <div className="pr-board-meta">{board.production?.targetDurationSeconds > 0 && <span>{seconds(board.production.targetDurationSeconds)} planned</span>}{board.shots.length > 0 && <span>{board.shots.length} shots · {seconds(board.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0))} storyboard</span>}{board.songAssetId && <span title={song ? nameOf(song) : board.songAssetId}>{song ? nameOf(song) : 'Song is missing from Assets'}</span>}</div>
@@ -126,7 +126,7 @@ function BoardSession({ projectName, workspace, onBackToEditor, highlightShotIds
             {board.shots.length ? <div className="pr-shot-grid">{presentation.shots.map(shot => <ShotCard key={shot.shotId} shot={shot} board={board} assetsById={assetsById} highlighted={highlightShotIds.includes(shot.shotId)} />)}</div> : <p className="pr-storyboard-empty">Once you're happy with the references, ask your assistant to create the storyboard images.</p>}
           </section>
         </>}
-        <p className="pr-editor-note">When you're ready, ask your assistant to build an animatic on a normal Velorn timeline. Review and edit it in the editor.</p>
+        <p className="pr-editor-note">When you're ready, ask your assistant to build an animatic on a normal Belrog timeline. Review and edit it in the editor.</p>
       </>}
     </div>
   </section>

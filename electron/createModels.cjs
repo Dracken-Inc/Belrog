@@ -1,5 +1,5 @@
 'use strict'
-// The models Velorn's Create tab offers through Comfy Router, in display order.
+// The models Belrog's Create tab offers through Comfy Router, in display order.
 // The data lives in createModels.json so it can be read without running code.
 // Prices here are fallbacks recorded on `pricesAsOf`; Create asks Comfy for a
 // live quote before showing a cost and uses these only when it cannot.

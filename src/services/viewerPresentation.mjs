@@ -63,7 +63,7 @@ export function createViewerPresentation({ getElement, documentTarget = document
       return Promise.resolve()
     }
     if (api && typeof api.setViewerPresentation !== 'function') {
-      notify(null, 'Restart Velorn to enable the updated fullscreen viewer.')
+      notify(null, 'Restart Belrog to enable the updated fullscreen viewer.')
       return Promise.resolve()
     }
     const current = { element, wanted: true, phase: 'entering', nativeTouched: false,

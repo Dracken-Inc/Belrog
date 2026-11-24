@@ -1,4 +1,4 @@
-/* Create tab. Ported from the approved "Velorn Create First Run" prototype. */
+/* Create tab. Ported from the approved "Belrog Create First Run" prototype. */
 .vcreate{--acc:#E6BE7A;flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;padding:24px 20px 40px;
   background:radial-gradient(ellipse 70% 55% at 50% 42%,#1A1A1C 0%,#0B0B0C 70%);color:#F4F4F5;user-select:text}
 .vcreate *{box-sizing:border-box}

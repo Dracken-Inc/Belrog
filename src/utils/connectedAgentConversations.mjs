@@ -7,8 +7,8 @@ import { sanitizeAgentToolReceipts, sanitizeAgentLocalDiagnostics } from './conn
 export const CONNECTED_AGENT_CONVERSATION_LIMITS = Object.freeze({ conversations: 50, storedCharacters: 2 * 1024 * 1024, titleCharacters: 64 })
 const profiles = new WeakMap()
 const session = { strings: new Map(), objects: new WeakMap() }
-const warning = 'These chats are available for this Velorn session, but could not be saved on this device.'
-const protectedWarning = 'Saved chats could not be safely loaded. They have not been replaced; new changes are available only for this Velorn session.'
+const warning = 'These chats are available for this Belrog session, but could not be saved on this device.'
+const protectedWarning = 'Saved chats could not be safely loaded. They have not been replaced; new changes are available only for this Belrog session.'
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value)
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(value)
 const timestamp = value => Number.isSafeInteger(value) && value >= 0

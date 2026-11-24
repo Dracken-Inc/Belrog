@@ -21,7 +21,7 @@
 
 ## v0.4.87 (Belrog 0.4.87) — 2026-11-23
 
-### The upstream base is back: Velorn 0.4.1 merged in, with the Belrog work re-applied on top
+### The upstream base is back: Belrog 0.4.1 merged in, with the Belrog work re-applied on top
 - **Merged upstream 0.4.1 — 336 commits of editor work this fork never had — and replayed six months of Belrog work on top of it.** 376 commits in this release. Wherever code conflicted the upstream version became the base, and Belrog's edits inside those shared files were replayed one work package at a time. Each replay was checked by reading the result, because a blanket `git apply` rollback had already produced two false-greens during the merge. Full audit trail: `MERGE_PLAN.md`.
 - **What Belrog kept.** The one-shot H3 engine (headless chain runner, script→clips compiler, disk-truth watcher, smoke-all), Suno intake (m4a to tiled director script, deterministic and gapless by construction), the final-artifact integrity gate that will not mark a render `verified` unless the audio stream and duration match the song, the Cast/asset-library/director-legend layer including two-person identity mapping, the lyrics-timed shot grid, the AutoChainAudio slot contract with live `object_info` validation, the Whisper caption engine, and the MCP action set (134 actions, a superset of the 128 Belrog had).
 - **What upstream brings.** Six months of editor work we did not have: captions, audio mix, export paths, and the GPU compositor.

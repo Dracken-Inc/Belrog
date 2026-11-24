@@ -60,7 +60,7 @@ export function getClipAgentTiming(clip, { asset = null } = {}) {
     return result(unavailableSource('unavailable', 'invalid-source-timing'))
   }
   // Do not build a large speed integral during every snapshot. Non-linear
-  // clips remain inspectable through Velorn's source/timeline frame tools.
+  // clips remain inspectable through Belrog's source/timeline frame tools.
   if (hasSpeedRamp(clip)) return result(unavailableSource('unsupported', 'active-speed-ramp'))
 
   const options = { useFrameSampling: false }

@@ -2,7 +2,7 @@
 // GPU sharing for the person's paired phone. The phone is a remote control:
 // it picks one of the creators' workflows this account may use, writes a
 // description (and adds a photo where the workflow starts from one), and this
-// computer sends the job to the Velorn network exactly as its own GPU sharing
+// computer sends the job to the Belrog network exactly as its own GPU sharing
 // tab would. Nothing here costs anything: there is no price and no approval.
 //
 // What the phone can do: read the creators' workflows, send ONE job at a time,
@@ -80,7 +80,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
     if (!job?.fromPhone || !JOB_ID.test(job.jobId || '')) return
     let entry = entries.get(job.jobId)
     if (!entry) {
-      // Also a job from before Velorn was restarted: it is picked up from the job on record.
+      // Also a job from before Belrog was restarted: it is picked up from the job on record.
       entry = { jobId: job.jobId, label: text(job.label, 120) || 'A shared workflow', kind: job.kind === 'video' ? 'video' : 'image', maker: text(job.hostName, 80), createdAt: Number.isFinite(job.sentAt) ? job.sentAt : now(), status: 'waiting', text: STAGE.waiting, error: '', mediaId: '', file: null, saved: false }
       entries.set(job.jobId, entry); void trim()
     }
@@ -93,7 +93,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
     } else if (event.type === 'collected') { entry.status = 'done'; entry.text = 'Done'; void keep(entry, event.clip) }
     // The window forgets a finished job only once it is safely in the project.
     else if (event.type === 'forgotten') { if (entry.status === 'done') entry.saved = true; else if (!['failed', 'cancelled'].includes(entry.status)) { entry.status = 'failed'; entry.error = 'It was cleared on the computer before it finished.' } }
-    else if (event.type === 'lost') { if (entry.status !== 'done') { entry.status = 'failed'; entry.error = 'That job is no longer on the Velorn network. Nothing was saved.' } }
+    else if (event.type === 'lost') { if (entry.status !== 'done') { entry.status = 'failed'; entry.error = 'That job is no longer on the Belrog network. Nothing was saved.' } }
   })
 
   const shown = entry => ({ jobId: entry.jobId, label: entry.label, kind: entry.kind, maker: entry.maker, ...(entry.local ? { local: true } : {}), createdAt: entry.createdAt, status: entry.status,
@@ -165,7 +165,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
   async function catalog() {
     let listed
     // Without the network there is still what this computer offers by itself.
-    try { listed = await jobs.hosts() } catch (error) { const own = await yours(); if (!own.length) return failed(error, 'The Velorn network could not be reached from your computer.'); listed = { hosts: [], emailVerified: true, banned: false } }
+    try { listed = await jobs.hosts() } catch (error) { const own = await yours(); if (!own.length) return failed(error, 'The Belrog network could not be reached from your computer.'); listed = { hosts: [], emailVerified: true, banned: false } }
     offered.clear()
     const cards = []
     for (const host of Array.isArray(listed?.hosts) ? listed.hosts : []) {
@@ -173,7 +173,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
         const cardId = `${host.hostId}.${own.id}`
         if (!CARD.test(cardId)) continue
         if (own.kind === 'audio' || own.shape === 'text-to-music') continue // Not on the phone page yet.
-        const maker = text(host.maker, 40) || 'A Velorn creator'
+        const maker = text(host.maker, 40) || 'A Belrog creator'
         const card = { cardId, name: text(own.name, 60), kind: own.kind === 'video' ? 'video' : 'image', needsImage: own.needsImage === true, shape: own.shape, maker, makerId: host.hostId,
           ready: host.idle === true && !(host.waiting > 0), waiting: Number.isInteger(host.waiting) ? host.waiting : 0, yours: host.sameAccount === true,
           ...(Number.isInteger(host.remainingToday) ? { remainingToday: host.remainingToday } : {}) }
@@ -221,7 +221,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
     if (!exact(input, ['action', 'jobId']) || !JOB_ID.test(input.jobId || '')) return invalid()
     if (running?.jobId === input.jobId) { running.controller.abort(); return { success: true } }
     let now_
-    try { now_ = await jobs.current() } catch (error) { return failed(error, 'No answer from the Velorn network. It may still be running.') }
+    try { now_ = await jobs.current() } catch (error) { return failed(error, 'No answer from the Belrog network. It may still be running.') }
     if (!now_?.job?.fromPhone || now_.job.jobId !== input.jobId) return refuse('SHARED_NOT_RUNNING', 'That job is not running any more.')
     try { await jobs.cancel() } catch (error) { return failed(error, 'It could not be stopped.') }
     return { success: true }
@@ -231,7 +231,7 @@ function createPhoneSharedGpu({ jobs, cacheDir, now = Date.now, local = null, on
   async function handle(input, context) {
     if (!object(input) || !Object.hasOwn(ACTIONS, input.action)) return invalid()
     try { return await ACTIONS[input.action](input, context) }
-    catch { return refuse('SHARED_FAILED', 'Velorn could not finish that. Check GPU sharing on the computer before trying again.') }
+    catch { return refuse('SHARED_FAILED', 'Belrog could not finish that. Check GPU sharing on the computer before trying again.') }
   }
 
   async function open(mediaId) {
@@ -260,7 +260,7 @@ const LOCAL_CHANNELS = ['phone-local:pending', 'phone-local:take', 'phone-local:
 function registerPhoneLocalIpc({ ipcMain, getMainWindow, getShared }) {
   const allowed = event => { const window = getMainWindow(); return Boolean(window && !window.isDestroyed() && event?.sender === window.webContents && event.senderFrame === window.webContents.mainFrame) }
   const handle = (channel, action) => ipcMain.handle(channel, async (event, payload) => {
-    if (!allowed(event)) return { success: false, error: 'Open Velorn\'s main window.' }
+    if (!allowed(event)) return { success: false, error: 'Open Belrog\'s main window.' }
     const results = getShared()?.localResults, jobId = object(payload) ? payload.jobId : undefined
     if (!results || (channel !== 'phone-local:pending' && !JOB_ID.test(jobId || ''))) return { success: false, error: 'There is nothing to save.' }
     try { return await action(results, jobId) } catch { return { success: false, error: 'That result could not be read.' } }

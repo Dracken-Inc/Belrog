@@ -23,7 +23,7 @@ function answer(request, { status = 200, headers = {}, chunks = [] } = {}) {
 }
 
 test('a result is read even when the server sends a header no browser fetch accepts', async () => {
-  // The header that hung Velorn on 2026-11-19: a value with characters above 255.
+  // The header that hung Belrog on 2026-11-19: a value with characters above 255.
   const net = fakeNet(), fetchResult = createResultFetch(net)
   const pending = fetchResult('https://maker.example.com/clip.mp4?sig=1', { method: 'GET', redirect: 'manual' })
   const request = net.requests[0]

@@ -1,4 +1,4 @@
-// Asks Velo (Velorn's built-in agent) to write a director script from the
+// Asks Velo (Belrog's built-in agent) to write a director script from the
 // music video brief: one quiet request, no tools, nothing added to the chat.
 //
 // It goes through the same native connection as the chat panel
@@ -151,7 +151,7 @@ export async function writeScriptWithVelo({ api, brief, onText, signal, makeId =
     if (signal?.aborted) return stopped()
     if (!result?.success) return { success: false, code: result?.code || 'FAILED', error: describeVeloFailure(result) }
     text = cleanScriptAnswer(result.text)
-    if (countScriptShots(text) === 0) return { success: false, code: 'BAD_FORMAT', error: 'Velo answered, but not with a script Velorn can read. Try again, or use your own AI below.' }
+    if (countScriptShots(text) === 0) return { success: false, code: 'BAD_FORMAT', error: 'Velo answered, but not with a script Belrog can read. Try again, or use your own AI below.' }
   }
   return { success: true, text, shots: countScriptShots(text) }
 }

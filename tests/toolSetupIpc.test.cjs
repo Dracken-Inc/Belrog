@@ -6,7 +6,7 @@ const { EventEmitter } = require('node:events')
 const { createToolSetupController, CHANNELS, CHANGED } = require('../electron/toolSetupIpc.cjs')
 
 const defer = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
-const destination = '/fixture-downloads/Velorn setup/fixture-installer.dmg'
+const destination = '/fixture-downloads/Belrog setup/fixture-installer.dmg'
 const sourceUrl = 'https://official.example.test/download/fixture-installer.dmg'
 function fixture(options = {}) {
   const handlers = new Map(), calls = [], approvals = [], opened = [], effects = [], cancelledOwners = [], guards = [], sent = []

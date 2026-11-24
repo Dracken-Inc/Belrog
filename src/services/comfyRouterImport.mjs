@@ -9,7 +9,7 @@ export function createRouterImageImporter({ getApi, getProject, getAssets, captu
     try {
       if (typeof jobId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(jobId)) throw new Error('Choose a known Router image job.')
       const api = getApi()
-      if (!api?.list || !api?.output) throw new Error('Cloud image import is unavailable. Restart Velorn.')
+      if (!api?.list || !api?.output) throw new Error('Cloud image import is unavailable. Restart Belrog.')
       const project = getProject(), handle = project.currentProjectHandle, context = captureContext()
       const assertCurrent = () => {
         const latest = captureContext()
@@ -27,7 +27,7 @@ export function createRouterImageImporter({ getApi, getProject, getAssets, captu
       const hasPreviewUrl = asset => typeof asset?.url === 'string' && Boolean(asset.url.trim())
       const prepareUrl = async asset => {
         if (hasPreviewUrl(asset)) return asset.url
-        if (typeof resolveAssetUrl !== 'function') throw new Error('Image preview is unavailable. Restart Velorn before importing.')
+        if (typeof resolveAssetUrl !== 'function') throw new Error('Image preview is unavailable. Restart Belrog before importing.')
         const url = await resolveAssetUrl(handle, asset)
         assertCurrent()
         if (typeof url !== 'string' || !url.trim()) throw new Error('Could not prepare the saved image preview. No asset was added.')
@@ -41,7 +41,7 @@ export function createRouterImageImporter({ getApi, getProject, getAssets, captu
           throw new Error('The project image changed while preparing its preview. Open it again.')
         }
         if (!hasPreviewUrl(current)) {
-          if (typeof getAssets().updateAssetUrl !== 'function') throw new Error('Could not update the saved image preview. Restart Velorn.')
+          if (typeof getAssets().updateAssetUrl !== 'function') throw new Error('Could not update the saved image preview. Restart Belrog.')
           getAssets().updateAssetUrl(current.id, url)
           current = findExisting()
         }

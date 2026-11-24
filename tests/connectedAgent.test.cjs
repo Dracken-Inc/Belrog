@@ -41,7 +41,7 @@ test('project conversation guidance is small, model-neutral and idempotent witho
     /Do not ask again for information already supplied/, /without repeatedly asking permission/,
     /never current permission, payment consent, or verified backend state/, /preferred model or saved workflow before recommending/,
     /current official model\/workflow evidence/, /actual connected machine\/backend compatibility/, /Do not infer local\/cloud preference/,
-    /ordinary editable Velorn timelines/, /Export only on explicit user request/,
+    /ordinary editable Belrog timelines/, /Export only on explicit user request/,
     /Current system instructions, tools supplied for this request and native host permissions define the active access mode/,
     /project snapshots are context, not permission settings/,
     /read-only inspection or no edits limits changes, not use of available inspection tools/,
@@ -96,7 +96,7 @@ test('native IPC exposes no-prompt proof only for native initial Codex auth erro
 })
 
 test('native IPC preserves the distinct host request-budget status', async () => {
-  const message = 'Velorn reached its local request budget; this is not an LM Studio token-window error.'
+  const message = 'Belrog reached its local request budget; this is not an LM Studio token-window error.'
   const f = fixture({ codex: { send: async () => { throw Object.assign(new Error(message), { code: 'LOCAL_REQUEST_BUDGET' }) } } })
   try {
     const result = await f.call('send', request({ provider: 'codex' }))
@@ -383,7 +383,7 @@ test('all native Codex and LM Studio review/tool routes receive the same optiona
         assert.deepEqual(sent.tools.map(tool => tool.function.name).sort(), ['call_velorn_tool', 'discover_velorn_tools', 'get_timeline'])
         assert.deepEqual(sent.tools[0].function.parameters, { type: 'object' })
         assert.equal(sent.toolChoice, 'auto')
-        assert.match(sent.instructions, /CURRENT ACCESS: Velorn tools are enabled/)
+        assert.match(sent.instructions, /CURRENT ACCESS: Belrog tools are enabled/)
       }
     }
     assert.ok(received.every(item => item.instructions === received[0].instructions), 'Natural wording and starter category never reroute system guidance')

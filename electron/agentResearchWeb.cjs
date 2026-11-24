@@ -146,7 +146,7 @@ function createPublicWebClient({ lookup = dns.lookup, request = https.request, t
               family: selected.family, autoSelectFamily: false, maxHeaderSize: 16384,
               lookup: (_name, settings, callback) => typeof settings === 'function' ? settings(null, selected.address, selected.family)
                 : settings?.all ? callback(null, [selected]) : callback(null, selected.address, selected.family),
-              headers: { Host: url.host, 'User-Agent': 'Velorn-Public-Research/1.0', Accept: '*/*', 'Accept-Encoding': 'identity' },
+              headers: { Host: url.host, 'User-Agent': 'Belrog-Public-Research/1.0', Accept: '*/*', 'Accept-Encoding': 'identity' },
             }, incoming => {
               activeResponse = incoming
               incoming.on('error', () => {}) // A cancellation may precede iteration.

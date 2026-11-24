@@ -30,7 +30,7 @@ export default function CreateKeySetting() {
         <p className="text-[10px] text-sf-text-muted">
           {!held ? 'No key is held. Create asks for one the first time you generate.'
             : status.remembered ? 'A key is remembered on this computer, encrypted by the system password store.'
-              : 'A key is held until Velorn closes. This computer has no protected password store to remember it.'}
+              : 'A key is held until Belrog closes. This computer has no protected password store to remember it.'}
           {message ? ` ${message}` : ''}
         </p>
       </div>

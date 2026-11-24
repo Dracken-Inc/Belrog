@@ -19,7 +19,7 @@ const TOOLS = Object.freeze([
     inputSchema: schema({ url: { type: 'string', maxLength: 4096 }, filename: { type: 'string', maxLength: 240 }, targetSubdir: { type: 'string', maxLength: 100 },
       maxBytes: { type: 'integer', minimum: 1, maximum: 68719476736, description: 'Explicit upper bound in bytes (maximum 64 GiB), shown for approval.' },
       expectedSha256: { type: 'string', pattern: '^[a-fA-F0-9]{64}$' }, previewToken: { type: 'string' }, previewOnly: { type: 'boolean', default: true } }, ['url', 'filename', 'targetSubdir', 'maxBytes']) },
-  { name: TOOL_NAMES.status, description: 'Inspect model-download progress and confirmed completion/error for this project in this Velorn session. Does not import, load or execute a model. Jobs from unrelated projects are not exposed.',
+  { name: TOOL_NAMES.status, description: 'Inspect model-download progress and confirmed completion/error for this project in this Belrog session. Does not import, load or execute a model. Jobs from unrelated projects are not exposed.',
     inputSchema: schema({ jobId: { type: 'string', maxLength: 120 } }) },
   { name: TOOL_NAMES.cancel, description: 'Cancel one approved model download in this project and clean up its own incomplete file. Completed files are never deleted. This action asks for host approval.',
     inputSchema: schema({ jobId: { type: 'string', maxLength: 120 } }, ['jobId']) },
@@ -44,8 +44,8 @@ function createResearchAccess({ getComfyRoot, reader = createResearchReader(), d
   })
   let disposed = false
   function catalog(server) {
-    if (!server || !Array.isArray(server.tools)) throw new Error('The Velorn tool catalog is unavailable.')
-    if (server.tools.some(tool => NAMES.has(tool.name))) throw new Error('A research tool name conflicts with the Velorn catalog.')
+    if (!server || !Array.isArray(server.tools)) throw new Error('The Belrog tool catalog is unavailable.')
+    if (server.tools.some(tool => NAMES.has(tool.name))) throw new Error('A research tool name conflicts with the Belrog catalog.')
     return { tools: [...server.tools, ...TOOLS] }
   }
   async function execute(name, args, guard, signal) {

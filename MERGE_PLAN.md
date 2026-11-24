@@ -1,11 +1,11 @@
-# Belrog ← Velorn Merge Plan (merge-velorn branch)
+# Belrog ← Belrog Merge Plan (merge-velorn branch)
 
 Date: 2026-11-22 · Prepared mid-merge, branch `merge-velorn` in `/home/henlafon/belrog-src`
 `main` is untouched and green (28/28 tests, pushed to `1a13ef9`).
 
 ## 1. Objective
 
-Take the upstream Velorn codebase (what Belrog was before the rename/scrub) up to its
+Take the upstream Belrog codebase (what Belrog was before the rename/scrub) up to its
 current root — 336 commits of editor work we never had — and re-apply everything Belrog
 built since the May fork point, so the merged product:
 
@@ -13,7 +13,7 @@ built since the May fork point, so the merged product:
 2. Gains upstream's editor improvements (captions, audio mix, export paths, GPU compositor).
 3. Builds, passes the full test suite, and stays local-mode: no account service,
    no spending gates, no cloud router. Our desktop app talks to local ComfyUI only.
-4. Never says "Velorn"/"ComfyStudioPro" anywhere in UI strings.
+4. Never says "Belrog"/"ComfyStudioPro" anywhere in UI strings.
 
 Definition of done: merge committed on `merge-velorn`, `npm run build` exit 0,
 `npm test` fully green, branding grep clean, then (separate approval) GPU smoke.

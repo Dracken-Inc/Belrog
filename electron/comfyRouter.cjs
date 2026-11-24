@@ -127,7 +127,7 @@ function resultLink(format, result) {
   if (format === 'pika-music') return result.status === 'completed' && object(result.output) && result.output.media_type === 'audio' && object(result.output.audio) ? result.output.audio.url : null
   return null
 }
-// A light check that bytes are a sound file of a kind Velorn can play: MP3, WAV, Ogg, FLAC or M4A.
+// A light check that bytes are a sound file of a kind Belrog can play: MP3, WAV, Ogg, FLAC or M4A.
 function audioHeader(data) {
   if (!Buffer.isBuffer(data) || data.length < 128) return null
   const tag = data.toString('latin1', 0, 4)
@@ -193,7 +193,7 @@ function diagnosticMessage(diagnostics) {
   if (status === 401) message = 'Comfy Router rejected the credential. Enter a valid Comfy key in the private field.'
   else if (type === 'not_enabled') message = 'Queued Router generation is not enabled for this key or model. Check that the key belongs to a Comfy workspace and that the model supports queued requests.'
   else if (type === 'content_policy_violation') message = 'The provider reported a content-policy rejection. Review the prompt before another generation attempt.'
-  else if (type === 'insufficient_credits' || status === 402) message = 'Comfy reports insufficient workspace credits. Check the balance of the workspace tied to this key; Velorn did not purchase credits.'
+  else if (type === 'insufficient_credits' || status === 402) message = 'Comfy reports insufficient workspace credits. Check the balance of the workspace tied to this key; Belrog did not purchase credits.'
   else if (status === 403) message = 'Comfy denied access to this operation. Check the key’s workspace and model permissions; a catalog connection check does not verify generation access.'
   else if (type === 'model_not_found') message = 'Comfy could not find the requested model. Check its current availability before another generation attempt.'
   else if (status === 409) message = 'Comfy reported a request conflict. Inspect the existing request before trying again; a new submission could be billed separately.'
@@ -209,7 +209,7 @@ const stoppedBeforeSubmission = job => job.status === 'CANCELLED' && job.errorTy
 const NOT_SUBMITTED_MESSAGE = 'This request was stopped before submission. No generation request was sent, and there is no provider job to refresh.'
 function submissionErrorMessage(job) {
   if (validDiagnostics(job.diagnostics)) return diagnosticMessage(job.diagnostics)
-  return 'Comfy rejected this earlier submission before returning a generation job ID. The earlier Velorn version did not retain the detailed rejection reason. There is no accepted job to refresh; no retry was made.'
+  return 'Comfy rejected this earlier submission before returning a generation job ID. The earlier Belrog version did not retain the detailed rejection reason. There is no accepted job to refresh; no retry was made.'
 }
 
 // Bound declared pixel allocation BEFORE a codec sees untrusted compressed
@@ -291,7 +291,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
   const background = new Set()
   const resultFile = job => path.join(storageDir, `result-${job.id}.audio`)
   // Which requests were started from the paired phone. Kept beside the job
-  // record, not inside it, so an older Velorn sharing this data folder can still
+  // record, not inside it, so an older Belrog sharing this data folder can still
   // read the record. Losing this file only means those results wait for the
   // Create tab's own pick-up instead of being saved to the project by themselves.
   const phoneFile = path.join(storageDir, 'comfy-router-phone-jobs.json')
@@ -329,7 +329,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     finally { clearTimeout(timer) }
     if (!object(value) || typeof value.session !== 'string' || !value.session || value.session.length > 512
       || !(value.projectKey == null || typeof value.projectKey === 'string' && value.projectKey.length <= 8192)
-      || projectRequired && !value.projectKey) throw fault('COMFY_ROUTER_PROJECT_REQUIRED', 'Open or save a Velorn project before generating an image.')
+      || projectRequired && !value.projectKey) throw fault('COMFY_ROUTER_PROJECT_REQUIRED', 'Open or save a Belrog project before generating an image.')
     return { session: value.session, projectKey: value.projectKey || null }
   }
   async function check(op, projectRequired = true) {
@@ -459,7 +459,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     } finally { try { await reader.cancel() } catch {} }
   }
   async function request(op, url, { method = 'GET', key = credential, body, idempotency, resultBody = false } = {}) {
-    if (typeof fetchImpl !== 'function') throw fault('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router transport is unavailable. Restart Velorn.')
+    if (typeof fetchImpl !== 'function') throw fault('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router transport is unavailable. Restart Belrog.')
     await check(op, Boolean(op.context.projectKey))
     const timer = setTimeout(() => op.controller.abort('timeout'), timeoutMs)
     try {
@@ -504,7 +504,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
       summary: remembered ? 'A Comfy Router key is remembered on this computer, encrypted by the system password store. Workspace access, credits and generation have not been verified.'
         : credential ? 'Comfy Router accepted this session key for model access. Workspace access, credits and generation have not been verified.'
         : canRemember() ? 'Connect a Comfy Router key privately. It will be remembered on this computer, encrypted by the system password store.'
-        : 'Connect a Comfy Router key privately. It is kept only for this Velorn session.' }
+        : 'Connect a Comfy Router key privately. It is kept only for this Belrog session.' }
   }, false) }
   // The Create list for the screen: names, choices and recorded prices. No key,
   // project or network is needed to read it.
@@ -710,7 +710,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     })
     for (const [id, plan] of plans) if (now() - plan.createdAt > LIMITS.planMs) plans.delete(id)
     if (plans.size >= LIMITS.plans) throw fault('COMFY_ROUTER_PLAN_LIMIT', 'Too many recent previews. Wait for an older preview to expire (previews last 10 minutes), then create another. Existing jobs remain recorded.')
-    // Priced from Velorn's recorded price for each picture: asking Comfy would
+    // Priced from Belrog's recorded price for each picture: asking Comfy would
     // mean one question per picture, and a request with pictures is never quoted live.
     const count = items.length
     let total = 0, known = true, asOf = null, basis = null
@@ -822,7 +822,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
     if (jobs.size + count > LIMITS.jobs) throw fault('COMFY_ROUTER_LEDGER_FULL', 'The Router job record is full. No job was submitted.')
     if ([...jobs.values()].some(job => job.projectKey === op.context.projectKey && job.credentialFingerprint === credentialId && job.status === 'UNCERTAIN' && !job.providerJobId
       && !(syncModel(job) && now() - job.updatedAt > SYNC_SETTLED_MS))) {
-      throw fault('COMFY_ROUTER_UNCERTAIN', 'An earlier submission has no confirmed provider identifier. Inspect your Comfy account before starting another image; Velorn will not retry or risk a duplicate charge.')
+      throw fault('COMFY_ROUTER_UNCERTAIN', 'An earlier submission has no confirmed provider identifier. Inspect your Comfy account before starting another image; Belrog will not retry or risk a duplicate charge.')
     }
     busySubmit = true
     let job, dispatched = false
@@ -831,8 +831,8 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
       if (await policy(op) !== 'ask-cloud') throw fault('COMFY_ROUTER_LOCAL_ONLY', 'Local only blocks this paid cloud image. Enable Ask before cloud in Generation spending settings first.')
       if (remote && !buttonApproved && !phoneConfirmed) {
         if (phoneConfirmable) throw fault('COMFY_ROUTER_CONFIRM_REQUIRED', 'Confirm the price on the phone before this request is sent. No job was submitted.')
-        throw fault('COMFY_ROUTER_APPROVAL_UNAVAILABLE', ceiling === null ? 'This request has no set price, so it has to be started in Velorn on the computer. No job was submitted.'
-          : `This request is priced above the $${PHONE_CONFIRM_MAX_USD} that can be approved from the phone. Start it in Velorn on the computer. No job was submitted.`)
+        throw fault('COMFY_ROUTER_APPROVAL_UNAVAILABLE', ceiling === null ? 'This request has no set price, so it has to be started in Belrog on the computer. No job was submitted.'
+          : `This request is priced above the $${PHONE_CONFIRM_MAX_USD} that can be approved from the phone. Start it in Belrog on the computer. No job was submitted.`)
       }
       if (!buttonApproved && !phoneConfirmed) {
         if (typeof confirmSpend !== 'function') throw fault('COMFY_ROUTER_APPROVAL_UNAVAILABLE', 'Native spending confirmation is unavailable. No job was submitted.')
@@ -949,7 +949,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
   // sent: the link is already signed. Redirects are followed, each one checked
   // like the first address; the link is never stored or returned.
   async function download(op, link, maximum) {
-    if (typeof fetchImpl !== 'function') throw fault('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router transport is unavailable. Restart Velorn.')
+    if (typeof fetchImpl !== 'function') throw fault('COMFY_ROUTER_UNAVAILABLE', 'Comfy Router transport is unavailable. Restart Belrog.')
     await check(op)
     const timer = setTimeout(() => op.controller.abort('timeout'), timeoutMs * 4)
     try {
@@ -1029,7 +1029,7 @@ function createComfyRouter({ fetchImpl = globalThis.fetch, storageDir, getContex
       if (ok) declared = { width, height }
       return ok
     })
-    if (!header || !declared) throw fault('COMFY_ROUTER_OUTPUT_UNVERIFIED', 'Comfy returned something that is not a picture Velorn can read. Nothing was imported.')
+    if (!header || !declared) throw fault('COMFY_ROUTER_OUTPUT_UNVERIFIED', 'Comfy returned something that is not a picture Belrog can read. Nothing was imported.')
     const { mimeType, extension } = header
     const size = declared
     return { success: true, jobId: job.id, bytes: new Uint8Array(data), mimeType, width: size.width, height: size.height, filename: `velorn-router-${job.id}.${extension}` }

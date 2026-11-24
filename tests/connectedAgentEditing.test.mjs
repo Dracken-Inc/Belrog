@@ -922,7 +922,7 @@ test('checkpoint preview stays a preview; one edit approval creates a real pre-e
   let f
   f = await harness({ approval: details => {
     assert.equal(details.toolName, 'edit_trim', 'Only the edit asks for approval, not its host-owned prerequisite.')
-    assert.match(details.warnings.join(' '), /also creates an in-memory Velorn safety checkpoint/)
+    assert.match(details.warnings.join(' '), /also creates an in-memory Belrog safety checkpoint/)
     assert.equal(f.requests.filter(item => item.action === 'create_project_checkpoint' && item.payload.previewOnly === false).length, 0,
       'No checkpoint may be applied before approving the edit.')
     assert.deepEqual(timeline.getState().clips, original)
@@ -936,7 +936,7 @@ test('checkpoint preview stays a preview; one edit approval creates a real pre-e
     assert.equal(f.approvals.length, 1)
     const checkpointApplies = f.requests.filter(item => item.action === 'create_project_checkpoint' && item.payload.previewOnly === false)
     assert.equal(checkpointApplies.length, 1)
-    assert.equal(checkpointApplies[0].payload.label, 'Velorn Agent — before approved undoable edits',
+    assert.equal(checkpointApplies[0].payload.label, 'Belrog Agent — before approved undoable edits',
       'The host creates its own checkpoint; it never silently applies the model’s preview-only label.')
     const trimApplies = f.requests.filter(item => item.action === 'edit_trim' && item.payload.previewOnly === false)
     assert.equal(trimApplies.length, 1)

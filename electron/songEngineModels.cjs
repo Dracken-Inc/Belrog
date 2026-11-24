@@ -1,13 +1,13 @@
 'use strict'
 // The two models song listening needs besides the speech model: a vocal
-// separator and an aligner. This file downloads them once into Velorn's data
+// separator and an aligner. This file downloads them once into Belrog's data
 // folder and checks each against a known size and SHA-256, the same way the
 // built-in voice model is fetched (localVoice.cjs).
 //
 // Where they come from:
 //   - Kim_Vocal_2.onnx: the public UVR model collection.
-//   - aligner.onnx and aligner_dict.json: exported for Velorn from torchaudio's
-//     MMS_FA model. They exist nowhere else, so they are served from a Velorn
+//   - aligner.onnx and aligner_dict.json: exported for Belrog from torchaudio's
+//     MMS_FA model. They exist nowhere else, so they are served from a Belrog
 //     release. Until that release is published the download says so plainly.
 //     (Jaime is handling the aligner's licence; see docs/DIRECTOR_DIRECTION.md.)
 const fs = require('node:fs')
@@ -46,7 +46,7 @@ function createSongEngineModels({ dir, fetchImpl = globalThis.fetch, notify = ()
     await fsp.mkdir(dir, { recursive: true })
     let response
     try { response = await fetchImpl(item.url, { redirect: 'follow' }) }
-    catch { throw new Error(`Velorn could not reach the download for ${item.label}. Check your internet connection and try again.`) }
+    catch { throw new Error(`Belrog could not reach the download for ${item.label}. Check your internet connection and try again.`) }
     if (response.status === 404) throw new Error(`The download for ${item.label} is not published yet.`)
     if (!response.ok || !response.body) throw new Error(`The download server answered ${response.status} for ${item.label}.`)
     const hash = createHash('sha256'), out = fs.createWriteStream(part)

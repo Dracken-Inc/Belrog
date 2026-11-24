@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { GENERATED_FOLDERS, generatedFolderId } from '../src/services/generatedFolders.mjs'
-import { createVelornNetworkSaver } from '../src/services/velornNetworkSave.mjs'
+import { createBelrogNetworkSaver } from '../src/services/velornNetworkSave.mjs'
 
 function assets(folders = []) {
   const state = { folders: [...folders], assets: [], made: 0 }
@@ -26,7 +26,7 @@ test('a folder is made the first time, found after that, and only at the top lev
 
 test('a result from a shared GPU is filed in the "GPU sharing" folder', async () => {
   const state = assets()
-  const save = createVelornNetworkSaver({
+  const save = createBelrogNetworkSaver({
     getProject: () => ({ currentProject: { name: 'Beach' }, currentProjectHandle: '/projects/beach' }), getAssets: () => state,
     importFile: async (handle, file) => ({ path: `assets/${file.name}` }), makeFile: (parts, name, options) => ({ name, type: options.type }), resolveAssetUrl: async (handle, asset) => `file://${handle}/${asset.path}` })
   const clip = { jobId: 'job-12345678', filename: 'velorn-network-job-123456.mp4', mimeType: 'video/mp4', bytes: new Uint8Array(2048) }

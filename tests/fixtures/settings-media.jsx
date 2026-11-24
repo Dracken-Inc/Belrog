@@ -137,7 +137,7 @@ function Fixture() {
   }, [])
   return <div className="h-screen bg-sf-dark-950 text-sf-text-primary flex flex-col">
     <header className="h-14 shrink-0 border-b border-sf-dark-700 flex items-center gap-4 px-5">
-      <span>Velorn · isolated Settings and media removal</span>
+      <span>Belrog · isolated Settings and media removal</span>
       <button className="rounded bg-sf-dark-700 px-3 py-1" onClick={() => { setSection(null); setShowSettings(true) }}>Open fixture Settings</button>
     </header>
     <main className="flex min-h-0 flex-1">

@@ -1,6 +1,6 @@
 /**
  * The Sound tab's built-in local voice (Kokoro). It runs in a worker inside
- * Velorn, with no ComfyUI: the main process keeps and checks the model files,
+ * Belrog, with no ComfyUI: the main process keeps and checks the model files,
  * the worker speaks with them, and the finished recording is saved into the
  * project that asked for it. Jobs are reported in the same shape as the other
  * sound services, so the Sound tab follows them the same way.
@@ -17,12 +17,12 @@ let worker = null, nextId = 0
 
 export const localVoiceAvailable = () => typeof api()?.status === 'function'
 export async function localVoiceStatus() {
-  if (!localVoiceAvailable()) return { success: false, error: 'Local voices need the Velorn desktop app.' }
+  if (!localVoiceAvailable()) return { success: false, error: 'Local voices need the Belrog desktop app.' }
   return api().status()
 }
 // Downloads the model files that are missing. `onProgress` gets { doneBytes, totalBytes }.
 export async function installLocalVoice(onProgress) {
-  if (!localVoiceAvailable()) return { success: false, error: 'Local voices need the Velorn desktop app.' }
+  if (!localVoiceAvailable()) return { success: false, error: 'Local voices need the Belrog desktop app.' }
   const stop = typeof onProgress === 'function' ? api().onProgress?.(onProgress) : null
   try { return await api().install() } finally { stop?.() }
 }
@@ -99,7 +99,7 @@ async function run(job, text, voice) {
 
 /** Start one line of speech. Returns at once; follow it with getLocalVoiceJobs. */
 export async function queueLocalVoice({ text, voice, label = 'Voice' } = {}) {
-  if (!localVoiceAvailable()) throw new Error('Local voices need the Velorn desktop app.')
+  if (!localVoiceAvailable()) throw new Error('Local voices need the Belrog desktop app.')
   const projectDir = useProjectStore.getState().currentProjectHandle
   if (!projectDir) throw new Error('Create or open a project first, so the audio can be saved with it.')
   const words = typeof text === 'string' ? text.trim() : ''

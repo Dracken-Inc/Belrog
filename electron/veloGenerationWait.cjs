@@ -3,12 +3,12 @@
 // scoped MCP connection works in old chats too, unlike start-only dynamic tools.
 const { setTimeout: delay } = require('node:timers/promises')
 const tool = Object.freeze({ name: 'wait_for_comfyui_runs', description:
-  'Let Velorn monitor existing generation IDs without AI polling. Queue independent clips first, then wait for the batch. Returns compact completion/import receipts or an actionable failure; other jobs keep running. Never queues, regenerates, cancels or edits anything. Stop only ends the wait. For dependencies, wait for prerequisite IDs before planning dependent jobs. Already completed IDs return immediately.',
+  'Let Belrog monitor existing generation IDs without AI polling. Queue independent clips first, then wait for the batch. Returns compact completion/import receipts or an actionable failure; other jobs keep running. Never queues, regenerates, cancels or edits anything. Stop only ends the wait. For dependencies, wait for prerequisite IDs before planning dependent jobs. Already completed IDs return immediately.',
   inputSchema: { type: 'object', additionalProperties: false, required: ['runIds'], properties: {
     runIds: { type: 'array', minItems: 1, maxItems: 400, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 128 } },
     returnWhen: { type: 'string', enum: ['all', 'any'], description: 'Default all. Use any only when individual completions unlock dependent work.' },
   } } })
-const instructions = '\nGeneration monitoring: after queueing independent generations, call the directly exposed wait_for_comfyui_runs tool once with their actual run IDs. Do not wrap this monitor in functions.exec. If a generation was submitted outside Velorn tracking, first inspect/adopt its existing ComfyUI prompt with track_comfyui_prompt; never submit it again just to obtain a run ID. Do not repeatedly call status/log tools or clock.sleep while jobs are healthy. Velorn tracks progress and imports eligible outputs without model calls. Wait for prerequisite IDs before dependent work. On an error, inspect only the failed job; other jobs continue. Never resubmit completed jobs to recover an import/save error. Return pendingRunIds to the wait tool when useful. Existing completed jobs may be inspected by ID after a restart; do not replay submissions.\n'
+const instructions = '\nGeneration monitoring: after queueing independent generations, call the directly exposed wait_for_comfyui_runs tool once with their actual run IDs. Do not wrap this monitor in functions.exec. If a generation was submitted outside Belrog tracking, first inspect/adopt its existing ComfyUI prompt with track_comfyui_prompt; never submit it again just to obtain a run ID. Do not repeatedly call status/log tools or clock.sleep while jobs are healthy. Belrog tracks progress and imports eligible outputs without model calls. Wait for prerequisite IDs before dependent work. On an error, inspect only the failed job; other jobs continue. Never resubmit completed jobs to recover an import/save error. Return pendingRunIds to the wait tool when useful. Existing completed jobs may be inspected by ID after a restart; do not replay submissions.\n'
 const abort = signal => { if (signal?.aborted) throw Object.assign(new Error('Generation monitoring stopped; queued generations were not cancelled.'), { code: 'CANCELLED' }) }
 async function cancellableRead(read, signal) {
   abort(signal)
@@ -60,7 +60,7 @@ async function waitForGenerationRuns(args, { read, signal, onProgress = () => {}
     const completedRunIds = runs.filter(r => r.status === 'done').map(r => r.id)
     const attentionRunIds = runs.filter(r => r.attention).map(r => r.id)
     const imported = runs.filter(r => r.importState === 'imported').length
-    const progress = `${imported}/${runs.length} clips imported · ${pendingRunIds.length} pending. Velorn is monitoring; no AI polling.`
+    const progress = `${imported}/${runs.length} clips imported · ${pendingRunIds.length} pending. Belrog is monitoring; no AI polling.`
     if (progress !== previous) { try { onProgress(progress) } catch {} previous = progress }
     // Return before the transport's one-day deadline. This ends only the wait;
     // even a multi-day render remains tracked and may be waited on again.

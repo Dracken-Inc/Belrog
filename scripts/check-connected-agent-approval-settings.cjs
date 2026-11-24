@@ -80,7 +80,7 @@ async function main() {
     assert.equal(await accessOptions.evaluate(node => node.parentElement.open), false)
     assert.equal(await section.isVisible(), true, 'Approval choices are visible on the ordinary settings screen')
     assert.equal(await mode('Chat only').count(), 1, 'Chat only is an explicit mode alongside project work')
-    for (const name of ['Work in Velorn', 'Full access']) await mode(name).waitFor()
+    for (const name of ['Work in Belrog', 'Full access']) await mode(name).waitFor()
     assert.equal((await snapshot()).fullAccessGrant, null)
     await back()
     await openApprovalSettings('Enter')
@@ -92,7 +92,7 @@ async function main() {
     assert.equal((await snapshot()).requests.length, 0)
     pass('Chat has no routine permission indicators; Enter on the settings shortcut focuses approvals without losing the draft')
 
-    await openSettings(); await mode('Work in Velorn').click(); await back()
+    await openSettings(); await mode('Work in Belrog').click(); await back()
     assert.equal(await status.innerText(), 'Ask before changes')
     await openApprovalSettings('Space')
     assert.equal(await ask.isChecked(), true); assert.equal(await auto.isEnabled(), true)
@@ -150,7 +150,7 @@ async function main() {
     pass('Workspace changes retain approval mode and draft; a new conversation starts Ask first and the original retains its session choice')
 
     await openSettings(); await provider.selectOption('lmstudio'); await button('Start LM Studio chat').click(); await frame(); await openSettings()
-    await mode('Work in Velorn').click(); await page.getByLabel('Model', { exact: true }).selectOption('__custom__')
+    await mode('Work in Belrog').click(); await page.getByLabel('Model', { exact: true }).selectOption('__custom__')
     await page.getByLabel('Custom model ID', { exact: true }).fill('fixture-local-model')
     await button('Use model').click(); await frame()
     await back(); await openApprovalSettings()
@@ -163,7 +163,7 @@ async function main() {
     assert.equal(await status.innerText(), 'Chat only')
     pass('Both providers use the existing edit policy; changing providers does not transfer live permission authority')
 
-    await openSettings(); await mode('Work in Velorn').click(); await back()
+    await openSettings(); await mode('Work in Belrog').click(); await back()
     await page.evaluate(() => window.connectedAgentTest.setExportBusy(true)); await frame()
     assert.equal(await status.innerText(), 'Ask before changes')
     await openApprovalSettings(); assert.equal(await ask.isDisabled(), true); assert.equal(await auto.isDisabled(), true)
@@ -202,7 +202,7 @@ async function main() {
     await settle(full)
     pass('Full access has a settings-only shortcut and overriding explanation instead of misleading radios; native token and send semantics are unchanged')
 
-    await openSettings(); await mode('Work in Velorn').click(); await back()
+    await openSettings(); await mode('Work in Belrog').click(); await back()
     for (const width of [900, 760]) {
       await page.setViewportSize({ width, height: 800 }); await frame()
       assert.equal(await status.isVisible(), false)

@@ -1,7 +1,7 @@
 /**
  * Sound tab jobs that run as a ComfyUI workflow: a paid partner node (Sonilo)
  * or a local model. ComfyUI does the work; this queues the workflow through
- * Velorn's managed generation path (which asks before any cloud spend and adds
+ * Belrog's managed generation path (which asks before any cloud spend and adds
  * the Comfy account key), watches ComfyUI's history, and saves the finished
  * audio into the project that started it. Modelled on musicGeneration.js.
  */

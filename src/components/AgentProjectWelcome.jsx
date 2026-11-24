@@ -26,8 +26,8 @@ export default function AgentProjectWelcome({ projectName, hasProjectWork = fals
     {notice && <p className="ca-starter-notice" role="status">{notice}</p>}
     <p className="ca-welcome-capabilities">{fullAccessEnabled
       ? provider === 'codex' || computerAccessEnabled ? 'Full computer access is active. Computer actions can run without per-action prompts; stop the response to interrupt.'
-        : 'Full Velorn access is active. Velorn actions can run without per-action prompts; stop the response to interrupt.'
-      : toolsEnabled ? 'We can plan together, then use Velorn’s tools when you’re ready. Your current approval settings still apply.'
-        : 'You can plan and discuss now. Enable Velorn tools in Assistant settings when you want the assistant to make changes.'}</p>
+        : 'Full Belrog access is active. Belrog actions can run without per-action prompts; stop the response to interrupt.'
+      : toolsEnabled ? 'We can plan together, then use Belrog’s tools when you’re ready. Your current approval settings still apply.'
+        : 'You can plan and discuss now. Enable Belrog tools in Assistant settings when you want the assistant to make changes.'}</p>
   </section>
 }

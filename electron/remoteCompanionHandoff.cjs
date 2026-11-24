@@ -4,7 +4,7 @@
 // This module is also staged for the browser; private keys remain in memory.
 (function expose(root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('node:crypto').webcrypto);
-  else root.VelornPhoneHandoff = factory(root.crypto);
+  else root.BelrogPhoneHandoff = factory(root.crypto);
 }(typeof globalThis === 'undefined' ? this : globalThis, function createHandoff(crypto) {
   const ALG = 'RSA-OAEP-256+A256GCM', encoder = new TextEncoder();
   const ID = /^[A-Za-z0-9_-]{16,128}$/, TOKEN = /^[A-Za-z0-9_-]{43}$/;

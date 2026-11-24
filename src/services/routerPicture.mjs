@@ -16,7 +16,7 @@ export function routerPictureProblem(answer) {
 }
 
 // What the picture model is called and what a picture costs, read from
-// Velorn's own list. No key and no network are needed.
+// Belrog's own list. No key and no network are needed.
 export async function routerPictureModel(api) {
   if (!api?.models) return null
   let listed = null
@@ -37,7 +37,7 @@ export async function routerPictureModel(api) {
 
 // Step 1: the price. Sends nothing that costs money.
 export async function quoteRouterPicture({ api, modelId, size, prompt, shape = 'landscape' }) {
-  if (!api?.previewCreate) return { success: false, error: 'Cloud pictures need the Velorn desktop app.' }
+  if (!api?.previewCreate) return { success: false, error: 'Cloud pictures need the Belrog desktop app.' }
   const text = String(prompt || '').trim()
   if (!text) return { success: false, error: 'Describe the picture first.' }
   let plan = null
@@ -66,7 +66,7 @@ export async function collectRouterPicture({ api, jobId, importImage, wait = (ms
     try { answer = await api.refresh({ jobId }) } catch { answer = null }
     if (!answer?.success) {
       if (++misses < maxMisses && !NOT_CONNECTED.has(answer?.code)) continue
-      return { success: false, error: 'Velorn lost touch with Comfy. The picture may still have been made: check your Comfy usage page before trying again, or you could pay twice.' }
+      return { success: false, error: 'Belrog lost touch with Comfy. The picture may still have been made: check your Comfy usage page before trying again, or you could pay twice.' }
     }
     misses = 0
     const job = answer.job

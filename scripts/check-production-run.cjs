@@ -96,7 +96,7 @@ async function main() {
     const shotId = initial.board.shots[0].id
     await edit({ operation: 'update_run', patch: {
       notes: 'Synthetic approval: character and storyboard approved; keep the final editable.',
-      nextAction: 'Review the normal Velorn timeline together; export only if requested.',
+      nextAction: 'Review the normal Belrog timeline together; export only if requested.',
     } })
     await edit({ operation: 'record_attempt', shotId, attemptId: 'synthetic-browser-attempt-1', recipe: {
       model: 'Synthetic model — not submitted', workflow: 'synthetic-workflow-no-generation',

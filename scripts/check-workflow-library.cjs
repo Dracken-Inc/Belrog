@@ -48,7 +48,7 @@ async function main() {
     await page.getByText('No matching workflows', { exact: true }).waitFor()
     await page.getByLabel('Search saved workflows').fill('')
     await details('My older landscape workflow')
-    assert.match(await card('My older landscape workflow').innerText(), /save it to Velorn again/)
+    assert.match(await card('My older landscape workflow').innerText(), /save it to Belrog again/)
     pass('Searches descriptions and names; legacy UI-only saves have honest setup guidance')
     await card('My portrait animation').getByRole('button', { name: 'Use with agent', exact: true }).click()
     await dialog().waitFor({ state: 'hidden' })

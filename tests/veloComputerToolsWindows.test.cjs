@@ -161,7 +161,7 @@ test('when the command itself ends, programs it left behind are ended with it', 
 })
 
 for (const ending of ['a normal exit', 'being killed outright']) {
-  test(`Velorn ending by ${ending} leaves nothing running`, async t => {
+  test(`Belrog ending by ${ending} leaves nothing running`, async t => {
     const f = await fixture(t), pidFile = path.join(f.root, 'pids.txt'), host = path.join(f.root, 'host.js')
     const command = await treeCommand(f, pidFile)
     await fs.writeFile(host, `const { createVeloComputerTools } = require(${JSON.stringify(require.resolve('../electron/veloComputerTools.cjs'))})

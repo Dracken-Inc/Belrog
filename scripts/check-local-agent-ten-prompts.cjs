@@ -40,7 +40,7 @@ const noWrites = 'Do not edit, generate, download, export, or use outside servic
 const CASES = [
   { id: 1, name: 'Timeline picture count and end', prompt: `Use get_timeline to inspect the current sequence. How many picture shots are there, and where does the final picture shot end? ${noWrites} ${jsonInstruction('pictureClipCount (number), timelineEndSeconds (number)')}` },
   { id: 2, name: 'Titles and audio are not picture shots', prompt: `Inspect the timeline and count picture shots, title overlays, and audio clips separately. Do not count a title as a picture shot. Also give the total clip count. ${noWrites} ${jsonInstruction('pictureShots, titleOverlays, audioClips, totalClips (all numbers)')}` },
-  { id: 3, name: 'Use computed timeline and source midpoints', prompt: `Inspect all picture shots with get_timeline. For each, report Velorn's computed timeline midpoint and source midpoint in seconds. Use the computed timing supplied by the tool; do not substitute the entire source video's midpoint. Do not extract files or change anything. ${jsonInstruction('shots (an array of {clipId, timelineMidpointSeconds, sourceMidpointSeconds})')}` },
+  { id: 3, name: 'Use computed timeline and source midpoints', prompt: `Inspect all picture shots with get_timeline. For each, report Belrog's computed timeline midpoint and source midpoint in seconds. Use the computed timing supplied by the tool; do not substitute the entire source video's midpoint. Do not extract files or change anything. ${jsonInstruction('shots (an array of {clipId, timelineMidpointSeconds, sourceMidpointSeconds})')}` },
   { id: 4, name: 'Disabled image sharing is reported honestly', prompt: `Try to show one composited review still at 1 second using inspect_timeline_frame with includeImage:true, maxWidth:960, maxHeight:540. If sharing is disabled, explain that and do not claim to have shown or visually inspected an image. ${noWrites} ${jsonInstruction('timeSeconds, imageShown (boolean), visuallyInspected (boolean), reason (short string)')}` },
   { id: 5, name: 'Asset inventory by media type', prompt: `Use get_assets to list the video assets and audio assets separately, with their exact names and IDs. Also count image assets. Do not import or change anything. ${jsonInstruction('videos (array of {id,name}), audio (array of {id,name}), imageCount (number)')}` },
   { id: 6, name: 'Trim preview without applying', prompt: `Inspect the timeline, then use trim_clips to PREVIEW shortening the last picture shot from 3 seconds to 2 seconds, preserving its start and source-in. Do not apply the preview or change anything. ${jsonInstruction('clipId, beforeDurationSeconds, afterDurationSeconds, applied (boolean)')}` },
@@ -292,8 +292,8 @@ async function runCase(testCase, catalog, overallSignal, fetchImpl = globalThis.
   let result, transportError
   try {
     result = await sendLocalWithTools({ model, endpoint, vision: false, images: [],
-      context: JSON.stringify({ project: 'Isolated in-memory Velorn test project', timelineId: fixture.timeline.id,
-        generationPolicy: 'local-only', host: 'The supplied Velorn tools operate only on this fixture. Their results and approval responses are authoritative.' }),
+      context: JSON.stringify({ project: 'Isolated in-memory Belrog test project', timelineId: fixture.timeline.id,
+        generationPolicy: 'local-only', host: 'The supplied Belrog tools operate only on this fixture. Their results and approval responses are authoritative.' }),
       messages: [{ role: 'user', content: testCase.prompt }],
     }, {
       signal, timeoutMs: budget,

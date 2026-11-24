@@ -7,7 +7,7 @@
 // records what Comfy charged. It stops at the first unclear outcome.
 //
 // It also notes WHERE a queued audio result is stored (host and first folder
-// only, never the signed link), which Velorn needs before it will collect one.
+// only, never the signed link), which Belrog needs before it will collect one.
 //
 // The key is read from a hidden prompt, kept in memory, and never written.
 //   node scripts/check-create-audio.cjs <results.json> <output-folder>
@@ -20,7 +20,7 @@ const { getModel, listVoices } = require('../electron/createModels.cjs')
 
 const [RESULTS, OUT_DIR] = process.argv.slice(2)
 const BUDGET_USD = 0.5
-const SHORT = 'Hello, this is a voice check for Velorn.'
+const SHORT = 'Hello, this is a voice check for Belrog.'
 const LONGER = 'Welcome back. Here is what changed while you were away, and what is ready for you to review.'
 const PLAN = [
   ...listVoices({ unverified: true }).map(voice => ({ id: 'eleven-v4-turbo', choices: { prompt: SHORT, voice: voice.id }, note: `voice ${voice.name}` })),
@@ -131,7 +131,7 @@ async function main() {
       row.chargedCredits = after.chargedCredits ?? row.chargedCredits; row.chargedUsd = after.chargedUsd ?? row.chargedUsd
       let bytes = output.success ? Buffer.from(output.bytes) : null, extension = output.success ? output.filename.split('.').pop() : null
       if (!output.success && lastResultLink) {
-        // Velorn itself would not follow this link yet. Note where it points, and fetch it here so it can be heard.
+        // Belrog itself would not follow this link yet. Note where it points, and fetch it here so it can be heard.
         try {
           const link = new URL(lastResultLink)
           row.resultAddress = { protocol: link.protocol, host: link.hostname, firstFolder: link.pathname.split('/').slice(0, 2).join('/') + '/', queryNames: [...link.searchParams.keys()].sort() }

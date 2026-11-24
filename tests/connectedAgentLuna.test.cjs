@@ -56,7 +56,7 @@ test('Velo desktop full computer access requires new native confirmation and ret
     const result = await f.call('send', request({ context: {}, toolsEnabled: true, vision: true, fullAccess: true, conversationId: 'review-chat', fullAccessToken: grant.token, expectedContext: owner }))
     assert.equal(result.success, true, JSON.stringify(result))
     assert.equal(events[0].trustedFullAccess, true); assert.equal(events[0].allowImages, true)
-    assert.match(deps.requests[0].instructions, /All available Velorn tools run automatically/)
+    assert.match(deps.requests[0].instructions, /All available Belrog tools run automatically/)
     assert.match(deps.requests[0].instructions, /Rendering\/export does not require sending images/)
     assert.match(deps.requests[0].instructions, /native computer commands/)
     assert.match(deps.requests[0].instructions, /run_computer_command/)
@@ -75,7 +75,7 @@ test('Luna inspection is separate from inference, clamps unsafe status data and 
   assert.equal(result.remainingMicroUsd, undefined); assert.equal(result.credential, undefined)
   assert.equal((await inspectLuna({})).status, 'unavailable')
 })
-test('funded and local agents retain identical editor privileges and tool definitions in Work in Velorn', async () => {
+test('funded and local agents retain identical editor privileges and tool definitions in Work in Belrog', async () => {
   const owner = { session: 'fixture', projectKey: 'unsaved-project', revision: 1 }
   const { createComfyStudioMcpServer } = require('../electron/mcpServer.js')
   const server = createComfyStudioMcpServer()

@@ -2,7 +2,7 @@
 
 // Read-only live check. Also runs under ELECTRON_RUN_AS_NODE=1 with the bundled
 // Electron executable, testing the packaged native Node runtime without opening
-// another Velorn window, sharing its profile or touching its project.
+// another Belrog window, sharing its profile or touching its project.
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const { createComfyStudioMcpServer } = require('../electron/mcpServer.js')

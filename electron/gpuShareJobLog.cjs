@@ -1,11 +1,11 @@
 'use strict'
 // What this computer keeps of the jobs other people sent to it through the
-// Velorn network, so its owner can look at a job before reporting it: one small
+// Belrog network, so its owner can look at a job before reporting it: one small
 // folder per job with the picture that came in, the clip that was made and a
 // note of who sent it and what they wrote. Only the last few jobs are kept, and
 // none longer than thirty days. Jobs from the person's own computers are never
 // kept here. Nothing in this folder is sent anywhere, with one exception: when the owner
-// reports a job, that job's result (and the picture that came in) go to Velorn's reviewers.
+// reports a job, that job's result (and the picture that came in) go to Belrog's reviewers.
 const fs = require('node:fs/promises')
 const path = require('node:path')
 

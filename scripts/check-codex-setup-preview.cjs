@@ -44,7 +44,7 @@ async function main(){
     await button('Sign in with ChatGPT').click();await page.getByRole('heading',{name:'Simulated browser sign-in'}).waitFor()
     assert.equal(await location().count(),0,'Location shortcut does not interrupt pending sign-in')
     assert.equal(await page.locator('input[type=password]').count(),0);assert.equal(await frame().locator('input[type=password]').count(),0)
-    await page.getByRole('button',{name:'Back to Velorn'}).click();await button('Cancel sign-in').click()
+    await page.getByRole('button',{name:'Back to Belrog'}).click();await button('Cancel sign-in').click()
     await button('Sign in with ChatGPT').waitFor();await page.getByText('Simulated sign-in cancelled. Your real account was not touched.').waitFor()
     await button('Sign in with ChatGPT').click();await page.getByRole('button',{name:'Complete simulated sign-in'}).click()
     await frame().getByRole('textbox',{name:'Message your agent',exact:true}).waitFor()

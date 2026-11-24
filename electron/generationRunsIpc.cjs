@@ -19,7 +19,7 @@ function registerGenerationRunsIpc({ ipcMain, getMainWindow, getManager }) {
       if (disposed || !window || window.isDestroyed() || !event?.sender || event.sender.isDestroyed()
         || event.sender !== window.webContents || !event.senderFrame
         || event.senderFrame !== window.webContents.mainFrame) {
-        return { success: false, code: 'GENERATION_RUN_UNAUTHORIZED', error: 'Generation runs are available in the main Velorn window.' }
+        return { success: false, code: 'GENERATION_RUN_UNAUTHORIZED', error: 'Generation runs are available in the main Belrog window.' }
       }
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
         return { success: false, code: 'GENERATION_RUN_INVALID_REQUEST', error: 'Provide a generation run request.' }
@@ -28,7 +28,7 @@ function registerGenerationRunsIpc({ ipcMain, getMainWindow, getManager }) {
         const result = await getManager()[method](payload)
         if (disposed || getMainWindow() !== window || window.isDestroyed()
           || event.senderFrame !== window.webContents.mainFrame) {
-          return { success: false, code: 'GENERATION_RUN_CONTEXT_CHANGED', error: 'The Velorn window changed. Inspect the queue before continuing.' }
+          return { success: false, code: 'GENERATION_RUN_CONTEXT_CHANGED', error: 'The Belrog window changed. Inspect the queue before continuing.' }
         }
         return result
       } catch (error) {

@@ -24,7 +24,7 @@ The maintainer verified the initial batch-edit engine. Following feedback, the s
 
 ### Review in Electron
 
-Close the other Velorn development instance first (it owns port 5173). Dependencies are installed in this worktree; the main checkout is unchanged.
+Close the other Belrog development instance first (it owns port 5173). Dependencies are installed in this worktree; the main checkout is unchanged.
 
 This worktree's Electron sandbox helper is now correctly configured (root-owned, mode 4755). Launch with:
 
@@ -33,7 +33,7 @@ cd /home/jaime/Documents/coding_projects/general/velorn-editing-polish
 npm run electron:dev
 ```
 
-The helper needs rechecking after a fresh `npm ci`. No sandbox-disabling flags or system-wide security changes were added. Separate source folders still use Velorn's normal app preferences/project storage, so use a disposable or duplicated project for this review.
+The helper needs rechecking after a fresh `npm ci`. No sandbox-disabling flags or system-wide security changes were added. Separate source folders still use Belrog's normal app preferences/project storage, so use a disposable or duplicated project for this review.
 
 1. Use a disposable/duplicated project, select two visual clips, and adjust the original Scale slider. Linked clips should change both axes; unlinked clips should change only X. Different link settings expose the existing X/Y sliders.
 2. Give two clips different X positions. Position X should show Mixed. Drag it: both should take the same resulting value. Double-click it and type 20: both should become 20. Undo each gesture together.
@@ -63,7 +63,7 @@ These are synthetic-state tests plus a production renderer build and native depe
 
 An isolated browser fixture exercises the real Inspector and timeline store, undo/redo, project serialization, and dirty tracking without opening a user project. Run Vite on port 5184, then `node scripts/check-multi-clip-inspector.cjs` with Playwright available (`PLAYWRIGHT_MODULE_PATH`, `CHROME_PATH`, `VELORN_TEST_URL`, and optional `VELORN_TEST_SCREENSHOT` are supported).
 
-`VELORN_TEST_ELECTRON=1` runs the same suite in an isolated hidden Electron test host with a fresh temporary profile and no preload/IPC/MCP. It never launches Velorn's main process or opens a real project. The temporary test profile is left in the OS temporary directory for normal cleanup. Although the fixture requests a sandboxed BrowserWindow, Playwright's Electron launcher adds a process-level `--no-sandbox` flag; this is test-only automation, not verification of the production sandbox. No normal app launcher or system security settings were changed.
+`VELORN_TEST_ELECTRON=1` runs the same suite in an isolated hidden Electron test host with a fresh temporary profile and no preload/IPC/MCP. It never launches Belrog's main process or opens a real project. The temporary test profile is left in the OS temporary directory for normal cleanup. Although the fixture requests a sandboxed BrowserWindow, Playwright's Electron launcher adds a process-level `--no-sandbox` flag; this is test-only automation, not verification of the production sandbox. No normal app launcher or system security settings were changed.
 
 ## Checkpoint 1B — Multi-clip Color
 
@@ -594,7 +594,7 @@ In the existing `velorn-editing-polish` app, place the playhead near an edit and
 
 - Focused regression suite: **278 tests passed**, including **27 new envelope tests** covering data validation, trim/split offsets, audio-clock scheduling and real FFmpeg sample comparisons. The actual native export mix handler was exercised with synthetic media, including a partial range and static clip/track gain. This is not a complete movie-export test.
 - Frozen Chrome and isolated Electron UI runs: **all 12 groups passed**, plus 300/350px Inspector containment. Coverage includes point editing, no-op/cancel/history behavior, stale and locked targets, linked selection, endpoint accessibility, save/load, trim/split/copy/overwrite preservation, proxy invalidation and real OfflineAudioContext sample parity at 0.5x/1x/2x. Live playback produced nonzero signal through the real media-element/Web Audio graph while the monitor output remained muted. No renderer exceptions were reported.
-- Native test limitation: the isolated Electron host uses an explicit synthetic waveform IPC stand-in. Its existing renderer-side `AudioContext.decodeAudioData` path crashes even in a bare Electron page on valid PCM WAVs at 8/24/44.1kHz, independently of Velorn and the new playback code. Production normally uses native waveform extraction; that IPC was not exercised by this fixture. Chrome tested real waveform decoding, and both hosts tested real playback and envelope scheduling. No runtime/security workaround was added to the application. This is not production preload, packaged-app or sandbox verification.
+- Native test limitation: the isolated Electron host uses an explicit synthetic waveform IPC stand-in. Its existing renderer-side `AudioContext.decodeAudioData` path crashes even in a bare Electron page on valid PCM WAVs at 8/24/44.1kHz, independently of Belrog and the new playback code. Production normally uses native waveform extraction; that IPC was not exercised by this fixture. Chrome tested real waveform decoding, and both hosts tested real playback and envelope scheduling. No runtime/security workaround was added to the application. This is not production preload, packaged-app or sandbox verification.
 - Source Insert/Overwrite (14 groups), Paste Attributes (11 groups) and trim-preview (10 groups) browser regressions passed. Production build, `runtime:verify-native`, Electron/module syntax checks and `git diff --check` passed; existing build warnings remain.
 - No user projects were modified. Main remains clean; this and the preceding accepted checkpoints remain local and uncommitted in the review worktree.
 
@@ -687,7 +687,7 @@ Integration uses the isolated fixture host, with waveform/export/cache IPC stand
 
 ### Try this checkpoint
 
-Use the same `velorn-editing-polish` review folder and a disposable/duplicated project. Do not open a compound-containing project in an older Velorn build; older builds do not support this new clip type.
+Use the same `velorn-editing-polish` review folder and a disposable/duplicated project. Do not open a compound-containing project in an older Belrog build; older builds do not support this new clip type.
 
 1. Select a short video/title/logo section and its linked sound. Right-click, choose **Create Compound Clip…**, and name it.
 2. Play it, move it, and trim its outer edges. Picture, title animation and audio should retain their alignment.
@@ -867,4 +867,4 @@ Start review with a short music bed and separate dialogue track: Analyze, listen
 
 ## Subsequent checkpoints — not started
 
-Checkpoint 6 is approved; stop after the authorized local commit and await further maintainer instructions. Automatic background range rendering remains proposed; OFX hosting remains deferred. Footage logging/Favorites/Rejects is **deferred by request**: Velorn's focus is shorter edits and generated media, without asset-panel clutter. Further nesting, reusable sequence references and broader scheduling/shortcut redesign require discussion before implementation.
+Checkpoint 6 is approved; stop after the authorized local commit and await further maintainer instructions. Automatic background range rendering remains proposed; OFX hosting remains deferred. Footage logging/Favorites/Rejects is **deferred by request**: Belrog's focus is shorter edits and generated media, without asset-panel clutter. Further nesting, reusable sequence references and broader scheduling/shortcut redesign require discussion before implementation.

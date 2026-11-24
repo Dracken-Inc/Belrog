@@ -15,7 +15,7 @@ function registerComfyRouterIpc({ ipcMain, getMainWindow, getManager, openExtern
   const watched = new WeakSet()
   const cleanups = []
   const channels = []
-  const failure = () => ({ success: false, code: 'ROUTER_UNAUTHORIZED', error: 'Open Cloud image in the main Velorn window.' })
+  const failure = () => ({ success: false, code: 'ROUTER_UNAUTHORIZED', error: 'Open Cloud image in the main Belrog window.' })
   for (const method of [...METHODS, 'openGuide']) {
     const channel = `comfy-router:${method}`
     ipcMain.handle(channel, async (event, payload = {}) => {
@@ -48,7 +48,7 @@ function registerComfyRouterIpc({ ipcMain, getMainWindow, getManager, openExtern
           return current() ? { success: true } : failure()
         }
         const result = await getManager()[method](payload)
-        return current() ? result : { success: false, code: 'ROUTER_CONTEXT_CHANGED', error: 'The Velorn window changed. Inspect Cloud image jobs before trying again.' }
+        return current() ? result : { success: false, code: 'ROUTER_CONTEXT_CHANGED', error: 'The Belrog window changed. Inspect Cloud image jobs before trying again.' }
       } catch {
         // Never surface provider exceptions, signed result URLs or credentials.
         return { success: false, code: 'ROUTER_FAILED', error: 'The Router request could not finish. Inspect Cloud image jobs before trying again.' }

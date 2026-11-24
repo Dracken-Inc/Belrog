@@ -155,7 +155,7 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer, refreshOnMount = true }
   const statusLabel = connectedExternally
     ? t('settings.launcher.connectedExternally', {}, 'Connected externally')
     : state.state === 'running' && (state.ownership === 'ours' || state.ownership === 'app')
-      ? t('settings.launcher.connectedManaged', {}, 'Connected · managed by Velorn')
+      ? t('settings.launcher.connectedManaged', {}, 'Connected · managed by Belrog')
       : t(`settings.launcher.states.${stateMeta.key}`)
   const usableCandidates = candidates.filter(candidate => candidate?.path
     && (candidate.launcherMode === 'mac-app' ? isMacPlatform : !candidate.launcherMode || candidate.launcherMode === 'script'))
@@ -232,7 +232,7 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer, refreshOnMount = true }
           <div className="mt-2 flex items-start gap-2 rounded bg-sky-500/10 border border-sky-500/30 px-2 py-1.5 text-[11px] text-sky-200">
             <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
             <div>
-              {t('settings.launcher.externalConnectionHelp', {}, 'ComfyUI is connected. Open its app or terminal to stop or restart it; generation does not require Velorn to manage startup.')}
+              {t('settings.launcher.externalConnectionHelp', {}, 'ComfyUI is connected. Open its app or terminal to stop or restart it; generation does not require Belrog to manage startup.')}
             </div>
           </div>
         )}
@@ -242,7 +242,7 @@ function ComfyLauncherSettingsSection({ onOpenLogViewer, refreshOnMount = true }
 
       <details open={hasLauncherTarget} className="rounded-lg border border-sf-dark-700 bg-sf-dark-900/30 px-4 py-3">
         <summary className="cursor-pointer text-sm font-medium text-sf-text-primary">
-          {t('settings.launcher.optionalStartup', {}, 'Let Velorn start ComfyUI (optional)')}
+          {t('settings.launcher.optionalStartup', {}, 'Let Belrog start ComfyUI (optional)')}
         </summary>
         <p className="mt-2 text-xs text-sf-text-muted">
           {t('settings.launcher.optionalStartupHelp', {}, 'Already open ComfyUI yourself? Keep using it that way. To start it here instead, choose a detected installation or browse for your launch script.')}

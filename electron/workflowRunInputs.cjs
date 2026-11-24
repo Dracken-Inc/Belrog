@@ -40,7 +40,7 @@ async function resolveRunInputs(graph, bindings, { inputOverrides = [], template
   const addAsset = async (target, assetId) => {
     if (assets.length >= 16) throw fail('Use at most 16 reference assets per generation.')
     if (typeof assetId !== 'string' || !assetId) throw fail('Reference media must identify an existing project asset ID.')
-    if (typeof resolveAsset !== 'function') throw fail('Project-reference preparation is unavailable. Use an already uploaded ComfyUI filename in an exact node override, or restart Velorn.')
+    if (typeof resolveAsset !== 'function') throw fail('Project-reference preparation is unavailable. Use an already uploaded ComfyUI filename in an exact node override, or restart Belrog.')
     const resolved = await resolveAsset({ assetId, assetType: target.assetType })
     add({ nodeId: target.nodeId, input: target.input, value: resolved.value })
     assets.push({ ...target, ...resolved, assetId })

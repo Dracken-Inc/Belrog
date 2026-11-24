@@ -110,7 +110,7 @@ test('model reader rejects invalid legacy sizing and recovers from the same reta
         const error = helperReply(body)
         assert.equal(error.isError, true)
         assert.equal(error.error.code, 'LOCAL_TOOL_RESULT_ARGUMENTS')
-        assert.match(error.error.message, /Velorn manages the bounded page size/)
+        assert.match(error.error.message, /Belrog manages the bounded page size/)
         assert.doesNotMatch(error.error.message, /maxChars|page size from|1 to 12000/)
         assert.equal(error.requestedResult.nextUnreadOffset, LIMITS.excerptChars)
         assert.equal(error.requestedResult.resultId, resultId)

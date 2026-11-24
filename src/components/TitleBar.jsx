@@ -4,6 +4,7 @@ import ComfyLauncherChip from './ComfyLauncherChip'
 import CreditsChip from './CreditsChip'
 import GenerationMonitorChip from './GenerationMonitorChip'
 import { DesktopAccountButton } from './DesktopAccount'
+import { SHOW_CREDITS_CHIP, SHOW_CLOUD_ACCOUNT_CHROME } from '../config/belrogProduct'
 import { useI18n } from '../i18n/I18nContext'
 
 const EDITOR_LAYOUTS = [
@@ -196,10 +197,10 @@ function TitleBar({
             ))}
           </div>
         )}
-        <CreditsChip size="xs" className="mr-1" />
+        {SHOW_CREDITS_CHIP && <CreditsChip size="xs" className="mr-1" />}
         <GenerationMonitorChip onOpenGenerate={() => onTabChange?.('generate')} />
         <ComfyLauncherChip />
-        <DesktopAccountButton disabled={exportBusy} />
+        {SHOW_CLOUD_ACCOUNT_CHROME && <DesktopAccountButton disabled={exportBusy} />}
         </div>
         <button
           data-export-allowed="true"

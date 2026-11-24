@@ -37,7 +37,7 @@ module.exports = {
   tools: [
     {
       name: 'get_storyboard',
-      description: 'Read the shared project Storyboard: ordered shot plans, takes, selected takes, metadata-only asset summaries and a read-only presentation matching the visual board. presentation.shots maps stable human labels such as Shot 01 to exact shotId and stillAssetId; use shotId for edits, never array position or label as an ID. Presentation also groups cast, locations and other references. Raw saved board fields remain compatible and reads never materialize legacy labels. The board is a read-only reference page; discuss changes with an external assistant or the separate Velorn Agent dock. Works without Director or Generate open. Never loads images, decodes media, queues generation or changes the timeline. Unsupported schemas are reported, never reset.',
+      description: 'Read the shared project Storyboard: ordered shot plans, takes, selected takes, metadata-only asset summaries and a read-only presentation matching the visual board. presentation.shots maps stable human labels such as Shot 01 to exact shotId and stillAssetId; use shotId for edits, never array position or label as an ID. Presentation also groups cast, locations and other references. Raw saved board fields remain compatible and reads never materialize legacy labels. The board is a read-only reference page; discuss changes with an external assistant or the separate Belrog Agent dock. Works without Director or Generate open. Never loads images, decodes media, queues generation or changes the timeline. Unsupported schemas are reported, never reset.',
       inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     },
     {
@@ -61,14 +61,14 @@ module.exports = {
         productionType,
         targetDurationSeconds: productionFields.targetDurationSeconds,
         songAssetId: { type: ['string', 'null'], maxLength: 160, description: 'Optional update_production-only song assignment, saved atomically with its scalar patch. Existing audio or audio-bearing video asset, or null. update_board instead uses patch.songAssetId.' },
-        member: { type: 'object', properties: memberFields, additionalProperties: false, description: 'add_cast_member fields. Velorn assigns a stable ID; at most 20 cast members.' },
+        member: { type: 'object', properties: memberFields, additionalProperties: false, description: 'add_cast_member fields. Belrog assigns a stable ID; at most 20 cast members.' },
         memberId: { type: 'string', maxLength: 160, description: 'Existing cast member ID for update_cast_member/remove_cast_member.' },
-        location: { type: 'object', properties: locationFields, additionalProperties: false, description: 'add_location fields. Velorn assigns a stable ID; at most 20 locations.' },
+        location: { type: 'object', properties: locationFields, additionalProperties: false, description: 'add_location fields. Belrog assigns a stable ID; at most 20 locations.' },
         locationId: { type: 'string', maxLength: 160, description: 'Existing location ID for update_location/remove_location. Use patch.locationId for shot direction.' },
         stage: { type: 'string', enum: ['concept', 'cast-locations', 'animatic', 'generate', 'refine'] },
         decision: { type: 'string', enum: ['approve', 'reopen'], description: 'Record human creative review only. Approval is rejected when the stage is not ready and never grants execution authorization.' },
         note: { type: 'string', maxLength: 4000, description: 'Optional stage-review note.' },
-        shot: { type: 'object', properties: shotFields, additionalProperties: false, description: 'New shot fields for add_shot. IDs are assigned by Velorn.' },
+        shot: { type: 'object', properties: shotFields, additionalProperties: false, description: 'New shot fields for add_shot. IDs are assigned by Belrog.' },
         afterShotId: { type: ['string', 'null'], description: 'Optional insertion position for add_shot; omit to append.' },
         shotId: { type: 'string', description: 'Exact existing shot ID for shot/take operations. Resolve human-facing Shot 01-style labels through get_storyboard.presentation.shots; never use a label or array position as the ID.' },
         shotIds: { type: 'array', items: { type: 'string', maxLength: 160 }, maxItems: 200, uniqueItems: true, description: 'Complete shot order for reorder_shots; every current shot ID exactly once.' },

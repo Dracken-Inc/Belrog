@@ -93,6 +93,22 @@ jobs:
       - name: Verify audio-to-oneshot intake
         run: npm run test:audio-intake
 
+      # The remote-server tunnel used to die with "Port 8188 is already in use"
+      # on any machine that already runs ComfyUI locally, and a tunnel that
+      # dropped stayed half-open until the app was restarted. These tests drive
+      # the real bind/probe/forward code, so a regression ships as a red build
+      # instead of a creator's dead tunnel.
+      - name: Verify remote SSH tunnel port handling
+        run: npm run test:ssh-tunnel
+
+      # The "Detected from your Director Script / Add to Cast" panel shipped dead
+      # once: an upstream-base swap dropped the props in GenerateWorkspace.jsx and
+      # the panel simply rendered nothing, with no error anywhere. These tests run
+      # the real parser, gap detector, stub builder and Cast store, and check the
+      # compiled props on the music-video element.
+      - name: Verify Cast gap detection
+        run: npm run test:cast-gap-detection
+
       - name: Verify native media helpers
         run: npm run runtime:verify-native
 

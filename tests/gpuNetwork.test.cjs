@@ -1,5 +1,5 @@
 'use strict'
-// The Velorn side of the Velorn network: the content check, the bounded call to
+// The Belrog side of the Belrog network: the content check, the bounded call to
 // the queue, the client's refusals, and the window's send / follow / collect
 // channels. The two real ends are run together in the connection service's own
 // tests; here the queue is pretend.
@@ -25,7 +25,7 @@ test('the content check refuses explicit descriptions, however they are spelled,
   for (const prompt of ['a nude figure', 'N U D E figure', 'A n.u.d.e figure on a beach', 'nak3d person', 'NSFW scene', 'p0rn', 'Two people having sex', 'ṅúde woman'])
     assert.equal(checkPrompt(prompt).code, 'GPU_SHARE_FILTER_EXPLICIT', prompt)
   for (const prompt of ['a naked child', 'sexy teen', 'school girl, s e x y'])
-    assert.deepEqual(checkPrompt(prompt), { ok: false, code: 'GPU_SHARE_FILTER_MINOR', reason: 'This description is not allowed on the Velorn network.' }, prompt)
+    assert.deepEqual(checkPrompt(prompt), { ok: false, code: 'GPU_SHARE_FILTER_MINOR', reason: 'This description is not allowed on the Belrog network.' }, prompt)
   // Revealing clothes or a flirty mood, the level of a music video, are allowed; with a minor they are not.
   for (const prompt of ['A sexy dancer in a bikini on stage', 'A woman in lingerie with a seductive look', 'Kids in swimsuits at the beach'])
     assert.deepEqual(checkPrompt(prompt), { ok: true }, prompt)
@@ -115,7 +115,7 @@ test('a host turns down what its owner did not allow, without running anything',
   const offer = extra => ({ ok: true, hostId: HOST, cancelled: [], job: { jobId: 'job-12345678', workflowId: 'ltx23-i2v', choices: { prompt: 'Waves at dusk' }, image: { mimeType: 'image/png', bytes: 4000, pieces: 1 }, requester: { sameAccount: true }, ...extra } })
   const settle = async c => { for (let i = 0; i < 200 && c.made.hostState().job; i++) await new Promise(resolve => setTimeout(resolve, 5)) }
   for (const [name, extra, settings] of [
-    ['a workflow that is not Velorn\'s', { workflowId: 'someones-own' }, {}],
+    ['a workflow that is not Belrog\'s', { workflowId: 'someones-own' }, {}],
     ['a workflow the owner did not tick', {}, { allowedWorkflows: [] }],
     ['choices outside what the workflow takes', { choices: { prompt: 'Waves', seconds: 600 } }, {}],
     ['an extra instruction smuggled into the choices', { choices: { prompt: 'Waves', workflow: { 1: {} } } }, {}],
@@ -140,7 +140,7 @@ test('a host turns down what its owner did not allow, without running anything',
   assert.deepEqual(fake.calls.at(-1), { route: 'host/finish', payload: { jobId: 'job-12345678', ok: false, error: 'host_failed' } })
   // Signed out: nothing is sent and the panel says why.
   const signedOut = createGpuShareClient({ host: { getSettings: async () => ({ enabled: true, allowedWorkflows: [] }), idle: async () => ({ idle: true, reasons: [] }), status: async () => ({ offering: [] }) }, runner: { run: async () => {} }, getNetwork: () => null })
-  assert.deepEqual(await signedOut.beat().then(state => ({ connected: state.connected, note: state.note })), { connected: false, note: 'Sign in to your Velorn account on this computer first.' })
+  assert.deepEqual(await signedOut.beat().then(state => ({ connected: state.connected, note: state.note })), { connected: false, note: 'Sign in to your Belrog account on this computer first.' })
 })
 
 test('a host keeps the last jobs other people sent, and can report one to the service', async () => {
@@ -181,7 +181,7 @@ test('the host keeps the picture and clip of other people\'s last jobs, lists th
   assert.deepEqual((await fs.readdir(folder)).sort(), ['clip.mp4', 'job.json', 'picture.png'])
   assert.deepEqual(await fs.readFile(path.join(folder, 'picture.png')), png(4000)); assert.deepEqual(await fs.readFile(path.join(folder, 'clip.mp4')), mp4(4000))
   await c.made.report('job-12345678')
-  // A new run of Velorn reads the list back, reported mark included.
+  // A new run of Belrog reads the list back, reported mark included.
   const again = client({ jobLog: createGpuShareJobLog({ dir, keep: 2, now: () => time }) })
   for (let i = 0; i < 100 && !again.made.hostState().recent.length; i++) await new Promise(resolve => setTimeout(resolve, 5))
   assert.deepEqual(again.made.hostState().recent.map(item => [item.jobId, item.from, item.reported, item.hasFiles]), [['job-12345678', 'friend@example.test', true, true]])
@@ -227,7 +227,7 @@ test('the window can send one job at a time, follow it after a restart, and clea
   assert.deepEqual(log[0], ['submit', 'ltx23-i2v', true, 4000])
   assert.equal((await fs.stat(jobPath)).mode & 0o777, 0o600)
   assert.match((await window.call('send', job)).error, /already have a job/)
-  // Velorn restarts: the job is still followed.
+  // Belrog restarts: the job is still followed.
   window.ipc.dispose(); window = open()
   assert.deepEqual((await window.call('current')).state, status)
   assert.equal((await window.call('cancel')).cancelRequested, true)
@@ -281,7 +281,7 @@ test('a picture workflow sends no picture for text to image, runs on a host with
   await assert.rejects(client({ replies: { 'job/status': done, 'job/output': { ok: true, data: mp4(5000).toString('base64') } } }).made.collect('job-12345678'), { code: 'GPU_NETWORK_INVALID' })
 })
 
-test('every route Velorn\'s own code calls is one the transport lets out', async () => {
+test('every route Belrog\'s own code calls is one the transport lets out', async () => {
   // "Report" on the owner's side was refused here, before anything was sent, and read as "could not be reached".
   const source = require('node:fs').readFileSync(require.resolve('../electron/gpuShareClient.cjs'), 'utf8')
   const routes = new Set([...source.matchAll(/\b(?:must|call)\('([a-z]+(?:\/[a-z]+)?)'/g)].map(match => match[1]))

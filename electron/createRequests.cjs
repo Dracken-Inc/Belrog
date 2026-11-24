@@ -106,7 +106,7 @@ const BUILDERS = {
     duration: c.seconds, ...(p && c.pictureUse === 'start' && model.id === 'seedance-2-5' ? {} : { ratio: RATIO[c.shape] }), resolution: c.resolution, watermark: false }),
   'gemini-image': (c, p, _model, more = []) => ({ contents: [{ role: 'user', parts: [...(p ? [p] : more).map(item => ({ inlineData: { mimeType: item.mimeType, data: item.base64 } })), { text: c.prompt }] }],
     generationConfig: { responseModalities: ['IMAGE'], imageConfig: { aspectRatio: RATIO[c.shape], imageSize: c.size } } }),
-  // Same safety choices as Velorn's original Seedream request: one image,
+  // Same safety choices as Belrog's original Seedream request: one image,
   // returned inline, never fetched from a link. Seedream 5.0 Pro and Flash make
   // one image only and refuse the two batch/stream fields 4.0 accepts (seen as
   // invalid_input on real requests, 2026-11-09), so those are sent to 4.0 alone.

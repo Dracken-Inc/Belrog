@@ -10,7 +10,7 @@ const fault = (code, message) => Object.assign(new Error(message), { code })
 const cancelled = () => fault('CANCELLED', 'Codex sign-in was cancelled. Check connection to see the current account status.')
 
 // Only a native, explicitly requested action calls this helper. The official
-// CLI owns browser login and credential storage. Velorn discards subprocess
+// CLI owns browser login and credential storage. Belrog discards subprocess
 // output without forwarding or storing URLs, codes, tokens or diagnostics,
 // and never reads account files.
 async function signInCodex({ executablePath, signal, spawnImpl = spawn, preflightImpl = preflightCodex,

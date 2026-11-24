@@ -7,7 +7,7 @@ import CustomWorkflowLibraryPicker from './CustomWorkflowLibraryPicker'
  * slots). Primary path: pick a saved My Workflows graph — the picker is the
  * card's main content until a workflow is loaded, then the card collapses to
  * a one-line summary. Saving from the ComfyUI tab is the one way in: the
- * older Import JSON and Velorn bridge routes are no longer offered here.
+ * older Import JSON and Belrog bridge routes are no longer offered here.
  */
 // What is missing, in plain words, with the node name for people who want it.
 const NEEDS = {
@@ -22,11 +22,11 @@ function plainProblem(validation) {
   return `This workflow still needs ${missing.map((name) => `${NEEDS[name]} (a node named ${name})`).join(', and ')}. Open it in ComfyUI, add what is missing, and save it again.`
 }
 
-// The names Velorn looks for, and what each one is. The first column is what
+// The names Belrog looks for, and what each one is. The first column is what
 // the person types as the node's title in ComfyUI.
 const GUIDE_ROWS = {
   keyframe: [
-    ['VELORN_PROMPT', 'A plain text box. Velorn writes the description of the shot into it.', true],
+    ['VELORN_PROMPT', 'A plain text box. Belrog writes the description of the shot into it.', true],
     ['VELORN_OUTPUT_IMAGE', 'The Save Image node. Its picture comes back into the shot.', true],
     ['VELORN_REFERENCE_IMAGE_1', 'A Load Image node. Gets the picture of the person in the shot.', false],
     ['VELORN_REFERENCE_IMAGE_2', 'A Load Image node. Gets a second person, if there is one.', false],
@@ -37,7 +37,7 @@ const GUIDE_ROWS = {
   ],
   video: [
     ['VELORN_INPUT_IMAGE', 'A Load Image node. Gets the keyframe the video starts from.', true],
-    ['VELORN_PROMPT', 'A plain text box. Velorn writes the description of the shot into it.', true],
+    ['VELORN_PROMPT', 'A plain text box. Belrog writes the description of the shot into it.', true],
     ['VELORN_OUTPUT_VIDEO', 'The node that saves the video. It comes back into the shot.', true],
     ['VELORN_AUDIO', 'A Load Audio node. Gets the piece of the song for the shot.', false],
     ['VELORN_DURATION', 'A number box. Gets the length of the shot in seconds.', false],
@@ -87,9 +87,9 @@ function SetupGuide({ kind, onOpenStarter }) {
         <li>The text box must give plain text (a String node), not a CLIP Text Encode node.</li>
         <li>A number box is a Primitive Int node, wired into the setting it controls.</li>
         <li>Without a node named VELORN_SEED, every run uses the same seed.</li>
-        <li>Only wire in the width and height if your model takes any size. Velorn sends sizes like 1280 by 720, and some models refuse that (MiniMax H3 needs 704 high).</li>
+        <li>Only wire in the width and height if your model takes any size. Belrog sends sizes like 1280 by 720, and some models refuse that (MiniMax H3 needs 704 high).</li>
         {kind !== 'video' && <li>A picture input a shot does not use is left out for that shot.</li>}
-        <li>A paid model works too. Velorn asks before it spends.</li>
+        <li>A paid model works too. Belrog asks before it spends.</li>
       </ul>
     </div>
   )

@@ -4,15 +4,15 @@ export function localModelSupportPresentation(value) {
   const validProfile = typeof value?.profileId === 'string' && /^[a-zA-Z0-9._-]{1,100}$/.test(value.profileId)
   if (value?.status === 'recommended' && validProfile) return {
     status: 'recommended', label: 'Recommended setup',
-    summary: 'This exact setup matches a reviewed Velorn compatibility profile. Review important edits before delivery.',
+    summary: 'This exact setup matches a reviewed Belrog compatibility profile. Review important edits before delivery.',
   }
   if (value?.status === 'unavailable') return {
     status: 'unavailable', label: 'Setup unavailable',
     summary: 'This setup is not currently available. Check the local server and choose an available model.',
   }
   return {
-    status: 'experimental', label: 'Experimental in Velorn',
-    summary: 'Connected does not mean validated for editing. This setup has not yet matched a reviewed Velorn compatibility profile; you can still use it.',
+    status: 'experimental', label: 'Experimental in Belrog',
+    summary: 'Connected does not mean validated for editing. This setup has not yet matched a reviewed Belrog compatibility profile; you can still use it.',
   }
 }
 

@@ -56,7 +56,7 @@ export default function GuidedComfySetup({ onBack, onSkip, onManual, onCloudSetu
     if (operation.current) return
     setResult(null); setSaved(false); setStep('check')
     void run('check', async current => {
-      if (!api?.optionalSetup?.inspect) throw new Error('Open the latest Velorn desktop app to check this computer. You can still use the editor without ComfyUI.')
+      if (!api?.optionalSetup?.inspect) throw new Error('Open the latest Belrog desktop app to check this computer. You can still use the editor without ComfyUI.')
       const checked = await api.optionalSetup.inspect({ integration: 'comfyui' })
       if (!current()) return
       if (checked?.success !== true || checked.integration !== 'comfyui'
@@ -102,7 +102,7 @@ export default function GuidedComfySetup({ onBack, onSkip, onManual, onCloudSetu
   return <section className="optional-setup guided-setup" aria-labelledby={titleId} aria-busy={Boolean(pending)}>
     <p className="guided-setup-eyebrow">Optional setup · AI generation</p>
     <h2 id={titleId} ref={heading} tabIndex={-1}>{titles[step]}</h2>
-    {step === 'choice' && <><p>You can use Velorn just as an editor. Add generation now, or come back whenever you need it.</p>{choices}</>}
+    {step === 'choice' && <><p>You can use Belrog just as an editor. Add generation now, or come back whenever you need it.</p>{choices}</>}
     {step === 'help' && <>
       <p><strong>Local models</strong> run on your computer. Speed and memory needs depend on the model and your hardware; connecting ComfyUI alone does not confirm they will run.</p>
       <p><strong>Paid API services</strong> run supported generation remotely using your account and credits. Some workflows still need a local ComfyUI runner.</p>
@@ -111,7 +111,7 @@ export default function GuidedComfySetup({ onBack, onSkip, onManual, onCloudSetu
     {step === 'local' && <><p>You don’t need to know whether ComfyUI is installed. We can look for a running local server first.</p><p>This checks local connections only. It won’t install anything, start ComfyUI or change your settings.</p><button type="button" onClick={check}>Check this computer</button></>}
     {step === 'check' && !pending && !error && <button type="button" onClick={check}>Check again</button>}
     {step === 'connections' && <>
-      <p>{result.connections.length === 1 ? 'Connect Velorn to this server?' : 'More than one server responded. Choose the one you want; we won’t guess.'} We’ll test it once more before saving the connection.</p>
+      <p>{result.connections.length === 1 ? 'Connect Belrog to this server?' : 'More than one server responded. Choose the one you want; we won’t guess.'} We’ll test it once more before saving the connection.</p>
       <div className="guided-setup-choices">{result.connections.map(candidate => <button key={candidate.port} type="button" aria-label={`Connect on port ${candidate.port}`} disabled={Boolean(pending)} onClick={() => connect(candidate.port)}>
         <Monitor size={19} aria-hidden="true" /><span><strong>Connect on port {candidate.port}</strong><small>Local ComfyUI · 127.0.0.1:{candidate.port}{candidate.port === result.configuredPort ? ' · Saved connection' : ''}</small></span>
       </button>)}</div>

@@ -3,7 +3,7 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory(require('node:crypto').webcrypto);
   } else {
-    root.VelornRemoteCrypto = factory(root.crypto);
+    root.BelrogRemoteCrypto = factory(root.crypto);
   }
 }(typeof globalThis !== 'undefined' ? globalThis : this, function createApi(crypto) {
   'use strict';

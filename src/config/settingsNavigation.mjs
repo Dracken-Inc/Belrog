@@ -1,6 +1,6 @@
 // Navigation/search metadata only. No preference reads, writes or app actions.
 export const SETTINGS_GROUPS = [
-  { id: 'general', title: 'General', description: 'Make Velorn feel right for you.', pages: ['appearance', 'language', 'notifications'] },
+  { id: 'general', title: 'General', description: 'Make Belrog feel right for you.', pages: ['appearance', 'language', 'notifications'] },
   { id: 'editing', title: 'Editing', description: 'Customize the editor and your keyboard shortcuts.', pages: ['editor', 'hotkeys'] },
   { id: 'media', title: 'Media & Storage', description: 'Manage project storage, imported media and safe removal defaults.', pages: ['storage', 'assets', 'paths'] },
   { id: 'playback', title: 'Playback & Export', description: 'Maintain smooth playback and configure advanced export tools.', pages: ['cache', 'ffmpeg'] },

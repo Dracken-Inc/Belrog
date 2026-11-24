@@ -1,8 +1,8 @@
 // Owner-facing, synthetic browser exercise. The iframe imports the actual
-// Velorn renderer through the existing RAM-only fixture, never Electron.
+// Belrog renderer through the existing RAM-only fixture, never Electron.
 import './codex-setup-preview.css'
 const host=document.getElementById('preview')
-host.innerHTML=`<header><span class="badge">ISOLATED PREVIEW · NOT YOUR INSTALLED APP</span><h1>Try Codex setup</h1><p>Real Velorn screens, simulated installation and sign-in. Your account and chats stay untouched.</p></header><div class="toolbar"><button id="restart">Start from scratch</button><button id="installed">Start with Codex installed</button></div><div class="layout"><aside><section class="note"><h2>Try it as a new user</h2><p>Choose <strong>Codex</strong> in Velorn, then follow its setup buttons.</p><p class="small">No passwords, real downloads, account connections or AI requests. Reloading resets this preview. You can leave your installed Velorn and Codex open.</p></section><section id="step" class="note active" aria-live="polite"></section><p class="small" id="status" role="status">Loading the isolated screens…</p></aside><iframe title="Velorn Codex setup preview" sandbox="allow-scripts allow-same-origin"></iframe></div>`
+host.innerHTML=`<header><span class="badge">ISOLATED PREVIEW · NOT YOUR INSTALLED APP</span><h1>Try Codex setup</h1><p>Real Belrog screens, simulated installation and sign-in. Your account and chats stay untouched.</p></header><div class="toolbar"><button id="restart">Start from scratch</button><button id="installed">Start with Codex installed</button></div><div class="layout"><aside><section class="note"><h2>Try it as a new user</h2><p>Choose <strong>Codex</strong> in Belrog, then follow its setup buttons.</p><p class="small">No passwords, real downloads, account connections or AI requests. Reloading resets this preview. You can leave your installed Belrog and Codex open.</p></section><section id="step" class="note active" aria-live="polite"></section><p class="small" id="status" role="status">Loading the isolated screens…</p></aside><iframe title="Belrog Codex setup preview" sandbox="allow-scripts allow-same-origin"></iframe></div>`
 const frame=host.querySelector('iframe'),step=host.querySelector('#step'),status=host.querySelector('#status')
 let epoch=0
 const show=(title,description,buttons=[])=>{
@@ -45,7 +45,7 @@ frame.addEventListener('load',async()=>{
         ]))
       if(current!==epoch||!approved){step.replaceChildren();return {success:false,cancelled:true}}
       job={jobId:`synthetic-job-${++sequence}`,state:'downloading',started:Date.now(),bytesReceived:0,totalBytes:40000000}
-      show('Simulated download','Watch the progress inside Velorn. You can cancel there. No software is being downloaded.',[
+      show('Simulated download','Watch the progress inside Belrog. You can cancel there. No software is being downloaded.',[
         ['Simulate download failure',()=>{job.state='failed';job.error='The simulated download was interrupted. Try again.';step.replaceChildren()}]
       ])
       return {success:true,...job}
@@ -67,7 +67,7 @@ frame.addEventListener('load',async()=>{
   api.openExternalUrl=async url=>{
     const result=await guide(url) // existing fixed-URL stub; never opens a browser
     if(current===epoch)show('Simulated installation guide','In the real app, this opens the Codex CLI installation guide in your browser. Nothing is downloaded here.',[
-      ['Simulate installation complete',()=>{test.setCodexSetupStatus('login-required');step.replaceChildren();status.textContent='Simulated Codex is installed. Return to Velorn and choose Check again.'}],
+      ['Simulate installation complete',()=>{test.setCodexSetupStatus('login-required');step.replaceChildren();status.textContent='Simulated Codex is installed. Return to Belrog and choose Check again.'}],
       ['Back without installing',()=>{step.replaceChildren();status.textContent='Nothing installed. You can check again or leave setup.'}]
     ])
     return result
@@ -84,7 +84,7 @@ frame.addEventListener('load',async()=>{
     ])
     const result=await pending
     test.setHoldExecutable('choose',false)
-    if(current===epoch){step.replaceChildren();status.textContent=result.cancelled?'Location selection cancelled. Your existing setup is unchanged.':'Simulated Codex selected. Velorn will check its connection; nothing was installed.'}
+    if(current===epoch){step.replaceChildren();status.textContent=result.cancelled?'Location selection cancelled. Your existing setup is unchanged.':'Simulated Codex selected. Belrog will check its connection; nothing was installed.'}
     return result
   }
   api.connectedAgent.codexLogin=async options=>{
@@ -92,14 +92,14 @@ frame.addEventListener('load',async()=>{
     const pending=login(options)
     if(current===epoch)show('Simulated browser sign-in','The real app would open ChatGPT sign-in in your browser. This preview never opens an account page or asks for credentials.',[
       ['Complete simulated sign-in',()=>test.releaseCodexLogin(null,{success:true})],
-      ['Back to Velorn',()=>step.replaceChildren()]
+      ['Back to Belrog',()=>step.replaceChildren()]
     ])
     const result=await pending
     if(current===epoch){step.replaceChildren();status.textContent=result.cancelled?'Simulated sign-in cancelled. Your real account was not touched.':'Preview connected. The model names are test data; no real account or model is connected.'}
     return result
   }
   api.connectedAgent.send=async()=>({success:false,error:'Preview only: no message was sent and no allowance was used.'})
-  status.textContent='Ready. Choose Codex inside Velorn to begin.'
+  status.textContent='Ready. Choose Codex inside Belrog to begin.'
   window.codexSetupPreview={ready:true,snapshot:()=>test.snapshot(),installerCalls:()=>installerCalls.slice()}
 })
 host.querySelector('#restart').onclick=()=>start('missing')

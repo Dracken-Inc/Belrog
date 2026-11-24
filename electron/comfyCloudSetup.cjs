@@ -11,8 +11,8 @@ const methods = Object.freeze({ [REQUEST_TOOL]: 'request', [STATUS_TOOL]: 'statu
 const names = new Set(Object.keys(methods)), readNames = new Set([STATUS_TOOL])
 const tools = Object.freeze(Object.keys(methods).map(name => ({ name,
   description: name === REQUEST_TOOL
-    ? 'Open Velorn’s dedicated Comfy cloud API-key dialog on the desktop and wait up to 5 minutes for the user. The user enters or tests their key directly in the dialog, never in chat. Returns only saved/verified/unknown/invalid/cancelled status, not credentials. Does not buy credits, change generation spending policy, run generation, install ComfyUI or connect hosted Comfy Cloud. Requires an explicit setup request; do not repeatedly reopen after cancellation.'
-    : 'Read whether a Comfy cloud key is configured in Velorn, and any matching validation from this app session. No key, prefix, fingerprint, account information, network request or generation. Configured is not necessarily verified or funded.',
+    ? 'Open Belrog’s dedicated Comfy cloud API-key dialog on the desktop and wait up to 5 minutes for the user. The user enters or tests their key directly in the dialog, never in chat. Returns only saved/verified/unknown/invalid/cancelled status, not credentials. Does not buy credits, change generation spending policy, run generation, install ComfyUI or connect hosted Comfy Cloud. Requires an explicit setup request; do not repeatedly reopen after cancellation.'
+    : 'Read whether a Comfy cloud key is configured in Belrog, and any matching validation from this app session. No key, prefix, fingerprint, account information, network request or generation. Configured is not necessarily verified or funded.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
   annotations: { readOnlyHint: name === STATUS_TOOL, destructiveHint: false, idempotentHint: name === STATUS_TOOL, openWorldHint: false },
 })))
@@ -53,7 +53,7 @@ function createComfyCloudSetup({ ipcMain, app, getMainWindow, readKey, writeKey,
   function invalidate(record) {
     if (!record?.valid) return
     record.valid = false
-    if (active?.document === record) cancel('COMFY_CLOUD_SETUP_CONTEXT_CHANGED', 'The Velorn window changed. Start cloud setup again if needed.')
+    if (active?.document === record) cancel('COMFY_CLOUD_SETUP_CONTEXT_CHANGED', 'The Belrog window changed. Start cloud setup again if needed.')
     for (const [target, event, listener] of record.listeners) target.removeListener?.(event, listener)
     if (document === record) document = null
   }
@@ -61,7 +61,7 @@ function createComfyCloudSetup({ ipcMain, app, getMainWindow, readKey, writeKey,
     const window = getMainWindow(), contents = window?.webContents, frame = contents?.mainFrame
     if (disposed || !window || window.isDestroyed() || !contents || contents.isDestroyed() || !frame
       || renderer && (event?.sender !== contents || event?.senderFrame !== frame)) {
-      throw fault('COMFY_CLOUD_SETUP_UNAUTHORIZED', 'Cloud setup is available only in the main Velorn desktop window.')
+      throw fault('COMFY_CLOUD_SETUP_UNAUTHORIZED', 'Cloud setup is available only in the main Belrog desktop window.')
     }
     if (document && !currentDocument(document)) invalidate(document)
     if (!document) {
@@ -92,7 +92,7 @@ function createComfyCloudSetup({ ipcMain, app, getMainWindow, readKey, writeKey,
       const doc = authorize()
       if (!empty(args)) throw fault('COMFY_CLOUD_SETUP_INVALID_REQUEST', 'Cloud setup status takes no arguments.')
       const key = await readKey()
-      if (!currentDocument(doc)) throw fault('COMFY_CLOUD_SETUP_CONTEXT_CHANGED', 'The Velorn window changed.')
+      if (!currentDocument(doc)) throw fault('COMFY_CLOUD_SETUP_CONTEXT_CHANGED', 'The Belrog window changed.')
       return state(key)
     } catch (error) { return safeError(error) }
   }

@@ -6,6 +6,7 @@ import NewProjectDialog from './NewProjectDialog'
 import ComfyLauncherChip from './ComfyLauncherChip'
 import { DesktopAccountButton } from './DesktopAccount'
 import CreditsChip from './CreditsChip'
+import { SHOW_CREDITS_CHIP, SHOW_CLOUD_ACCOUNT_CHROME } from '../config/belrogProduct'
 import GettingStartedModal from './GettingStartedModal'
 import ApiKeyDialog from './ApiKeyDialog'
 import SettingsModal from './SettingsModal'
@@ -422,7 +423,7 @@ function WelcomeScreen() {
   const titleStrip = (
     <div className="relative z-50 h-10 flex-shrink-0 bg-black flex items-stretch justify-end drag-region select-none">
       <div className="no-drag flex items-stretch">
-        <div className="flex items-center"><DesktopAccountButton /></div>
+        <div className="flex items-center">{SHOW_CLOUD_ACCOUNT_CHROME && <DesktopAccountButton />}</div>
         <button
           onClick={handleMinimize}
           className="w-10 h-10 flex items-center justify-center hover:bg-sf-dark-700 transition-colors"
@@ -485,7 +486,7 @@ function WelcomeScreen() {
           <div className="max-w-md w-full mx-4 my-auto">
           {/* Branding */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-sf-text-primary">Velorn</h1>
+            <h1 className="text-4xl font-bold text-sf-text-primary">Belrog</h1>
           </div>
           
           {/* Browser Support Warning - only show in web mode */}
@@ -560,7 +561,7 @@ function WelcomeScreen() {
             </p>
           </div>
           <div className="mt-5 text-center">
-            <p className="text-xs text-sf-text-muted mb-2">Use Velorn as an editor, or add an agent and generation tools when you want them.</p>
+            <p className="text-xs text-sf-text-muted mb-2">Use Belrog as an editor, or add an agent and generation tools when you want them.</p>
             <button type="button" onClick={() => setOptionalSetupOpen(true)} className="inline-flex items-center gap-2 rounded-lg border border-sf-dark-600 px-3 py-2 text-xs text-sf-text-secondary hover:bg-sf-dark-800">
               <Plug className="h-3.5 w-3.5" />Connect tools · optional
             </button>
@@ -603,8 +604,8 @@ function WelcomeScreen() {
               </>
             )}
           </button>
-          {/* Credits chip — self-hides when no API key is configured. */}
-          <CreditsChip />
+          {/* Hosted credit balance - no Belrog service backs it yet (config/belrogProduct.js). */}
+          {SHOW_CREDITS_CHIP && <CreditsChip />}
         </div>
       </div>
 
@@ -704,7 +705,7 @@ function WelcomeScreen() {
           </div>
           {/* Subtle attribution */}
           <div className="absolute bottom-3 right-4 text-[10px] uppercase tracking-wider text-white/40 pointer-events-none">
-            Made with Velorn
+            Made with Belrog
           </div>
         </div>
       ) : null}

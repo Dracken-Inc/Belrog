@@ -80,6 +80,7 @@ import {
   flattenYoloPlanVariants,
   parseStructuredDirectorScript,
 } from '../utils/yoloPlanning'
+import { buildCastGapDetection, buildCastStubs } from '../services/castGapDetectionWiring'
 import { extractVisualStyleNotes } from '../utils/musicVisualStyle'
 import { checkWorkflowDependencies, buildMissingDependencyClipboardText, buildWorkflowDependencyReport } from '../services/workflowDependencies'
 import { openApiWorkflowInComfyUi, openBundledWorkflowInComfyUi, openUiWorkflowInComfyUi } from '../services/workflowSetupManager'
@@ -519,7 +520,7 @@ function buildGenerationErrorClipboardText({
   generationMode = '',
 } = {}) {
   const lines = [
-    'Velorn error report',
+    'Belrog error report',
     `Timestamp: ${new Date().toISOString()}`,
   ]
 
@@ -2327,7 +2328,7 @@ function buildMusicVideoCoveragePlanPrompt(coveragePlan) {
     'B-roll, environmental, and detail coverage must tile as adjacent video clips: each shot has a Start at, and its Length should end exactly at the next shot Start at. The final shot must end at the full audio duration.',
     'B-roll shot starts must NOT be constrained to lyric/SRT offsets. Use lyric timings only as emotional/story landmarks, then create continuous b-roll coverage between and beyond those lyric moments.',
     'Do not write one long take for any pass. Break every pass into 2-8 second clips aligned to the song timing.',
-    'Use the exact Coverage type and Coverage label fields shown below so Velorn can group the shots later.',
+    'Use the exact Coverage type and Coverage label fields shown below so Belrog can group the shots later.',
   ]
   plan.sections.forEach((section, index) => {
     lines.push(`  Coverage ${index + 1}: ${section.label}`)
@@ -5096,7 +5097,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const handleImportYoloMusicAudio = useCallback(async (droppedFile = null) => {
     if (yoloMusicAudioImporting) return
     if (!currentProjectHandle) {
-      setFormError('Open or create a project first so Velorn can import the song file.')
+      setFormError('Open or create a project first so Belrog can import the song file.')
       addComfyLog('error', 'Song audio import requires an open project folder.')
       return
     }
@@ -5170,7 +5171,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const addToCast = options?.addToCast !== false
     if (yoloMusicCastImageImporting) return null
     if (!currentProjectHandle) {
-      setFormError('Open or create a project first so Velorn can import the reference image.')
+      setFormError('Open or create a project first so Belrog can import the reference image.')
       addComfyLog('error', 'Cast reference import requires an open project folder.')
       return null
     }
@@ -5278,7 +5279,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       '2': {
         class_type: 'PrimitiveStringMultiline',
         inputs: {
-          value: 'Velorn will inject the shot keyframe prompt here.',
+          value: 'Belrog will inject the shot keyframe prompt here.',
         },
         _meta: {
           title: 'VELORN_PROMPT',
@@ -5321,7 +5322,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           crop: 'center',
         },
         _meta: {
-          title: 'Velorn Output Resize',
+          title: 'Belrog Output Resize',
         },
       },
       '7': {
@@ -5349,7 +5350,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
     const validation = validateCustomKeyframeWorkflow(starter)
     return {
-      name: 'Velorn custom keyframe starter',
+      name: 'Belrog custom keyframe starter',
       workflow: starter,
       jsonText: JSON.stringify(starter, null, 2),
       validation,
@@ -5370,7 +5371,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       '2': {
         class_type: 'PrimitiveStringMultiline',
         inputs: {
-          value: 'Velorn will inject the ad shot keyframe prompt here.',
+          value: 'Belrog will inject the ad shot keyframe prompt here.',
         },
         _meta: {
           title: 'VELORN_PROMPT',
@@ -5413,7 +5414,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           crop: 'center',
         },
         _meta: {
-          title: 'Velorn Output Resize',
+          title: 'Belrog Output Resize',
         },
       },
       '7': {
@@ -5429,7 +5430,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
     const validation = validateCustomKeyframeWorkflow(starter, { requireInputImage: false })
     return {
-      name: 'Velorn custom ad keyframe starter',
+      name: 'Belrog custom ad keyframe starter',
       workflow: starter,
       jsonText: JSON.stringify(starter, null, 2),
       validation,
@@ -5450,7 +5451,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       '2': {
         class_type: 'PrimitiveStringMultiline',
         inputs: {
-          value: 'Velorn will inject the shot video prompt here.',
+          value: 'Belrog will inject the shot video prompt here.',
         },
         _meta: {
           title: 'VELORN_PROMPT',
@@ -5520,7 +5521,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           crop: 'center',
         },
         _meta: {
-          title: 'Velorn Output Resize',
+          title: 'Belrog Output Resize',
         },
       },
       '10': {
@@ -5536,7 +5537,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
     const validation = validateCustomVideoWorkflow(starter)
     return {
-      name: 'Velorn custom video starter',
+      name: 'Belrog custom video starter',
       workflow: starter,
       jsonText: JSON.stringify(starter, null, 2),
       validation,
@@ -5609,7 +5610,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       validateOptionalEndpoints: false,
     })
     return {
-      name: 'Velorn custom image starter',
+      name: 'Belrog custom image starter',
       workflow: starter,
       jsonText: JSON.stringify(starter, null, 2),
       validation,
@@ -5630,7 +5631,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       '2': {
         class_type: 'PrimitiveStringMultiline',
         inputs: {
-          value: 'Velorn will inject the video prompt here.',
+          value: 'Belrog will inject the video prompt here.',
         },
         _meta: {
           title: 'VELORN_PROMPT',
@@ -5700,7 +5701,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           crop: 'center',
         },
         _meta: {
-          title: 'Velorn Output Resize',
+          title: 'Belrog Output Resize',
         },
       },
       '10': {
@@ -5716,7 +5717,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
     const validation = validateCustomVideoWorkflow(starter, { requireInputImage: false })
     return {
-      name: 'Velorn custom video starter',
+      name: 'Belrog custom video starter',
       workflow: starter,
       jsonText: JSON.stringify(starter, null, 2),
       validation,
@@ -6208,7 +6209,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const unavailable = normalizeComfyStudioBridgeStatus({
         state: 'unavailable',
         installed: false,
-        message: 'Velorn Bridge is only available in the desktop app.',
+        message: 'Belrog Bridge is only available in the desktop app.',
       })
       setYoloMusicCustomKeyframeBridgeStatus(unavailable)
       if (!silent) addComfyLog('warning', unavailable.message)
@@ -6228,7 +6229,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const next = normalizeComfyStudioBridgeStatus({
         state: 'unavailable',
         installed: false,
-        error: error?.message || 'Could not check the Velorn Bridge.',
+        error: error?.message || 'Could not check the Belrog Bridge.',
       })
       setYoloMusicCustomKeyframeBridgeStatus(next)
       if (!silent) addComfyLog('error', next.message)
@@ -6770,6 +6771,88 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const slot = yoloMusicAltScripts.find((entry) => entry.id === yoloMusicActiveScriptId)
     return Array.isArray(slot?.planWarnings) ? slot.planWarnings : []
   }, [yoloMusicActiveScriptId, yoloMusicAltScripts, yoloMusicPlanWarnings])
+  // ── Cast: what the script names that Cast has no picture for ───────────
+  // (0.4.4-0.4.8 feature. The 0.5.0 upstream-base swap of this file dropped the
+  // wiring, which silently killed the "Detected from your Director Script" panel
+  // in the music workflow — the UI stayed in the tree with no props, so nothing
+  // looked broken. tests/castGapDetection.test.cjs fails if this breaks.)
+  // The rules live in src/services/castGapDetectionWiring.js so they can be
+  // tested without rendering this file.
+  const castLibrary = useAssetLibraryStore((s) => s.library)
+  const addCastEntries = useAssetLibraryStore((s) => s.addMany)
+  const setCastNotice = useAssetLibraryStore((s) => s.setNotice)
+
+  const assetLibraryGapDetection = useMemo(() => buildCastGapDetection({
+    isEnabled: isYoloMusicMode,
+    script: yoloMusicScript,
+    altScripts: yoloMusicAltScripts,
+    activeScriptId: yoloMusicActiveScriptId,
+    plan: yoloMusicActiveTargetPlan,
+    warnings: yoloMusicActiveTargetPlanWarnings,
+    cast: yoloMusicResolvedCast,
+    library: castLibrary,
+  }), [isYoloMusicMode, yoloMusicScript, yoloMusicAltScripts, yoloMusicActiveScriptId,
+    yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicResolvedCast, castLibrary])
+
+  // Auto-stub the declared gaps when a plan is (re)built, so a creator describes
+  // a character once and every later script reuses the same reference image.
+  // Idempotent: buildCastStubs skips entries Cast already knows, and the signature
+  // guard stops a re-render from running it twice.
+  const lastAutoStubSignatureRef = useRef(null)
+  useEffect(() => {
+    if (!assetLibraryGapDetection) return
+    // Format contract: when the script declares an asset legend, only legend
+    // entries are auto-created. Prose guesses stay suggestion-only — Cast is
+    // never polluted from a heuristic reading of a shot description.
+    const stubs = buildCastStubs({
+      detection: assetLibraryGapDetection,
+      library: castLibrary,
+      scenes: yoloMusicActiveTargetPlan,
+      declaredOnly: true,
+    })
+    if (stubs.length === 0) return
+    if (lastAutoStubSignatureRef.current === yoloMusicPlanSignature) return
+    lastAutoStubSignatureRef.current = yoloMusicPlanSignature
+    const withVersion = stubs.map((stub) => ({
+      ...stub,
+      provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+    }))
+    const { added } = addCastEntries(withVersion)
+    if (added === 0) return
+    setCastNotice({
+      tone: 'success',
+      text: `Script parsed — added ${added} new reference${added === 1 ? '' : 's'} to Cast. Use Generate all to create the pictures, then Import from Cast in your music video.`,
+    })
+  }, [castLibrary, assetLibraryGapDetection, addCastEntries, setCastNotice,
+    yoloMusicPlanSignature, yoloMusicActiveTargetPlan])
+
+  // One-click "Add to Cast" on the People step. Same builder as the auto-stub
+  // path, so re-running only adds what is genuinely new.
+  const handleAddGapsToCast = useCallback(() => {
+    if (!assetLibraryGapDetection) return
+    const stubs = buildCastStubs({
+      detection: assetLibraryGapDetection,
+      library: castLibrary,
+      scenes: yoloMusicActiveTargetPlan,
+    })
+    if (stubs.length === 0) {
+      setCastNotice({ tone: 'info', text: 'Everything the script mentions is already in Cast.' })
+      return
+    }
+    const withVersion = stubs.map((stub) => ({
+      ...stub,
+      provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+    }))
+    const { added, total } = addCastEntries(withVersion)
+    setCastNotice({
+      tone: 'success',
+      text: added === 0
+        ? 'Already in Cast — nothing new to add.'
+        : `Added ${added} reference${added === 1 ? '' : 's'} to Cast${total > added ? ` (${total - added} already known)` : ''}. Use Generate all to create the pictures.`,
+    })
+  }, [assetLibraryGapDetection, castLibrary, yoloMusicActiveTargetPlan, addCastEntries,
+    setCastNotice, yoloMusicPlanSignature])
+
   /**
    * Render the pass-switcher tab strip — Master + one chip per alt script,
    * each with badge, label, and a parse-status dot.
@@ -8063,7 +8146,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const unavailable = normalizeComfyStudioBridgeStatus({
         state: 'unavailable',
         installed: false,
-        message: 'Velorn Bridge is only available in the desktop app.',
+        message: 'Belrog Bridge is only available in the desktop app.',
       })
       setYoloMusicCustomKeyframeBridgeStatus(unavailable)
       addComfyLog('warning', unavailable.message)
@@ -8077,7 +8160,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       setYoloMusicCustomKeyframeBridgeStatus(status)
 
       if (!result?.success) {
-        addComfyLog('error', status.message || status.error || 'Could not install the Velorn Bridge.')
+        addComfyLog('error', status.message || status.error || 'Could not install the Belrog Bridge.')
         return status
       }
 
@@ -8086,7 +8169,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
       const restartNow = await requestConfirm({
         title: 'Restart ComfyUI now?',
-        message: 'The Velorn Bridge is installed. Restart ComfyUI now to load the Send to Velorn button.\n\nIf this ComfyUI session was started outside Velorn, restart it manually and then re-check the bridge.',
+        message: 'The Belrog Bridge is installed. Restart ComfyUI now to load the Send to Belrog button.\n\nIf this ComfyUI session was started outside Belrog, restart it manually and then re-check the bridge.',
         confirmLabel: 'Restart ComfyUI',
         cancelLabel: 'Later',
         tone: 'primary',
@@ -8129,7 +8212,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const next = normalizeComfyStudioBridgeStatus({
         state: 'unavailable',
         installed: false,
-        error: error?.message || 'Could not install the Velorn Bridge.',
+        error: error?.message || 'Could not install the Belrog Bridge.',
       })
       setYoloMusicCustomKeyframeBridgeStatus(next)
       addComfyLog('error', next.message)
@@ -9709,7 +9792,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       coveragePlan: options.coveragePlan || null,
     })
     // `copy: false` hands the brief back without touching the clipboard, for
-    // writing the script inside Velorn.
+    // writing the script inside Belrog.
     if (options.copy === false) return llmPrompt
     await copyTextToClipboard(llmPrompt)
     setFormError(null)
@@ -11430,7 +11513,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         if (!Number.isFinite(Number(queuedCount)) || Number(queuedCount) <= 0) {
           respond({
             success: false,
-            error: 'Velorn did not queue a keyframe job. Inspect the shot again for its current state.',
+            error: 'Belrog did not queue a keyframe job. Inspect the shot again for its current state.',
             report,
           })
           return
@@ -13594,7 +13677,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               })) || 0
             }
           }
-          if (queuedCount <= 0) throw new Error(`Velorn did not queue any Music Video ${stage} jobs.`)
+          if (queuedCount <= 0) throw new Error(`Belrog did not queue any Music Video ${stage} jobs.`)
           respond({
             success: true,
             previewOnly: false,
@@ -13812,7 +13895,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         if (!Number.isFinite(Number(queuedCount)) || Number(queuedCount) <= 0) {
           respond({
             success: false,
-            error: 'Velorn did not queue a Step 5 video job. Inspect the shot again for its current state.',
+            error: 'Belrog did not queue a Step 5 video job. Inspect the shot again for its current state.',
             report,
           })
           return
@@ -15149,7 +15232,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           const manifest = getMcpPromptWorkflowManifest(id)
           const label = getWorkflowDisplayLabel(id) || id
           if (!manifest) {
-            respond({ success: false, error: `Unknown Velorn workflow: ${id}`, status })
+            respond({ success: false, error: `Unknown Belrog workflow: ${id}`, status })
             return
           }
           if (manifest.runnable === false) {
@@ -15168,7 +15251,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               const jobAssetFields = normalizeMcpPromptAssetFieldIds(job)
               const inputAssetId = String(jobAssetFields.image || jobAssetFields.inputImage || '').trim()
               if (!inputAssetId) {
-                respond({ success: false, error: `Workflow ${label} needs an input image. Provide jobs[].assetFieldIds.image with a Velorn image asset id.`, status })
+                respond({ success: false, error: `Workflow ${label} needs an input image. Provide jobs[].assetFieldIds.image with a Belrog image asset id.`, status })
                 return
               }
               const inputAsset = assetById.get(inputAssetId)
@@ -16837,7 +16920,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             frames: Math.round(job.duration * job.fps) + 1,
             fps: job.fps,
             seed: job.seed,
-            filenamePrefix: outputPrefix || 'video/Velorn_wan',
+            filenamePrefix: outputPrefix || 'video/Belrog_wan',
             qualityPreset: job.wanQualityPreset || 'balanced',
           })
           break
@@ -16916,7 +16999,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             ...h3SizeFromPicture(inputPictureSize, job.resolution),
             seed: job.seed,
             quality: job.videoQuality,
-            filenamePrefix: outputPrefix || 'video/Velorn_h3',
+            filenamePrefix: outputPrefix || 'video/Belrog_h3',
           })
           break
         case MUSIC_VIDEO_SHOT_WORKFLOW_ID: {
@@ -17047,7 +17130,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             inputImage: uploadedFilename,
             inputAudio: uploadedAudioFilename,
             seed: job.seed,
-            filenamePrefix: outputPrefix || 'video/Velorn_h3_lip_sync',
+            filenamePrefix: outputPrefix || 'video/Belrog_h3_lip_sync',
           })
           break
         case 'minimax-h3-r2v': {
@@ -17063,7 +17146,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               height: job.resolution?.height,
               seed: job.seed,
               level: job.videoQuality,
-              filenamePrefix: outputPrefix || 'video/Velorn_h3_cloud',
+              filenamePrefix: outputPrefix || 'video/Belrog_h3_cloud',
             })
             break
           }
@@ -17095,7 +17178,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             width: job.resolution?.width,
             height: job.resolution?.height,
             referenceImages: referenceFilenames,
-            filenamePrefix: outputPrefix || 'image/Velorn_edit',
+            filenamePrefix: outputPrefix || 'image/Belrog_edit',
           })
           break
         case CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID:
@@ -17210,7 +17293,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             seed: job.seed,
             width: job.resolution?.width,
             height: job.resolution?.height,
-            filenamePrefix: peopleWizardImagePrefix || outputPrefix || 'image/Velorn_klein',
+            filenamePrefix: peopleWizardImagePrefix || outputPrefix || 'image/Belrog_klein',
           })
           break
         case 'z-image-turbo':
@@ -17706,7 +17789,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             {!launcherIsBooting && !launcherWaitingForExternal && launcherCanAutoStart && (
               <>
                 <span className="font-semibold">ComfyUI is offline.</span>{' '}
-                <span className="text-sky-200/85">Hit Start (or just queue a job) and Velorn will boot it for you.</span>
+                <span className="text-sky-200/85">Hit Start (or just queue a job) and Belrog will boot it for you.</span>
               </>
             )}
           </div>
@@ -18380,8 +18463,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     yoloMusicParsedLyrics={yoloMusicParsedLyrics}
                     yoloMusicScript={yoloMusicScript}
                     setYoloMusicScript={setYoloMusicScript}
+                    yoloMusicAltScripts={yoloMusicAltScripts}
                     yoloMusicCast={yoloMusicCast}
                     yoloMusicResolvedCast={yoloMusicResolvedCast}
+                    assetLibraryGapDetection={assetLibraryGapDetection}
+                    onAddGapsToCast={handleAddGapsToCast}
                     yoloMusicPlaces={yoloMusicPlaces}
                     setYoloMusicPlaces={setYoloMusicPlaces}
                     setYoloMusicCast={setYoloMusicCast}
@@ -18618,8 +18704,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                               <div className="text-[10px] leading-5 text-sf-text-secondary">
                                 <div className="font-semibold text-sf-text-primary">Lyrics source</div>
                                 {yoloMusicAlignProvidedLyrics
-                                  ? 'Paste plain lyrics below. Velorn listens to the selected audio for timing, then writes your lyrics as SRT.'
-                                  : 'Velorn listens to the selected audio and writes timed SRT output.'}
+                                  ? 'Paste plain lyrics below. Belrog listens to the selected audio for timing, then writes your lyrics as SRT.'
+                                  : 'Belrog listens to the selected audio and writes timed SRT output.'}
                               </div>
                               <div className="inline-flex rounded-lg border border-sf-dark-600 bg-sf-dark-950 p-1">
                                 <button

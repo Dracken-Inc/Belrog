@@ -10,7 +10,7 @@ Base: published v0.3.34 / `140d3b6`, plus the accepted YuE2 work. Local `main` i
 
 ## Start here
 
-1. Save and quit the other running Velorn instance, and stop its development server. Only one instance should own MCP port 19790.
+1. Save and quit the other running Belrog instance, and stop its development server. Only one instance should own MCP port 19790.
 2. In a terminal:
 
    ```bash

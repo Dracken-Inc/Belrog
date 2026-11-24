@@ -178,16 +178,16 @@ async function main() {
     pass('Pending discovery locks provider changes; after completion the local dropdown loads only its own catalog')
 
     const compatibility = page.getByLabel('Local model compatibility', { exact: true })
-    assert.equal(await compatibility.locator('summary').textContent(), 'Experimental in Velorn')
+    assert.equal(await compatibility.locator('summary').textContent(), 'Experimental in Belrog')
     assert.equal(await compatibility.getAttribute('open'), null, 'Qualification details stay compact')
     await compatibility.locator('summary').click()
     assert.match(await compatibility.textContent(), /Connected does not mean validated for editing/)
-    assert.match(await picker().locator('option[value="fixture-model"]').textContent(), /Experimental in Velorn/)
+    assert.match(await picker().locator('option[value="fixture-model"]').textContent(), /Experimental in Belrog/)
     await compatibility.scrollIntoViewIfNeeded()
     await page.screenshot({ path: path.join(output, '02-local-compatibility.png'), fullPage: true })
     const requestCountBeforeQualification = (await snapshot()).requests.length
     await picker().selectOption('__custom__'); await custom().fill('untested-custom-local-model')
-    assert.equal(await compatibility.locator('summary').textContent(), 'Experimental in Velorn')
+    assert.equal(await compatibility.locator('summary').textContent(), 'Experimental in Belrog')
     assert.equal((await snapshot()).requests.length, requestCountBeforeQualification, 'Qualification labels never run a model or gate model choice')
     const experimentalRequest = await send('Use my experimental local model for this synthetic test.')
     assert.equal(experimentalRequest.model, 'untested-custom-local-model')
@@ -201,7 +201,7 @@ async function main() {
       { id: 'untested-custom-local-model', loaded: false },
     ]))
     await refresh(); await frame()
-    assert.equal(await picker().inputValue(), 'untested-custom-local-model', 'Loading other models must not silently override Velorn’s requested model')
+    assert.equal(await picker().inputValue(), 'untested-custom-local-model', 'Loading other models must not silently override Belrog’s requested model')
     assert.match(await picker().locator('option[value="loaded-small"]').textContent(), /32,768 context/)
     assert.match(await picker().locator('option[value="loaded-small:2"]').textContent(), /loaded-small:2.*8,192 context/)
     await picker().scrollIntoViewIfNeeded()

@@ -54,11 +54,11 @@ function fixture({ platform = 'linux', entries = {}, onSpawn } = {}) {
 test('exact native-resolved Linux/macOS/Windows development and packaged binaries are verified in parallel', async () => {
   const variants = [
     ['linux', '/checkout/node_modules/ffmpeg-static/ffmpeg', '/checkout/node_modules/@derhuerst/ffprobe-static/ffprobe'],
-    ['linux', '/opt/Velorn/resources/bin/ffmpeg', '/opt/Velorn/resources/bin/ffprobe'],
-    ['darwin', '/Applications/Velorn.app/Contents/Resources/bin/ffmpeg', '/Applications/Velorn.app/Contents/Resources/bin/ffprobe'],
-    ['darwin', '/Applications/Velorn.app/Contents/Resources/app.asar.unpacked/node_modules/ffmpeg-static/ffmpeg', '/Applications/Velorn.app/Contents/Resources/app.asar.unpacked/node_modules/@derhuerst/ffprobe-static/ffprobe'],
-    ['win32', 'C:\\Program Files\\Velorn\\resources\\bin\\ffmpeg.exe', 'C:\\Program Files\\Velorn\\resources\\bin\\ffprobe.exe'],
-    ['win32', 'C:\\Program Files\\Velorn\\resources\\app.asar.unpacked\\node_modules\\ffmpeg-static\\ffmpeg.exe', 'C:\\Program Files\\Velorn\\resources\\app.asar.unpacked\\node_modules\\@derhuerst\\ffprobe-static\\ffprobe.exe'],
+    ['linux', '/opt/Belrog/resources/bin/ffmpeg', '/opt/Belrog/resources/bin/ffprobe'],
+    ['darwin', '/Applications/Belrog.app/Contents/Resources/bin/ffmpeg', '/Applications/Belrog.app/Contents/Resources/bin/ffprobe'],
+    ['darwin', '/Applications/Belrog.app/Contents/Resources/app.asar.unpacked/node_modules/ffmpeg-static/ffmpeg', '/Applications/Belrog.app/Contents/Resources/app.asar.unpacked/node_modules/@derhuerst/ffprobe-static/ffprobe'],
+    ['win32', 'C:\\Program Files\\Belrog\\resources\\bin\\ffmpeg.exe', 'C:\\Program Files\\Belrog\\resources\\bin\\ffprobe.exe'],
+    ['win32', 'C:\\Program Files\\Belrog\\resources\\app.asar.unpacked\\node_modules\\ffmpeg-static\\ffmpeg.exe', 'C:\\Program Files\\Belrog\\resources\\app.asar.unpacked\\node_modules\\@derhuerst\\ffprobe-static\\ffprobe.exe'],
   ]
   for (const [platform, ffmpegPath, ffprobePath] of variants) {
     const mock = fixture({ platform, entries: { [ffmpegPath]: {}, [ffprobePath]: {} } })
@@ -95,7 +95,7 @@ test('missing or invalid resolved paths never search PATH, infer installations o
 
 test('ASAR-only paths are unavailable without execution or silently rewriting native resolver choices', async () => {
   const mock = fixture()
-  const result = await discoverConnectedAgentMediaRuntime({ ffmpegPath: '/opt/Velorn/resources/app.asar/node_modules/ffmpeg-static/ffmpeg' }, mock.dependencies)
+  const result = await discoverConnectedAgentMediaRuntime({ ffmpegPath: '/opt/Belrog/resources/app.asar/node_modules/ffmpeg-static/ffmpeg' }, mock.dependencies)
   assert.deepEqual(result.utilities.ffmpeg, { status: 'unavailable', reason: 'inside_archive' })
   assert.deepEqual(mock.calls, [])
 })

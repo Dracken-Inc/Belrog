@@ -13,13 +13,13 @@ Implemented on `codex/yue2-timeline-music`, based on v0.3.34, then copied into `
 
 ## Runtime and compatibility
 
-The graph uses ComfyUI core's CheckpointLoaderSimple, YuE2GenerateABC, YuE2GenerateMusic, EmptyYuE2LatentAudio, KSampler, VAEDecodeAudio and SaveAudioAdvanced. The bundled checkpoint is `models/checkpoints/yue2_3b_int8_convrot.safetensors` (3,960,938,800 bytes). No custom node pack or weights are distributed with Velorn.
+The graph uses ComfyUI core's CheckpointLoaderSimple, YuE2GenerateABC, YuE2GenerateMusic, EmptyYuE2LatentAudio, KSampler, VAEDecodeAudio and SaveAudioAdvanced. The bundled checkpoint is `models/checkpoints/yue2_3b_int8_convrot.safetensors` (3,960,938,800 bytes). No custom node pack or weights are distributed with Belrog.
 
 Full ABC planning and 32-step DPM2/SGM Uniform sampling follow the native workflow. The latent's seconds input is linked to YuE2GenerateMusic's actual seconds output. The guided length range remains 5–240 seconds; this is a ceiling for YuE2, not a claim that every song will be exactly that long. Output is lossless stereo FLAC.
 
 The same UI/service code is used on Windows, macOS and Linux. Actual model acceleration belongs to the ComfyUI host. Linux/RTX 5090 was exercised; Windows/macOS packaged execution and Apple GPU compatibility have not been validated. No invented minimum-VRAM guarantee is shown.
 
-Review [current model terms](https://github.com/multimodal-art-projection/YuE/blob/main/MODEL_LICENSE) before public distribution/default decisions. Upstream includes individual creator monetization permission, while company commercial model use needs separate permission. Velorn links the terms in the new surfaces and downloads only after the user's setup action.
+Review [current model terms](https://github.com/multimodal-art-projection/YuE/blob/main/MODEL_LICENSE) before public distribution/default decisions. Upstream includes individual creator monetization permission, while company commercial model use needs separate permission. Belrog links the terms in the new surfaces and downloads only after the user's setup action.
 
 ## Job safety
 

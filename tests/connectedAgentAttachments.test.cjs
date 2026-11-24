@@ -39,7 +39,7 @@ test('attached instructions remain data; history is not mutated and grants no au
 
 test('auto-approval is a strict host option requiring tools, not a string or inferred from history', () => {
   for (const value of [1, 'true', null, {}]) assert.throws(() => validateSend(request({ autoApproveEdits: value })), /boolean/)
-  assert.throws(() => validateSend(request({ autoApproveEdits: true })), /requires Velorn tools/)
+  assert.throws(() => validateSend(request({ autoApproveEdits: true })), /requires Belrog tools/)
   const validated = validateSend(request({ toolsEnabled: true, expectedContext: { session: 's1', revision: 1 }, autoApproveEdits: true }))
   assert.equal(validated.autoApproveEdits, true)
 })

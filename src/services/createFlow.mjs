@@ -54,12 +54,12 @@ export function stableAudioWorkflow({ prompt, seconds, seed }) {
   }
 }
 export const LOCAL_PRICE = 'free, made on this computer'
-// Local voices: Kokoro 82M (Apache-2.0), which runs inside Velorn itself. No ComfyUI
+// Local voices: Kokoro 82M (Apache-2.0), which runs inside Belrog itself. No ComfyUI
 // and no graphics card; its files (about 120 MB) are downloaded on request and kept
-// in Velorn's data folder. The ids are the model's own voice names.
+// in Belrog's data folder. The ids are the model's own voice names.
 export const LOCAL_VOICE = Object.freeze([
   Object.freeze({ id: 'local-kokoro', kind: 'voice', local: true, via: 'builtin', name: 'Kokoro', default: true,
-    note: 'Runs on this computer, inside Velorn. No ComfyUI needed.', about: 'It turns text into speech on your own computer, with no ComfyUI and no graphics card.',
+    note: 'Runs on this computer, inside Belrog. No ComfyUI needed.', about: 'It turns text into speech on your own computer, with no ComfyUI and no graphics card.',
     characters: Object.freeze({ max: 3000 }), voices: Object.freeze([
     { id: 'af_heart', name: 'Heart', note: 'American, female' },
     { id: 'af_bella', name: 'Bella', note: 'American, female' },
@@ -74,7 +74,7 @@ export const LOCAL_VOICE = Object.freeze([
     ]) }),
 ])
 // Cloud models that only exist as paid nodes inside ComfyUI. ComfyUI makes the
-// call with the person's Comfy account, so it has to be running, and Velorn's
+// call with the person's Comfy account, so it has to be running, and Belrog's
 // spending check asks before each one. Prices are the nodes' own (2026-11-09):
 // 0.5275 credits a second for a description, $0.0032175 a second for a sung song.
 // Voices as each ComfyUI node names them (read from a running ComfyUI, 2026-11-09). The id is the exact option the node takes.
@@ -307,7 +307,7 @@ export function rateText(model, rate = null) {
 }
 export const capital = text => text.charAt(0).toUpperCase() + text.slice(1)
 
-// After Velorn asks Comfy for the real price at click time: may the click that
+// After Belrog asks Comfy for the real price at click time: may the click that
 // showed `shown` stand as approval for `quoted`? A price that rose noticeably,
 // or appeared or vanished, needs a fresh look first.
 export function sameDeal(shown, quoted) {
@@ -316,15 +316,15 @@ export function sameDeal(shown, quoted) {
 }
 
 export function footnote({ connected, remembered, model, price }) {
-  if (model?.network) return `Made on a computer that shares its GPU with you, free. The description and ${model.kind === 'music' ? 'lyrics' : 'picture'} travel through Velorn’s service to that computer, and its owner can see them. Nothing sexually explicit.`
-  if (model?.via === 'builtin') return 'Made on this computer, inside Velorn. Nothing is sent anywhere and nothing is charged.'
+  if (model?.network) return `Made on a computer that shares its GPU with you, free. The description and ${model.kind === 'music' ? 'lyrics' : 'picture'} travel through Belrog’s service to that computer, and its owner can see them. Nothing sexually explicit.`
+  if (model?.via === 'builtin') return 'Made on this computer, inside Belrog. Nothing is sent anywhere and nothing is charged.'
   if (model?.local) return 'Made on this computer with ComfyUI. Nothing is sent to Comfy and nothing is charged.'
   if (model?.via === 'comfyui') return 'Runs through ComfyUI and uses credits from your Comfy account. Pressing the button approves the price shown.'
   if (!connected) return 'You see the cost before anything is charged.'
   return ['Uses credits from your Comfy account.',
     model && !model.firmQuote && price ? `You see the exact cost after each ${model.kind === 'image' ? 'picture' : 'one'}.` : '',
     model?.refusalCharged === 'yes' ? 'This model charges even if it refuses a request.' : '',
-    remembered === false ? 'Your key is kept until Velorn closes.' : ''].filter(Boolean).join(' ')
+    remembered === false ? 'Your key is kept until Belrog closes.' : ''].filter(Boolean).join(' ')
 }
 
 const NOUNS = { image: 'image', video: 'video', voice: 'voice recording', sound: 'sound effect', music: 'music' }
@@ -365,7 +365,7 @@ export function problemFor(result, { model = null, kind = 'image' } = {}) {
   if (code === 'COMFY_ROUTER_UNCERTAIN' || result?.job?.status === 'UNCERTAIN') return { screen: 'trouble', kind: 'lost',
     title: 'We lost touch with Comfy',
     body: `Your ${NOUN(kind)} may still be on its way. Check your Comfy usage page before generating again, or you could pay twice for the same thing.`,
-    note: "Velorn won't send this request again on its own.", primary: 'Go back' }
+    note: "Belrog won't send this request again on its own.", primary: 'Go back' }
   return { screen: 'trouble', kind: 'failed', title: "That one didn't work",
     body: 'Comfy ran into a problem and stopped. Your description and settings are still here.',
     note: 'Your Comfy usage page shows whether this attempt was charged.', primary: 'Try again', secondary: 'Change something first' }
@@ -381,7 +381,7 @@ export function problemForJob(job, context) {
 export const RESULT_KEPT_MS = 24 * 60 * 60 * 1000
 export const PICK_UP_MAX = 8
 
-// Requests made in Create that Velorn stopped watching before their result was
+// Requests made in Create that Belrog stopped watching before their result was
 // saved (it was closed, or the person moved on). `jobs` is the project's list
 // from the main process. Oldest first. Nothing here is ever sent again: these
 // are only watched and collected. Requests started from the paired phone are

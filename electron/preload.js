@@ -102,7 +102,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     queuePriced: payload => ipcRenderer.invoke(globalThis.navigator?.userActivation?.isActive
       ? 'generation-spending:queue-priced' : 'generation-spending:queue', payload),
     cancel: requestId => ipcRenderer.invoke('generation-spending:cancel', { requestId }),
-    // True while Velorn is asking whether a paid or unfamiliar job may run.
+    // True while Belrog is asking whether a paid or unfamiliar job may run.
     onAsking: callback => {
       const handler = (_event, value) => callback(value === true)
       ipcRenderer.on('generation-spending:asking', handler)
@@ -114,7 +114,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('generation-spending:changed', handler)
     },
   },
-  // Velorn network: this computer's own GPU sharing choices. Reading is free;
+  // Belrog network: this computer's own GPU sharing choices. Reading is free;
   // a change is forwarded only during a real click or key press.
   gpuShare: {
     status: () => ipcRenderer.invoke('gpu-share:status'),
@@ -161,7 +161,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('gpu-share:changed', handler)
     },
   },
-  // Velorn network: run one of Velorn's own workflows on a computer that shares
+  // Belrog network: run one of Belrog's own workflows on a computer that shares
   // its GPU with this account. Sending and cancelling need a real click.
   // What the paired phone had this computer make with one of its own workflows: the window saves it into the open project.
   phoneLocal: {
@@ -215,7 +215,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return ipcRenderer.invoke('mobile-companion:guided-unregister', payload)
     },
     checkAccountRequests: payload => {
-      if (!globalThis.navigator?.userActivation?.isActive) return Promise.reject(new Error('Checking Velorn account requests requires a user gesture.'))
+      if (!globalThis.navigator?.userActivation?.isActive) return Promise.reject(new Error('Checking Belrog account requests requires a user gesture.'))
       return ipcRenderer.invoke('mobile-companion:account-requests', payload)
     },
     getPreference: () => ipcRenderer.invoke('mobile-companion:preference'),
@@ -527,7 +527,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Direct NVIDIA RTX Video Super Resolution. The optional runtime is
-  // managed by Velorn and does not require a running ComfyUI server.
+  // managed by Belrog and does not require a running ComfyUI server.
   checkRtxVideoUpscaleRuntime: () => ipcRenderer.invoke('rtx:checkRuntime'),
   installRtxVideoUpscaleRuntime: () => ipcRenderer.invoke('rtx:installRuntime'),
   runRtxVideoUpscale: (options) => ipcRenderer.invoke('rtx:run', options),
@@ -911,7 +911,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ============================================
-  // Velorn Bridge
+  // Belrog Bridge
   // ============================================
 
   comfyBridge: {

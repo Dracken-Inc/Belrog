@@ -66,7 +66,7 @@ closing without Save discards unsaved drafted fields.
   recovery through the OS Trash. If the panel unmounts, a window-level alert
   preserves the failure/recovery notice instead of awaiting an invisible dialog.
 
-Native Trash is recoverable through the OS, not through Velorn Undo. Path-based
+Native Trash is recoverable through the OS, not through Belrog Undo. Path-based
 OS APIs cannot offer a perfectly atomic file-handle transaction; already-running
 background edits or external filesystem changes remain possible. The checks
 reduce those races and report recovery when state changes during a batch, but
@@ -97,6 +97,6 @@ require project-only removal rather than guessing which target to trash.
   `/tmp/velorn-trash-fixture-rhBlqN`; the disposable file remains recoverable in
   system Trash. Actual macOS/Windows packaged validation is still pending.
 
-Fully quit and reopen the review Velorn app before testing native Trash; old
+Fully quit and reopen the review Belrog app before testing native Trash; old
 preloads correctly refuse it and recommend restarting or project-only removal.
 The normal app, ComfyUI and user projects were not restarted or modified.

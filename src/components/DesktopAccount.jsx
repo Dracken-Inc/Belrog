@@ -90,7 +90,7 @@ export function DesktopAccountButton({ disabled = false }) {
   const close = () => { setOpen(false); setError(''); setRenaming(false); if (!mobile?.changing) mobile?.setComputerName?.(null) }
   const veeKey = JSON.stringify([live?.scopeKey, guided?.computer?.id, guided?.account, registered, guided?.enabled, guided?.phase])
   const allowance = useVeloAllowance({ enabled: Boolean(open && registered && live && guided.phase !== 'account-unavailable'), accountKey: veeKey, revision: veeRefresh })
-  const veeText = !registered ? 'Connect a Velorn account to check access'
+  const veeText = !registered ? 'Connect a Belrog account to check access'
     : !live ? 'Open a project to check availability'
       : guided.phase === 'account-unavailable' ? 'Account connection unavailable'
           : allowance.checking ? 'Checking availability…' : veloAllowanceNotice(allowance.result) || desktopVeeStatus(allowance.result)
@@ -144,7 +144,7 @@ export function DesktopAccountButton({ disabled = false }) {
   }
   if (!context) return null
   return <>
-    <button ref={button} type="button" className="desktop-account-button no-drag" aria-label="Velorn account" title={displayName ? `Velorn account · ${displayName}` : 'Velorn account'}
+    <button ref={button} type="button" className="desktop-account-button no-drag" aria-label="Belrog account" title={displayName ? `Belrog account · ${displayName}` : 'Belrog account'}
       aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => open ? close() : show()}>
       {initials ? <span aria-hidden="true">{initials}</span> : <UserRound size={17} aria-hidden="true" />}
       {shareActivity && <span className={`desktop-account-dot${shareActivity === 'asking' ? ' is-asking' : ''}`} title={shareActivity === 'asking' ? 'A shared GPU job is waiting for your answer' : 'This computer is running a shared GPU job'} />}
@@ -154,13 +154,13 @@ export function DesktopAccountButton({ disabled = false }) {
     }} onKeyDown={keys} data-editor-keyboard-scope="text">
       <section ref={sheet} className="desktop-account-sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={registered ? undefined : descriptionId} tabIndex={-1}>
         <header><div className="desktop-account-avatar" aria-hidden="true">{initials || <UserRound size={23} />}</div>
-          <div className="desktop-account-heading"><h2 id={titleId}>Your Velorn account</h2>{registered && <>
+          <div className="desktop-account-heading"><h2 id={titleId}>Your Belrog account</h2>{registered && <>
             <small>Connected as</small>
             <p className="desktop-account-name">{displayName || 'Account details unavailable'}</p>
             {email && <p className="desktop-account-email">{email}</p>}
           </>}</div>
           <button type="button" className="desktop-account-close" data-account-close aria-label="Close account" onClick={close}><X size={19} /></button></header>
-        {!registered && <p id={descriptionId} className="desktop-account-muted">A Velorn account is optional. Use it for Velo access and phone sharing. Editing, your own Codex and local LM Studio work without one.</p>}
+        {!registered && <p id={descriptionId} className="desktop-account-muted">A Belrog account is optional. Use it for Velo access and phone sharing. Editing, your own Codex and local LM Studio work without one.</p>}
         {shareActivity && <div className="desktop-account-computer"><Monitor size={17} aria-hidden="true" /><div className="desktop-account-computer-label"><small>Shared GPU</small><span>{shareActivity === 'asking' ? 'A job is waiting for your answer' : `Running a job for ${shareState.network.job.from}`}</span></div>
           <button type="button" onClick={() => { window.dispatchEvent(new CustomEvent('velorn:open-settings', { detail: 'network' })); close() }}>Open</button></div>}
         {registered && !email && <p className="desktop-account-muted">{displayName ? 'Email is not available for this connection.' : 'Account details are not available for this connection yet.'} Your connection is unchanged.</p>}
@@ -176,7 +176,7 @@ export function DesktopAccountButton({ disabled = false }) {
           <p className="desktop-account-status">Open or create a project to {registered ? 'manage your account on this computer' : 'sign in'}. This does not sign you out or change your account.</p>
         </>
           : !live ? <p className="desktop-account-status" role="status">{state.error || 'Preparing phone access…'}</p>
-            : !mobile.guidedAvailable ? <p className="desktop-account-status" role="status">Checking Velorn account…</p>
+            : !mobile.guidedAvailable ? <p className="desktop-account-status" role="status">Checking Belrog account…</p>
               : <p className="desktop-account-status" role="status">{desktopAccountStatus(connection)}</p>}
         {registered ? <>
           <div className="desktop-account-computer"><Monitor size={17} aria-hidden="true" /><div><small>Computer</small><span>{guided.computer?.name || 'This computer'}</span></div></div>
@@ -196,21 +196,21 @@ export function DesktopAccountButton({ disabled = false }) {
             const current = context?.store.current()
             if (current && !current.disabled && !disabled && !actionLock.current) current.mobile.setComputerName(event.target.value)
           }} />
-          <p className="desktop-account-muted">Used when you sign in. This only changes the name shown in Velorn.</p>
+          <p className="desktop-account-muted">Used when you sign in. This only changes the name shown in Belrog.</p>
           <button type="button" disabled={blocked || phasePending} onClick={() => { mobile.setComputerName(null); setRenaming(false) }}>Cancel rename</button>
           </>}
           <button type="button" className="desktop-account-primary" disabled={blocked || !accountControlsReady || phasePending || !mobile.computerName?.trim()} onClick={() => void act('connectPhoneAccount', { reauthenticate: true })}>{phasePending ? 'Waiting for sign-in…' : working || mobile.changing ? 'Opening sign-in…' : 'Sign in'}</button>
-          {!accountControlsReady && <p className="desktop-account-muted">Restart Velorn after the desktop update to enable sign-in here.</p>}
+          {!accountControlsReady && <p className="desktop-account-muted">Restart Belrog after the desktop update to enable sign-in here.</p>}
           <p className="desktop-account-muted">Sign-in opens in your browser.</p>
         </>}
-        {registered && <p className="desktop-account-muted">On your phone, open <a href="https://connect.velorn.ai" target="_blank" rel="noopener noreferrer">connect.velorn.ai</a> and use the same account. Keep this computer awake with Velorn and your project open.</p>}
+        {registered && <p className="desktop-account-muted">On your phone, open <a href="https://connect.velorn.ai" target="_blank" rel="noopener noreferrer">connect.velorn.ai</a> and use the same account. Keep this computer awake with Belrog and your project open.</p>}
         {(error || mobile?.notice || projectLive?.mobile?.notice) && <p className="desktop-account-error" role="status">{error || mobile?.notice || projectLive?.mobile?.notice}</p>}
         {usable && <footer>
           {/* Older address-and-code pairing can no longer be started here, so a computer that still has it on keeps a way to turn it off. */}
           {connection?.legacyEnabled === true && <button type="button" disabled={blocked} onClick={() => void act('disable')}>{privateSharingOnly ? 'Stop older phone pairing' : 'Stop phone sharing'}</button>}
           {registered && <>
             <button type="button" disabled={blocked || !accountControlsReady || phasePending} onClick={() => void act('manageDesktopAccount', 'sign-out')}>Sign out</button>
-            {!accountControlsReady && <small>Restart Velorn after the desktop update to enable these controls.</small>}
+            {!accountControlsReady && <small>Restart Belrog after the desktop update to enable these controls.</small>}
           </>}
         </footer>}
       </section>

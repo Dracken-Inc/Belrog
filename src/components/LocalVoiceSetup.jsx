@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Download, Loader2 } from 'lucide-react'
 import { installLocalVoice, localVoiceAvailable, localVoiceStatus } from '../services/localVoice'
 
 // Getting the built-in voice model onto this computer: one download, kept in
-// Velorn's own data folder, no ComfyUI. Looks like the other local model panel
+// Belrog's own data folder, no ComfyUI. Looks like the other local model panel
 // and reports `ready` the same way so the Generate button can wait for it.
 const megabytes = bytes => `${Math.max(1, Math.round(Number(bytes) / 1e6))} MB`
 
@@ -36,7 +36,7 @@ export default function LocalVoiceSetup({ model, onReady, onUseCloud }) {
   if (state.phase === 'ready') return justInstalled ? <p className="vc-setup-line vc-setup-ok" role="status"><Check aria-hidden="true" size={17} />{model.name} is downloaded. Voices you make here are free from now on.</p> : null
   if (state.phase === 'unavailable' || state.phase === 'error') return <section className="vc-setup" role="status">
     <h2>{model.name} can't run here</h2>
-    <p>{state.phase === 'unavailable' ? 'Local voices need the Velorn desktop app.' : state.error || 'Velorn could not check the voice model. Restart Velorn and try again.'}</p>
+    <p>{state.phase === 'unavailable' ? 'Local voices need the Belrog desktop app.' : state.error || 'Belrog could not check the voice model. Restart Belrog and try again.'}</p>
     <div className="vc-row">{state.phase === 'error' && <button type="button" className="vc-line" onClick={check}>Check again</button>}{cloud}</div>
   </section>
 
@@ -47,7 +47,7 @@ export default function LocalVoiceSetup({ model, onReady, onUseCloud }) {
       <div className="vc-row vc-between" style={{ alignItems: 'baseline' }}><h2>Downloading {model.name}</h2><span className="vc-setup-percent">{percent}%</span></div>
       <div className="vc-setup-bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Download progress"><span style={{ width: `${percent}%` }} /></div>
       <div className="vc-row vc-between vc-setup-facts"><span>Each file is checked as it arrives.</span><span>{megabytes(done)} of {megabytes(total)}</span></div>
-      <p>You can keep working, and Cloud still works while this runs. Keep Velorn open until it finishes.</p>
+      <p>You can keep working, and Cloud still works while this runs. Keep Belrog open until it finishes.</p>
     </section>
   }
   return <section className="vc-setup" aria-label={`Get ${model.name}`}>
@@ -63,7 +63,7 @@ export default function LocalVoiceSetup({ model, onReady, onUseCloud }) {
     <p className="vc-setup-terms">Kokoro is open source under the Apache 2.0 licence. What you make with it is yours to use.</p>
     {state.error && <p className="vc-alert" role="alert"><AlertTriangle aria-hidden="true" size={17} />{state.error}</p>}
     <div className="vc-row vc-between">
-      <span className="vc-setup-small">It is kept in Velorn's own data folder. Nothing is downloaded until you press the button.</span>
+      <span className="vc-setup-small">It is kept in Belrog's own data folder. Nothing is downloaded until you press the button.</span>
       <div className="vc-row">{cloud}<button type="button" className="vc-go" onClick={start}><Download aria-hidden="true" size={16} />Download {megabytes(Math.max(0, total - have))}</button></div>
     </div>
   </section>

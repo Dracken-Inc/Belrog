@@ -33,7 +33,7 @@ function buildPortableArgs({ mainPy, launcherScript, extraArgTokens = [], disabl
     const explicitPort = validPort(value)
     if (!explicitPort) throw new TypeError('The --port extra argument must be an integer from 1 to 65535.')
     if (explicitPort !== configuredPort) {
-      throw new Error(`ComfyUI extra arguments use port ${explicitPort}, but Velorn is configured for port ${configuredPort}. Match the port in Settings before starting ComfyUI.`)
+      throw new Error(`ComfyUI extra arguments use port ${explicitPort}, but Belrog is configured for port ${configuredPort}. Match the port in Settings before starting ComfyUI.`)
     }
   }
 

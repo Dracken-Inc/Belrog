@@ -1,4 +1,4 @@
-# Velorn v0.3.35 — Export scheduling hotfix
+# Belrog v0.3.35 — Export scheduling hotfix
 
 ## Faster exports when the hidden renderer is throttled
 

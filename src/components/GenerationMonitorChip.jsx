@@ -56,11 +56,11 @@ function statusLabel(job, awaitingApproval = false) {
 }
 
 function originLabel(job) {
-  if (job.source === 'legacy') return 'Velorn managed'
+  if (job.source === 'legacy') return 'Belrog managed'
   if (job.origin === 'agent') return 'Agent run'
   if (job.origin === 'external' && job.adopted) return 'External · tracked'
   if (job.origin === 'external') return 'External observed'
-  return 'Velorn managed'
+  return 'Belrog managed'
 }
 
 function runTone(job) {
@@ -203,7 +203,7 @@ function ObservedExternalCard({ item, busyAction, onTrack }) {
           <div className="mt-0.5 text-[10px] text-sf-text-muted">Read-only · {statusLabel(item)}</div>
           <div className="mt-2">
             {isTracked ? (
-              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-200"><CheckCircle2 className="h-3 w-3" />Tracked in Velorn</span>
+              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-200"><CheckCircle2 className="h-3 w-3" />Tracked in Belrog</span>
             ) : (
               <button type="button" disabled={Boolean(busyAction)} onClick={() => onTrack(item)} className="rounded border border-sf-blue/50 bg-sf-blue/10 px-2 py-1 text-[10px] font-medium text-sf-text-primary hover:bg-sf-blue/20 disabled:cursor-wait disabled:opacity-60">
                 {busyAction === `observe:${item.promptId}` ? 'Tracking…' : 'Track in this project'}
@@ -333,7 +333,7 @@ function GenerationMonitorChip() {
             <div className="mt-0.5 rounded-md border border-sf-accent/35 bg-sf-accent/10 p-1.5 text-sf-accent"><FileOutput className="h-4 w-4" /></div>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold text-sf-text-primary">Generation queue</h2>
-              <p className="mt-0.5 text-[11px] leading-4 text-sf-text-muted">Velorn-managed and agent-run ComfyUI work. External observation is read-only until you explicitly track a job.</p>
+              <p className="mt-0.5 text-[11px] leading-4 text-sf-text-muted">Belrog-managed and agent-run ComfyUI work. External observation is read-only until you explicitly track a job.</p>
             </div>
             <button type="button" aria-label="Close generation queue" onClick={() => setOpen(false)} className="rounded p-1 text-sf-text-muted hover:bg-sf-dark-700 hover:text-sf-text-primary"><X className="h-4 w-4" /></button>
           </div>

@@ -33,7 +33,7 @@ async function main() {
   }
   const back = async () => { if (await button('Back to chat').isVisible()) await button('Back to chat').click() }
   const enable = async () => {
-    await openSettings(); await checkbox('Velorn tools').check(); await full().check()
+    await openSettings(); await checkbox('Belrog tools').check(); await full().check()
     await page.waitForFunction(() => Boolean(window.connectedAgentTest.snapshot().fullAccessGrant))
     await frame(); assert.equal(await full().isChecked(), true)
   }
@@ -68,7 +68,7 @@ async function main() {
     assert.match(await page.locator('.ca-full-access-consent').innerText(), /Giving an agent full access can be dangerous/)
     pass('Default-off concise controls retain the complete authority disclosure behind Learn more')
 
-    await checkbox('Velorn tools').check()
+    await checkbox('Belrog tools').check()
     await page.evaluate(() => { window.connectedAgentTest.setFullAccessResponse({ success: true, enabled: false }); window.connectedAgentTest.setHoldFullAccess(true) })
     await full().click(); await frame()
     assert.equal(await full().isChecked(), false); assert.equal(await full().isDisabled(), true)
@@ -126,7 +126,7 @@ async function main() {
     assert.ok(!JSON.stringify((await snapshot()).storage).includes('localhost:8188'))
     assert.ok(!JSON.stringify({ context: request.context, messages: request.messages }).includes(enabled.token))
     await openSettings(); assert.equal(await full().isDisabled(), true)
-    assert.equal(await checkbox('Velorn tools').isDisabled(), true)
+    assert.equal(await checkbox('Belrog tools').isDisabled(), true)
     assert.equal(await page.getByLabel('Assistant selection', { exact: true }).isDisabled(), true)
     await page.evaluate(id => window.connectedAgentTest.emitEvent({ requestId: id, type: 'tool', callId: 'full-fixture', toolName: 'run_command', status: 'running', summary: 'Synthetic activity only' }), request.requestId)
     await page.getByTestId('agent-activity').filter({ hasText: 'Synthetic activity only' }).waitFor()
@@ -181,15 +181,15 @@ async function main() {
     await page.getByLabel('Assistant selection', { exact: true }).selectOption('lmstudio'); if (await page.getByRole('group', { name: 'Confirm assistant switch' }).count()) await page.getByRole('group', { name: 'Confirm assistant switch' }).getByRole('button', { name: /^Start .* chat$/ }).click(); await frame()
     await openSettings()
     assert.equal((await snapshot()).fullAccessGrant, null)
-    assert.equal(await checkbox('Full Velorn access').isChecked(), false)
+    assert.equal(await checkbox('Full Belrog access').isChecked(), false)
     assert.equal(await page.getByRole('button', { name: 'Full access', exact: true }).isEnabled(), true)
     assert.match(await page.locator('.ca-access-modes').innerText(), /LM Studio does not include a computer-command tool/)
     await page.getByLabel('Assistant selection', { exact: true }).selectOption('codex'); if (await page.getByRole('group', { name: 'Confirm assistant switch' }).count()) await page.getByRole('group', { name: 'Confirm assistant switch' }).getByRole('button', { name: /^Start .* chat$/ }).click(); await frame()
     await openSettings()
     assert.equal(await full().isChecked(), false)
-    pass('Provider switches revoke permission; LM Studio exposes separate Full Velorn access without claiming arbitrary computer commands')
+    pass('Provider switches revoke permission; LM Studio exposes separate Full Belrog access without claiming arbitrary computer commands')
 
-    await enable(); await checkbox('Velorn tools').uncheck(); await frame()
+    await enable(); await checkbox('Belrog tools').uncheck(); await frame()
     assert.equal((await snapshot()).fullAccessGrant, null); assert.equal(await full().isChecked(), false)
     await enable(); await back()
     const active = await send('Stop me before changing computer permission.')
@@ -210,7 +210,7 @@ async function main() {
     assert.equal((await grantCalls(true)).length, 0)
     pass('Project changes and renderer restart do not inherit full access even when all saved preferences/history are replayed')
 
-    await checkbox('Velorn tools').check()
+    await checkbox('Belrog tools').check()
     await page.evaluate(() => { delete window.electronAPI.connectedAgent.setFullAccess })
     await full().click(); await page.getByRole('alert').filter({ hasText: 'Fully quit and reopen' }).waitFor()
     assert.equal(await full().isChecked(), false)
@@ -220,7 +220,7 @@ async function main() {
     await enable(); await button('Close assistant panel').click(); await frame()
     assert.equal((await snapshot()).fullAccessGrant, null)
     await button('Open agent').click(); await openSettings(); assert.equal(await full().isChecked(), false)
-    await checkbox('Velorn tools').check()
+    await checkbox('Belrog tools').check()
     await page.evaluate(() => window.connectedAgentTest.setHoldFullAccess(true))
     await full().click(); await button('Close assistant panel').click()
     await page.evaluate(() => { window.connectedAgentTest.releaseFullAccess(); window.connectedAgentTest.setHoldFullAccess(false) })

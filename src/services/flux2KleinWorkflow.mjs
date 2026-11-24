@@ -1,4 +1,4 @@
-// FLUX.2 klein 4B (distilled, Apache-2.0): Velorn's local picture model for
+// FLUX.2 klein 4B (distilled, Apache-2.0): Belrog's local picture model for
 // the Director. One light model does both jobs: a picture from words alone
 // (cast portraits, shots with nobody in them) and a picture that keeps the
 // character from one or more reference pictures (keyframes).

@@ -1,6 +1,6 @@
 'use strict'
 
-// Disposable packaged Electron smoke test. It never launches Velorn, uses a
+// Disposable packaged Electron smoke test. It never launches Belrog, uses a
 // real user profile, opens a browser, contacts production, or builds a release.
 // The ASAR contains only fixture code, required native phone modules, and the
 // production ws package. Account replies/native consent are synthetic; the
@@ -48,7 +48,7 @@ async function launch() {
     await fs.cp(path.dirname(require.resolve('ws/package.json')),path.join(source,'node_modules','ws'),{recursive:true})
     await fs.writeFile(path.join(source,'package.json'),JSON.stringify({name:'velorn-phone-packaged-fixture',version:'0.0.0',main:'scripts/check-phone-packaged.cjs',dependencies:{ws:packageJson.dependencies.ws}}))
     await fs.writeFile(path.join(source,'preload.cjs'),"const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('phoneFixture',{invoke:(channel,payload)=>ipcRenderer.invoke(channel,payload),events:[]});ipcRenderer.on('mobile-companion:event',(_event,value)=>{globalThis.fixtureEvents ||= [];globalThis.fixtureEvents.push(value)});\n")
-    await fs.writeFile(path.join(source,'index.html'),'<!doctype html><meta charset="utf-8"><title>Velorn packaged phone fixture</title><h1>Synthetic packaged phone fixture</h1><iframe src="frame.html"></iframe>')
+    await fs.writeFile(path.join(source,'index.html'),'<!doctype html><meta charset="utf-8"><title>Belrog packaged phone fixture</title><h1>Synthetic packaged phone fixture</h1><iframe src="frame.html"></iframe>')
     await fs.writeFile(path.join(source,'frame.html'),'<!doctype html><meta charset="utf-8"><title>Synthetic subframe</title>Fixture subframe')
     const archive=path.join(output,'app.asar')
     await createPackage(source,archive)

@@ -812,7 +812,7 @@ async function main() {
     for (const reason of ['mouse', 'focus', 'modal', 'blur', 'visibility', 'hidden', 'unmounted', 'busy']) {
       await pauseAt()
       await page.keyboard.down('Space')
-      if (reason === 'mouse') await page.getByText('Velorn · isolated export verification', { exact: true }).click()
+      if (reason === 'mouse') await page.getByText('Belrog · isolated export verification', { exact: true }).click()
       else if (reason === 'focus') { await control('filename').focus(); await focusWorkspace() }
       else if (reason === 'modal') await page.evaluate(() => {
         const dialog = document.createElement('div'); dialog.id = 'export-key-modal'; dialog.setAttribute('role', 'dialog')

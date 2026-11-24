@@ -215,7 +215,7 @@ test('the line under the box warns up front', () => {
   assert.equal(footnote({ connected: false }), 'You see the cost before anything is charged.')
   assert.equal(footnote({ connected: true, remembered: true, model: by('nano-banana-2-1'), price: { usd: 0.055 } }),
     'Uses credits from your Comfy account. You see the exact cost after each picture. This model charges even if it refuses a request.')
-  assert.equal(footnote({ connected: true, remembered: false, model: by('flux-3-image'), price: { usd: 0.07 } }), 'Uses credits from your Comfy account. Your key is kept until Velorn closes.')
+  assert.equal(footnote({ connected: true, remembered: false, model: by('flux-3-image'), price: { usd: 0.07 } }), 'Uses credits from your Comfy account. Your key is kept until Belrog closes.')
 })
 
 test('each Comfy answer leads to the right screen', () => {

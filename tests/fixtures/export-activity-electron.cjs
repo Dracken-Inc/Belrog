@@ -53,7 +53,7 @@ app.whenReady().then(async () => {
     inspectExportFileNative: async () => {}, ffprobePath: '',
     beginCappedLogSession: () => true, abortGifExportsForOwner: () => {},
   })
-  await mainWindow.loadURL('data:text/html,<title>Velorn export activity IPC fixture</title>')
+  await mainWindow.loadURL('data:text/html,<title>Belrog export activity IPC fixture</title>')
   const evaluate = code => mainWindow.webContents.executeJavaScript(code)
   await evaluate('window.activities = []; window.offActivity = window.electronAPI.onExportActivity(value => window.activities.push(value)); true')
   const run = (jobId, owner = 'ui') => evaluate(`window.electronAPI.runExportInWorker(${JSON.stringify({ jobId, owner, outputPath: path.join(profile, `${jobId}.mp4`), options: {} })})`)

@@ -1,8 +1,8 @@
 'use strict'
 // The built-in local voice model (Kokoro 82M v1.0, Apache-2.0).
 //
-// It runs inside Velorn's own window, with no ComfyUI and no graphics card. This
-// file keeps its files: it downloads them once into Velorn's data folder, checks
+// It runs inside Belrog's own window, with no ComfyUI and no graphics card. This
+// file keeps its files: it downloads them once into Belrog's data folder, checks
 // each one against a known size and SHA-256, and hands the bytes to the window
 // that speaks with them. Every file is pinned to an exact published version, so
 // what is run is what was reviewed.

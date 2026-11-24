@@ -170,7 +170,7 @@ async function main() {
     await select(thirdId)
     pass('Running replies disable chat creation, switching and deletion; Stop permits navigation and rejects late replies in both chats')
 
-    await openSettings(); await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check(); await backToChat()
+    await openSettings(); await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check(); await backToChat()
     const approvalRequest = await send('Ask before a synthetic timeline change')
     await emit(approvalRequest, { type: 'approval', approvalId: 'conversation-pending', toolName: 'edit_timeline', arguments: { operation: 'move', clipId: 'fixture-clip' } })
     await button('Approve').waitFor(); await assertDisabled()

@@ -1,12 +1,12 @@
 'use strict'
 // Runs ONE approved network job on this computer's own ComfyUI and hands back
-// the finished clip or picture. This is the host's side of "Run on Velorn network".
+// the finished clip or picture. This is the host's side of "Run on Belrog network".
 //
 // It talks only to the loopback ComfyUI. It takes a workflow id from
 // gpuShareWorkflows.cjs and a few plain choices, never a workflow or a path.
 // Before anything is queued it checks that this ComfyUI has every node and
 // model the workflow needs and that the bound graph is entirely local (the same
-// audited list the rest of Velorn uses), so a network job can never reach a
+// audited list the rest of Belrog uses), so a network job can never reach a
 // paid or unknown node. It does not decide WHETHER to run a job: who may ask,
 // content checks and limits belong to its caller.
 const { createHash, randomInt } = require('node:crypto')
@@ -78,17 +78,17 @@ function createGpuShareHostRunner({ getEndpoint, readWorkflow, fetchImpl = globa
     } finally { clearTimeout(timer) }
   }
 
-  // Velorn's own short list first. Anything else must be one of this computer's
+  // Belrog's own short list first. Anything else must be one of this computer's
   // owner's own added workflows (gpuShareOwnWorkflows.cjs), which brings its graph with it.
   async function prepared(workflowId, own = null) {
     const found = own || (getApproved(workflowId) ? null : typeof resolveOwn === 'function' ? await resolveOwn(workflowId) : null)
     const entry = found ? found.entry : getApproved(workflowId)
-    if (!entry) throw refuse('That workflow is not offered on the Velorn network.', 'GPU_SHARE_WORKFLOW_UNKNOWN')
+    if (!entry) throw refuse('That workflow is not offered on the Belrog network.', 'GPU_SHARE_WORKFLOW_UNKNOWN')
     const base = loopback(await getEndpoint())
     let template
     if (found) template = found.template
     else try { template = await readWorkflow(entry.file) } catch { template = null }
-    if (!plain(template)) throw refuse('This Velorn is missing the workflow file. Reinstall or update Velorn.', 'GPU_SHARE_WORKFLOW_CHANGED')
+    if (!plain(template)) throw refuse('This Belrog is missing the workflow file. Reinstall or update Belrog.', 'GPU_SHARE_WORKFLOW_CHANGED')
     const info = await call(base, '/object_info', { maxBytes: LIMITS.objectInfoBytes })
     if (!info.ok || !plain(info.value)) throw refuse('ComfyUI on this computer did not answer.', 'GPU_SHARE_COMFY_UNAVAILABLE')
     return { entry, base, template, objectInfo: info.value }

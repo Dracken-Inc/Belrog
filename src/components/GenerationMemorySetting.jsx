@@ -27,7 +27,7 @@ export default function GenerationMemorySetting() {
   }
   return <section className="ca-settings-section">
     <label><input type="checkbox" checked={enabled} disabled={!ready || saving} onChange={event => void change(event.target.checked)} /> Free GPU memory after generation</label>
-    <p>Unload ComfyUI models and clear its cache after Velorn-managed generation when the queue stays empty briefly. The next generation may start more slowly. Does not unload your agent model or delete files. Saved on this device.</p>
+    <p>Unload ComfyUI models and clear its cache after Belrog-managed generation when the queue stays empty briefly. The next generation may start more slowly. Does not unload your agent model or delete files. Saved on this device.</p>
     {error && <p role="alert">{error}</p>}
   </section>
 }

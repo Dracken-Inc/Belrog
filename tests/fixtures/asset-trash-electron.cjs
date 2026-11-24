@@ -10,7 +10,7 @@ const { createAssetTrash } = require('../../electron/assetTrash.cjs')
 app.whenReady().then(async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-trash-fixture-'))
   const candidate = path.join(root, 'disposable-asset.txt'), retained = path.join(root, 'retained-asset.txt')
-  await fs.writeFile(candidate, 'Synthetic Velorn Trash verification. Not user media.\n')
+  await fs.writeFile(candidate, 'Synthetic Belrog Trash verification. Not user media.\n')
   await fs.writeFile(retained, 'Synthetic file that must be retained.\n')
   const helper = createAssetTrash({ trashItem: target => {
     assert.equal(target, candidate, 'Only the newly created disposable file may be moved')

@@ -11,7 +11,7 @@ let scenario, serial = 0
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html')
   if (req.url === '/child') return res.end(`<button id="activate">Edit workflow</button><script>addEventListener('beforeunload',event=>{ event.preventDefault(); return true })</script>`)
-  res.end(`<button id="close">Close Velorn</button><input id="project" value="unsaved edit"><iframe id="comfy" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads" src="/child"></iframe><script>
+  res.end(`<button id="close">Close Belrog</button><input id="project" value="unsaved edit"><iframe id="comfy" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads" src="/child"></iframe><script>
     window.electronAPI.onPrepareClose(async()=>{
       document.body.dataset.saving='yes';
       const result=await window.electronAPI.readFile('synthetic-save',document.querySelector('#project').value);

@@ -1,5 +1,5 @@
 'use strict'
-// One call to the Velorn network queue on the connection service. Fixed paths
+// One call to the Belrog network queue on the connection service. Fixed paths
 // only, this computer's own registered credential, bounded sizes and time. The
 // address always comes from native configuration, never from a job or a reply.
 const http = require('node:http')
@@ -9,7 +9,7 @@ const ROUTES = new Set(['host/heartbeat', 'host/claim', 'host/input', 'host/prog
   'hosts', 'submit', 'job/input', 'job/status', 'job/output', 'job/cancel', 'job/done',
   'own/submit', 'own/graph', 'own/withdraw', 'own/status', 'workflow/report', 'review/list', 'review/example', 'review/graph', 'review/try', 'review/decide', 'review/ban', 'review/dismiss'])
 const MAX_REQUEST = 300 * 1024, MAX_RESPONSE = 400 * 1024, DEADLINE_MS = 20000
-const unavailable = (code = 'GPU_NETWORK_UNAVAILABLE', message = 'The Velorn network could not be reached.') => Object.assign(new Error(message), { code, publicMessage: message })
+const unavailable = (code = 'GPU_NETWORK_UNAVAILABLE', message = 'The Belrog network could not be reached.') => Object.assign(new Error(message), { code, publicMessage: message })
 
 // Resolves to the service's JSON answer. A refusal by the service is an answer:
 // { ok: false, error, status }. Only a failure to get any answer rejects.
@@ -22,7 +22,7 @@ function requestGpuNetwork({ url, token, body, signal, allowLocalTest = false })
         || !(url.protocol === 'https:' || (allowLocalTest && url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname)))
         || !/^[A-Za-z0-9_-]{43}$/.test(token || '')) throw unavailable('GPU_NETWORK_REJECTED')
       contents = JSON.stringify(body)
-      if (!contents || Buffer.byteLength(contents) > MAX_REQUEST) throw unavailable('GPU_NETWORK_LIMIT', 'That is too large to send through the Velorn network.')
+      if (!contents || Buffer.byteLength(contents) > MAX_REQUEST) throw unavailable('GPU_NETWORK_LIMIT', 'That is too large to send through the Belrog network.')
       if (signal?.aborted) throw unavailable('GPU_NETWORK_CANCELLED', 'Stopped.')
     } catch (error) { reject(error?.publicMessage ? error : unavailable('GPU_NETWORK_REJECTED')); return }
     let settled = false

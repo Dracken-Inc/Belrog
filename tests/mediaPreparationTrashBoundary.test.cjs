@@ -90,7 +90,7 @@ test('native Trash holds the preparation lease until success and does not let fo
     { sender: f.editor, senderFrame: {} }]) {
     const result = await f.trash(event)
     assert.equal(result.success, false)
-    assert.match(result.error, /Only the Velorn editor/)
+    assert.match(result.error, /Only the Belrog editor/)
   }
   assert.equal(f.exclusiveCalls, 0, 'Authorization runs before claiming the queue lease')
   assert.equal(f.calls.length, 0)

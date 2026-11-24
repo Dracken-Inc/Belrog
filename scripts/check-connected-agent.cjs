@@ -76,13 +76,13 @@ async function main() {
   const settle = (request, result) => page.evaluate(({ requestId, result }) => window.connectedAgentTest.settle(requestId, result), { requestId: request.requestId, result })
   const emit = (request, type, text) => page.evaluate(({ requestId, type, text }) => window.connectedAgentTest.emit(requestId, type, text), { requestId: request.requestId, type, text })
   const assertAgentIdentity = async (providerName, busy = false) => {
-    await page.getByRole('complementary', { name: 'Velorn Assistant', exact: true }).waitFor()
-    assert.equal(await page.getByRole('heading', { name: 'Velorn Assistant', exact: true }).isVisible(), true)
+    await page.getByRole('complementary', { name: 'Belrog Assistant', exact: true }).waitFor()
+    assert.equal(await page.getByRole('heading', { name: 'Belrog Assistant', exact: true }).isVisible(), true)
     assert.equal(await page.getByLabel('Current assistant permissions', { exact: true }).locator('span').first().innerText(), providerName, 'Provider status keeps the selected backend name')
     assert.equal(await page.locator('.ca-assistant[aria-busy="true"]').count(), busy ? 1 : 0)
     const assistantLabels = await page.locator('.ca-assistant > strong').allTextContents()
     assert.ok(assistantLabels.length > 0)
-    assert.ok(assistantLabels.every(label => label === 'Velorn Assistant'), 'Streaming, completed and restored replies use the product agent name')
+    assert.ok(assistantLabels.every(label => label === 'Belrog Assistant'), 'Streaming, completed and restored replies use the product agent name')
     const userLabels = await page.locator('.ca-user > strong').allTextContents()
     assert.ok(userLabels.length > 0)
     assert.ok(userLabels.every(label => label === 'You'), 'User messages retain their sender label')
@@ -110,7 +110,7 @@ async function main() {
     assert.equal(baseline.dirty, false)
     assert.equal(await button('Assistant settings').getAttribute('aria-expanded'), 'false')
     for (const control of [page.getByLabel('Assistant selection', { exact: true }), page.getByLabel('Model', { exact: true }),
-      button('Check connection'), page.getByRole('checkbox', { name: 'Velorn tools', exact: true }), page.getByRole('checkbox', { name: 'Share images', exact: true })]) {
+      button('Check connection'), page.getByRole('checkbox', { name: 'Belrog tools', exact: true }), page.getByRole('checkbox', { name: 'Share images', exact: true })]) {
       assert.equal(await control.isVisible(), false, 'Configuration stays out of the default chat-first view')
     }
     const initialSubscriptions = (await snapshot()).listenerSubscriptions
@@ -119,7 +119,7 @@ async function main() {
     await button('Assistant settings').focus(); await page.keyboard.press('Enter')
     assert.equal(await button('Assistant settings').getAttribute('aria-expanded'), 'true')
     assert.equal(await input().isVisible(), false)
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Work in Velorn')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Work in Belrog')
     await page.getByLabel('Model', { exact: true }).focus(); await page.keyboard.press('Escape')
     await input().waitFor()
     assert.equal(await button('Assistant settings').evaluate(node => document.activeElement === node), true)

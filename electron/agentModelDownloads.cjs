@@ -7,7 +7,7 @@ const { randomUUID, createHash } = require('node:crypto')
 const { isIP } = require('node:net')
 
 // Boundary: untrusted remote URLs/model arguments and incidental filesystem
-// changes, not a hostile same-OS-user process controlling Velorn's directories.
+// changes, not a hostile same-OS-user process controlling Belrog's directories.
 // Portable Node does not expose descriptor-relative linkat/unlinkat. Identity
 // rechecks therefore detect ordinary replacement, not every adversarial race.
 // Linux additionally pins the destination directory with /proc/self/fd.
@@ -266,7 +266,7 @@ function createModelDownloadManager({ getComfyRoot, webClient, fs = fsPromises, 
       // Queueing is not network admission. Export/project availability can
       // change while this job waits or prepares its guarded partial file.
       try { await assertCanStart() }
-      catch { throw fault('DOWNLOAD_UNAVAILABLE', 'Model downloading is no longer available in the current Velorn state. Inspect before requesting a new approved download.') }
+      catch { throw fault('DOWNLOAD_UNAVAILABLE', 'Model downloading is no longer available in the current Belrog state. Inspect before requesting a new approved download.') }
       checkAbort(signal)
       response = await abortable(webClient.open(job.args.url, { signal, method: 'GET', maxBytes: job.args.maxBytes, timeoutMs }), signal)
       if (response.stream?.[Symbol.asyncIterator]) iterator = response.stream[Symbol.asyncIterator]()

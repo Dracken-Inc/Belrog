@@ -32,7 +32,7 @@ Full-length run `native-fixed-full-crf16.mp4` completed in **185.552s (3m05.6s)*
 
 Final validation: ffprobe confirmed those video dimensions/rate/frame count and the stereo AAC stream; a complete FFmpeg `-xerror` decode of both streams passed. Matching review frames at 35 seconds were visually inspected. The native job completed/unlocked, and Meme World Loop remained open on the same timeline. No commit, merge or push was performed.
 
-This is export prioritization, not an OS resource scheduler: work already started in ComfyUI, external programs, or pre-existing asynchronous jobs is not silently killed. Cross-origin embedded applications cannot be paused by traversing Velorn's document. Native-only MCP entry points see native export activity; renderer preparation guards begin earlier. Pending MCP batches remain renderer-session-only, as documented before this work.
+This is export prioritization, not an OS resource scheduler: work already started in ComfyUI, external programs, or pre-existing asynchronous jobs is not silently killed. Cross-origin embedded applications cannot be paused by traversing Belrog's document. Native-only MCP entry points see native export activity; renderer preparation guards begin earlier. Pending MCP batches remain renderer-session-only, as documented before this work.
 
 ## Verification
 

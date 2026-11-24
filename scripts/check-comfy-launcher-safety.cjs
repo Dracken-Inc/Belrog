@@ -1,5 +1,5 @@
 // Real native lookup/guarded stop with disposable local HTTP processes only.
-// Never reads normal Velorn settings/state or uses ComfyUI's configured port.
+// Never reads normal Belrog settings/state or uses ComfyUI's configured port.
 const assert = require('node:assert/strict')
 const { spawn } = require('node:child_process')
 const { once } = require('node:events')

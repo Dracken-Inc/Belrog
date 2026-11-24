@@ -182,7 +182,7 @@ function registerViewerPresentationIpc(ipcMain, getController) {
     const controller = getController()
     const window = controller?.window
     if (!window || window.isDestroyed() || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) {
-      throw new Error('Only the Velorn editor main frame may control viewer presentation.')
+      throw new Error('Only the Belrog editor main frame may control viewer presentation.')
     }
     return controller
   }

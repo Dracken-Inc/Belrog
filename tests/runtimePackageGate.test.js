@@ -204,7 +204,7 @@ test('post-sign validation relaxes only the executable hash and verifies its sig
     runBinaryImpl: () => {
       calls.push('execute')
       return {
-        output: 'Usage: rife-ncnn-vulkan\nVelorn secure build: PNG input and output only; WebP is disabled.',
+        output: 'Usage: rife-ncnn-vulkan\nBelrog secure build: PNG input and output only; WebP is disabled.',
       }
     },
   })
@@ -238,7 +238,7 @@ test('RIFE help probe accepts only the secure build success status', (t) => {
       allowedStatuses = options.allowedStatuses
       return {
         status: 0,
-        output: 'Usage: rife-ncnn-vulkan\nVelorn secure build: PNG input and output only; WebP is disabled.',
+        output: 'Usage: rife-ncnn-vulkan\nBelrog secure build: PNG input and output only; WebP is disabled.',
       }
     },
   })
@@ -402,7 +402,7 @@ test('pins native media bytes and verifies signatures before signed helper execu
     ffprobePath,
     expectedFiles,
     signedPackage: true,
-    hostExecutablePath: '/Velorn.app/Contents/MacOS/Velorn',
+    hostExecutablePath: '/Belrog.app/Contents/MacOS/Belrog',
     signatureVerifier: ({ executablePath }) => calls.push(`signature:${path.basename(executablePath)}`),
     runBinaryImpl: (...args) => {
       calls.push(`execute:${path.basename(args[0])}`)

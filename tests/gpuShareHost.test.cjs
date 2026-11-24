@@ -1,5 +1,5 @@
 'use strict'
-// The host's side of the Velorn network: the approved workflow list and running
+// The host's side of the Belrog network: the approved workflow list and running
 // one job on this computer's ComfyUI. The ComfyUI here is a pretend one in
 // memory; nothing is queued, no model runs and no network is used.
 const test = require('node:test')
@@ -17,7 +17,7 @@ const picture = { mimeType: 'image/png', bytes: png }
 const MODULES = ['nodes', ...['nodes_lt', 'nodes_lt_audio', 'nodes_lt_upsampler', 'nodes_hunyuan', 'nodes_custom_sampler', 'nodes_primitive', 'nodes_logic', 'nodes_math',
   'nodes_post_processing', 'nodes_dataset', 'nodes_video', 'nodes_textgen', 'nodes_preview_any', 'nodes_images', 'nodes_mask'].map(name => `comfy_extras.${name}`)]
 // Node information as an up-to-date ComfyUI reports it: each class from the
-// module Velorn's audited list expects, and each loader offering the files it has.
+// module Belrog's audited list expects, and each loader offering the files it has.
 function objectInfo({ without = [], files = null } = {}) {
   const info = {}
   for (const node of Object.values(template)) {

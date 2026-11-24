@@ -1,4 +1,4 @@
-// Whether Velorn is asking, right now, if a paid or unfamiliar job may run.
+// Whether Belrog is asking, right now, if a paid or unfamiliar job may run.
 // A job waits at "queuing" while that question is open, so its card says it is
 // waiting for the person instead of "Queued in ComfyUI".
 import { useSyncExternalStore } from 'react'

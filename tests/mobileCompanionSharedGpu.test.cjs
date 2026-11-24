@@ -99,8 +99,8 @@ test('only what was just listed can be sent, and refusals, failures and stopping
     assert.equal((await f.bridge.handle({ action: 'shared-send', ...bad })).success, false, JSON.stringify(bad))
   assert.equal(f.net.submitted.length, 0)
   // The description check and the daily limit answer in their own words.
-  f.net.fail = { code: 'GPU_SHARE_FILTER_EXPLICIT', publicMessage: 'This description is not allowed on the Velorn network.' }
-  assert.deepEqual(await f.bridge.handle({ action: 'shared-send', cardId: card(HOST, T2I), prompt: 'x', agreed: true }), { success: false, code: 'GPU_SHARE_FILTER_EXPLICIT', error: 'This description is not allowed on the Velorn network.' })
+  f.net.fail = { code: 'GPU_SHARE_FILTER_EXPLICIT', publicMessage: 'This description is not allowed on the Belrog network.' }
+  assert.deepEqual(await f.bridge.handle({ action: 'shared-send', cardId: card(HOST, T2I), prompt: 'x', agreed: true }), { success: false, code: 'GPU_SHARE_FILTER_EXPLICIT', error: 'This description is not allowed on the Belrog network.' })
   f.net.fail = null
   const sent = await f.bridge.handle({ action: 'shared-send', cardId: card(OTHER, T2I), prompt: 'my own computer' }) // One's own computer: no rules step.
   assert.equal(sent.success, true)
@@ -119,7 +119,7 @@ test('only what was just listed can be sent, and refusals, failures and stopping
   await f.bridge.handle({ action: 'shared-send', cardId: card(OTHER, T2I), prompt: 'third' })
   f.net.status = 'gone'
   seen = await f.bridge.handle({ action: 'shared-jobs' })
-  assert.deepEqual([seen.busy, seen.jobs[0].status], [false, 'failed']); assert.match(seen.jobs[0].errorMessage, /no longer on the Velorn network/)
+  assert.deepEqual([seen.busy, seen.jobs[0].status], [false, 'failed']); assert.match(seen.jobs[0].errorMessage, /no longer on the Belrog network/)
   assert.equal((await f.bridge.handle({ action: 'shared-nope' })).success, false)
 })
 
@@ -129,7 +129,7 @@ test('"Yours": this computer\'s own tested workflows show on the phone and run r
   const MINE = 'own-' + '9'.repeat(16), EDIT = 'own-' + '8'.repeat(16)
   const ran = [], finished = []
   let release, fail = null
-  const jobs = createGpuNetworkJobs({ jobPath: path.join(dir, 'job.json'), client: { listHosts: async () => { throw Object.assign(new Error('offline'), { publicMessage: 'The Velorn network could not be reached.' }) },
+  const jobs = createGpuNetworkJobs({ jobPath: path.join(dir, 'job.json'), client: { listHosts: async () => { throw Object.assign(new Error('offline'), { publicMessage: 'The Belrog network could not be reached.' }) },
     submit: async () => { throw new Error('nothing may go to the network') }, jobStatus: async () => ({}), collect: async () => ({}), cancel: async () => ({}), forget: async () => {}, reportWorkflow: async () => ({}) } })
   const shared = createPhoneSharedGpu({ jobs, cacheDir: path.join(dir, 'shared'), onLocalResult: () => finished.push(1),
     local: { list: async () => [{ id: MINE, name: 'My houses', shape: 'text-to-picture', kind: 'image', needsImage: false }, { id: EDIT, name: 'My edit', shape: 'picture-edit', kind: 'image', needsImage: true }, { id: 'not-an-id', name: 'x' }],

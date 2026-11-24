@@ -8,7 +8,7 @@ const MODELS = { success: true, creditsPerUsd: 211, models: [
   { id: 'vid', kind: 'video', name: 'Video' },
 ] }
 
-test('the cloud picture model and its price come from the list Velorn keeps', async () => {
+test('the cloud picture model and its price come from the list Belrog keeps', async () => {
   const model = await routerPictureModel({ models: async () => MODELS })
   assert.deepEqual(model, { id: 'nano-banana-2-1', name: 'Nano Banana 2.1', usd: 0.0785, size: '2K', creditsPerUsd: 211 })
   assert.equal(await routerPictureModel({ models: async () => ({ success: false }) }), null)

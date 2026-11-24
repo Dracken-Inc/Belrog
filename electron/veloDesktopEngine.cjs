@@ -56,7 +56,7 @@ function initializeDesktopEngine(app, dependencies = {}) {
             const waitSignal = AbortSignal.any([signal, controls?.signal].filter(Boolean))
             const callId = `velo-generation:${++monitorSerial}`
             const emit = (status, summary) => { try { onEvent?.({ type: 'tool', callId, toolName: name, status, summary }) } catch {} }
-            emit('running', 'Velorn is monitoring existing generations; no AI polling.')
+            emit('running', 'Belrog is monitoring existing generations; no AI polling.')
             onWaiting?.(true)
             try {
               const result = await toolSession.monitorGenerationRuns(args, { signal: waitSignal,

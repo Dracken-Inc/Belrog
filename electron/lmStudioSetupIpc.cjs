@@ -82,7 +82,7 @@ function createLmStudioSetupController({ ipcMain, app, getMainWindow, dialog,
     const window = getMainWindow(), contents = window?.webContents, frame = contents?.mainFrame
     if (disposed || !window || window.isDestroyed() || !contents || contents.isDestroyed() || !frame
       || source === 'desktop' && (event?.sender !== contents || event?.senderFrame !== frame)) {
-      throw fault('LM_STUDIO_SETUP_UNAUTHORIZED', 'Model setup is available only in the main Velorn desktop window.')
+      throw fault('LM_STUDIO_SETUP_UNAUTHORIZED', 'Model setup is available only in the main Belrog desktop window.')
     }
     if (document && !documentCurrent(document)) invalidate(document)
     if (!document) {
@@ -100,7 +100,7 @@ function createLmStudioSetupController({ ipcMain, app, getMainWindow, dialog,
   function contextFor(owner) {
     const context = calls.getStore(), binding = owners.get(owner)
     if (!context || context.owner !== owner || !binding || binding.record !== context.record || !documentCurrent(binding.record)) {
-      throw fault('LM_STUDIO_SETUP_CONTEXT_CHANGED', 'The Velorn window changed. Reopen model setup before continuing.')
+      throw fault('LM_STUDIO_SETUP_CONTEXT_CHANGED', 'The Belrog window changed. Reopen model setup before continuing.')
     }
     return context
   }
@@ -150,7 +150,7 @@ function createLmStudioSetupController({ ipcMain, app, getMainWindow, dialog,
     if (url.protocol !== 'https:' || url.hostname !== 'huggingface.co' || url.port || url.username || url.password || url.search || url.hash) throw fault('LM_STUDIO_SETUP_INVALID_REVIEW', 'Use an exact public Hugging Face model source.')
     await assertCanStart({ owner, action })
     if (confirming) throw fault('LM_STUDIO_SETUP_BUSY', 'Finish the current model review before starting another one.')
-    if (typeof dialog?.showMessageBox !== 'function') throw fault('LM_STUDIO_SETUP_UNAVAILABLE', 'Native model confirmation is unavailable. Restart Velorn.')
+    if (typeof dialog?.showMessageBox !== 'function') throw fault('LM_STUDIO_SETUP_UNAVAILABLE', 'Native model confirmation is unavailable. Restart Belrog.')
     const context = contextFor(owner), record = context.record, token = {}, controller = new AbortController()
     confirming = token
     let timer, rejectAbort
@@ -164,10 +164,10 @@ function createLmStudioSetupController({ ipcMain, app, getMainWindow, dialog,
       if (record.abort.signal.aborted || context.agentScope?.signal?.aborted) { abort(); await aborted }
       try { context.agentScope?.onWaiting?.(true) } catch {}
       const answer = await Promise.race([aborted, dialog.showMessageBox(record.window, {
-        type: 'question', title: 'Velorn local model setup', signal: controller.signal,
+        type: 'question', title: 'Belrog local model setup', signal: controller.signal,
         message: `${loading ? 'Load' : 'Download'} ${review.modelName}?`,
         detail: `Model: ${review.repository}\nFile: ${review.filename}\nRevision: ${review.revision}\nLicense: ${review.license.name}\nLicense information: ${review.license.url}\nSource: ${review.sourceUrl}\n\nSize: ${review.bytes.toLocaleString('en-US')} bytes\nDestination: ${review.destination}\n\n${loading
-          ? `Context Length: up to ${review.contextTargetTokens.toLocaleString('en-US')} tokens, capped by the model's reported maximum. Larger context uses more RAM/GPU memory; fitting in memory is not guaranteed. Loading may start the installed LM Studio local server on loopback only. Existing authentication stays enabled. This does not send a prompt, switch your Velorn agent/model, or unload/reload an already loaded model.`
+          ? `Context Length: up to ${review.contextTargetTokens.toLocaleString('en-US')} tokens, capped by the model's reported maximum. Larger context uses more RAM/GPU memory; fitting in memory is not guaranteed. Loading may start the installed LM Studio local server on loopback only. Existing authentication stays enabled. This does not send a prompt, switch your Belrog agent/model, or unload/reload an already loaded model.`
           : 'This downloads only the reviewed model weights. Loading uses additional RAM/GPU memory and needs separate approval. This does not select an agent, send a prompt, install code, or purchase credits.'}`,
         buttons: ['Cancel', loading ? 'Load model' : 'Download model'], defaultId: 0, cancelId: 0, noLink: true,
       })])

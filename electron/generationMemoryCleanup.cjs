@@ -1,7 +1,7 @@
 'use strict'
 
 const SETTING_KEY = 'freeGpuMemoryAfterGeneration'
-// A completion arms cleanup; merely starting Velorn or changing a setting does
+// A completion arms cleanup; merely starting Belrog or changing a setting does
 // not unload anything. Keep this independent from agent-model residency.
 function createGenerationMemoryCleanup({ getEnabled, getEndpoint, isBusy = async () => false,
   fetchImpl = globalThis.fetch, delayMs = 10000, setTimer = setTimeout, clearTimer = clearTimeout,

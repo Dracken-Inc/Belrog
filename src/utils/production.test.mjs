@@ -266,7 +266,7 @@ test('the next-step guide asks one focused creative question at each blocked or 
   assert.match(guide(board).questions[0], /before approving/)
   assert.match(guide(approve(board, 'cast-locations')).questions[0], /sequence of shots/)
   board = animatic()
-  assert.match(guide(board).questions[0], /ordinary Velorn timeline/)
+  assert.match(guide(board).questions[0], /ordinary Belrog timeline/)
   let changed = edit(board, { operation: 'update_shot', shotId: board.shots[0].id, patch: { referenceAssetIds: [] } }).board
   assert.match(guide(changed).questions[0], /still image/)
   changed = edit(board, { operation: 'update_shot', shotId: board.shots[0].id, patch: { durationSeconds: 30 } }).board
@@ -290,6 +290,6 @@ test('guide keeps the assistant conversation first and separates preferences fro
   assert.match(value.handoffPrompt, /not permission or proof of delegated scope/)
   assert.match(value.handoffPrompt, /whole scope in this conversation/)
   assert.match(value.handoffPrompt, /read-only visual reference page/)
-  assert.match(value.handoffPrompt, /ordinary Velorn timeline/)
+  assert.match(value.handoffPrompt, /ordinary Belrog timeline/)
   assert.match(value.handoffPrompt, /labels or text overlays only if requested/)
 })

@@ -46,10 +46,10 @@ function registerLmStudioAppIpc({ ipcMain, app, getMainWindow, installedApps } =
     let value, ownsAction = false
     try {
       value = authorize(event)
-      if (!value) return failure('LM_STUDIO_APP_UNAUTHORIZED', 'LM Studio app controls are available only in the main Velorn window.')
+      if (!value) return failure('LM_STUDIO_APP_UNAUTHORIZED', 'LM Studio app controls are available only in the main Belrog window.')
       if (!validPayload(payload)) return failure('LM_STUDIO_APP_INVALID_REQUEST', 'Choose only Open LM Studio or Choose its location.')
       if (busy) return failure('LM_STUDIO_APP_BUSY', 'Finish the current LM Studio app action before starting another.')
-      if (typeof installedApps?.[payload.action] !== 'function') return failure('LM_STUDIO_APP_UNAVAILABLE', 'Fully quit and reopen Velorn to enable LM Studio app controls.')
+      if (typeof installedApps?.[payload.action] !== 'function') return failure('LM_STUDIO_APP_UNAVAILABLE', 'Fully quit and reopen Belrog to enable LM Studio app controls.')
       busy = true; ownsAction = true
       // Existing discovery, exact-target native approval and selection guards
       // remain authoritative. No URL, path, model or launch flags cross IPC.
@@ -60,8 +60,8 @@ function registerLmStudioAppIpc({ ipcMain, app, getMainWindow, installedApps } =
       if (outcome?.ok === true && outcome.status === (payload.action === 'open' ? 'opened' : 'selected')) {
         return { success: true, opened: payload.action === 'open', cancelled: false,
           summary: payload.action === 'open'
-            ? 'LM Studio was opened. Its saved startup preferences may apply. Check its local server next; Velorn did not request a model download, load or prompt.'
-            : 'LM Studio was selected for this Velorn session. It has not been opened or connected.' }
+            ? 'LM Studio was opened. Its saved startup preferences may apply. Check its local server next; Belrog did not request a model download, load or prompt.'
+            : 'LM Studio was selected for this Belrog session. It has not been opened or connected.' }
       }
       if (outcome?.status === 'stale') return cancelled()
       if (outcome?.status === 'busy') return failure('LM_STUDIO_APP_BUSY', 'Finish the current LM Studio app action before starting another.')

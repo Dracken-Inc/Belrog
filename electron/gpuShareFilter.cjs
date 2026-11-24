@@ -1,6 +1,6 @@
 'use strict'
-// A first, plain check on the description of a Velorn network job. It runs in
-// Velorn on BOTH computers: before the job leaves the person who wrote it, and
+// A first, plain check on the description of a Belrog network job. It runs in
+// Belrog on BOTH computers: before the job leaves the person who wrote it, and
 // again on the host before anything is accepted. The host's check is the one
 // that counts.
 //
@@ -39,8 +39,8 @@ function checkPrompt(prompt) {
   if (typeof prompt !== 'string' || !prompt.trim()) return { ok: false, code: 'GPU_SHARE_FILTER_EMPTY', reason: 'There is no description to check.' }
   const text = normalize(prompt)
   const explicit = has(EXPLICIT, text) || spelled(EXPLICIT, text), minor = has(MINOR, text) || spelled(MINOR, text)
-  if (minor && (explicit || has(SUGGESTIVE, text) || spelled(SUGGESTIVE, text))) return { ok: false, code: 'GPU_SHARE_FILTER_MINOR', reason: 'This description is not allowed on the Velorn network.' }
-  if (explicit) return { ok: false, code: 'GPU_SHARE_FILTER_EXPLICIT', reason: 'Sexually explicit descriptions are not allowed on the Velorn network.' }
+  if (minor && (explicit || has(SUGGESTIVE, text) || spelled(SUGGESTIVE, text))) return { ok: false, code: 'GPU_SHARE_FILTER_MINOR', reason: 'This description is not allowed on the Belrog network.' }
+  if (explicit) return { ok: false, code: 'GPU_SHARE_FILTER_EXPLICIT', reason: 'Sexually explicit descriptions are not allowed on the Belrog network.' }
   return { ok: true }
 }
 

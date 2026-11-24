@@ -148,7 +148,7 @@ async function runElectron() {
     server = http.createServer((request, response) => {
       if (!['/', '/frame', '/next', '/export-worker', '/favicon.ico'].includes(request.url)) { response.writeHead(404); response.end(); return }
       response.writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'none'" })
-      response.end('<!doctype html><html><head><title>Velorn native synthetic fixture</title></head><body style="margin:0;background:#16364d;color:white;font:32px sans-serif"><h1>Velorn synthetic IPC fixture</h1><p>No project or provider is connected.</p>'
+      response.end('<!doctype html><html><head><title>Belrog native synthetic fixture</title></head><body style="margin:0;background:#16364d;color:white;font:32px sans-serif"><h1>Belrog synthetic IPC fixture</h1><p>No project or provider is connected.</p>'
         + (request.url === '/' ? '<iframe title="Untrusted child frame" src="/frame" style="width:300px;height:160px"></iframe>' : '') + '</body></html>')
     })
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -187,7 +187,7 @@ async function runElectron() {
         assert.equal(request.provider, 'codex')
         assert.equal(request.toolsEnabled, true)
         assert.equal(request.workingDirectory, fs.realpathSync(profile), 'The host resolves the real temporary project directory')
-        assert.ok(toolSession, 'Full-access backend retains the guarded Velorn tool session')
+        assert.ok(toolSession, 'Full-access backend retains the guarded Belrog tool session')
         const catalog = await toolSession.listTools()
         assert.equal(catalog.length, toolServer.tools.length)
         assertLiveGenerationRunTools(catalog)

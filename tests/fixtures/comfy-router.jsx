@@ -132,7 +132,7 @@ function Fixture() {
   const [preview, showPreview] = React.useState(currentPreview)
   React.useEffect(() => { previewListeners.add(showPreview); return () => previewListeners.delete(showPreview) }, [])
   return <main style={{ background: '#090e18', color: '#e7ebf5', minHeight: '100vh', padding: 30 }}>
-    <h1>Velorn · Synthetic cloud image panel</h1>
+    <h1>Belrog · Synthetic cloud image panel</h1>
     <button onClick={() => setOpen(true)} style={{ marginTop: 20, padding: 12, border: '1px solid #697080' }}>Open cloud images</button>
     {preview && <img alt="Imported Router image preview" src={preview.url || undefined} width={260} height={260} style={{ display: 'block', marginTop: 20 }} />}
     {open && <ComfyRouterPanel onClose={() => setOpen(false)} onOpenSpending={() => { spendingOpens++ }} onImport={async jobId => {

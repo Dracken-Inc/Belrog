@@ -2,7 +2,7 @@
 // filesystem picker, account, provider request or network is used here.
 import './codex-setup-preview.css'
 const host=document.getElementById('preview')
-host.innerHTML=`<header><span class="badge">ISOLATED PREVIEW · NOT YOUR INSTALLED APP</span><h1>Try LM Studio setup</h1><p>Real Velorn screens, simulated local models and app controls. Your working apps, accounts and chats stay untouched.</p></header><div class="toolbar"><button id="ready">Server ready</button><button id="stopped">Server stopped</button><button id="empty">No models</button></div><div class="layout"><aside><section class="note"><h2>Try the connection-first flow</h2><p>Choose <strong>LM Studio</strong> inside Velorn. The buttons above reset only this preview.</p><p class="small">Model names are examples, not recommendations. Nothing is installed, downloaded, loaded or sent to an AI. You can leave your working apps open.</p></section><section id="step" class="note active" aria-live="polite"></section><p class="small" id="status" role="status">Loading the isolated screens…</p></aside><iframe title="Velorn LM Studio setup preview" sandbox="allow-scripts allow-same-origin"></iframe></div>`
+host.innerHTML=`<header><span class="badge">ISOLATED PREVIEW · NOT YOUR INSTALLED APP</span><h1>Try LM Studio setup</h1><p>Real Belrog screens, simulated local models and app controls. Your working apps, accounts and chats stay untouched.</p></header><div class="toolbar"><button id="ready">Server ready</button><button id="stopped">Server stopped</button><button id="empty">No models</button></div><div class="layout"><aside><section class="note"><h2>Try the connection-first flow</h2><p>Choose <strong>LM Studio</strong> inside Belrog. The buttons above reset only this preview.</p><p class="small">Model names are examples, not recommendations. Nothing is installed, downloaded, loaded or sent to an AI. You can leave your working apps open.</p></section><section id="step" class="note active" aria-live="polite"></section><p class="small" id="status" role="status">Loading the isolated screens…</p></aside><iframe title="Belrog LM Studio setup preview" sandbox="allow-scripts allow-same-origin"></iframe></div>`
 const frame=host.querySelector('iframe'),step=host.querySelector('#step'),status=host.querySelector('#status')
 const sampleModels=[{id:'preview-local-small',displayName:'Example local model · preview',loaded:true,contextLength:8192},
   {id:'preview-local-alternate',displayName:'Second example · preview',loaded:false,contextLength:4096}]
@@ -32,15 +32,15 @@ frame.addEventListener('load',async()=>{
   style.textContent='#root>div>header,[data-testid="shared-workspace"]{display:none!important}.connected-agent-panel{width:100%!important;max-width:none!important;flex:1!important;border-left:0}.ca-resize{display:none!important}'
   w.document.head.append(style);w.open=()=>null
   const simulator=()=>show('Simulated LM Studio','In the real app these steps happen in LM Studio. Here they change example metadata only; they do not start a server or load a model.',[
-    ['Start simulated local server',()=>{test.setConnectionError('','');status.textContent='Simulated server started. Return to Velorn and choose Check again.'}],
-    ['Load example model',()=>{test.setLocalModels(sampleModels,'available');status.textContent='Example model is marked loaded. Return to Velorn and choose Check again.'}],
-    ['Back to Velorn',()=>step.replaceChildren()]
+    ['Start simulated local server',()=>{test.setConnectionError('','');status.textContent='Simulated server started. Return to Belrog and choose Check again.'}],
+    ['Load example model',()=>{test.setLocalModels(sampleModels,'available');status.textContent='Example model is marked loaded. Return to Belrog and choose Check again.'}],
+    ['Back to Belrog',()=>step.replaceChildren()]
   ])
   const openGuide=async url=>{
     if(!guides.has(url))throw Error('Preview permits only fixed LM Studio guide URLs')
     guideCalls.push(url)
     if(current===epoch)show('Simulated official guide','The real app opens this official guide in your browser. This preview does not leave the page or download anything.',[
-      ['Continue in simulated LM Studio',simulator],['Back to Velorn',()=>step.replaceChildren()]
+      ['Continue in simulated LM Studio',simulator],['Back to Belrog',()=>step.replaceChildren()]
     ])
     return {success:true,opened:true,summary:'The simulated official guide was opened.'}
   }
@@ -71,7 +71,7 @@ frame.addEventListener('load',async()=>{
     sendAttempts.push({...payload})
     return {success:false,error:'Preview only: no message was sent and no allowance was used.'}
   }
-  status.textContent='Ready. Choose LM Studio inside Velorn to begin.'
+  status.textContent='Ready. Choose LM Studio inside Belrog to begin.'
   window.lmStudioSetupPreview={ready:true,scenario,snapshot:()=>test.snapshot(),actionCalls:()=>actionCalls.slice(),guideCalls:()=>guideCalls.slice(),sendAttempts:()=>sendAttempts.slice()}
 })
 for(const name of ['ready','stopped','empty'])host.querySelector(`#${name}`).onclick=()=>start(name)

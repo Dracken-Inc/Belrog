@@ -1,11 +1,11 @@
-// Global renderer bridge for generation runs that were registered by Velorn's
+// Global renderer bridge for generation runs that were registered by Belrog's
 // native broker.  GenerateWorkspace still owns its legacy queue; this module
 // deliberately does not mount it, restore it, or ask ComfyUI to run anything.
 //
 // A run is only trustworthy when it has a native run id and ComfyUI prompt id.
 // Direct shell / embedded-ComfyUI work can be shown as external only after the
 // native broker has explicitly observed it.  That distinction is important:
-// this surface must never imply that Velorn can safely cancel, import, or
+// this surface must never imply that Belrog can safely cancel, import, or
 // recreate arbitrary ComfyUI work it did not submit or adopt.
 
 import useGenerationMonitorStore from '../stores/generationMonitorStore'
@@ -452,7 +452,7 @@ async function markAutomaticImportFailed(run, runId, reason, api) {
     const result = await native.control({
       operation: 'mark-import-failed',
       runId,
-      error: cleanText(reason, 400) || 'Velorn could not import the completed generation output.',
+      error: cleanText(reason, 400) || 'Belrog could not import the completed generation output.',
       previewOnly: false,
     })
     if (result?.success !== false) await refreshGenerationRuns(api)
@@ -605,7 +605,7 @@ export async function importGenerationRunResults(runId, { previewOnly = true, au
       assertActiveRunProject(run, projectHandle)
       const saved = await useProjectStore.getState().saveProject()
       assertActiveRunProject(run, projectHandle)
-      if (!saved) throw new Error('Outputs were added, but Velorn could not save the project. Keep the project open and save it before closing.')
+      if (!saved) throw new Error('Outputs were added, but Belrog could not save the project. Keep the project open and save it before closing.')
     }
     const resultAssetIds = importedAssets.map(asset => asset?.id).filter(Boolean)
     const coverage = existingOutputCoverage(run, plan.outputs)
@@ -625,7 +625,7 @@ export async function importGenerationRunResults(runId, { previewOnly = true, au
         assertActiveRunProject(run, projectHandle)
         acknowledgement = await native.control({ operation: 'mark-imported', runId: plan.runId, resultAssetIds: reconciledAssetIds, previewOnly: false })
         assertActiveRunProject(run, projectHandle)
-        if (acknowledgement?.success === false) throw new Error(acknowledgement.error || 'Velorn could not record the import acknowledgement.')
+        if (acknowledgement?.success === false) throw new Error(acknowledgement.error || 'Belrog could not record the import acknowledgement.')
       } catch (error) {
         if (error?.code === 'GENERATION_RUN_PROJECT_CHANGED') throw error
         acknowledgementFailure = { filename: 'Run record', error: cleanText(error?.message || error, 300) || 'The project imported outputs, but the run record was not updated.' }
@@ -724,7 +724,7 @@ export async function openGenerationRunRecipe(runId, { api = globalThis.window?.
   const result = await native.recipe({ runId: run.runId })
   if (result?.success === false) return result
   const workflow = safeApiWorkflow(result?.apiWorkflow || result?.workflow || result?.recipe?.apiWorkflow)
-  if (!workflow) return { success: false, error: 'Velorn could not verify a safe API workflow recipe for this run.' }
+  if (!workflow) return { success: false, error: 'Belrog could not verify a safe API workflow recipe for this run.' }
   return await openApiWorkflowInComfyUi(workflow, { label: cleanText(run.workflowLabel || run.label || 'Generation run', 120) })
 }
 

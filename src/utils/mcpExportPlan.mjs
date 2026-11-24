@@ -13,8 +13,8 @@ const positive = (value, label) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) throw new Error(`${label} must be a finite positive number`)
   return value
 }
-export const sanitizeExportFilename = value => String(value || 'Velorn_export').trim()
-  .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 120) || 'Velorn_export'
+export const sanitizeExportFilename = value => String(value || 'Belrog_export').trim()
+  .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, '_').replace(/^\.+|\.+$/g, '').slice(0, 120) || 'Belrog_export'
 
 /** Pure resolved settings. The same preset validation and delivery algorithms
  * as the Export workspace are authoritative; no model or node configuration. */
@@ -107,7 +107,7 @@ export function resolveMcpExportPlan(payload = {}, timeline = {}, customPresets 
   if (!['fit', 'fill', 'cover', 'center_crop', 'center-crop'].includes(framing)) throw new Error('Export framing must be fit or fill')
   const extension = settings.format === 'audio' ? ({ aac: 'm4a', mp3: 'mp3', wav: 'wav' }[settings.audioCodec])
     : ({ mp4: 'mp4', webm: 'webm', prores: 'mov', gif: 'gif', 'png-seq': '' }[settings.format])
-  const filename = sanitizeExportFilename(payload.filename || timeline.name || 'Velorn_export')
+  const filename = sanitizeExportFilename(payload.filename || timeline.name || 'Belrog_export')
   const options = { ...settings, filename, videoCodec: visualOnly ? null : settings.videoCodec,
     audioCodec: visualOnly ? null : settings.audioCodec, width: size.width, height: size.height, fps,
     sourceTimelineWidth: source.width, sourceTimelineHeight: source.height, rangeStart, rangeEnd,

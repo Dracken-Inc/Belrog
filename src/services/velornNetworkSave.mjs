@@ -1,4 +1,4 @@
-// Saves a clip, a picture or a piece of music that came back from the Velorn network into the
+// Saves a clip, a picture or a piece of music that came back from the Belrog network into the
 // open project, through the same import the Create tab uses. Once per job.
 import { GENERATED_FOLDERS, generatedFolderId } from './generatedFolders.mjs'
 
@@ -7,7 +7,7 @@ const TYPES = ['video/mp4', 'video/quicktime', 'video/webm', 'image/png', 'audio
 const SOUND_EXTENSION = { 'audio/mpeg': '.mp3', 'audio/flac': '.flac', 'audio/ogg': '.opus' }
 const LIMIT = 96 * 1024 * 1024
 
-export function createVelornNetworkSaver({ getProject, getAssets, importFile, makeFile, resolveAssetUrl, isBusy = () => false, measureDuration = null }) {
+export function createBelrogNetworkSaver({ getProject, getAssets, importFile, makeFile, resolveAssetUrl, isBusy = () => false, measureDuration = null }) {
   return async function save({ jobId, filename, mimeType, bytes, hostName = '', prompt = '' } = {}) {
     try {
       if (typeof jobId !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(jobId) || !NAME.test(filename || '') || !TYPES.includes(mimeType) || filename.endsWith('.png') !== (mimeType === 'image/png')

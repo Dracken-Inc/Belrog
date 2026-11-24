@@ -118,7 +118,7 @@ test('real ASAR bridge preserves local model privacy and verified ComfyUI/Codex 
     assert.match(firstComfyRequest.instructions, /do not start, stop or change anything.*still calls for configure, not a guide/)
     const actionTool = firstComfyRequest.tools.find(tool => tool.name === 'request_setup_action')
     assert.match(actionTool.description, /For ComfyUI, configure offers Open ComfyUI controls/)
-    assert.match(actionTool.parameters.properties.action.description, /external official documentation, NOT Velorn's controls/)
+    assert.match(actionTool.parameters.properties.action.description, /external official documentation, NOT Belrog's controls/)
     assert.deepEqual(actionTool.parameters.properties.action.enum, ['check', 'configure', 'install', 'credentials', 'open_app', 'choose_app', 'installation_guide', 'connection_guide'])
     assert.equal(comfy.checks[0].state, 'ready')
     assert.equal(comfy.checks[0].configuredPort, 8189)

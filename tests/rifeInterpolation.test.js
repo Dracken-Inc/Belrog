@@ -324,7 +324,7 @@ test('trusted RIFE probes require a zero exit and the PNG-only secure-build mark
     return child
   }
   const legacyHelp = 'Usage: rife-ncnn-vulkan -i indir -o outdir\n  -n num-frame\n'
-  const secureHelp = `${legacyHelp}  Velorn secure build: PNG input and output only; WebP is disabled.\n`
+  const secureHelp = `${legacyHelp}  Belrog secure build: PNG input and output only; WebP is disabled.\n`
 
   const legacyDevelopment = await probeRifeRuntime({
     rifeExecutablePath: '/development/rife-ncnn-vulkan',

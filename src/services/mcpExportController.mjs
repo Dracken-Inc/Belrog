@@ -41,7 +41,7 @@ export function createMcpExportController({ getProject, getTimeline, getAssets, 
   }
   const api = () => {
     const value = getApi()
-    if (!value?.runExportInWorker || !value?.getExportJobs) throw new Error('Export job tools require the current Velorn desktop app. Restart after updating.')
+    if (!value?.runExportInWorker || !value?.getExportJobs) throw new Error('Export job tools require the current Belrog desktop app. Restart after updating.')
     return value
   }
   const library = () => requireSuccess(readExportPresetLibrary(storage))
@@ -271,7 +271,7 @@ export function createMcpExportController({ getProject, getTimeline, getAssets, 
           else throw new Error('Each batch target must be a preset/target ID or export settings object.')
           prepared.push(await prepare(snap, { ...payload, ...item,
             overrides: { ...(payload.overrides || {}), ...(item.overrides || {}) },
-            filename: item.filename || `${payload.filenamePrefix || payload.filename || snap.info.name || 'Velorn'}_${index + 1}` }))
+            filename: item.filename || `${payload.filenamePrefix || payload.filename || snap.info.name || 'Belrog'}_${index + 1}` }))
           checkCancelled()
         }
         if (new Set(prepared.map(item => item.plan.outputPath)).size !== prepared.length) throw new Error('Batch targets must have distinct output paths.')

@@ -261,7 +261,7 @@ async function resolveCodexExecutable({ customPath = '', environment = process.e
     // Only a last resort: never replace the user's PATH, desktop app, npm,
     // standalone installation or explicit selection with a managed download.
     if (platform === 'linux' && home) {
-      const managed = await tryCandidate(paths.join(home, '.local', 'share', 'velorn', 'tools', 'codex', 'codex'), 'Velorn managed installation', false)
+      const managed = await tryCandidate(paths.join(home, '.local', 'share', 'velorn', 'tools', 'codex', 'codex'), 'Belrog managed installation', false)
       if (managed) return managed
     }
     throw notFound()

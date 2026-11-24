@@ -128,18 +128,18 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, onOpenStoryboard, pro
         {projectName || t('bottomBar.untitled')}
       </div>
       <Separator />
-      {/* Velorn - dropdown: Leave, Settings, Project Selection, Save Project (with dividers) */}
+      {/* Belrog - dropdown: Leave, Settings, Project Selection, Save Project (with dividers) */}
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setMenuOpen((o) => !o)}
           className="flex items-center gap-2 px-2 py-1 rounded text-sf-text-muted hover:text-sf-text-primary hover:bg-sf-dark-800 transition-colors"
-          title="Velorn"
+          title="Belrog"
         >
           <svg
             className="block h-[14px] w-[45px]"
             viewBox="0 0 52 16"
             role="img"
-            aria-label="Velorn"
+            aria-label="Belrog"
           >
             <defs>
               <linearGradient id="velorn-bottombar-gradient" x1="0" y1="0" x2="52" y2="0" gradientUnits="userSpaceOnUse">
@@ -165,7 +165,7 @@ function BottomBar({ onOpenSettings, onOpenGettingStarted, onOpenStoryboard, pro
               fontWeight="800"
               letterSpacing="0"
             >
-              Velorn
+              Belrog
             </text>
           </svg>
           <ChevronDown

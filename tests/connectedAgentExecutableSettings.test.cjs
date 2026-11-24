@@ -21,7 +21,7 @@ function fixture({ initial = '', selected = '/trusted/Codex.app', resolveError, 
       if (resolveError) throw Object.assign(new Error('The selected installation is unavailable.'), { code: resolveError })
       return { path: '/trusted/native/codex', source: options.customPath ? 'Custom' : 'Desktop app', mode: options.customPath ? 'custom' : 'automatic' }
     },
-    resolutionOptions: { platform: 'darwin', excludedRoots: ['/app/Velorn'] },
+    resolutionOptions: { platform: 'darwin', excludedRoots: ['/app/Belrog'] },
   })
   return { access, resolutions, writes, get value() { return value }, get picks() { return picks } }
 }
@@ -33,7 +33,7 @@ test('status/resolve use device preference without persisting discovery or readi
   assert.equal(f.writes.length, 0)
   assert.equal(f.resolutions.length, 2)
   assert.equal(f.resolutions[0].customPath, '')
-  assert.deepEqual(f.resolutions[0].excludedRoots, ['/app/Velorn'])
+  assert.deepEqual(f.resolutions[0].excludedRoots, ['/app/Belrog'])
 })
 
 test('native picker validates then saves the chosen alias rather than a versioned target', async () => {

@@ -8,7 +8,7 @@ export async function handleOpenComfyUiWorkflow(payload = {}) {
   const workflowId = typeof payload.workflowId === 'string' ? payload.workflowId.trim() : ''
   if (!workflowId) throw new Error('workflowId is required. Choose a saved workflow ID from the workflow library.')
   const api = globalThis.window?.electronAPI
-  if (!api?.readSavedWorkflow) throw new Error('Opening saved workflows needs the updated desktop bridge. Restart Velorn, then try again.')
+  if (!api?.readSavedWorkflow) throw new Error('Opening saved workflows needs the updated desktop bridge. Restart Belrog, then try again.')
 
   assertMcpContext(payload.expectedContext, 'opening the saved ComfyUI workflow')
   const context = captureMcpContext()
@@ -40,16 +40,16 @@ export async function handleOpenComfyUiWorkflow(payload = {}) {
       success: true, action: 'open_comfyui_workflow', previewOnly: true, opened: false, applied: false,
       ...summary, context,
       plan: { ...summary, replacesActiveGraph: true },
-      message: 'Ready to show this saved workflow in Velorn’s ComfyUI tab. Applying replaces the currently displayed ComfyUI graph, including unsaved graph changes. No generation will start and the saved workflow and project stay unchanged.',
+      message: 'Ready to show this saved workflow in Belrog’s ComfyUI tab. Applying replaces the currently displayed ComfyUI graph, including unsaved graph changes. No generation will start and the saved workflow and project stay unchanged.',
       suggestedApplyPayload: { workflowId, previewOnly: false, expectedContext: context },
     }
   }
 
   const result = await openWorkflow(graph, { label: title, assertCurrent, expectedContext: context })
-  if (result?.success !== true) throw new Error(result?.error || 'Could not load the workflow into Velorn’s ComfyUI tab.')
+  if (result?.success !== true) throw new Error(result?.error || 'Could not load the workflow into Belrog’s ComfyUI tab.')
   return {
     success: true, action: 'open_comfyui_workflow', previewOnly: false, opened: true, applied: true,
     ...summary,
-    message: `Opened ${title} in Velorn’s ComfyUI tab. No generation was started; the saved workflow and project are unchanged.`,
+    message: `Opened ${title} in Belrog’s ComfyUI tab. No generation was started; the saved workflow and project are unchanged.`,
   }
 }

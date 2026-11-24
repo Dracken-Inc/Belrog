@@ -210,7 +210,7 @@ const tools = [
     classType: string, inputName: string, optionQuery: string, optionsOffset: { type: 'integer', minimum: 0 }, optionsLimit: { type: 'integer', minimum: 1, maximum: 100 } }, ['classType']),
   tool('find_comfyui_node_paths', 'Find candidate installed node chains between socket types, e.g. LATENT to IMAGE. Reports other required inputs; connections alone do not prove model compatibility. Bounded search, no writes or generation.', {
     fromType: string, toType: string, excludeApi: { type: 'boolean' }, maxDepth: { type: 'integer', minimum: 1, maximum: 6 }, maxPaths: { type: 'integer', minimum: 1, maximum: 10 } }, ['fromType', 'toType']),
-  tool('validate_comfyui_workflow', 'Advisory preflight of an API-format workflow against live installed node schemas. Reports missing nodes/inputs, invalid model options, links/types, numeric bounds and cycles with repair information. No save, GPU work, approval or execution gate. Read valid and warnings; tool success alone is not validation success. After repair, submit through existing Velorn queue tools.', {
+  tool('validate_comfyui_workflow', 'Advisory preflight of an API-format workflow against live installed node schemas. Reports missing nodes/inputs, invalid model options, links/types, numeric bounds and cycles with repair information. No save, GPU work, approval or execution gate. Read valid and warnings; tool success alone is not validation success. After repair, submit through existing Belrog queue tools.', {
     workflow: { type: 'object', description: 'ComfyUI API prompt graph keyed by node ID, each with class_type and inputs. Inspect a saved workflow with includeGraph:true or use a modified template. Not a UI-format export.' } }, ['workflow']),
 ]
 const names = new Set(tools.map(t => t.name))
@@ -228,7 +228,7 @@ async function dispatch(name, args, readCatalog) {
         || (p.type === 'integer' && (!Number.isSafeInteger(value) || value < (p.minimum || 0) || value > (p.maximum || 1000000)))
         || (p.type === 'boolean' && typeof value !== 'boolean') || (p.type === 'object' && !object(value))) throw new Error(`Invalid argument: ${key}.`)
     }
-    if (typeof readCatalog !== 'function') throw new Error('Workflow authoring unavailable. Restart Velorn to load the native tools.')
+    if (typeof readCatalog !== 'function') throw new Error('Workflow authoring unavailable. Restart Belrog to load the native tools.')
     const { info, endpoint } = await readCatalog()
     if (!object(info) || !Object.keys(info).length || Object.values(info).some(s => !object(s) || !object(s.input) || !Array.isArray(s.output))) throw new Error('ComfyUI did not return a usable node catalog. Check its connection; no validation verdict is available.')
     const result = name === 'discover_comfyui_nodes' ? discover(info, args) : name === 'inspect_comfyui_node' ? inspect(info, args)

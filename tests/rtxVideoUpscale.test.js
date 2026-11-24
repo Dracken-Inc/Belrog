@@ -39,7 +39,7 @@ test('normalizes supported RTX quality values', () => {
 })
 
 test('keeps the standalone runtime ahead of compatible local fallbacks', () => {
-  const userDataPath = path.join(fixtureRoot, 'VelornData')
+  const userDataPath = path.join(fixtureRoot, 'BelrogData')
   const portableRoot = path.join(fixtureRoot, 'ComfyUI_windows_portable')
   const candidates = getRuntimeCandidates({
     userDataPath,
@@ -69,11 +69,11 @@ test('finds common portable ComfyUI Python layouts as compatibility fallbacks', 
 })
 
 test('builds a bounded direct helper command', () => {
-  const helperPath = path.join(fixtureRoot, 'Velorn app', 'rtx_vsr_stream.py')
+  const helperPath = path.join(fixtureRoot, 'Belrog app', 'rtx_vsr_stream.py')
   const inputPath = path.join(fixtureRoot, 'Renders', 'source clip.mp4')
   const outputPath = path.join(fixtureRoot, 'Renders', 'final clip.mp4')
-  const ffmpegPath = path.join(fixtureRoot, 'Velorn app', 'ffmpeg.exe')
-  const ffprobePath = path.join(fixtureRoot, 'Velorn app', 'ffprobe.exe')
+  const ffmpegPath = path.join(fixtureRoot, 'Belrog app', 'ffmpeg.exe')
+  const ffprobePath = path.join(fixtureRoot, 'Belrog app', 'ffprobe.exe')
   const options = {
     helperPath,
     inputPath,
@@ -102,7 +102,7 @@ test('builds a bounded direct helper command', () => {
 })
 
 test('returns stable managed runtime paths', () => {
-  const userDataPath = path.join(fixtureRoot, 'Users', 'Editor', 'AppData', 'Roaming', 'Velorn')
+  const userDataPath = path.join(fixtureRoot, 'Users', 'Editor', 'AppData', 'Roaming', 'Belrog')
   const runtime = getManagedRuntimePaths(userDataPath)
   const expectedRoot = path.join(userDataPath, 'rtx-runtime-v1')
   assert.deepEqual(runtime, {

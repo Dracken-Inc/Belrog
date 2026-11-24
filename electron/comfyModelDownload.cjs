@@ -1,6 +1,6 @@
-// ComfyUI's own "Download" button for a missing model, handled by Velorn.
+// ComfyUI's own "Download" button for a missing model, handled by Belrog.
 //
-// Inside Velorn, ComfyUI runs in a frame. Its Download button normally opens
+// Inside Belrog, ComfyUI runs in a frame. Its Download button normally opens
 // the model's address as a new tab and leaves the rest to the browser. That
 // depended on how the browser engine treats such a link, and in the dev copy
 // the click was dropped without a word (traced 2026-11-12: the button was
@@ -8,16 +8,16 @@
 //
 // ComfyUI has an official hand-off for desktop hosts: if the page has
 // `window.__comfyDesktop2.downloadModel(url, name, folder)`, the button calls
-// that instead. Velorn provides it (FRAME_HOOK below), so the request arrives
+// that instead. Belrog provides it (FRAME_HOOK below), so the request arrives
 // here with the folder ComfyUI wants the file in. The file goes straight into
-// that models folder, with progress in Velorn's download indicator. No file
+// that models folder, with progress in Belrog's download indicator. No file
 // picker, and no reliance on the link click.
 const path = require('path')
 
 const ALLOWED_HOSTS = ['huggingface.co', 'civitai.com', 'civitai.red']
 const MODEL_EXTENSIONS = ['.safetensors', '.sft', '.ckpt', '.pth', '.pt', '.gguf', '.bin', '.onnx']
 
-// Runs inside the ComfyUI frame. It only passes the request to the Velorn page
+// Runs inside the ComfyUI frame. It only passes the request to the Belrog page
 // around it and waits for the answer, so ComfyUI can show an error if it fails.
 const FRAME_HOOK = `(() => {
   if (window.__velornModelDownloadHook) return 'already'
@@ -30,14 +30,14 @@ const FRAME_HOOK = `(() => {
     if (!entry) return
     waiting.delete(data.id)
     if (data.ok) entry.resolve(true)
-    else entry.reject(new Error(data.error || 'Velorn could not start the download.'))
+    else entry.reject(new Error(data.error || 'Belrog could not start the download.'))
   })
   const host = window.__comfyDesktop2 || {}
   host.downloadModel = (url, name, directory) => new Promise((resolve, reject) => {
     const id = 'dl-' + Date.now() + '-' + Math.random().toString(36).slice(2)
     waiting.set(id, { resolve, reject })
     window.parent.postMessage({ source: 'velorn-comfy-frame', type: 'download-model', id, url: String(url || ''), name: String(name || ''), directory: String(directory || '') }, '*')
-    setTimeout(() => { if (waiting.delete(id)) reject(new Error('Velorn did not answer the download request.')) }, 20000)
+    setTimeout(() => { if (waiting.delete(id)) reject(new Error('Belrog did not answer the download request.')) }, 20000)
   })
   window.__comfyDesktop2 = host
   return 'installed'
@@ -55,12 +55,12 @@ function checkRequest({ url, name, directory } = {}) {
   let parsed = null
   try { parsed = new URL(String(url || '')) } catch { return fault('That download address is not valid.') }
   if (parsed.protocol !== 'https:') return fault('Model downloads must use a secure (https) address.')
-  if (!hostAllowed(parsed.hostname)) return fault(`Velorn only downloads models from ${ALLOWED_HOSTS.join(', ')}.`)
+  if (!hostAllowed(parsed.hostname)) return fault(`Belrog only downloads models from ${ALLOWED_HOSTS.join(', ')}.`)
   const filename = String(name || '').trim()
   if (!filename || filename !== path.basename(filename) || /[\\/:*?"<>|\x00-\x1f]/.test(filename) || filename.startsWith('.')) {
     return fault('That model file name is not valid.')
   }
-  if (!MODEL_EXTENSIONS.includes(path.extname(filename).toLowerCase())) return fault('That file is not a model file Velorn recognises.')
+  if (!MODEL_EXTENSIONS.includes(path.extname(filename).toLowerCase())) return fault('That file is not a model file Belrog recognises.')
   const folder = String(directory || '').trim()
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(folder)) return fault('ComfyUI did not say which models folder this file belongs in.')
   return { success: true, url: parsed.toString(), filename, folder }
@@ -127,8 +127,8 @@ function createComfyModelDownloads({ resolveFolder, fetchImpl, fs, createWriteSt
     const checked = checkRequest(request)
     if (!checked.success) return checked
     let destination = null
-    try { destination = await resolveFolder(checked.folder) } catch (error) { return fault(error?.message || 'Velorn could not find your ComfyUI models folder.') }
-    if (!destination?.folder) return fault(destination?.error || 'Velorn does not know where your ComfyUI folder is yet. Set it in Settings, then try again.')
+    try { destination = await resolveFolder(checked.folder) } catch (error) { return fault(error?.message || 'Belrog could not find your ComfyUI models folder.') }
+    if (!destination?.folder) return fault(destination?.error || 'Belrog does not know where your ComfyUI folder is yet. Set it in Settings, then try again.')
     if (destination.available === false) return fault(`The folder ${destination.folder} is not there right now. Connect that drive or fix the path, then try again.`)
     const targetPath = path.join(destination.folder, checked.filename)
     if (active.has(targetPath)) return { success: true, alreadyDownloading: true, targetPath }

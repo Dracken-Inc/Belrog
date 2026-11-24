@@ -47,7 +47,7 @@ export default function LmStudioSetup({ endpoint, model, models, checking, conne
   }
   return <section className="ca-lmstudio-setup" aria-label="LM Studio setup" aria-busy={checking || Boolean(pending)}>
     <h3 ref={heading} tabIndex={-1}>Connect LM Studio</h3>
-    <p>Use a model on your computer. No Velorn account is needed.</p>
+    <p>Use a model on your computer. No Belrog account is needed.</p>
     {checking ? <p role="status">Checking your LM Studio server…</p> : connected ? <>
       <p role="status">Connected to LM Studio.</p>
       {models.length > 0 ? <>

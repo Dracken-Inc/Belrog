@@ -159,7 +159,7 @@ async function main() {
     await assertBottom('Inspector → Agent reveal'); await assertIdentity(draft)
     pass('Returning from settings, a collapsed rail or Inspector reveals the bottom of the same conversation')
 
-    await openSettings(); await page.getByRole('checkbox', { name: 'Velorn tools', exact: true }).check(); await backToChat()
+    await openSettings(); await page.getByRole('checkbox', { name: 'Belrog tools', exact: true }).check(); await backToChat()
     const pending = await send('Hold a synthetic approval while changing workspaces.')
     await input().fill(draft)
     await emit(pending, { type: 'approval', approvalId: 'scroll-review', toolName: 'edit_timeline',

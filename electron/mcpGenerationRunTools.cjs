@@ -6,11 +6,11 @@
 const id = { type: 'string', minLength: 1, maxLength: 200 }
 const label = { type: 'string', minLength: 1, maxLength: 240 }
 const assetIds = { type: 'array', maxItems: 50, uniqueItems: true, items: id,
-  description: 'Existing Velorn project asset IDs used by this run. Paths, credentials, and unregistered files are not accepted here.' }
+  description: 'Existing Belrog project asset IDs used by this run. Paths, credentials, and unregistered files are not accepted here.' }
 const targetShotId = { ...id, description: 'Optional existing stable storyboard shot ID this run is intended to support.' }
 const workflow = {
   type: 'object', minProperties: 1, maxProperties: 1500, additionalProperties: true,
-  description: 'Resolved ComfyUI API/prompt graph keyed by node ID. This is not a Velorn Generate form or a UI workflow export.',
+  description: 'Resolved ComfyUI API/prompt graph keyed by node ID. This is not a Belrog Generate form or a UI workflow export.',
 }
 const workflowJson = {
   type: 'string', minLength: 2, maxLength: 2 * 1024 * 1024,
@@ -57,7 +57,7 @@ const previewToolNames = new Set(['queue_comfyui_workflow', 'track_comfyui_promp
 const tools = [
   {
     name: 'queue_comfyui_workflow',
-    description: 'Preview or submit a saved workflow by stable workflowId or one inline ComfyUI API graph through Velorn\'s native Runs manager, without Generate. Inspect saved workflows with inspect_velorn_workflow(includeGraph:true), then use named or exact inputOverrides and both graphFingerprint and the queue preview\'s resolvedFingerprint on apply. Named reference inputs accept project asset IDs, uploaded only on apply. Preview is the default; applying uses the existing native spending gate and records the run. Saved originals remain unchanged. UI-only legacy entries need the user to open and save them again in ComfyUI to capture an API copy. No arbitrary file path is accepted.',
+    description: 'Preview or submit a saved workflow by stable workflowId or one inline ComfyUI API graph through Belrog\'s native Runs manager, without Generate. Inspect saved workflows with inspect_velorn_workflow(includeGraph:true), then use named or exact inputOverrides and both graphFingerprint and the queue preview\'s resolvedFingerprint on apply. Named reference inputs accept project asset IDs, uploaded only on apply. Preview is the default; applying uses the existing native spending gate and records the run. Saved originals remain unchanged. UI-only legacy entries need the user to open and save them again in ComfyUI to capture an API copy. No arbitrary file path is accepted.',
     inputSchema: {
       type: 'object', additionalProperties: false, oneOf: [...sourceOneOf, { required: ['workflowId'] }],
       properties: {
@@ -72,17 +72,17 @@ const tools = [
   },
   {
     name: 'get_comfyui_runs',
-    description: 'Read Velorn\'s cached native ComfyUI Runs snapshot. This does not contact ComfyUI, mount Generate, submit work, or import outputs, so it may be repeated to inspect known progress. By default it returns the active project only; includeOtherProjects:true is an app-wide read.',
+    description: 'Read Belrog\'s cached native ComfyUI Runs snapshot. This does not contact ComfyUI, mount Generate, submit work, or import outputs, so it may be repeated to inspect known progress. By default it returns the active project only; includeOtherProjects:true is an app-wide read.',
     inputSchema: {
       type: 'object', additionalProperties: false,
       properties: {
-        includeOtherProjects: { type: 'boolean', default: false, description: 'Include cached Runs records from other Velorn projects. This remains read-only.' },
+        includeOtherProjects: { type: 'boolean', default: false, description: 'Include cached Runs records from other Belrog projects. This remains read-only.' },
       },
     },
   },
   {
     name: 'track_comfyui_prompt',
-    description: 'Preview or adopt one explicit existing ComfyUI prompt ID into the active Velorn project. It verifies that ID against the local ComfyUI queue/history before applying. Tracking records Velorn\'s adoption/correlation of the prompt; it cannot prove who originally submitted a direct external prompt. Use this for an existing direct run rather than requeueing it.',
+    description: 'Preview or adopt one explicit existing ComfyUI prompt ID into the active Belrog project. It verifies that ID against the local ComfyUI queue/history before applying. Tracking records Belrog\'s adoption/correlation of the prompt; it cannot prove who originally submitted a direct external prompt. Use this for an existing direct run rather than requeueing it.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['promptId'],
       properties: {
@@ -101,18 +101,18 @@ const tools = [
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['runId'],
       properties: {
-        runId: { ...id, description: 'Velorn run ID from get_comfyui_runs.' },
-        includeOtherProjects: { type: 'boolean', default: false, description: 'Permit inspection of an explicitly named cached run from another Velorn project. This remains read-only.' },
+        runId: { ...id, description: 'Belrog run ID from get_comfyui_runs.' },
+        includeOtherProjects: { type: 'boolean', default: false, description: 'Permit inspection of an explicitly named cached run from another Belrog project. This remains read-only.' },
       },
     },
   },
   {
     name: 'control_comfyui_run',
-    description: 'Preview or control one known Velorn Run. cancel only removes a still-queued known prompt; it never interrupts a running job or changes the global ComfyUI queue. retry is a new managed submission through the same spending gate and requires a fresh inline workflow/workflowJson graph; stored redacted recipes are never silently replayed.',
+    description: 'Preview or control one known Belrog Run. cancel only removes a still-queued known prompt; it never interrupts a running job or changes the global ComfyUI queue. retry is a new managed submission through the same spending gate and requires a fresh inline workflow/workflowJson graph; stored redacted recipes are never silently replayed.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['runId', 'operation'],
       properties: {
-        runId: { ...id, description: 'Velorn run ID from get_comfyui_runs.' },
+        runId: { ...id, description: 'Belrog run ID from get_comfyui_runs.' },
         operation: { type: 'string', enum: ['cancel', 'retry'] },
         ...sourceProperties,
         label: { ...label, description: 'Optional label for the fresh retry record.' },
@@ -128,11 +128,11 @@ const tools = [
   },
   {
     name: 'import_comfyui_run_outputs',
-    description: 'Preview or import completed output files already recorded for one Velorn ComfyUI Run into the active project. This is separate from queueing/tracking, uses the renderer\'s normal project asset path, and never starts or retries a ComfyUI job.',
+    description: 'Preview or import completed output files already recorded for one Belrog ComfyUI Run into the active project. This is separate from queueing/tracking, uses the renderer\'s normal project asset path, and never starts or retries a ComfyUI job.',
     inputSchema: {
       type: 'object', additionalProperties: false, required: ['runId'],
       properties: {
-        runId: { ...id, description: 'Velorn run ID whose recorded outputs should be imported.' },
+        runId: { ...id, description: 'Belrog run ID whose recorded outputs should be imported.' },
         previewOnly: { type: 'boolean', default: true },
       },
     },
@@ -190,7 +190,7 @@ async function dispatchGenerationRunTool({ generationRuns, name, args = {} } = {
   const method = nativeToolMethods[name]
   if (!method) return failure('GENERATION_RUNS_INVALID_REQUEST', `Unsupported ComfyUI Runs tool: ${String(name || '')}.`)
   if (!generationRuns || typeof generationRuns[method] !== 'function') {
-    return failure('GENERATION_RUNS_UNAVAILABLE', 'ComfyUI Runs are unavailable. Restart Velorn and try again.')
+    return failure('GENERATION_RUNS_UNAVAILABLE', 'ComfyUI Runs are unavailable. Restart Belrog and try again.')
   }
   const normalized = await normalizeGenerationRunArgs(name, args)
   if (normalized.success !== true) return normalized
