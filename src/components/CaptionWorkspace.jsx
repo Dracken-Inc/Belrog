@@ -1136,7 +1136,7 @@ function CaptionWorkspace({
     (tier) => installedModelIds.has(tier.id) && tier.id !== selectedTier.id
   )
   // The retired ComfyUI path stays reachable through a localStorage escape
-  // hatch only ('velorn-caption-engine' = 'comfyui') — no UI for it.
+  // hatch only ('Belrog-caption-engine' = 'comfyui') — no UI for it.
   const captionsUseComfy = getCaptionEnginePreference() === 'comfyui' || platformUsesComfy
   const engineReady = captionsUseComfy || selectedTierInstalled
   const showEngineInstall = !captionsUseComfy && localEngineSupported && !selectedTierInstalled

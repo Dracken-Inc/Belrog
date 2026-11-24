@@ -85,7 +85,7 @@ index 2b47317..666b9b7 100644
 -#include "wic_image.h"
 -#else // _WIN32
 -// image decoder and encoder with stb
-+// Belrog's runtime intentionally accepts and writes PNG only. Keeping the
++// belrog's runtime intentionally accepts and writes PNG only. Keeping the
 +// decoder surface this narrow avoids carrying the obsolete libwebp revision
 +// from the upstream wrapper and rejects disguised non-PNG input by signature.
  #define STB_IMAGE_IMPLEMENTATION

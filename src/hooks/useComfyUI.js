@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import comfyui, { modifyMaskWorkflow } from '../services/comfyui';
 import { getBundledWorkflowPath } from '../config/workflowRegistry';
-import { hydrateLocalComfyConnection } from '../services/localComfyConnection';
 
 // Store the base workflow in memory after first load
 let cachedWorkflows = {};
@@ -29,15 +28,6 @@ export function useComfyUI() {
   
   // Check connection on mount
   const checkConnectionRef = useRef(null);
-  const checkHttpConnection = useCallback(async () => {
-    // A newly mounted Generate workspace is ready to receive events before
-    // its initial probe has settled. Queue callers need this result directly,
-    // not the previous React state or a successful WebSocket connection.
-    await hydrateLocalComfyConnection();
-    const connected = await comfyui.checkConnection();
-    setIsConnected(connected);
-    return connected;
-  }, []);
   const recheckConnection = useCallback(async () => {
     const fn = checkConnectionRef.current;
     if (typeof fn === 'function') {
@@ -47,7 +37,8 @@ export function useComfyUI() {
 
   useEffect(() => {
     const checkConnection = async () => {
-      const connected = await checkHttpConnection();
+      const connected = await comfyui.checkConnection();
+      setIsConnected(connected);
       
       // Only try WebSocket a few times, then give up
       if (connected && !comfyui.isWebSocketConnected() && wsAttemptCount.current < 3) {
@@ -77,7 +68,7 @@ export function useComfyUI() {
     // fast disconnect signal, so a quicker HTTP heartbeat adds nothing.
     const interval = setInterval(checkConnection, 30000);
     return () => clearInterval(interval);
-  }, [wsConnected, checkHttpConnection]);
+  }, [wsConnected]);
 
   // Track which node is currently executing (for progress estimation)
   const [currentNode, setCurrentNode] = useState(null);
@@ -505,11 +496,11 @@ export function useComfyUI() {
         extension = '.png';
         mimeType = 'image/png';
         
-        filename = `belrog_input_${Date.now()}${extension}`;
+        filename = `Belrog_input_${Date.now()}${extension}`;
         console.log('Converted to PNG. Creating file:', filename);
         file = new File([pngBlob], filename, { type: mimeType });
       } else {
-        filename = `belrog_input_${Date.now()}${extension}`;
+        filename = `Belrog_input_${Date.now()}${extension}`;
         console.log('Creating file with extension:', extension, 'mimeType:', mimeType);
         file = new File([blob], filename, { type: mimeType });
       }
@@ -737,7 +728,6 @@ export function useComfyUI() {
     wsConnected,  // Expose WebSocket connection status
     currentNode,  // Expose which node is executing
     recheckConnection,  // Force an immediate HTTP/WebSocket re-check (e.g. after launcher state change)
-    checkHttpConnection, // Await current readiness before an approved queue action
     // Mask generation
     generateMask,
     maskResult,

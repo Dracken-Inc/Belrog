@@ -1,6 +1,6 @@
 export const DISCOVER_CATALOG_SCHEMA_VERSION = 1
-export const DEFAULT_DISCOVER_CATALOG_URL = 'https://raw.githubusercontent.com/VelornLabs/velorn/main/public/discover/catalog.json'
-export const DISCOVER_CATALOG_CACHE_KEY = 'velorn-discover-catalog-v1'
+export const DEFAULT_DISCOVER_CATALOG_URL = 'https://raw.githubusercontent.com/BelrogLabs/Belrog/main/public/discover/catalog.json'
+export const DISCOVER_CATALOG_CACHE_KEY = 'Belrog-discover-catalog-v1'
 export const DISCOVER_CATALOG_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 export const DISCOVER_CATALOG_REMOTE_TIMEOUT_MS = 5_000
 
@@ -8,8 +8,8 @@ const YOUTUBE_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/
 const ITEM_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 const TRUSTED_REMOTE_CATALOG_URLS = new Set([
   DEFAULT_DISCOVER_CATALOG_URL,
-  'https://velorn.ai/discover/catalog.json',
-  'https://www.velorn.ai/discover/catalog.json',
+  'https://Belrog.ai/discover/catalog.json',
+  'https://www.Belrog.ai/discover/catalog.json',
 ])
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com'])
 const ITEM_KINDS = new Set(['showcase', 'tutorial'])
@@ -22,7 +22,7 @@ export const DEFAULT_BUNDLED_DISCOVER_CATALOG = Object.freeze({
   updatedAt: '2026-08-27T18:11:01.000Z',
   items: Object.freeze([
     Object.freeze({
-      id: 'velorn-overview',
+      id: 'Belrog-overview',
       youtubeId: 'RVuGlRZheps',
       title: 'Belrog Overview: AI Video Editing Powered by ComfyUI',
       kind: 'tutorial',
@@ -33,7 +33,7 @@ export const DEFAULT_BUNDLED_DISCOVER_CATALOG = Object.freeze({
       featured: true,
     }),
     Object.freeze({
-      id: 'velorn-mcp-ai-generations',
+      id: 'Belrog-mcp-ai-generations',
       youtubeId: 'AT9usQS3m48',
       title: 'Belrog MCP AI Generations',
       kind: 'tutorial',
@@ -44,7 +44,7 @@ export const DEFAULT_BUNDLED_DISCOVER_CATALOG = Object.freeze({
       featured: false,
     }),
     Object.freeze({
-      id: 'velorn-music-video-tutorial',
+      id: 'Belrog-music-video-tutorial',
       youtubeId: '8BsFbUsq1kE',
       title: 'Belrog Music Video Tutorial',
       kind: 'tutorial',
@@ -77,7 +77,7 @@ export const DEFAULT_BUNDLED_DISCOVER_CATALOG = Object.freeze({
       featured: true,
     }),
     Object.freeze({
-      id: 'music-video-made-with-velorn',
+      id: 'music-video-made-with-Belrog',
       youtubeId: 'iX-YdjVMDhg',
       title: 'Music video made with Belrog',
       kind: 'showcase',

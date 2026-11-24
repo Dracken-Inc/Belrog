@@ -30,7 +30,6 @@
 import { comfyui } from './comfyui'
 import { importAsset } from './fileSystem'
 import { canImportGifMedia, importGifAsset, isGifFilename } from './gifImport'
-import { isBelrogManagedOutput } from './comfyOutputOwnership.mjs'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
 import { isPromptHandledByApp } from './comfyPromptGuard'
@@ -69,8 +68,7 @@ function appendLauncherLog(stream, text) {
 // avoid unbounded growth in long sessions.
 const MAX_SIGNATURES = 2000
 const importedSignatures = new Set()
-// Which files count as ours lives in comfyOutputOwnership.mjs, beside the prefixes that writers
-// use, so the reader and the writers are changed together.
+const Belrog_MANAGED_OUTPUT_RE = /^(director_job_|Belrog_|Belrog_job_|comfystudio_|comfystudio_job_|flow_ai_|topaz_video_upscale_|comfystudiomask_|BelrogMask_)/i
 const MAX_ELIGIBLE_PROMPT_IDS = 300
 const eligibleUnmanagedPromptIds = new Set()
 let runtimeOptions = {}
@@ -130,6 +128,11 @@ function normalizeSourceText(value) {
 
 function sameSourceText(left, right) {
   return normalizeSourceText(left).toLowerCase() === normalizeSourceText(right).toLowerCase()
+}
+
+function isBelrogManagedOutput(fileDesc) {
+  const filename = normalizeSourceText(fileDesc?.filename)
+  return Belrog_MANAGED_OUTPUT_RE.test(filename)
 }
 
 function getAutoImportSourceFields(fileDesc, promptId) {
@@ -1045,9 +1048,6 @@ export function stopComfyAutoImport() {
  */
 export async function unstitchSequenceAsset(asset) {
   if (!asset || !asset.sequenceSource) return { success: false, error: 'Asset is not a stitched sequence.' }
-  const { checkCompoundAssetDeletion } = await import('./compoundAssetProtection')
-  const guard = checkCompoundAssetDeletion([asset.id])
-  if (!guard.ok) return { success: false, blockedByCompound: true, error: guard.reason }
   const projectDir = currentProjectHandle()
   if (!projectDir) return { success: false, error: 'No active project.' }
   const { sequenceSource } = asset
@@ -1077,10 +1077,7 @@ export async function unstitchSequenceAsset(asset) {
   // Remove the stitched video asset from the store.
   try {
     const { removeAsset } = useAssetsStore.getState()
-    const latestGuard = checkCompoundAssetDeletion([asset.id])
-    if (!latestGuard.ok) return { success: false, blockedByCompound: true, error: latestGuard.reason, importedCount: imported.length }
-    const result = typeof removeAsset === 'function' ? removeAsset(asset.id) : null
-    if (result?.ok === false) return { success: false, blockedByCompound: true, error: result.reason, importedCount: imported.length }
+    if (typeof removeAsset === 'function') removeAsset(asset.id)
   } catch (err) {
     console.warn('[comfyAutoImport] could not remove stitched asset from store:', err)
   }

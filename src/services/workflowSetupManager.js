@@ -411,11 +411,9 @@ export async function openBundledWorkflowInComfyUi(workflowId) {
   }
 }
 
-async function loadApiWorkflowGraphIntoComfyUi(apiWorkflow, { assertCurrent, expectedContext } = {}) {
-  assertCurrent?.()
+async function loadApiWorkflowGraphIntoComfyUi(apiWorkflow) {
   const objectInfo = await comfyui.getObjectInfo()
   const workflowGraph = await buildComfyGraphFromApiWorkflow(apiWorkflow, objectInfo)
-  assertCurrent?.()
   const comfyBaseUrl = getLocalComfyConnectionSync().httpBase
 
   if (!window?.electronAPI?.loadComfyUiWorkflowGraph) {
@@ -427,12 +425,10 @@ async function loadApiWorkflowGraphIntoComfyUi(apiWorkflow, { assertCurrent, exp
     throw new Error('The embedded ComfyUI tab did not become visible in time.')
   }
 
-  assertCurrent?.()
   const loadResult = await window.electronAPI.loadComfyUiWorkflowGraph({
     workflowGraph,
     comfyBaseUrl,
     waitForMs: 12000,
-    ...(expectedContext ? { expectedContext } : {}),
   })
 
   if (!loadResult?.success) {
@@ -444,9 +440,8 @@ async function loadApiWorkflowGraphIntoComfyUi(apiWorkflow, { assertCurrent, exp
 // template repo) straight into the embedded ComfyUI tab — no API→UI
 // conversion needed. ComfyUI's own missing-nodes dialog + Manager then handle
 // node packs our installer can't.
-export async function openUiWorkflowInComfyUi(uiWorkflow, { label = 'ComfyUI template', assertCurrent, expectedContext } = {}) {
+export async function openUiWorkflowInComfyUi(uiWorkflow, { label = 'ComfyUI template' } = {}) {
   try {
-    assertCurrent?.()
     window.dispatchEvent(new CustomEvent(OPEN_COMFY_TAB_EVENT, { detail: { label } }))
 
     if (!window?.electronAPI?.loadComfyUiWorkflowGraph) {
@@ -458,20 +453,24 @@ export async function openUiWorkflowInComfyUi(uiWorkflow, { label = 'ComfyUI tem
       throw new Error('The embedded ComfyUI tab did not become visible in time.')
     }
 
-    assertCurrent?.()
     const loadResult = await window.electronAPI.loadComfyUiWorkflowGraph({
       workflowGraph: uiWorkflow,
       comfyBaseUrl: getLocalComfyConnectionSync().httpBase,
       waitForMs: 12000,
-      ...(expectedContext ? { expectedContext } : {}),
     })
     if (!loadResult?.success) {
       throw new Error(loadResult?.error || 'Could not load the workflow into the embedded ComfyUI tab.')
     }
 
+    // The main process verifies the graph actually landed (node count readback).
+    // Surface that in the hint so a "Loaded" message is a verified claim.
+    const nodeCount = Number(loadResult.nodeCount)
+    const loadedNote = Number.isFinite(nodeCount) && nodeCount > 0
+      ? ` ${nodeCount} nodes confirmed on the canvas.`
+      : ''
     return {
       success: true,
-      hint: `Loaded ${label} into the embedded ComfyUI tab.`,
+      hint: `Loaded ${label} into the embedded ComfyUI tab.${loadedNote}`,
     }
   } catch (error) {
     return {
@@ -481,14 +480,13 @@ export async function openUiWorkflowInComfyUi(uiWorkflow, { label = 'ComfyUI tem
   }
 }
 
-export async function openApiWorkflowInComfyUi(apiWorkflow, { label = 'Custom workflow', assertCurrent, expectedContext } = {}) {
+export async function openApiWorkflowInComfyUi(apiWorkflow, { label = 'Custom workflow' } = {}) {
   try {
-    assertCurrent?.()
     window.dispatchEvent(new CustomEvent(OPEN_COMFY_TAB_EVENT, {
       detail: { label },
     }))
 
-    await loadApiWorkflowGraphIntoComfyUi(apiWorkflow, { assertCurrent, expectedContext })
+    await loadApiWorkflowGraphIntoComfyUi(apiWorkflow)
 
     return {
       success: true,

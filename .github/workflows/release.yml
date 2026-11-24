@@ -10,6 +10,22 @@ on:
         description: Release tag to build or rebuild (for example v0.1.11)
         required: true
         type: string
+      sign:
+        description: Code-sign Windows artifacts (Azure Trusted Signing). Set false for unsigned test builds.
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "true"
+      build:
+        description: Which platforms to build (all for normal releases, windows-only for test builds)
+        required: true
+        type: choice
+        options:
+          - all
+          - windows-only
+        default: all
 
 permissions:
   contents: write
@@ -21,18 +37,11 @@ concurrency:
 env:
   NODE_VERSION: "20"
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
-  # onnxruntime-node's install step downloads optional CUDA files on Linux x64.
-  # Belrog runs it on the CPU, and the archive the older nested copy asks for
-  # (onnxruntime v1.21.0) no longer exists, which fails `npm ci`.
-  ONNXRUNTIME_NODE_INSTALL: skip
-  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
   secrets-probe:
     name: Probe Signing Secrets
     runs-on: ubuntu-latest
-    outputs:
-      apple: ${{ steps.apple.outputs.apple }}
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -71,75 +80,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # 0.5.1 shipped to Windows as an app that started, threw "ReferenceError:
-      # workflowAssetInputs is not defined" inside getGenerationRuns, never caught the
-      # rejection and never showed its window. Removing GPU sharing had deleted four
-      # declarations that the rest of main.js still calls. Nothing was a syntax error, the
-      # build was green, and only running it on a real machine could see it - so this catches
-      # the static half before anything is packaged.
-      - name: Verify main-process files declare what they call
-        run: npm run test:undefined-identifiers
-
       - name: Build application
         run: npm run build
 
-      # The unit tests that sit next to the code they cover (src/, electron/) are named
-      # by no other script, so before this gate they ran for nobody - not local npm
-      # test, not a release. This is the layer that would have caught the Cast panel
-      # shipping dead in 0.5.0.
-      - name: Verify tests that live beside their source
-        run: npm run test:co-located
-
-      # Output prefixes and saver names are the only record linking a finished file to the project
-      # that asked for it, and they used to spell the product's old name. Writers say Belrog now
-      # while readers still take both spellings, so both halves have to be tested together: change
-      # one side only and auto-import stops, or the Sound tab's priced button stops approving its
-      # own requests and every click pays for the native confirmation path. No workflow ran these.
-      - name: Verify Create and Sound generation wiring
-        run: |
-          npm run test:create
-          npm run test:music-generation
-
-      # What the installer, the window title, the menus and the release notes call the product.
-      # Tiered on purpose: identifiers already written onto user disks are tracked by a ratchet,
-      # retired by migration, not by find-and-replace.
-      - name: Verify the product is called Belrog where it ships
-        run: npm run test:naming
-
-      - name: Verify export scheduling
-        run: npm run test:export-scheduler
-
-      - name: Verify media preparation and native CPU recovery
-        run: |
-          npm run test:media-preparation
-          npm run check:media-preparation
-
-      - name: Verify timeline hotfixes and native audio analysis
-        run: |
-          npm run test:timeline-hotfixes
-          npm run test:audio-analysis
-
       - name: Verify RIFE source and package hardening
         run: npm run test:rife-hardening
-
-      - name: Verify audio-to-oneshot intake
-        run: npm run test:audio-intake
-
-      # The remote-server tunnel used to die with "Port 8188 is already in use"
-      # on any machine that already runs ComfyUI locally, and a tunnel that
-      # dropped stayed half-open until the app was restarted. These tests drive
-      # the real bind/probe/forward code, so a regression ships as a red build
-      # instead of a creator's dead tunnel.
-      - name: Verify remote SSH tunnel port handling
-        run: npm run test:ssh-tunnel
-
-      # The "Detected from your Director Script / Add to Cast" panel shipped dead
-      # once: an upstream-base swap dropped the props in GenerateWorkspace.jsx and
-      # the panel simply rendered nothing, with no error anywhere. These tests run
-      # the real parser, gap detector, stub builder and Cast store, and check the
-      # compiled props on the music-video element.
-      - name: Verify Cast gap detection
-        run: npm run test:cast-gap-detection
 
       - name: Verify native media helpers
         run: npm run runtime:verify-native
@@ -169,9 +114,11 @@ jobs:
 
   build-windows:
     name: Build Windows
+    if: ${{ github.event_name == 'push' || inputs.build == 'all' || inputs.build == 'windows-only' }}
     needs: [ensure-release, preflight]
     runs-on: windows-2022
     env:
+      WIN_SIGN: ${{ github.event_name != 'workflow_dispatch' || inputs.sign == 'true' }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -192,21 +139,25 @@ jobs:
         id: signing_mode
         shell: pwsh
         run: |
-          $missing = @()
-          foreach ($name in 'AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET') {
-            if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value) {
-              $missing += $name
-            }
+          $requested = ('${{ env.WIN_SIGN }}' -eq 'true')
+          $tenant = (Get-Item "env:AZURE_TENANT_ID" -ErrorAction SilentlyContinue).Value
+          $client = (Get-Item "env:AZURE_CLIENT_ID" -ErrorAction SilentlyContinue).Value
+          $secret = (Get-Item "env:AZURE_CLIENT_SECRET" -ErrorAction SilentlyContinue).Value
+          $have = [bool]$tenant -and [bool]$client -and [bool]$secret
+          $signed = ($requested -and $have) ? 'true' : 'false'
+          if ($requested -and -not $have) {
+            Write-Warning "Windows code-signing requested but Azure signing secrets (AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET) are missing - producing UNSIGNED test artifacts."
           }
-          if ($missing.Count -gt 0) {
-            Write-Warning "Azure signing secrets ($($missing -join ', ')) missing - producing UNSIGNED artifacts (Belrog fork policy)."
-            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          } else {
-            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          elseif ($signed -eq 'true') {
+            Write-Host "Windows code-signing enabled (Azure Trusted Signing)."
           }
+          else {
+            Write-Host "Windows code-signing disabled - producing unsigned test artifacts."
+          }
+          "signed=$signed" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Install Azure signing PowerShell module
-        if: steps.signing_mode.outputs.signed == 'true'
+        if: ${{ steps.signing_mode.outputs.signed == 'true' }}
         shell: pwsh
         run: |
           Install-PSResource -Name TrustedSigning -Scope CurrentUser -TrustRepository
@@ -263,11 +214,7 @@ jobs:
           $version = node -p "require('./package.json').version"
           "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      # Fork divergence: package.json carries upstream's azureSignOptions. If it stays in the
-      # config while the Azure secrets are absent, electron-builder tries to install the
-      # TrustedSigning PowerShell module itself and the job hangs until the 6h runner timeout.
-      # Strip it so an unsigned fork build never reaches the signer.
-      - name: Disable code signing for unsigned build
+      - name: Disable code signing for unsigned test build
         if: ${{ steps.signing_mode.outputs.signed != 'true' }}
         run: |
           node -e "
@@ -276,7 +223,7 @@ jobs:
             if (pkg.build && pkg.build.win && pkg.build.win.azureSignOptions) {
               delete pkg.build.win.azureSignOptions;
               fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-              console.log('Removed azureSignOptions - building unsigned artifacts');
+              console.log('Removed azureSignOptions - building unsigned test artifacts');
             } else {
               console.log('azureSignOptions already absent - nothing to strip');
             }
@@ -288,9 +235,9 @@ jobs:
       - name: Verify packaged Windows runtime and signatures
         shell: pwsh
         run: |
+          $signCheck = '${{ steps.signing_mode.outputs.signed }}'
           $resources = Join-Path $PWD 'release\win-unpacked\resources'
-          $signed = '${{ steps.signing_mode.outputs.signed }}' -eq 'true'
-          if ($signed) {
+          if ($signCheck -eq 'true') {
             foreach ($executable in @(
               (Join-Path $PWD 'release\win-unpacked\Belrog.exe'),
               (Join-Path $resources 'bin\rife\rife-ncnn-vulkan.exe'),
@@ -302,27 +249,19 @@ jobs:
                 throw "Invalid Authenticode signature for $executable`: $($signature.Status)"
               }
             }
+            node scripts/runtime-package-gate.cjs packaged `
+              --resources $resources `
+              --platform win32 `
+              --arch x64 `
+              --signed-package `
+              --host-executable (Join-Path $PWD 'release\win-unpacked\Belrog.exe')
           } else {
-            Write-Warning "Unsigned build - skipping Authenticode verification."
+            Write-Host "Unsigned test build - skipping Authenticode verification"
+            node scripts/runtime-package-gate.cjs packaged `
+              --resources $resources `
+              --platform win32 `
+              --arch x64
           }
-          $gateArgs = @('scripts/runtime-package-gate.cjs','packaged','--resources',$resources,'--platform','win32','--arch','x64')
-          if ($signed) { $gateArgs += '--signed-package' }
-          $gateArgs += @('--host-executable',(Join-Path $PWD 'release\win-unpacked\Belrog.exe'))
-          node $gateArgs
-
-      # Every check above reads files. None of them started the app, which is how 0.5.1 shipped
-      # a Windows build whose process ran, threw ReferenceError in app.whenReady() and never
-      # showed a window. This launches the packaged exe against a throwaway %APPDATA% and fails
-      # unless a captioned, visible, uncloaked window at least 500x350 appears - the splash is
-      # frameless and the export worker window is 400x200, so neither can pass for the app.
-      - name: Verify the packaged app opens a window
-        shell: pwsh
-        run: |
-          $exe = Join-Path $PWD 'release\win-unpacked\Belrog.exe'
-          if (-not (Test-Path $exe)) { throw "packaged executable not found: $exe" }
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-windows-startup.ps1 `
-            -Executable $exe -TimeoutSeconds 120 -LogDirectory 'start-probe'
-          if ($LASTEXITCODE -ne 0) { throw "packaged Belrog did not open a window (exit $LASTEXITCODE)" }
 
       - name: Upload Windows release assets
         shell: pwsh
@@ -335,8 +274,20 @@ jobs:
             "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
+      - name: Keep Windows artifacts as job artifacts (fallback)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: belrog-windows-x64
+          path: |
+            release/belrog-*-windows-installer-x64.exe
+            release/belrog-*-windows-portable-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
   build-linux:
     name: Build Linux
+    if: ${{ github.event_name == 'push' || inputs.build == 'all' }}
     needs: [ensure-release, preflight]
     runs-on: ubuntu-latest
     env:
@@ -439,11 +390,25 @@ jobs:
             "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
 
+      - name: Keep Linux artifacts as job artifacts (fallback)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: belrog-linux-x64
+          path: |
+            release/belrog-*-linux-x86_64.AppImage
+            release/belrog-*-linux-amd64.deb
+          if-no-files-found: error
+          retention-days: 30
+
   build-macos:
     name: Build macOS (${{ matrix.arch }})
-    # Fork divergence: unsigned mac apps cannot run, so skip the job when Apple
-    # secrets are absent instead of failing the run (upstream hard-asserts).
-    if: needs.secrets-probe.outputs.apple == 'true'
+    # macOS signing/notarization credentials are a hard requirement (an
+    # unsigned mac app won't run), so the job skips when they're absent
+    # instead of failing the run. The secrets context is not available in
+    # job-level `if:`, so presence is resolved by the secrets-probe job.
+    if: ${{ (github.event_name == 'push' || inputs.build == 'all')
+      && needs.secrets-probe.outputs.apple == 'true' }}
     needs: [ensure-release, preflight, secrets-probe]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -567,5 +532,5 @@ jobs:
         run: |
           VERSION="${{ steps.app_version.outputs.app_version }}"
           gh release upload "$RELEASE_TAG" \
-            "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
+                      "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
             --clobber

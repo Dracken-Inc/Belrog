@@ -28,11 +28,6 @@ import { useAssetsStore } from '../stores/assetsStore'
 import { useProjectStore } from '../stores/projectStore'
 import { audioBufferToWav } from './exporter'
 import { applySoloAsMute, hasAudioSolo, isAudioTrackAudible } from '../utils/audioTrackAudibility'
-import { normalizeAudioVolumeEnvelope } from '../utils/audioVolumeEnvelope.mjs'
-import { scheduleAudioVolumeEnvelope } from '../utils/audioVolumeAutomation.mjs'
-import { normalizeAudioEq } from '../utils/audioEq.mjs'
-import { createAudioEqChain } from './audioEqChain'
-import { getCompoundRenderState, getClipPlaybackWindow } from '../utils/compoundPlayback.mjs'
 
 // Qwen3-ASR native rate. Sticking to 16k saves ~2/3 of the upload size vs
 // 44.1/48k without losing any transcription accuracy.
@@ -77,8 +72,9 @@ function clipHasUsableAudio(clip, asset) {
 function computeProgramDuration(clips) {
   let end = 0
   for (const clip of clips) {
-    const window = getClipPlaybackWindow(clip)
-    if (window.end > window.start && window.end > end) end = window.end
+    const start = Number(clip.startTime) || 0
+    const dur = Math.max(0, Number(clip.duration) || 0)
+    if (start + dur > end) end = start + dur
   }
   return end
 }
@@ -89,7 +85,7 @@ function computeProgramDuration(clips) {
  * and no unexpected references leak into the main process.
  */
 function buildIpcPayload({ duration }) {
-  const timelineState = getCompoundRenderState(useTimelineStore.getState())
+  const timelineState = useTimelineStore.getState()
   const assetsState = useAssetsStore.getState()
 
   const clips = (timelineState.clips || []).map((clip) => ({
@@ -99,8 +95,6 @@ function buildIpcPayload({ duration }) {
     type: clip.type,
     startTime: clip.startTime,
     duration: clip.duration,
-    playbackWindowStart: clip.playbackWindowStart,
-    playbackWindowEnd: clip.playbackWindowEnd,
     trimStart: clip.trimStart || 0,
     sourceTimeScale: clip.sourceTimeScale,
     timelineFps: clip.timelineFps,
@@ -109,8 +103,6 @@ function buildIpcPayload({ duration }) {
     reverse: !!clip.reverse,
     enabled: clip.enabled !== false,
     audioEnabled: clip.audioEnabled,
-    volumeEnvelope: normalizeAudioVolumeEnvelope(clip.volumeEnvelope),
-    audioEq: normalizeAudioEq(clip.audioEq),
     url: clip.url || null,
   }))
 
@@ -214,7 +206,7 @@ async function mixViaFFmpeg({ duration, report }) {
  * on large video sources — that's why the FFmpeg path exists.
  */
 async function mixViaWebAudio({ report }) {
-  const timelineState = getCompoundRenderState(useTimelineStore.getState())
+  const timelineState = useTimelineStore.getState()
   const assetsState = useAssetsStore.getState()
 
   const clips = Array.isArray(timelineState.clips) ? timelineState.clips : []
@@ -316,9 +308,8 @@ async function mixViaWebAudio({ report }) {
       if (clipDuration <= 0) continue
       const clipEnd = clipStart + clipDuration
 
-      const playbackWindow = getClipPlaybackWindow(clip)
-      const visibleStart = Math.max(0, playbackWindow.start)
-      const visibleEnd = Math.min(duration, playbackWindow.end)
+      const visibleStart = Math.max(0, clipStart)
+      const visibleEnd = Math.min(duration, clipEnd)
       if (visibleEnd <= visibleStart) continue
 
       const source = context.createBufferSource()
@@ -339,16 +330,7 @@ async function mixViaWebAudio({ report }) {
       )
       if (playDuration <= 0) continue
 
-      const envelopeGain = context.createGain()
-      scheduleAudioVolumeEnvelope(envelopeGain.gain, clip, {
-        localTime: clipOffset, contextTime: visibleStart,
-        endLocalTime: clipOffset + visibleDuration,
-      })
-      source.playbackRate.value = timeScale
-      const eqChain = createAudioEqChain(context, clip.audioEq)
-      source.connect(eqChain.input)
-      eqChain.output.connect(envelopeGain)
-      envelopeGain.connect(context.destination)
+      source.connect(context.destination)
       source.start(visibleStart, sourceOffset, playDuration)
     } catch (err) {
       console.warn('[timelineAudioMix] failed to include clip:', clip.id, err)
@@ -378,8 +360,7 @@ async function mixViaWebAudio({ report }) {
  * @returns {Promise<{ blob: Blob, duration: number, sampleRate: number, channels: number }>}
  */
 export async function mixTimelineAudioToWav({ onProgress } = {}) {
-  const timelineState = getCompoundRenderState(useTimelineStore.getState())
-  if (timelineState.compoundRenderErrors?.length) throw new Error(timelineState.compoundRenderErrors.join(' '))
+  const timelineState = useTimelineStore.getState()
   const assetsState = useAssetsStore.getState()
   const clips = Array.isArray(timelineState.clips) ? timelineState.clips : []
   const tracks = Array.isArray(timelineState.tracks) ? timelineState.tracks : []
@@ -434,9 +415,8 @@ export async function mixTimelineAudioToWav({ onProgress } = {}) {
 function computeAudibleSpans(clips, programDuration) {
   const spans = clips
     .map((clip) => {
-      const playbackWindow = getClipPlaybackWindow(clip)
-      const start = Math.max(0, playbackWindow.start)
-      const end = Math.min(programDuration, playbackWindow.end)
+      const start = Math.max(0, Number(clip.startTime) || 0)
+      const end = Math.min(programDuration, start + Math.max(0, Number(clip.duration) || 0))
       return { start, end }
     })
     .filter((span) => span.end > span.start)

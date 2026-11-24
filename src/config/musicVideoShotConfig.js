@@ -992,12 +992,12 @@ export function parseTimedLyrics(rawText = '') {
  * 4+ consecutive words) but returns the whole timed entry so the planner
  * gets startSec directly. Returns null when no confident match.
  */
-export function findTimedLyricLineByText(hint = '', timedLines = [], { nearSeconds = null } = {}) {
+export function findTimedLyricLineByText(hint = '', timedLines = [], { preferNearSec = null } = {}) {
   if (!Array.isArray(timedLines) || timedLines.length === 0) return null
   const texts = timedLines.map((l) => l?.text || '')
   const idxs = findLyricLineIndexes(hint, texts)
   if (idxs.length === 0) return null
-  if (idxs.length === 1 || nearSeconds === null || !Number.isFinite(nearSeconds)) return timedLines[idxs[0]]
+  if (idxs.length === 1 || preferNearSec === null || !Number.isFinite(preferNearSec)) return timedLines[idxs[0]]
   // Repeated lyric (chorus at 0:39 and 3:30): choose the occurrence whose
   // start time is closest to the anchor, so the shot stays where the
   // script/timeline expects instead of snapping to the first repetition.
@@ -1006,7 +1006,7 @@ export function findTimedLyricLineByText(hint = '', timedLines = [], { nearSecon
   for (const idx of idxs) {
     const startSec = Number(timedLines[idx]?.startSec)
     if (!Number.isFinite(startSec)) continue
-    const dist = Math.abs(startSec - nearSeconds)
+    const dist = Math.abs(startSec - preferNearSec)
     if (dist < bestDist) {
       bestDist = dist
       best = idx

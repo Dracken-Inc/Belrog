@@ -1,20 +1,4 @@
-export const LANGUAGE_STORAGE_KEY = 'belrog-language'
-// Builds before the product was named Belrog wrote the choice under this key.
-// Upgraded installs have to keep their language, so it stays readable forever;
-// only the new key is ever written.
-export const LEGACY_LANGUAGE_STORAGE_KEYS = ['velorn-language']
-
-export function readStoredLanguage(storage) {
-  for (const key of [LANGUAGE_STORAGE_KEY, ...LEGACY_LANGUAGE_STORAGE_KEYS]) {
-    try {
-      const value = storage?.getItem?.(key)
-      if (value) return value
-    } catch (_) {
-      // Storage can be unavailable in restricted browser contexts.
-    }
-  }
-  return null
-}
+export const LANGUAGE_STORAGE_KEY = 'Belrog-language'
 export const DEFAULT_LANGUAGE = 'en'
 
 export function normalizeLocale(locale) {

@@ -30,7 +30,6 @@ import { useI18n } from '../i18n/I18nContext'
 import { COMFY_PARTNER_KEY_CHANGED_EVENT } from '../services/comfyPartnerAuth'
 import { WORKFLOW_SETUP_STARTER_KITS, getWorkflowSetupGalleryMeta } from '../config/workflowSetupGallery'
 import { checkLocalComfyConnection, getLocalComfyConnectionSync } from '../services/localComfyConnection'
-import { noLauncherConfiguredInstruction } from '../utils/platformLabels'
 import {
   WORKFLOW_SETUP_SECTION_ID,
   buildWorkflowInstallPlan,
@@ -924,7 +923,7 @@ const WorkflowSetupSection = memo(function WorkflowSetupSection() {
       setInstalling(false)
       setStatusMessage(isExternal
         ? 'Restart ComfyUI in the window where you started it, then run Re-check. Tip: start ComfyUI from the header chip next time for one-click restarts.'
-        : noLauncherConfiguredInstruction())
+        : 'No launcher configured — open Settings → ComfyUI Launcher to pick your run_nvidia_gpu.bat, or restart ComfyUI manually.')
       return
     }
 

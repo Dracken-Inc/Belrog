@@ -1,14 +1,7 @@
-import { useState, useCallback, useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react'
-import { registerDesktopClose } from './services/desktopClose'
-import { RefreshCw, ExternalLink, Loader2, BookmarkPlus, Library } from 'lucide-react'
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react'
+import { RefreshCw, ExternalLink, Loader2, BookmarkPlus } from 'lucide-react'
 import TitleBar from './components/TitleBar'
-import { DesktopAccountProvider } from './components/DesktopAccount'
-import AgentComfyCloudSetup from './components/AgentComfyCloudSetup'
-import PhoneCreateSaver from './components/PhoneCreateSaver'
 import ExportPanel from './components/ExportPanel'
-import ExportProgressOverlay from './components/ExportProgressOverlay'
-import useExportActivityStore, { isExportBusy } from './stores/exportActivityStore'
-import { startExportActivityBridge } from './services/exportActivity'
 import WorkspaceErrorBoundary from './components/WorkspaceErrorBoundary'
 import LeftPanel from './components/LeftPanel'
 import PreviewPanel from './components/PreviewPanel'
@@ -18,7 +11,6 @@ import MixerPanel from './components/MixerPanel'
 import ScopesPanel from './components/ScopesPanel'
 import TransportControls from './components/TransportControls'
 import InspectorPanel from './components/InspectorPanel'
-import RightPanelDock from './components/RightPanelDock'
 import ResizeHandle from './components/ResizeHandle'
 import SettingsModal from './components/SettingsModal'
 import GettingStartedModal from './components/GettingStartedModal'
@@ -27,10 +19,6 @@ import BottomBar from './components/BottomBar'
 import useProjectStore from './stores/projectStore'
 import useAssetsStore from './stores/assetsStore'
 import useTimelineStore from './stores/timelineStore'
-import useStoryboardWorkspace from './hooks/useStoryboardWorkspace'
-import useGenerateWorkspace from './hooks/useGenerateWorkspace'
-import { getStoryboardProjectKey } from './utils/storyboardWorkspace.mjs'
-import { stageWorkflowInAgent } from './utils/workflowAgentHandoff.mjs'
 import videoCache from './services/videoCache'
 import { WORKFLOW_SETUP_SECTION_ID } from './services/workflowSetupManager'
 import {
@@ -42,15 +30,13 @@ import { startComfyLauncherEventBridge } from './services/comfyLauncherEventBrid
 import { startComfyAutoImport } from './services/comfyAutoImport'
 import { startMcpSnapshotPublisher } from './services/mcpSnapshot'
 import { MCP_ACTION_BRIDGE_VERSION, startMcpActionBridge } from './services/mcpActions'
-import { startGenerationRuns } from './services/generationRuns'
 import { attachProjectDirtyWatchers, isProjectDirty } from './services/projectDirtyTracker'
-import { VELORN_OPEN_STOCK_EVENT } from './services/pexelsStock'
+import { Belrog_OPEN_STOCK_EVENT } from './services/pexelsStock'
 import {
   DISCOVER_TAB_VISIBILITY_CHANGED_EVENT,
   getShowDiscoverTab,
   hydrateShowDiscoverTab,
 } from './services/discoverTabVisibilitySettings.mjs'
-import { useHiddenTopTabs } from './services/topTabVisibilitySettings.mjs'
 
 // Tab workspaces load on first visit instead of shipping in the startup
 // bundle. This keeps launch parse time down; GenerateWorkspace alone carries
@@ -62,12 +48,8 @@ const GenerateWorkspace = lazy(() => import('./components/GenerateWorkspace'))
 const FlowAIWorkspace = lazy(() => import('./components/FlowAIWorkspace'))
 const AgentWorkspace = lazy(() => import('./components/AgentWorkspace'))
 const MOGWorkspace = lazy(() => import('./components/MOGWorkspace'))
-const CreateWorkspace = lazy(() => import('./components/CreateWorkspace'))
 const StockPanel = lazy(() => import('./components/StockPanel'))
 const DiscoverWorkspace = lazy(() => import('./components/DiscoverWorkspace'))
-const ProductionWorkspace = lazy(() => import('./components/ProductionWorkspace'))
-const ConnectedAgentPanel = lazy(() => import('./components/ConnectedAgentPanel'))
-const WorkflowLibraryDrawer = lazy(() => import('./components/WorkflowLibraryDrawer'))
 
 const WORKSPACE_LOADING_FALLBACK = (
   <div className="flex-1 flex items-center justify-center bg-sf-dark-950 text-xs text-sf-text-muted">
@@ -89,47 +71,20 @@ function formatDownloadBytes(bytes) {
   return `${value.toFixed(digits)} ${units[unitIndex]}`
 }
 
-function AppWorkspace({ accountAgentRequested = false }) {
-  const exportBusy = useExportActivityStore(state => Boolean(state.activeJob || state.localActivity))
-  useLayoutEffect(() => startExportActivityBridge(), [])
+function App() {
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   const [settingsInitialSection, setSettingsInitialSection] = useState(null)
-  const [agentModelPickerRequest, setAgentModelPickerRequest] = useState(0)
   const [gettingStartedOpen, setGettingStartedOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState({ type: 'shot', id: '2.1' })
-  const [requestedMainTab, setMainTab] = useState('editor')
-  const [rightPanelTab, setRightPanelTab] = useState('inspector')
-  const rightPanelHostRef = useRef(null)
-  const workflowReferenceRef = useRef(null)
-  const workflowLibraryEpoch = useRef(0)
-  const [workflowLibraryOpen, setWorkflowLibraryOpen] = useState(false)
-  const closeWorkflowLibrary = useCallback(() => { workflowLibraryEpoch.current++; setWorkflowLibraryOpen(false) }, [])
-  useEffect(() => () => { workflowLibraryEpoch.current++ }, [])
-  const [agentHighlightShotIds, setAgentHighlightShotIds] = useState([])
-  const [agentRevealShotId, setAgentRevealShotId] = useState(null)
-  const agentWorkspaceRef = useRef(null)
-  const { activeTab: visibleMainTab, showGenerateTab, hasMountedGenerate } = useGenerateWorkspace({
-    activeTab: requestedMainTab, onTabChange: setMainTab, disabled: exportBusy,
-  })
-  const { activeTab: mainTab, showStoryboardTab, selectTab, openStoryboard } = useStoryboardWorkspace({
-    activeTab: visibleMainTab, onTabChange: setMainTab, disabled: exportBusy,
-  })
+  const [mainTab, setMainTab] = useState('editor')
   const [hasMountedFlowAi, setHasMountedFlowAi] = useState(false)
+  const [hasMountedGenerate, setHasMountedGenerate] = useState(false)
   const [showDiscoverTab, setShowDiscoverTabState] = useState(getShowDiscoverTab)
   const [bottomEditorView, setBottomEditorView] = useState('timeline')
-  // Migrate the previous lab's panel selection during a development hot update.
-  useEffect(() => {
-    if (bottomEditorView === 'storyboard') setBottomEditorView('timeline')
-  }, [bottomEditorView])
   const [activeTimelineToolLabel, setActiveTimelineToolLabel] = useState('Move tool')
   const [timelineStatusText, setTimelineStatusText] = useState('')
   const [downloadProgressItems, setDownloadProgressItems] = useState([])
   const mainTabRef = useRef(mainTab)
-  useLayoutEffect(() => {
-    // Release the editor's preview/decoder tree, including agent-started jobs.
-    // Remain on Export afterwards so completion or errors are easy to review.
-    if (exportBusy) setMainTab('export')
-  }, [exportBusy, mainTab])
   const downloadDismissTimersRef = useRef(new Map())
   
   // Left panel state
@@ -170,21 +125,66 @@ function AppWorkspace({ accountAgentRequested = false }) {
   // ComfyUI was briefly down during our own restart) leaves it stuck on a
   // black canvas with no in-app way to recover.
   const [comfyIframeNonce, setComfyIframeNonce] = useState(0)
-  // Director Script tab — embedded Perchance planner (perchance.org/belrog).
-  // Inbound: iframe postMessage -> validated -> window event
-  // 'director-script-received' -> GenerateWorkspace fills yoloMusicScript.
-  // Outbound: toolbar Send Brief -> 'director-script-request-brief' ->
-  // GenerateWorkspace builds the brief -> 'director-script-brief-ready' ->
-  // posted into the iframe as { type: 'belrog-director-brief', brief }.
   const [directorIframeNonce, setDirectorIframeNonce] = useState(0)
   const [directorScriptStatus, setDirectorScriptStatus] = useState('')
-  // 'checking' while we wait for the page to prove itself, 'live' once it posts
-  // anything back, 'blocked' when it never does (perchance.org sends
-  // X-Frame-Options: SAMEORIGIN, which stops the embed cold).
-  const [directorFrameState, setDirectorFrameState] = useState('checking')
   const directorIframeRef = useRef(null)
   const reloadComfyIframe = useCallback(() => {
     setComfyIframeNonce((n) => n + 1)
+  }, [])
+  // Director Script tab — embedded Perchance planner (perchance.org/belrog).
+  // Inbound path: iframe postMessage -> validated below ->
+  // window event 'director-script-received' -> GenerateWorkspace fills
+  // yoloMusicScript (user then presses the existing Parse button).
+  // Outbound path: toolbar Send Brief -> window event
+  // 'director-script-request-brief' -> GenerateWorkspace builds the brief ->
+  // window event 'director-script-brief-ready' -> posted into the iframe.
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (!event || !event.data || typeof event.data !== 'object') return
+      if (event.data.type !== 'belrog-director-script') return
+      const frame = directorIframeRef.current
+      if (!frame || event.source !== frame.contentWindow) return
+      const script = String(event.data.script || '')
+      if (!script.startsWith('BELROG DIRECTOR SCRIPT') || !/^Shot \d+:/m.test(script)) {
+        setDirectorScriptStatus('Rejected: not a Belrog director script.')
+        return
+      }
+      const count = (script.match(/^Shot \d+:/gm) || []).length
+      setDirectorScriptStatus(`Received ${count} shots — open Generate > Music Video to parse.`)
+      window.dispatchEvent(new CustomEvent('director-script-received', { detail: { text: script } }))
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+  useEffect(() => {
+    const onBriefReady = (event) => {
+      const brief = String(event.detail?.brief || '')
+      if (!brief) return
+      try {
+        directorIframeRef.current?.contentWindow?.postMessage(
+          { type: 'belrog-director-brief', brief }, '*'
+        )
+        setDirectorScriptStatus('Brief sent into the planner.')
+      } catch (_) { /* ignore */ }
+    }
+    window.addEventListener('director-script-brief-ready', onBriefReady)
+    return () => window.removeEventListener('director-script-brief-ready', onBriefReady)
+  }, [])
+  const handleSendBriefToDirector = useCallback(() => {
+    setMainTab('director-script')
+    window.dispatchEvent(new CustomEvent('director-script-request-brief'))
+  }, [])
+  const handleReloadDirector = useCallback(() => {
+    setDirectorIframeNonce((n) => n + 1)
+    setDirectorScriptStatus('Reloading the planner…')
+  }, [])
+  const handleOpenDirectorExternal = useCallback(() => {
+    const url = 'https://perchance.org/belrog'
+    if (window?.electronAPI?.openExternalUrl) {
+      window.electronAPI.openExternalUrl(url).catch(() => {})
+    } else {
+      window.open(url, '_blank', 'noopener,noreferrer')
+    }
   }, [])
   const [comfySaveState, setComfySaveState] = useState({ phase: 'idle', name: '', message: '', error: '' })
   const capturedComfyGraphRef = useRef(null)
@@ -225,27 +225,17 @@ function AppWorkspace({ accountAgentRequested = false }) {
       })
     }
   }, [])
-  // `choice` is undefined on the first press of Save. If a workflow of that name exists, the person is asked once:
-  // 'replace' overwrites it in place, 'both' saves a second one as before.
-  const handleConfirmSaveComfyGraph = useCallback(async (choice) => {
+  const handleConfirmSaveComfyGraph = useCallback(async () => {
     const captured = capturedComfyGraphRef.current
-    const existing = comfySaveState.existing
     setComfySaveState((prev) => ({ ...prev, phase: 'busy' }))
     try {
-      const { saveCapturedGraphToLibrary, findCustomLibraryWorkflowsByTitle } = await import('./services/customWorkflowLibrary')
-      if (choice !== 'replace' && choice !== 'both') {
-        const same = await findCustomLibraryWorkflowsByTitle(comfySaveState.name || captured?.workflowName)
-        if (same.length) {
-          setComfySaveState((prev) => ({ ...prev, phase: 'exists', existing: { id: same[0].id, title: same[0].title, count: same.length }, error: '', message: '' }))
-          return
-        }
-      }
-      const result = await saveCapturedGraphToLibrary(captured, comfySaveState.name, choice === 'replace' && existing ? { replaceId: existing.id } : {})
+      const { saveCapturedGraphToLibrary } = await import('./services/customWorkflowLibrary')
+      const result = await saveCapturedGraphToLibrary(captured, comfySaveState.name)
       capturedComfyGraphRef.current = null
       setComfySaveState({
         phase: 'idle',
         name: '',
-        message: `${result.updated ? 'Replaced' : 'Saved'} "${result.entry.title}" — find it in My Workflows`,
+        message: `${result.updated ? 'Updated' : 'Saved'} "${result.entry.title}" — find it under Generate → Custom.`,
         error: '',
       })
     } catch (error) {
@@ -256,7 +246,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
         error: error instanceof Error ? error.message : 'Could not save the workflow.',
       }))
     }
-  }, [comfySaveState.name, comfySaveState.existing])
+  }, [comfySaveState.name])
   const handleCancelSaveComfyGraph = useCallback(() => {
     capturedComfyGraphRef.current = null
     setComfySaveState({ phase: 'idle', name: '', message: '', error: '' })
@@ -264,10 +254,8 @@ function AppWorkspace({ accountAgentRequested = false }) {
   const openComfyExternal = useCallback(() => {
     const url = comfyIframeUrl || getLocalComfyHttpBaseSync()
     if (!url) return
-    // openExternalUrl is the name the preload actually exposes; openExternal
-    // never existed, so this button fell through to a popup the app blocks.
-    if (window?.electronAPI?.openExternalUrl) {
-      window.electronAPI.openExternalUrl(url).catch(() => window.open(url, '_blank', 'noopener,noreferrer'))
+    if (window?.electronAPI?.openExternal) {
+      window.electronAPI.openExternal(url).catch(() => {})
     } else {
       window.open(url, '_blank', 'noopener,noreferrer')
     }
@@ -323,19 +311,15 @@ function AppWorkspace({ accountAgentRequested = false }) {
     return () => { try { stop?.() } catch (_) { /* ignore */ } }
   }, [MCP_ACTION_BRIDGE_VERSION])
 
-  // Native run tracking is independent of the mounted workspace.
-  useEffect(() => startGenerationRuns(), [])
-
-  useLayoutEffect(() => {
+  useEffect(() => {
     const previousTab = mainTabRef.current
     mainTabRef.current = mainTab
-    if ((previousTab === 'editor' || previousTab === 'export') && previousTab !== mainTab) {
+    if (previousTab === 'editor' && mainTab !== 'editor') {
       try {
         useTimelineStore.getState().shuttlePause?.()
         videoCache.clear()
       } catch (_) {
-        // Run before the newly visible preview's passive effects acquire
-        // decoders; clearing later could dispose its freshly mounted media.
+        // Best-effort release of hidden editor media resources.
       }
     }
   }, [mainTab])
@@ -347,31 +331,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
       shouldImportUnmanagedPrompt: () => mainTabRef.current === 'comfyui',
     })
     return () => { try { stop?.() } catch (_) { /* ignore */ } }
-  }, [])
-
-  // ComfyUI's own Download button for a missing model: the frame asks, Belrog
-  // saves the file into the right models folder (electron/comfyModelDownload.cjs).
-  useEffect(() => {
-    const onMessage = async (event) => {
-      const data = event.data
-      if (!data || data.source !== 'velorn-comfy-frame' || data.type !== 'download-model') return
-      const frame = document.querySelector('iframe[title="ComfyUI"]')
-      if (!frame || event.source !== frame.contentWindow) return
-      let answer = null
-      try {
-        answer = await window.electronAPI?.comfyModelDownload?.({ url: data.url, name: data.name, directory: data.directory })
-      } catch (error) {
-        answer = { success: false, error: error?.message }
-      }
-      try {
-        event.source.postMessage({
-          source: 'velorn-host', type: 'download-model-answer', id: data.id,
-          ok: Boolean(answer?.success), error: answer?.error || (answer ? '' : 'Model downloads need the Belrog desktop app.'),
-        }, '*')
-      } catch { /* the frame was reloaded meanwhile */ }
-    }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
   }, [])
 
   useEffect(() => {
@@ -432,6 +391,9 @@ function AppWorkspace({ accountAgentRequested = false }) {
     if (mainTab === 'flow-ai') {
       setHasMountedFlowAi(true)
     }
+    if (mainTab === 'generate') {
+      setHasMountedGenerate(true)
+    }
   }, [mainTab])
 
   useEffect(() => {
@@ -456,19 +418,23 @@ function AppWorkspace({ accountAgentRequested = false }) {
     }
   }, [mainTab, showDiscoverTab])
 
-  // A tab hidden in Settings while it is open: go back to the Editor. Buttons
-  // elsewhere that open a hidden tab (Share my GPU, Open Stock) still work.
-  const hiddenTopTabs = useHiddenTopTabs()
-  const openTabRef = useRef(mainTab)
-  openTabRef.current = mainTab
+  // When user sends timeline frame to Generate (right-click preview → Extend with AI / Starting keyframe for AI)
   useEffect(() => {
-    if (hiddenTopTabs.includes(openTabRef.current)) setMainTab('editor')
-  }, [hiddenTopTabs])
+    const handler = () => setMainTab('generate')
+    window.addEventListener('comfystudio-open-generate-with-frame', handler)
+    return () => window.removeEventListener('comfystudio-open-generate-with-frame', handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = () => setMainTab('generate')
+    window.addEventListener('comfystudio-open-generate-tab', handler)
+    return () => window.removeEventListener('comfystudio-open-generate-tab', handler)
+  }, [])
 
   useEffect(() => {
     const handler = () => setMainTab('stock')
-    window.addEventListener(VELORN_OPEN_STOCK_EVENT, handler)
-    return () => window.removeEventListener(VELORN_OPEN_STOCK_EVENT, handler)
+    window.addEventListener(Belrog_OPEN_STOCK_EVENT, handler)
+    return () => window.removeEventListener(Belrog_OPEN_STOCK_EVENT, handler)
   }, [])
 
   // Reveal-in-assets (timeline clip menu / Shift+F): make sure the Assets
@@ -534,78 +500,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
     } catch (_) { /* ignore */ }
   }, [])
 
-  const [hasOpenedCreate, setHasOpenedCreate] = useState(false)
-  useEffect(() => { if (mainTab === 'create') setHasOpenedCreate(true) }, [mainTab])
-  const [hasOpenedSound, setHasOpenedSound] = useState(false)
-  useEffect(() => { if (mainTab === 'sound') setHasOpenedSound(true) }, [mainTab])
-  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script' || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'comfyui'
-  // Waiting for the planner to prove it loaded, but not forever: if it never
-  // answers, say what happened and hand over a button that works.
-  useEffect(() => {
-    if (mainTab !== 'director-script') return undefined
-    setDirectorFrameState((prev) => (prev === 'live' ? prev : 'checking'))
-    const timer = setTimeout(() => {
-      setDirectorFrameState((prev) => (prev === 'live' ? prev : 'blocked'))
-    }, 8000)
-    return () => clearTimeout(timer)
-  }, [mainTab, directorIframeNonce])
-  useEffect(() => {
-    const onMessage = (event) => {
-      if (!event || !event.data || typeof event.data !== 'object') return
-      // Anything coming back from the planner proves it really loaded. Perchance
-      // sends X-Frame-Options: SAMEORIGIN, so the frame can be blocked outright
-      // and leave nothing but a black rectangle - this is how we notice.
-      if (typeof event.origin === 'string' && event.origin.includes('perchance.org')) {
-        setDirectorFrameState('live')
-      }
-      if (event.data.type !== 'belrog-director-script') return
-      const frame = directorIframeRef.current
-      if (!frame || event.source !== frame.contentWindow) return
-      const script = String(event.data.script || '')
-      if (!script.startsWith('BELROG DIRECTOR SCRIPT') || !/^Shot \d+:/m.test(script)) {
-        setDirectorScriptStatus('Rejected: not a Belrog director script.')
-        return
-      }
-      const shotCount = (script.match(/^Shot \d+:/gm) || []).length
-      setDirectorScriptStatus(`Received ${shotCount} shots — open Generate > Music Video to parse.`)
-      window.dispatchEvent(new CustomEvent('director-script-received', { detail: { text: script } }))
-    }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [])
-  useEffect(() => {
-    const onBriefReady = (event) => {
-      const brief = String(event.detail?.brief || '')
-      if (!brief) return
-      try {
-        directorIframeRef.current?.contentWindow?.postMessage(
-          { type: 'belrog-director-brief', brief }, '*'
-        )
-        setDirectorScriptStatus('Brief sent into the planner.')
-      } catch (_) { /* ignore */ }
-    }
-    window.addEventListener('director-script-brief-ready', onBriefReady)
-    return () => window.removeEventListener('director-script-brief-ready', onBriefReady)
-  }, [])
-  const handleSendBriefToDirector = useCallback(() => {
-    setMainTab('director-script')
-    window.dispatchEvent(new CustomEvent('director-script-request-brief'))
-  }, [])
-  const handleReloadDirector = useCallback(() => {
-    setDirectorIframeNonce((n) => n + 1)
-    setDirectorScriptStatus('Reloading the planner…')
-  }, [])
-  const handleOpenDirectorExternal = useCallback(() => {
-    // Same path the ComfyUI tab uses. window.open() alone is a no-op here: the
-    // main process denies popup windows, which is why "Open in browser" used to
-    // look like a dead button on a blocked planner tab.
-    const url = 'https://perchance.org/belrog'
-    if (window?.electronAPI?.openExternalUrl) {
-      window.electronAPI.openExternalUrl(url).catch(() => window.open(url, '_blank', 'noopener,noreferrer'))
-    } else {
-      window.open(url, '_blank', 'noopener,noreferrer')
-    }
-  }, [])
+  const isFullScreenTab = mainTab === 'export' || mainTab === 'generate' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'comfyui' || mainTab === 'director-script'
   // Editor layout insets used by the editor content shell.
   const editorLeftInset = leftPanelExpanded ? ICON_BAR_WIDTH + leftPanelWidth : ICON_BAR_WIDTH
   const editorRightInset = inspectorExpanded ? ICON_BAR_WIDTH + inspectorWidth : ICON_BAR_WIDTH
@@ -625,23 +520,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
   const projectSessionKey = currentProject
     ? (currentProject.created || currentProject.name || 'project')
     : 'no-project'
-  const agentProjectHandle = useProjectStore(state => state.currentProjectHandle)
-  const agentProjectKey = getStoryboardProjectKey(currentProject, agentProjectHandle)
-  useLayoutEffect(() => { setAgentHighlightShotIds([]); setAgentRevealShotId(null) }, [agentProjectKey, isLoading])
-  useEffect(() => {
-    if (mainTab !== 'storyboard' || !agentRevealShotId) return
-    let cancelled = false, timer
-    let attempts = 0
-    const reveal = () => {
-      if (cancelled) return
-      const card = [...(agentWorkspaceRef.current?.querySelectorAll('[data-shot-id]') || [])]
-        .find(element => element.dataset.shotId === agentRevealShotId)
-      if (card) { card.scrollIntoView({ block: 'center', behavior: 'smooth' }); setAgentRevealShotId(null) }
-      else if (++attempts < 20) timer = setTimeout(reveal, 100)
-    }
-    reveal()
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [mainTab, agentRevealShotId])
   const mediaPreparation = useAssetsStore((state) => state.mediaPreparation)
   const mediaPreparationTotal = Math.max(0, Number(mediaPreparation?.total) || 0)
   const mediaPreparationCompleted = Math.max(0, Math.min(mediaPreparationTotal, Number(mediaPreparation?.completed) || 0))
@@ -666,7 +544,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
 
     const AUTOSAVE_BACKSTOP_MS = 5 * 60 * 1000
     const autoSaveTimer = setInterval(() => {
-      if (isExportBusy()) return
       const lastSavedAt = Date.parse(useProjectStore.getState().lastAutoSave || '') || 0
       const overdue = Date.now() - lastSavedAt > AUTOSAVE_BACKSTOP_MS
       const dirty = isProjectDirty()
@@ -678,11 +555,17 @@ function AppWorkspace({ accountAgentRequested = false }) {
     return () => clearInterval(autoSaveTimer)
   }, [currentProject, autoSaveEnabled, autoSaveInterval, saveProject])
   
-  // Await saving before native close; retain browser/reload fallback.
-  useEffect(() => registerDesktopClose({
-    api: window.electronAPI,
-    getProjectState: () => useProjectStore.getState(),
-  }), [])
+  // Save on window close/refresh
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentProject) {
+        saveProject()
+      }
+    }
+    
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [currentProject, saveProject])
 
   // Resize handlers
   const handleLeftPanelResize = useCallback((clientX) => {
@@ -729,49 +612,10 @@ function AppWorkspace({ accountAgentRequested = false }) {
   }, [persistLayout])
 
   const handleToggleInspectorExpanded = useCallback(() => {
-    if (mainTab !== 'editor' && rightPanelTab !== 'agent') {
-      setRightPanelTab('agent')
-      setInspectorExpanded(true)
-      persistLayout({ inspectorExpanded: true })
-      return
-    }
     setInspectorExpanded(prev => {
       const next = !prev
       persistLayout({ inspectorExpanded: next })
       return next
-    })
-  }, [persistLayout, mainTab, rightPanelTab])
-
-  const handleRightPanelTabClick = useCallback((tab) => {
-    if (isExportBusy() || (tab === 'inspector' && mainTab !== 'editor')) return
-    if (rightPanelTab === tab && inspectorExpanded) {
-      handleToggleInspectorExpanded()
-    } else {
-      setRightPanelTab(tab)
-      setInspectorExpanded(true)
-      persistLayout({ inspectorExpanded: true })
-    }
-  }, [mainTab, rightPanelTab, inspectorExpanded, persistLayout, handleToggleInspectorExpanded])
-
-  const handleRevealInspector = useCallback(() => {
-    setRightPanelTab('inspector')
-    setInspectorExpanded(true)
-    persistLayout({ inspectorExpanded: true })
-  }, [persistLayout])
-
-  const handleUseWorkflowWithAgent = useCallback(entry => {
-    const before = useProjectStore.getState()
-    const key = getStoryboardProjectKey(before.currentProject, before.currentProjectHandle)
-    const epoch = workflowLibraryEpoch.current
-    return stageWorkflowInAgent(entry, {
-      handlerRef: workflowReferenceRef,
-      reveal: () => { setRightPanelTab('agent'); setInspectorExpanded(true); persistLayout({ inspectorExpanded: true }) },
-      isCurrent: () => {
-        const current = useProjectStore.getState()
-        return epoch === workflowLibraryEpoch.current && !isExportBusy() && !current.isLoading && Boolean(current.currentProject)
-          && current.currentProjectHandle === before.currentProjectHandle
-          && getStoryboardProjectKey(current.currentProject, current.currentProjectHandle) === key
-      },
     })
   }, [persistLayout])
 
@@ -795,8 +639,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
   // column would be dead space above the timeline) — the left panel wins and
   // the inspector regains full height when the left panel drops it.
   const inspectorFullHeightActive = inspectorFullHeight && !(editorLayout === 'vertical' && leftPanelFullHeight)
-  const rightPanelExpanded = inspectorExpanded && (mainTab === 'editor' || rightPanelTab === 'agent')
-  const agentVisible = rightPanelExpanded && rightPanelTab === 'agent'
 
   const handleActiveTimelineToolChange = useCallback((label) => {
     setActiveTimelineToolLabel(label || 'Move tool')
@@ -810,13 +652,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
     setSettingsInitialSection(section)
     setSettingsModalOpen(true)
   }, [])
-
-  // Other parts of the window (the account drop-down) can ask for a Settings page by name.
-  useEffect(() => {
-    const open = event => { if (isExportBusy()) return; openSettingsModal(typeof event.detail === 'string' ? event.detail : null) }
-    window.addEventListener('velorn:open-settings', open)
-    return () => window.removeEventListener('velorn:open-settings', open)
-  }, [openSettingsModal])
 
   const handleOpenSettingsFromBottomBar = useCallback(() => {
     setMainTab('editor')
@@ -839,7 +674,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
 
   // Show welcome screen if no project is open
   if (!currentProject) {
-    return <><div inert={exportBusy ? '' : undefined}><WelcomeScreen /></div><ExportProgressOverlay /></>
+    return <WelcomeScreen />
   }
 
   return (
@@ -848,17 +683,11 @@ function AppWorkspace({ accountAgentRequested = false }) {
       <TitleBar
         projectName={currentProject?.name || 'Untitled'}
         activeTab={mainTab}
-        onTabChange={selectTab}
-        showStoryboardTab={showStoryboardTab}
-        showGenerateTab={showGenerateTab}
+        onTabChange={setMainTab}
         showDiscoverTab={showDiscoverTab}
-        hiddenTabs={hiddenTopTabs}
         editorLayout={editorLayout}
         onEditorLayoutChange={handleEditorLayoutChange}
-        exportBusy={exportBusy}
       />
-
-      <div className="contents" inert={exportBusy ? '' : undefined} aria-hidden={exportBusy ? true : undefined}>
 
       {showMediaPreparation && (
         <div className="pointer-events-none fixed left-1/2 top-1/2 z-50 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-sf-dark-600 bg-sf-dark-900/95 px-3 py-2 shadow-2xl shadow-black/40 backdrop-blur">
@@ -931,10 +760,9 @@ function AppWorkspace({ accountAgentRequested = false }) {
       
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-      <div className="flex-1 flex overflow-hidden min-h-0 min-w-0">
         {/* ComfyUI tab – kept mounted when visible so iframe does not reload */}
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0 bg-sf-dark-950"
+          className="flex-1 flex flex-col min-h-0 bg-sf-dark-950"
           style={{ display: mainTab === 'comfyui' ? 'flex' : 'none' }}
         >
           {/* Thin toolbar: the embedded ComfyUI iframe has no browser chrome,
@@ -943,23 +771,16 @@ function AppWorkspace({ accountAgentRequested = false }) {
               under it) the user has no way to recover from inside the app.
               Reload remounts the iframe; Open-external pops it in the system
               browser as a fallback diagnostic. */}
-          <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs text-sf-text-muted flex-shrink-0">
-            <span>Local ComfyUI</span><span className="min-w-0 max-w-full font-mono truncate">{comfyIframeUrl || '—'}</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs text-sf-text-muted flex-shrink-0">
+            <span className="font-mono truncate">{comfyIframeUrl || '—'}</span>
             {(comfySaveState.message || comfySaveState.error) && (
-              <span className={`min-w-0 max-w-[min(420px,100%)] truncate ${comfySaveState.error ? 'text-sf-error' : 'text-emerald-300'}`}>
+              <span className={`max-w-[420px] truncate ${comfySaveState.error ? 'text-sf-error' : 'text-emerald-300'}`}>
                 {comfySaveState.error || comfySaveState.message}
               </span>
             )}
             <div className="flex-1" />
-            {comfySaveState.phase === 'exists' ? (
-              <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 text-sf-text-secondary" role="group" aria-label="A workflow with this name exists">
-                <span className="min-w-0">You already have “{comfySaveState.existing?.title}”{comfySaveState.existing?.count > 1 ? ` (${comfySaveState.existing.count} of them)` : ''}.</span>
-                <button type="button" onClick={() => { void handleConfirmSaveComfyGraph('replace') }} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25 transition-colors">{comfySaveState.existing?.count > 1 ? 'Replace the newest' : 'Replace it'}</button>
-                <button type="button" onClick={() => { void handleConfirmSaveComfyGraph('both') }} className="px-2 py-1 rounded hover:bg-sf-dark-700 hover:text-sf-text-primary transition-colors">Keep both</button>
-                <button type="button" onClick={handleCancelSaveComfyGraph} className="px-2 py-1 rounded hover:bg-sf-dark-700 hover:text-sf-text-primary transition-colors">Cancel</button>
-              </span>
-            ) : comfySaveState.phase === 'naming' ? (
-              <span className="inline-flex max-w-full flex-wrap items-center gap-1.5">
+            {comfySaveState.phase === 'naming' ? (
+              <span className="inline-flex items-center gap-1.5">
                 <input
                   type="text"
                   value={comfySaveState.name}
@@ -971,7 +792,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
                   ref={comfySaveNameInputRef}
                   autoFocus
                   placeholder="Workflow name"
-                  className="w-56 min-w-0 max-w-full rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-xs text-sf-text-primary outline-none placeholder:text-sf-text-muted focus:border-sf-accent"
+                  className="w-56 rounded border border-sf-dark-600 bg-sf-dark-800 px-2 py-1 text-xs text-sf-text-primary outline-none placeholder:text-sf-text-muted focus:border-sf-accent"
                 />
                 <button
                   type="button"
@@ -999,17 +820,12 @@ function AppWorkspace({ accountAgentRequested = false }) {
                     ? 'cursor-not-allowed text-sf-text-muted'
                     : 'bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25'
                 }`}
-                title="Save a copy of the current workflow in My Workflows, to reopen it or use it with your agent"
+                title="Save the workflow currently open below to your library (Generate → Custom), so you can reopen it here anytime"
               >
                 {comfySaveState.phase === 'busy' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BookmarkPlus className="w-3.5 h-3.5" />}
-                Save workflow
+                Save to Belrog
               </button>
             )}
-            <button type="button" onClick={() => setWorkflowLibraryOpen(true)} disabled={exportBusy}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded hover:bg-sf-dark-700 hover:text-sf-text-primary transition-colors"
-              title="Browse saved workflows and add one to your agent chat">
-              <Library className="w-3.5 h-3.5" /> My Workflows
-            </button>
             <button
               type="button"
               onClick={reloadComfyIframe}
@@ -1041,20 +857,11 @@ function AppWorkspace({ accountAgentRequested = false }) {
             Kept mounted (display:none) so a half-edited script survives tab switches,
             same as the ComfyUI tab. */}
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0 bg-sf-dark-950"
+          className="flex-1 flex flex-col min-h-0 bg-sf-dark-950"
           style={{ display: mainTab === 'director-script' ? 'flex' : 'none' }}
         >
-          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              directorFrameState === 'live' ? 'bg-emerald-500'
-                : directorFrameState === 'blocked' ? 'bg-red-500'
-                  : 'bg-amber-400 animate-pulse'
-            }`} />
-            <span className="text-sf-text-muted">
-              {directorFrameState === 'live' ? 'Planner connected'
-                : directorFrameState === 'blocked' ? 'Planner did not load — perchance.org blocks embedding'
-                  : 'Loading planner…'}
-            </span>
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs text-sf-text-muted flex-shrink-0">
+            <span className="font-mono truncate">https://perchance.org/belrog</span>
             {directorScriptStatus && (
               <span className="max-w-[520px] truncate">{directorScriptStatus}</span>
             )}
@@ -1084,55 +891,22 @@ function AppWorkspace({ accountAgentRequested = false }) {
               Open in browser
             </button>
           </div>
-          <div className="relative flex-1 min-h-0 min-w-0">
-            <iframe
-              key={`director-iframe-${directorIframeNonce}`}
-              ref={directorIframeRef}
-              src="https://perchance.org/belrog"
-              title="DirectorScript"
-              className="absolute inset-0 w-full h-full border-0"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
-            />
-            {directorFrameState === 'blocked' && (
-              // Not a stub: perchance.org answers with X-Frame-Options: SAMEORIGIN,
-              // so the frame can never render inside Belrog. Say that, and give the
-              // one action that works, instead of leaving a black rectangle.
-              <div className="absolute inset-0 flex items-center justify-center bg-sf-dark-950/95 px-6">
-                <div className="max-w-md text-center space-y-3">
-                  <h3 className="text-sm font-semibold text-sf-text-primary">The planner will not show inside Belrog</h3>
-                  <p className="text-xs text-sf-text-secondary leading-relaxed">
-                    perchance.org tells browsers not to display it inside another app, so this
-                    frame stays empty no matter how many times it reloads. The planner itself is
-                    fine - open it in your browser. Send Brief still hands your brief to it, and
-                    a script you save there comes back into Belrog the same way.
-                  </p>
-                  <div className="flex items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleOpenDirectorExternal}
-                      className="px-3 py-1.5 rounded bg-sf-accent hover:bg-sf-accent/90 text-xs text-white transition-colors"
-                    >
-                      Open planner in browser
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleReloadDirector}
-                      className="px-3 py-1.5 rounded bg-sf-dark-700 hover:bg-sf-dark-600 text-xs text-sf-text-secondary transition-colors"
-                    >
-                      Try loading it here again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <iframe
+            key={`director-iframe-${directorIframeNonce}`}
+            ref={directorIframeRef}
+            src="https://perchance.org/belrog"
+            title="DirectorScript"
+            className="flex-1 w-full min-h-0 border-0"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+          />
         </div>
-        {/* Generate stays mounted after first use so its existing jobs survive
-            tab switches and hiding the tab. Older MCP adapters can still
-            mount its listeners in the background through the open event. */}
+        {/* Generate tab – mounted on first visit, then kept mounted so
+            queue/progress survives tab switches. MCP music-video tools open
+            this tab via the comfystudio-open-generate-tab event before their
+            readiness probe, so first mount happens before they need it. */}
         {hasMountedGenerate && (
           <div
-            className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950"
+            className="flex-1 flex flex-col min-h-0 overflow-hidden bg-sf-dark-950"
             style={{ display: mainTab === 'generate' ? 'flex' : 'none' }}
           >
             <WorkspaceErrorBoundary>
@@ -1147,7 +921,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
         )}
         {hasMountedFlowAi && (
           <div
-            className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950"
+            className="flex-1 flex flex-col min-h-0 overflow-hidden bg-sf-dark-950"
             style={{ display: mainTab === 'flow-ai' ? 'flex' : 'none' }}
           >
             <WorkspaceErrorBoundary>
@@ -1157,28 +931,8 @@ function AppWorkspace({ accountAgentRequested = false }) {
             </WorkspaceErrorBoundary>
           </div>
         )}
-        {/* Sound tab - the same screen as Create, making voice, music and effects */}
-        {(mainTab === 'sound' || hasOpenedSound) && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950" style={{ display: mainTab === 'sound' ? 'flex' : 'none' }}>
-            <WorkspaceErrorBoundary>
-              <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
-                <CreateWorkspace mode="sound" />
-              </Suspense>
-            </WorkspaceErrorBoundary>
-          </div>
-        )}
-        {/* Create tab - kept mounted once opened so a request in progress survives tab switches */}
-        {(mainTab === 'create' || hasOpenedCreate) && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950" style={{ display: mainTab === 'create' ? 'flex' : 'none' }}>
-            <WorkspaceErrorBoundary>
-              <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
-                <CreateWorkspace />
-              </Suspense>
-            </WorkspaceErrorBoundary>
-          </div>
-        )}
         {mainTab === 'mog' && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-sf-dark-950">
             <WorkspaceErrorBoundary>
               <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
                 <MOGWorkspace />
@@ -1188,22 +942,11 @@ function AppWorkspace({ accountAgentRequested = false }) {
         )}
         {/* Export tab - keep mounted so settings, queue, and progress survive tab switches */}
         <div
-          className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950"
+          className="flex-1 flex flex-col min-h-0 overflow-hidden bg-sf-dark-950"
           style={{ display: mainTab === 'export' ? 'flex' : 'none' }}
         >
-          <ExportPanel active={mainTab === 'export'} />
+          <ExportPanel />
         </div>
-        {mainTab === 'storyboard' && (
-          <div className="flex-1 flex min-w-0 min-h-0 overflow-hidden" data-workspace="storyboard">
-          <div ref={agentWorkspaceRef} className="flex-1 min-w-0 min-h-0 overflow-hidden">
-            <WorkspaceErrorBoundary>
-              <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
-                <ProductionWorkspace workspace onBackToEditor={() => selectTab('editor')} highlightShotIds={agentHighlightShotIds} />
-              </Suspense>
-            </WorkspaceErrorBoundary>
-          </div>
-          </div>
-        )}
         {mainTab === "stock" && (
           <WorkspaceErrorBoundary>
             <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
@@ -1236,7 +979,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
             {editorLayout === 'vertical' && (
               <>
                 <div style={{ width: verticalPreviewWidth }} className="flex-shrink-0 flex flex-col min-h-0">
-                  <div ref={agentWorkspaceRef} className="flex-1 min-h-0">
+                  <div className="flex-1 min-h-0">
                     <PreviewPanel />
                   </div>
                   <div className="flex-shrink-0 flex items-center justify-center py-1 border-t border-sf-dark-700">
@@ -1319,7 +1062,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
                 {/* Center - Preview (in the vertical layout it lives in the
                     dedicated left column instead) */}
                 {editorLayout !== 'vertical' && (
-                  <div ref={agentWorkspaceRef} className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0">
                     <PreviewPanel />
                   </div>
                 )}
@@ -1340,12 +1083,20 @@ function AppWorkspace({ accountAgentRequested = false }) {
                       />
                     )}
 
-                    {/* One shared right sidebar: Inspector or Agent. */}
+                    {/* Right Sidebar - Inspector with Icon Toolbar */}
                     <div
-                      ref={rightPanelHostRef}
                       style={{ width: inspectorExpanded ? inspectorWidth + ICON_BAR_WIDTH : ICON_BAR_WIDTH }}
                       className="flex-shrink-0 transition-[width] duration-200 ease-out"
-                    />
+                    >
+                      <InspectorPanel
+                        selectedItem={selectedItem}
+                        isExpanded={inspectorExpanded}
+                        onToggleExpanded={handleToggleInspectorExpanded}
+                        isFullHeight={false}
+                        onToggleFullHeight={handleToggleInspectorFullHeight}
+                        fullHeightDisabled={editorLayout === 'vertical' && leftPanelFullHeight}
+                      />
+                    </div>
                   </>
                 )}
               </div>
@@ -1469,60 +1220,32 @@ function AppWorkspace({ accountAgentRequested = false }) {
                   />
                 )}
                 <div
-                  ref={rightPanelHostRef}
                   style={{ width: inspectorExpanded ? inspectorWidth + ICON_BAR_WIDTH : ICON_BAR_WIDTH }}
                   className="flex-shrink-0 transition-[width] duration-200 ease-out h-full"
-                />
+                >
+                  <InspectorPanel
+                    selectedItem={selectedItem}
+                    isExpanded={inspectorExpanded}
+                    onToggleExpanded={handleToggleInspectorExpanded}
+                    isFullHeight={true}
+                    onToggleFullHeight={handleToggleInspectorFullHeight}
+                  />
+                </div>
               </>
             )}
           </>
         </div>
         )}
       </div>
-
-      {/* Every non-editor workspace shares a full-height Agent slot. The editor
-          keeps its normal/full-height slots; RightPanelDock moves its existing
-          DOM between them without remounting the conversation. */}
-      {mainTab !== 'editor' && <>
-        {rightPanelExpanded && <ResizeHandle direction="horizontal" onResize={handleInspectorResize} />}
-        <div ref={rightPanelHostRef}
-          style={{ width: rightPanelExpanded ? inspectorWidth + ICON_BAR_WIDTH : ICON_BAR_WIDTH, maxWidth: '60vw' }}
-          className="flex-shrink-0 min-h-0 transition-[width] duration-200 ease-out" />
-      </>}
       
-      <RightPanelDock hostRef={rightPanelHostRef} activeTab={rightPanelTab} isExpanded={rightPanelExpanded}
-        keepAgentMounted={accountAgentRequested}
-        onTabClick={handleRightPanelTabClick} onToggleExpanded={handleToggleInspectorExpanded}
-        isFullHeight={mainTab !== 'editor' || inspectorFullHeightActive}
-        onToggleFullHeight={handleToggleInspectorFullHeight}
-        fullHeightDisabled={mainTab !== 'editor' || (editorLayout === 'vertical' && leftPanelFullHeight)}
-        inspectorAvailable={mainTab === 'editor'}
-        inspector={mainTab === 'editor' ? <InspectorPanel embedded
-          isExpanded={rightPanelExpanded && rightPanelTab === 'inspector'} onToggleExpanded={handleRevealInspector} /> : null}
-        agent={<WorkspaceErrorBoundary><Suspense fallback={null}>
-          <ConnectedAgentPanel docked visible={agentVisible} activeTab={mainTab} workspaceRef={agentWorkspaceRef} modelPickerRequest={agentModelPickerRequest}
-            onOpenEditor={() => { if (!isExportBusy()) setMainTab('editor') }}
-            workflowReferenceRef={workflowReferenceRef}
-            onHighlight={setAgentHighlightShotIds}
-            onShowShot={shotId => {
-              if (isExportBusy()) return
-              setAgentHighlightShotIds([shotId]); setAgentRevealShotId(shotId); openStoryboard()
-            }} />
-        </Suspense></WorkspaceErrorBoundary>} />
-      </div>
       {/* Bottom bar: settings menu + undo/redo */}
       <BottomBar
         projectName={currentProject?.name}
         onOpenSettings={handleOpenSettingsFromBottomBar}
         onOpenGettingStarted={handleOpenGettingStarted}
-        onOpenStoryboard={openStoryboard}
       />
 
       {/* Settings Modal */}
-      {workflowLibraryOpen && <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
-        <WorkflowLibraryDrawer open onClose={closeWorkflowLibrary}
-          onUseWithAgent={handleUseWorkflowWithAgent} disabled={exportBusy} />
-      </Suspense>}
       <SettingsModal
         isOpen={settingsModalOpen}
         onClose={() => {
@@ -1530,11 +1253,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
           setSettingsInitialSection(null)
         }}
         initialSection={settingsInitialSection}
-        onChooseAgentModel={() => {
-          setSettingsModalOpen(false); setSettingsInitialSection(null)
-          setRightPanelTab('agent'); setInspectorExpanded(true)
-          setAgentModelPickerRequest(value => value + 1)
-        }}
       />
       <GettingStartedModal
         isOpen={gettingStartedOpen}
@@ -1544,19 +1262,9 @@ function AppWorkspace({ accountAgentRequested = false }) {
         onOpenSettings={handleOpenSettingsFromGettingStarted}
         onNavigate={handleNavigateFromGettingStarted}
       />
-      </div>
-      <ExportProgressOverlay />
     </div>
   )
 }
 
-export default function App() {
-  const hasProject = useProjectStore(state => Boolean(state.currentProject) && !state.isLoading)
-  const [accountAgentRequested, setAccountAgentRequested] = useState(false)
-  const requestAccountAgent = useCallback(() => setAccountAgentRequested(true), [])
-  return <DesktopAccountProvider hasProject={hasProject} onRequestAgent={requestAccountAgent}>
-    <AppWorkspace accountAgentRequested={accountAgentRequested} />
-    <AgentComfyCloudSetup />
-    <PhoneCreateSaver />
-  </DesktopAccountProvider>
-}
+export default App
+

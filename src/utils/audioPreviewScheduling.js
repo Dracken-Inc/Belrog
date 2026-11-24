@@ -1,5 +1,3 @@
-import { getClipPlaybackWindow } from '../../electron/audioMixEligibility.mjs'
-
 export const AUDIO_PREVIEW_LOOKAHEAD_SECONDS = 2.5
 export const AUDIO_PREVIEW_RETENTION_SECONDS = 1
 export const AUDIO_PREVIEW_MAX_ENTRIES = 16
@@ -81,9 +79,11 @@ export function getAudioSourceTimeAtTimeline(clip, timelineTime) {
 }
 
 const getClipWindow = (clip, playheadPosition) => {
-  const { start, end } = getClipPlaybackWindow(clip)
+  const start = finiteNumber(clip?.startTime)
+  const duration = Math.max(0, finiteNumber(clip?.duration))
+  const end = start + duration
   const playhead = finiteNumber(playheadPosition)
-  const active = end > start && playhead >= start && playhead < end
+  const active = duration > 0 && playhead >= start && playhead < end
   const distance = active
     ? 0
     : playhead < start

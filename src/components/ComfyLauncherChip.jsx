@@ -36,8 +36,7 @@ import {
   describeComfyLauncherPortOwner,
   connectComfyLauncherExternal,
 } from '../services/comfyLauncher'
-import { refreshComfyConnectionMode, getLocalComfyConnectionSync } from '../services/localComfyConnection'
-import { noLauncherConfiguredMessage } from '../utils/platformLabels'
+import { refreshComfyConnectionMode } from '../services/localComfyConnection'
 
 const STATE_STYLES = {
   unknown: { dot: 'bg-slate-400', label: 'ComfyUI', tone: 'idle' },
@@ -214,12 +213,6 @@ function ComfyLauncherChip() {
     if (state.state === 'stopping') return state.statusMessage || 'Stopping ComfyUI…'
     if (state.state === 'crashed') return state.statusMessage || 'ComfyUI exited unexpectedly.'
     if (state.state === 'stopped') return state.statusMessage || 'ComfyUI is stopped.'
-    // Remote mode: ComfyUI lives on another machine, so a missing local process
-    // means the tunnel is down, not that ComfyUI crashed on this PC.
-    const connection = getLocalComfyConnectionSync()
-    if (connection?.reconnecting) {
-      return t('launcherChip.summary.tunnelDown', {}, 'Remote server unreachable — the SSH tunnel is down. ComfyUI on that machine is probably fine; reconnect it in Settings → Remote Server.')
-    }
     if (state.state === 'idle') return t('launcherChip.summary.notRunning')
     return t('launcherChip.summary.unknown')
   }, [available, state, t])
@@ -514,7 +507,7 @@ function ComfyLauncherChip() {
             </div>
             <div className="text-[11px] text-sf-text-primary truncate" title={config.launcherScript}>
               {config.launcherScript || (
-                <span className="italic text-sf-text-muted">{noLauncherConfiguredMessage()} for you.</span>
+                <span className="italic text-sf-text-muted">No launcher configured. Pick your run_nvidia_gpu.bat to let Belrog start ComfyUI for you.</span>
               )}
             </div>
 

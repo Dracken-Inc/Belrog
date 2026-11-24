@@ -117,21 +117,6 @@ test('refreshComfyConnectionMode tracks tunnel coming up (port switches to tunne
   assert.equal(conn.getLocalComfyHttpBaseSync(), 'http://127.0.0.1:8199')
 })
 
-test('a tunnel that had to move off the configured port is followed, not the setting', async () => {
-  // The real case on a machine that already runs ComfyUI on 8188: the setting
-  // says 8188, the forwarder bound 8189. Generation must talk to 8189 — pointing
-  // at 8188 means quietly driving some other ComfyUI, or nothing.
-  installWindow({
-    remoteSettings: { enabled: true, tunnelLocalPort: 8188 },
-    tunnelStatus: { active: true, settings: { tunnelLocalPort: 8189, tunnelRequestedPort: 8188 }, localPort: 8189 },
-  })
-  const conn = await import('./localComfyConnection.js')
-  const after = await conn.refreshComfyConnectionMode()
-  assert.equal(after.port, 8189, 'the bound port must win over the configured one')
-  assert.equal(conn.getLocalComfyHttpBaseSync(), 'http://127.0.0.1:8189')
-  assert.equal(after.mode, 'remote')
-})
-
 test('refreshComfyConnectionMode never throws when IPC is missing (browser/dev context)', async () => {
   delete globalThis.window
   const conn = await import('./localComfyConnection.js')

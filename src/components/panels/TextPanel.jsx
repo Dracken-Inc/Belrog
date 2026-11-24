@@ -5,10 +5,6 @@ import { TEXT_ANIMATION_PRESETS, TEXT_ANIMATION_MODE_OPTIONS } from '../../utils
 import { useI18n } from '../../i18n/I18nContext'
 import { quoteCssFontFamily } from '../../utils/fontFamily'
 import FontFamilyPicker from '../FontFamilyPicker'
-import { useTimelineFields } from '../../hooks/useTimelineFields'
-
-// The playhead is read at the moment text is added, not subscribed to.
-const TEXT_PANEL_TIMELINE_FIELDS = ['addTextClip', 'applyTextAnimationPreset', 'tracks', 'activeTrackId', 'requestTextEdit']
 
 function TextPanel() {
   const { t } = useI18n()
@@ -17,9 +13,10 @@ function TextPanel() {
     addTextClip,
     applyTextAnimationPreset,
     tracks,
+    playheadPosition,
     activeTrackId,
     requestTextEdit,
-  } = useTimelineFields(TEXT_PANEL_TIMELINE_FIELDS)
+  } = useTimelineStore()
   
   // Text generation state
   const [textContent, setTextContent] = useState(() => t('textPanel.sampleText'))
@@ -60,7 +57,7 @@ function TextPanel() {
       backgroundOpacity: textBackgroundOpacity,
       shadow: textShadow,
       duration: textDuration,
-    }, useTimelineStore.getState().playheadPosition)
+    }, playheadPosition)
 
     if (newClip && animationPreset !== 'none') {
       applyTextAnimationPreset(newClip.id, animationPreset, animationMode, { saveHistory: false })

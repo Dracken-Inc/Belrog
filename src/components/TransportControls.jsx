@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { Play, Pause, SkipBack, SkipForward, Volume2, Film, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowLeftToLine, ArrowRightToLine, Repeat, Repeat1, ArrowLeftRight, Check, RotateCcw } from 'lucide-react'
+import { Play, Pause, SkipBack, SkipForward, Volume2, Film, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ArrowLeftToLine, ArrowRightToLine, Repeat, Repeat1, ArrowLeftRight, Check } from 'lucide-react'
 import useAssetsStore from '../stores/assetsStore'
 import useTimelineStore from '../stores/timelineStore'
 import useProjectStore from '../stores/projectStore'
 import TimelineSwitcher from './TimelineSwitcher'
-import { isNativeTransportActivation, isSpaceKey, isTransportKeyboardBlocked } from '../utils/transportKeyboardGuards.mjs'
-import { getShuttleKeyAction } from '../utils/shuttlePlayback'
+import { isTextEditingElement } from '../utils/keyboardFocus'
 import { formatTimecode, getSafeTimelineFps, stepTimeByFrames } from '../utils/timelineFrames'
-import { useTimelineFields } from '../hooks/useTimelineFields'
-import TimecodeField from './TimecodeField'
-import { DEFAULT_EDITOR_HOTKEYS, EDITOR_HOTKEY_IDS, EDITOR_HOTKEYS_CHANGED_EVENT, getEditorHotkeys, matchEditorHotkey, formatEditorHotkey } from '../services/editorHotkeys'
 
 const SPACE_MODIFIER_USED_EVENT = 'comfystudio-space-modifier-used'
 
@@ -22,39 +18,12 @@ const PLAYBACK_MODES = [
   { id: 'ping-pong', label: 'Back and Forth', description: 'Play forward then reverse', icon: ArrowLeftRight },
 ]
 
-const TRANSPORT_TIMELINE_FIELDS = ['isPlaying', 'setPlayheadPosition', 'togglePlay', 'getTimelineEndTime', 'clips',
-  'selectedClipIds', 'playbackRate', 'shuttleMode', 'shuttleForward', 'shuttleReverse', 'shuttlePause', 'shuttleSlow',
-  'inPoint', 'outPoint', 'setInPoint', 'setOutPoint', 'clearInOutPoints', 'goToInPoint', 'goToOutPoint', 'loopMode', 'setLoopMode']
-
-const BIG_FRAME_STEP = 10
-
 function TransportControls() {
   // Track if K is held for slow shuttle
-  const isKHeldRef = useRef(false)
+  const [isKHeld, setIsKHeld] = useState(false)
   // Distinguish Space tap (play/pause) from Space+drag (pan/zoom modifiers)
   const pendingSpaceToggleRef = useRef(false)
   const spaceUsedAsModifierRef = useRef(false)
-  const [editorHotkeys, setEditorHotkeys] = useState(DEFAULT_EDITOR_HOTKEYS)
-  useEffect(() => {
-    let alive = true
-    let revision = 0
-    const update = async (event) => {
-      const request = ++revision
-      if (event?.detail) {
-        setEditorHotkeys(event.detail)
-        return
-      }
-      try {
-        const next = await getEditorHotkeys()
-        if (alive && request === revision) setEditorHotkeys(next)
-      } catch (_) {
-        // Keep the current/default bindings if preferences are unavailable.
-      }
-    }
-    update()
-    window.addEventListener(EDITOR_HOTKEYS_CHANGED_EVENT, update)
-    return () => { alive = false; window.removeEventListener(EDITOR_HOTKEYS_CHANGED_EVENT, update) }
-  }, [])
   
   // Context menu state for playback mode
   const [showPlaybackMenu, setShowPlaybackMenu] = useState(false)
@@ -76,10 +45,9 @@ function TransportControls() {
   } = useAssetsStore()
   
   // Timeline store (for timeline playback)
-  // The playhead is deliberately absent: it is written every animation frame
-  // during playback. Handlers read it live; the timecode is its own child.
   const {
     isPlaying: timelineIsPlaying,
+    playheadPosition,
     setPlayheadPosition,
     togglePlay: timelineTogglePlay,
     getTimelineEndTime,
@@ -100,7 +68,7 @@ function TransportControls() {
     goToOutPoint,
     loopMode,
     setLoopMode
-  } = useTimelineFields(TRANSPORT_TIMELINE_FIELDS)
+  } = useTimelineStore()
 
   // Project store (for timeline FPS)
   const { getCurrentTimelineSettings } = useProjectStore()
@@ -113,30 +81,10 @@ function TransportControls() {
   
   // Unified values based on current preview mode
   const isPlaying = timelineMode ? timelineIsPlaying : assetIsPlaying
-  const getCurrentTime = () => (timelineMode ? useTimelineStore.getState().playheadPosition : assetCurrentTime)
+  const currentTime = timelineMode ? playheadPosition : assetCurrentTime
   const duration = timelineMode ? (endTime || 60) : assetDuration
   const hasContent = timelineMode ? clips.length > 0 : currentPreview !== null
   const playDisabled = !hasContent || Boolean(mediaPreparation?.critical)
-  const keyboardSessionId = useTimelineStore(state => state.timelineSessionId)
-  const playAround = useTimelineStore(state => state.playAround)
-  const playAroundHotkey = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.PLAY_AROUND])
-  const startPlayAround = () => {
-    if (!timelineMode || playDisabled || document.querySelector('[data-play-around-blocked="true"]')) return false
-    return useTimelineStore.getState().startPlayAround()
-  }
-
-  // Source audition and project preparation own their own transport. Cancel
-  // synchronously on mode changes, even if React hasn't painted that mode yet.
-  useEffect(() => {
-    const check = state => {
-      if (state.previewMode !== 'timeline' || state.mediaPreparation?.critical) {
-        useTimelineStore.getState().cancelPlayAround()
-      }
-    }
-    const unsubscribe = useAssetsStore.subscribe(check)
-    check(useAssetsStore.getState())
-    return unsubscribe
-  }, [])
 
   const selectedLoopRange = useMemo(() => {
     if (!timelineMode) return null
@@ -195,16 +143,18 @@ function TransportControls() {
   const goToStart = () => seekTo(0)
   const goToEnd = () => seekTo(duration)
   
-  const stepFrames = (count) => {
-    seekTo(stepTimeByFrames(getCurrentTime(), count, fps, { min: 0, max: duration }), { intent: 'frame-step' })
+  const frameBack = () => {
+    seekTo(stepTimeByFrames(currentTime, -1, fps, { min: 0, max: duration }), { intent: 'frame-step' })
   }
-  const frameBack = () => stepFrames(-1)
-  const frameForward = () => stepFrames(1)
+  
+  const frameForward = () => {
+    seekTo(stepTimeByFrames(currentTime, 1, fps, { min: 0, max: duration }), { intent: 'frame-step' })
+  }
   
   const previousClip = () => {
     if (!timelineMode) return goToStart()
     const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime)
-    const prevClip = sortedClips.reverse().find(c => c.startTime < getCurrentTime() - 0.01)
+    const prevClip = sortedClips.reverse().find(c => c.startTime < currentTime - 0.01)
     if (prevClip) {
       seekTo(prevClip.startTime)
     } else {
@@ -215,7 +165,7 @@ function TransportControls() {
   const nextClip = () => {
     if (!timelineMode) return goToEnd()
     const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime)
-    const nextClipItem = sortedClips.find(c => c.startTime > getCurrentTime() + 0.01)
+    const nextClipItem = sortedClips.find(c => c.startTime > currentTime + 0.01)
     if (nextClipItem) {
       seekTo(nextClipItem.startTime)
     } else {
@@ -225,86 +175,49 @@ function TransportControls() {
 
   // JKL Shuttle keyboard handlers
   useEffect(() => {
-    const resetHeldKeys = () => {
-      isKHeldRef.current = false
-      pendingSpaceToggleRef.current = false
-      spaceUsedAsModifierRef.current = false
-    }
-    const sessionChanged = () => {
-      const assets = useAssetsStore.getState()
-      return assets.previewMode !== previewMode || assets.currentPreview?.id !== currentPreview?.id
-        || assets.mediaPreparation?.critical || useTimelineStore.getState().timelineSessionId !== keyboardSessionId
-    }
     const handleKeyDown = (e) => {
-      if (sessionChanged() || isTransportKeyboardBlocked(e, { allowDefaultPrevented: e.key === 'Escape' })) {
-        resetHeldKeys()
-        return
-      }
+      const active = document.activeElement
+      const target = e.target
+      if (isTextEditingElement(active) || isTextEditingElement(target)) return
 
-      if (e.key === 'Escape' && (useTimelineStore.getState().playAround || e.defaultPrevented)) {
-        useTimelineStore.getState().cancelPlayAround()
-        e.preventDefault()
-        return
-      }
-      if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.PLAY_AROUND])) {
-        // Shift+K must not also be interpreted as shuttle Pause. Read the
-        // configured binding, including custom/unbound legacy preferences.
-        e.preventDefault()
-        if (e.repeat || [...document.querySelectorAll('[aria-modal="true"], [role="dialog"], .fixed.inset-0')]
-          .some(element => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden')) return
-        startPlayAround()
-        return
-      }
-      // Configured editor actions own their keys before hard-coded transport,
-      // irrespective of the order of the two window keyboard listeners.
-      if (Object.values(editorHotkeys).some(binding => matchEditorHotkey(e, binding))) return
-
-      // Other modified keys keep their native/editor meaning. Alt/Option+X
-      // remains the existing explicit timeline-range clearing shortcut.
-      if ((e.altKey || e.metaKey) && !e.ctrlKey && e.key.toLowerCase() === 'x') {
-        resetHeldKeys()
-        e.preventDefault()
-        clearInOutPoints()
-        return
-      }
-      if (e.ctrlKey || e.metaKey || e.altKey) { resetHeldKeys(); return }
-      if (e.shiftKey && (isSpaceKey(e) || e.key === 'Enter')) { resetHeldKeys(); return }
-      if (!isSpaceKey(e)) pendingSpaceToggleRef.current = false
-
-      // Native form controls retain their own arrows (guarded above).
-      // Shift makes the step ten frames.
+      // Reserve timeline frame-step on Left/Right globally so inspector controls
+      // don't trap arrow keys when the user expects timeline navigation.
       if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        stepFrames(e.shiftKey ? -BIG_FRAME_STEP : -1)
+        frameBack()
         return
       }
       if (e.key === 'ArrowRight') {
         e.preventDefault()
-        stepFrames(e.shiftKey ? BIG_FRAME_STEP : 1)
-        return
-      }
-      if (e.key === 'Home' || e.key === 'End') {
-        if (e.shiftKey) return
-        e.preventDefault()
-        if (!e.repeat) (e.key === 'Home' ? goToStart : goToEnd)()
+        frameForward()
         return
       }
 
-      // Only unmodified/Shift JKL belongs to transport (Ctrl+Shift+L unlinks).
-      const shuttleAction = getShuttleKeyAction(e, isKHeldRef.current)
-      if (shuttleAction && timelineMode && !playDisabled) {
+      // JKL Controls
+      if (e.key === 'j' || e.key === 'J') {
         e.preventDefault()
-        if (shuttleAction.type === 'pause') {
-          isKHeldRef.current = true
-          shuttlePause()
-        } else if (shuttleAction.type === 'hold-slow' || shuttleAction.type === 'step-slow') {
-          shuttleSlow(shuttleAction.direction, shuttleAction.type === 'step-slow')
-        } else if (shuttleAction.direction === 'reverse') {
+        if (isKHeld) {
+          // K+J = slow reverse
+          shuttleSlow('reverse')
+        } else {
           shuttleReverse()
+        }
+      }
+      
+      if (e.key === 'k' || e.key === 'K') {
+        e.preventDefault()
+        setIsKHeld(true)
+        shuttlePause()
+      }
+      
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault()
+        if (isKHeld) {
+          // K+L = slow forward
+          shuttleSlow('forward')
         } else {
           shuttleForward()
         }
-        return
       }
       
       // I/O Points
@@ -318,9 +231,16 @@ function TransportControls() {
         setOutPoint()
       }
       
+      // Clear I/O with Option/Alt + X
+      if ((e.altKey || e.metaKey) && e.key === 'x') {
+        e.preventDefault()
+        clearInOutPoints()
+      }
+      
       // Enter = Play/Pause toggle (legacy shortcut)
       if (e.key === 'Enter' && !e.repeat) {
-        if (isNativeTransportActivation(e)) return
+        const target = e.target
+        if (isTextEditingElement(target)) return
         if (!playDisabled) {
           e.preventDefault()
           togglePlay()
@@ -329,31 +249,25 @@ function TransportControls() {
       
       // Space = Play/Pause toggle on keyup.
       // We defer to keyup so Space+drag (pan/zoom in timeline/preview) doesn't toggle playback.
-      if (isSpaceKey(e)) {
+      if (e.code === 'Space' && !e.repeat) {
         if (playDisabled) return
+        pendingSpaceToggleRef.current = true
+        spaceUsedAsModifierRef.current = false
         e.preventDefault()
-        if (!e.repeat) {
-          pendingSpaceToggleRef.current = true
-          spaceUsedAsModifierRef.current = false
-        }
       }
       
     }
     
     const handleKeyUp = (e) => {
       if (e.key === 'k' || e.key === 'K') {
-        isKHeldRef.current = false
+        setIsKHeld(false)
       }
 
-      if (sessionChanged() || isTransportKeyboardBlocked(e) || e.ctrlKey || e.metaKey || e.altKey) {
-        resetHeldKeys()
-        return
-      }
-      if (isSpaceKey(e)) {
+      if (e.code === 'Space') {
         const shouldToggle = pendingSpaceToggleRef.current && !spaceUsedAsModifierRef.current
         pendingSpaceToggleRef.current = false
         spaceUsedAsModifierRef.current = false
-        if (shouldToggle && !playDisabled && !e.shiftKey && !e.repeat) {
+        if (shouldToggle && !playDisabled) {
           e.preventDefault()
           togglePlay()
         }
@@ -371,44 +285,19 @@ function TransportControls() {
         spaceUsedAsModifierRef.current = true
       }
     }
-    const handleBlur = () => {
-      resetHeldKeys()
-      useTimelineStore.getState().cancelPlayAround()
-    }
     
     window.addEventListener('keydown', handleKeyDown)
     window.addEventListener('keyup', handleKeyUp)
     window.addEventListener('mousedown', handleMouseDown)
     window.addEventListener(SPACE_MODIFIER_USED_EVENT, handleSpaceModifierUsed)
-    window.addEventListener('blur', handleBlur)
-    document.addEventListener('focusin', resetHeldKeys, true)
-    document.addEventListener('pointerdown', handleMouseDown, true)
-    document.addEventListener('visibilitychange', handleBlur)
     
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
       window.removeEventListener('mousedown', handleMouseDown)
       window.removeEventListener(SPACE_MODIFIER_USED_EVENT, handleSpaceModifierUsed)
-      window.removeEventListener('blur', handleBlur)
-      document.removeEventListener('focusin', resetHeldKeys, true)
-      document.removeEventListener('pointerdown', handleMouseDown, true)
-      document.removeEventListener('visibilitychange', handleBlur)
     }
-  }, [editorHotkeys, keyboardSessionId, previewMode, currentPreview?.id, timelineMode, playDisabled, isPlaying, togglePlay, shuttleReverse, shuttlePause, shuttleForward, shuttleSlow, setInPoint, setOutPoint, clearInOutPoints, frameBack, frameForward])
-
-  // Effects above rebind for live transport values; only a new ownership
-  // session (or true unmount) retires a still-held Space/K gesture.
-  useEffect(() => {
-    pendingSpaceToggleRef.current = false
-    spaceUsedAsModifierRef.current = false
-    isKHeldRef.current = false
-    return () => {
-      pendingSpaceToggleRef.current = false
-      spaceUsedAsModifierRef.current = false
-      isKHeldRef.current = false
-    }
-  }, [keyboardSessionId, previewMode, currentPreview?.id, playDisabled])
+  }, [isKHeld, playDisabled, isPlaying, togglePlay, shuttleReverse, shuttlePause, shuttleForward, shuttleSlow, setInPoint, setOutPoint, clearInOutPoints, frameBack, frameForward])
 
   // Format playback rate display
   const getPlaybackRateDisplay = () => {
@@ -525,16 +414,6 @@ function TransportControls() {
       
       {/* Center controls - Full transport */}
       <div className="flex items-center gap-1">
-        {timelineMode && <button
-          type="button"
-          data-testid="play-around-button"
-          aria-label="Play around edit"
-          aria-pressed={Boolean(playAround)}
-          onClick={startPlayAround}
-          disabled={playDisabled}
-          className={`p-1.5 rounded transition-colors disabled:opacity-40 ${playAround ? 'bg-sf-accent/20 text-sf-accent' : 'text-sf-text-secondary hover:bg-sf-dark-700'}`}
-          title={`Play around edit${playAroundHotkey !== 'Not set' ? ` (${playAroundHotkey})` : ''} — 2 seconds before/after, then return. Escape cancels.`}
-        ><RotateCcw className="w-4 h-4" /></button>}
         {/* Go to Start */}
         <button 
           onClick={goToStart}
@@ -560,7 +439,7 @@ function TransportControls() {
           onClick={frameBack}
           className="p-1.5 hover:bg-sf-dark-700 rounded transition-colors"
           disabled={!hasContent}
-          title="Frame Back (←, Shift+← for 10 frames)"
+          title="Frame Back"
         >
           <ChevronLeft className="w-4 h-4 text-sf-text-secondary" />
         </button>
@@ -579,7 +458,7 @@ function TransportControls() {
             disabled={playDisabled}
             title={mediaPreparation?.critical
               ? 'Project media is still loading'
-              : `${isPlaying ? 'Pause' : 'Play'} • Space/Enter = Play/Pause • J/L = reverse/forward • Shift+J/L = 1/2, 1/4, 1/8 speed • K = pause • Right-click for playback mode`}
+              : `${isPlaying ? 'Pause' : 'Play'} • Space/Enter = Play/Pause • Right-click for playback mode`}
           >
             {isPlaying ? (
               <Pause className="w-4 h-4 text-white" />
@@ -668,7 +547,7 @@ function TransportControls() {
           onClick={frameForward}
           className="p-1.5 hover:bg-sf-dark-700 rounded transition-colors"
           disabled={!hasContent}
-          title="Frame Forward (→, Shift+→ for 10 frames)"
+          title="Frame Forward"
         >
           <ChevronRight className="w-4 h-4 text-sf-text-secondary" />
         </button>
@@ -695,7 +574,7 @@ function TransportControls() {
         
         {/* Timecode Display */}
         <div className="ml-3 px-2 py-0.5 bg-sf-dark-950 rounded font-mono text-xs text-sf-text-primary">
-          {timelineMode ? <TimecodeField fps={fps} maxTime={duration} /> : formatTimecode(assetCurrentTime, fps)}
+          {formatTimecode(currentTime, fps)}
         </div>
         <span className="text-sf-text-muted text-xs mx-1">/</span>
         <div className="px-2 py-0.5 bg-sf-dark-950/50 rounded font-mono text-xs text-sf-text-muted">

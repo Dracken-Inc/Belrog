@@ -12,8 +12,7 @@ export async function getPexelsApiKey() {
 
 export async function setPexelsApiKey(value) {
   if (typeof window !== 'undefined' && window.electronAPI?.setSetting) {
-    const result = await window.electronAPI.setSetting('pexelsApiKey', value || '')
-    if (result?.success === false) throw new Error(result.error || 'Could not save the Pexels API key.')
+    await window.electronAPI.setSetting('pexelsApiKey', value || '')
   } else {
     localStorage.setItem(PEXELS_KEY_STORAGE, value || '')
   }

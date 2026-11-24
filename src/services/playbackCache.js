@@ -8,7 +8,6 @@
 import { isElectron } from './fileSystem'
 import { getProjectFileUrl } from './fileSystem'
 import { canUseOpaqueVideoDerivative } from '../utils/alphaMedia.mjs'
-import { createMediaPreparationTarget } from '../utils/mediaPreparationTarget.mjs'
 
 const CACHE_DIR = 'cache'
 const PREFIX = 'playback_'
@@ -91,8 +90,6 @@ export async function transcodeVideoForPlayback(projectDir, assetId, sourcePath,
   const result = await window.electronAPI.transcodeForPlayback({
     inputPath: sourcePath,
     outputPath,
-    assetId,
-    label: options.label,
   })
 
   if (!result.success) {
@@ -121,25 +118,16 @@ export async function enqueuePlaybackTranscode(projectDir, assetId, sourcePath, 
   console.log('[PlaybackCache] Transcoding for smooth playback…', { assetId })
 
   const { useAssetsStore } = await import('../stores/assetsStore')
-  const { useProjectStore } = await import('../stores/projectStore')
   const store = useAssetsStore.getState()
   const currentAsset = store.assets.find((asset) => asset.id === assetId)
   if (currentAsset && !isPlaybackCacheableVideoAsset(currentAsset)) {
     return { success: false, skipped: true, error: 'Alpha video uses its original source.' }
   }
-  const target = createMediaPreparationTarget({
-    projectDir, assetId, kind: 'playback', assetsStore: useAssetsStore, projectStore: useProjectStore,
-  })
-  if (!target.isCurrent()) {
-    target.release()
-    return { success: false, skipped: true, error: 'Playback cache target is no longer active.' }
-  }
   const previousPlaybackCachePath = currentAsset?.playbackCachePath || ''
   store.setPlaybackCacheStatus?.(assetId, 'encoding')
 
   try {
-    const result = await transcodeVideoForPlayback(projectDir, assetId, sourcePath, { ...options, label: currentAsset?.name })
-    if (!target.isCurrent()) return result
+    const result = await transcodeVideoForPlayback(projectDir, assetId, sourcePath, options)
     if (!result.success) {
       useAssetsStore.getState().setPlaybackCacheStatus?.(assetId, 'failed')
       console.warn('[PlaybackCache] Transcode failed:', result.error, { assetId })
@@ -147,7 +135,6 @@ export async function enqueuePlaybackTranscode(projectDir, assetId, sourcePath, 
     }
 
     const url = await getProjectFileUrl(projectDir, result.relativePath)
-    if (!target.isCurrent()) return result
     useAssetsStore.getState().setPlaybackCache?.(assetId, result.relativePath, url, {
       version: PLAYBACK_CACHE_VERSION,
     })
@@ -172,11 +159,9 @@ export async function enqueuePlaybackTranscode(projectDir, assetId, sourcePath, 
     }
     return { success: true, relativePath: result.relativePath }
   } catch (err) {
-    if (target.isCurrent()) useAssetsStore.getState().setPlaybackCacheStatus?.(assetId, 'failed')
+    useAssetsStore.getState().setPlaybackCacheStatus?.(assetId, 'failed')
     console.warn('[PlaybackCache] Transcode error:', err.message || err, { assetId })
     return { success: false, error: err.message || String(err) }
-  } finally {
-    target.release()
   }
 }
 

@@ -29,7 +29,7 @@ export default function DiscoverModal({ isOpen, onClose }) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={t('discover.title', undefined, 'Tutorials')}
+        aria-label={t('discover.title', undefined, 'Discover')}
         tabIndex={-1}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {

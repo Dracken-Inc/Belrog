@@ -4,7 +4,6 @@ import { useTimelineStore } from '../../stores/timelineStore'
 import { TRANSITION_TYPES, TRANSITION_DURATIONS, FRAME_RATE, TRANSITION_DEFAULT_SETTINGS, TRANSITION_CATEGORIES } from '../../constants/transitions'
 import { EFFECT_PICKER_GROUPS, getEffectTypeDefinition } from '../../utils/effects'
 import { useI18n } from '../../i18n/I18nContext'
-import { useTimelineFields } from '../../hooks/useTimelineFields'
 
 const EFFECT_PANEL_ICONS = {
   cameraShake: Waves,
@@ -30,9 +29,6 @@ const EFFECT_PANEL_ICONS = {
 
 const TRANSITION_DEFAULT_DURATION_KEY = 'comfystudio-transition-default-duration-frames'
 
-const EFFECTS_PANEL_TIMELINE_FIELDS = ['clips', 'transitions', 'selectedClipIds', 'addTransition', 'addEdgeTransition',
-  'updateTransition', 'getMaxTransitionDuration', 'getMaxEdgeTransitionDuration', 'addEffect', 'applyMultiClipEffectsEdit']
-
 function EffectsPanel() {
   const { t } = useI18n()
   const {
@@ -45,8 +41,7 @@ function EffectsPanel() {
     getMaxTransitionDuration,
     getMaxEdgeTransitionDuration,
     addEffect,
-    applyMultiClipEffectsEdit,
-  } = useTimelineFields(EFFECTS_PANEL_TIMELINE_FIELDS)
+  } = useTimelineStore()
   
   const [tab, setTab] = useState('transitions') // 'transitions' | 'effects'
   const [search, setSearch] = useState('')
@@ -246,11 +241,6 @@ function EffectsPanel() {
   }
 
   const applyEffect = (effectTypeId, presetId = null) => {
-    const liveState = useTimelineStore.getState()
-    if (liveState.clips.some((clip) => liveState.selectedClipIds.includes(clip.id) && clip.type === 'compound')) {
-      setMessage('Open Contents to add effects to clips inside this compound. Effects cannot be added to the parent compound.')
-      return
-    }
     const def = getEffectTypeDefinition(effectTypeId)
     if (!def) return
     if (selectedClips.length === 0) {
@@ -261,21 +251,16 @@ function EffectsPanel() {
     const settings = preset
       ? { ...def.defaults, ...preset.settings }
       : { ...def.defaults }
-    let changedCount = selectedClips.length
-    if (selectedClips.length > 1) {
-      const result = applyMultiClipEffectsEdit({ clipIds: selectedClipIds, action: 'add', type: effectTypeId, settings })
-      if (!result.ok) { setMessage(result.error); return }
-      changedCount = result.changedCount
-    } else {
-      addEffect(selectedClips[0].id, { type: effectTypeId, settings })
-    }
+    selectedClips.forEach((clip) => {
+      addEffect(clip.id, { type: effectTypeId, settings })
+    })
     const effectLabel = getEffectLabel(def)
     const presetSuffix = preset
       ? t('effectsPanel.messages.presetSuffix', { preset: getPresetLabel(def, preset) })
       : ''
     setMessage(t(
-      changedCount === 1 ? 'effectsPanel.messages.effectAddedOne' : 'effectsPanel.messages.effectAddedMany',
-      { effect: effectLabel, preset: presetSuffix, count: changedCount }
+      selectedClips.length === 1 ? 'effectsPanel.messages.effectAddedOne' : 'effectsPanel.messages.effectAddedMany',
+      { effect: effectLabel, preset: presetSuffix, count: selectedClips.length }
     ))
   }
   
@@ -428,7 +413,7 @@ function EffectsPanel() {
           </div>
 
           {message && (
-            <div role="status" data-testid="effects-panel-status" className="text-[11px] text-sf-accent bg-sf-accent/10 border border-sf-accent/20 rounded-lg p-2">
+            <div className="text-[11px] text-sf-accent bg-sf-accent/10 border border-sf-accent/20 rounded-lg p-2">
               {message}
             </div>
           )}

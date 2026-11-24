@@ -317,5 +317,5 @@ Belrog is licensed under the GNU General Public License v3.0. See `LICENSE`.
 Versions released before this license change remain available under the license terms they were released with.
 =======
 # Belrog
-Fork of Belrog
+Fork of Velorn
 

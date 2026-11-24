@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, FolderSearch, Loader2, Music, Plus, RotateCw, X } from 'lucide-react'
 import useTimelineStore from '../stores/timelineStore'
 import useAssetsStore from '../stores/assetsStore'
-import useProjectStore from '../stores/projectStore'
 import {
   MUSIC_BPM_MAX,
-  MUSIC_BACKENDS,
-  getMusicBackend,
   MUSIC_BPM_MIN,
   MUSIC_DURATION_MAX,
   MUSIC_DURATION_MIN,
@@ -14,11 +11,9 @@ import {
   MUSIC_KEY_SCALES,
   MUSIC_TIME_SIGNATURES,
   MUSIC_VARIATIONS_MAX,
-  YUE2_AUTOMATIC_DURATION,
-  YUE2_CUSTOM_DURATION_MAX,
   checkMusicModelDependencies,
   getMusicJobs,
-  resolveMusicLength,
+  normalizeMusicDuration,
   queueMusicGeneration,
 } from '../services/musicGeneration'
 import { checkLocalComfyConnection } from '../services/localComfyConnection'
@@ -31,7 +26,7 @@ import useMusicPopoverStore from '../stores/musicPopoverStore'
  * you finish (blur or Enter) — a controlled input that clamped on every
  * keystroke would snap "1" to the minimum before you could type "140".
  */
-function ClampedNumberField({ value, min, max, onCommit, className, label }) {
+function ClampedNumberField({ value, min, max, onCommit, className }) {
   const [draft, setDraft] = useState(String(value))
   useEffect(() => { setDraft(String(value)) }, [value])
 
@@ -49,7 +44,6 @@ function ClampedNumberField({ value, min, max, onCommit, className, label }) {
   return (
     <input
       type="number"
-      aria-label={label}
       min={min}
       max={max}
       value={draft}
@@ -62,32 +56,26 @@ function ClampedNumberField({ value, min, max, onCommit, className, label }) {
 }
 
 /**
- * YuE2 defaults to Automatic with an optional custom maximum. Only explicit
- * custom / ACE-Step durations prefill from an in/out range; finished takes
- * retain their measured length when added to the timeline.
+ * "Generate music for this range" — ACE-Step text-to-music scoped to the
+ * timeline. Duration prefills from the in/out range (or remaining timeline
+ * length at the playhead) so takes land exactly to picture; finished takes
+ * drop onto an audio track at the range start with one click.
  */
-export default function GenerateMusicPopover(props) {
-  const storedBackend = useMusicPopoverStore(state => state.backend)
-  const backend = MUSIC_BACKENDS.some(model => model.id === storedBackend) ? storedBackend : 'yue2'
-  // A fresh setup state per backend prevents late dependency checks or download
-  // plans from the previously selected model from enabling the wrong action.
-  return <MusicPanel key={backend} {...props} backend={backend} />
-}
-
-function MusicPanel({ onClose, anchorRect = null, backend }) {
-  const model = getMusicBackend(backend)
-  const isYue2 = backend === 'yue2'
-  const projectHandle = useProjectStore(state => state.currentProjectHandle)
+export default function GenerateMusicPopover({ onClose, anchorRect = null }) {
   const {
     inPoint,
     outPoint,
     playheadPosition,
+    duration,
   } = useTimelineStore()
   const getAssetById = useAssetsStore((state) => state.getAssetById)
 
   const rangeStart = Number.isFinite(inPoint) && inPoint !== null ? inPoint : null
   const rangeEnd = Number.isFinite(outPoint) && outPoint !== null ? outPoint : null
   const hasRange = rangeStart !== null && rangeEnd !== null && rangeEnd > rangeStart
+  const prefillDuration = hasRange
+    ? normalizeMusicDuration(rangeEnd - rangeStart)
+    : normalizeMusicDuration(Math.max(10, (Number(duration) || 30) - (Number(playheadPosition) || 0)))
   const dropTime = hasRange ? rangeStart : (Number(playheadPosition) || 0)
 
   // Persisted form state (survives popover close and app restart).
@@ -95,8 +83,6 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
     tags,
     instrumental,
     lyrics,
-    yue2LengthMode,
-    yue2CustomDurationSeconds,
     durationSeconds,
     variations,
     bpm,
@@ -106,63 +92,50 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
     setMusicField,
     appendSessionPromptIds,
   } = useMusicPopoverStore()
-  const lengthMode = isYue2 ? (yue2LengthMode === 'custom' ? 'custom' : 'automatic') : 'exact'
-  const durationField = isYue2 ? 'yue2CustomDurationSeconds' : 'durationSeconds'
-  const resolvedLength = resolveMusicLength({
-    backend, durationSeconds: isYue2 ? yue2CustomDurationSeconds : durationSeconds, lengthMode,
-  })
-  const matchesRange = hasRange && lengthMode !== 'automatic'
-    && resolvedLength.durationSeconds === resolveMusicLength({
-      backend, lengthMode, durationSeconds: rangeEnd - rangeStart,
-    }).durationSeconds
 
   const [isQueueing, setIsQueueing] = useState(false)
   const [queueError, setQueueError] = useState('')
   const [jobs, setJobs] = useState([])
-  const mounted = useRef(true)
-  const checkRequest = useRef(0)
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
-  // In/out can prefill an explicit length, never choose Custom or reduce the
-  // Automatic ceiling. Preserve the last custom seconds while Automatic is on.
+  // When opened over an in/out range, prefill duration to match it (that's
+  // the point of "generate music for this range"). Runs once per open.
   useEffect(() => {
-    if (hasRange && lengthMode !== 'automatic') {
-      setMusicField(durationField, resolveMusicLength({
-        backend, lengthMode, durationSeconds: rangeEnd - rangeStart,
-      }).durationSeconds)
-    }
+    if (hasRange) setMusicField('durationSeconds', prefillDuration)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Check the selected backend on open and after a user-approved installation.
+  // Model availability: check the shared 'music-gen' dependency once on open
+  // (and after installs) so the popover can offer a download instead of
+  // failing at generate time.
   const [isConnected, setIsConnected] = useState(false)
   const [dependencyCheck, setDependencyCheck] = useState({ status: 'idle', hasPack: true, hasBlockingIssues: false })
 
   const recheckModels = useCallback(async () => {
-    const request = ++checkRequest.current
-    setDependencyCheck({ status: 'checking', hasPack: true, hasBlockingIssues: false })
-    const connection = await checkLocalComfyConnection().catch(() => null)
-    const result = connection?.ok ? await checkMusicModelDependencies(backend) : null
-    if (mounted.current && request === checkRequest.current) {
-      setIsConnected(Boolean(connection?.ok))
-      setDependencyCheck(result || { status: 'error', hasPack: true, hasBlockingIssues: true })
-    }
+    const result = await checkMusicModelDependencies()
+    if (result) setDependencyCheck(result)
     return result
-  }, [backend])
+  }, [])
 
   useEffect(() => {
-    recheckModels()
+    let cancelled = false
+    ;(async () => {
+      const connection = await checkLocalComfyConnection().catch(() => null)
+      if (cancelled) return
+      const connected = Boolean(connection?.ok)
+      setIsConnected(connected)
+      if (connected) await recheckModels()
+    })()
+    return () => { cancelled = true }
   }, [recheckModels])
 
   const setupFlow = useWorkflowSetupFlow({ dependencyCheck, isConnected, recheck: recheckModels })
   const modelsMissing = setupFlow.mode !== 'hidden' && setupFlow.mode !== 'installing' && setupFlow.mode !== 'restarting'
   const modelsInstalling = setupFlow.mode === 'installing' || setupFlow.phase === 'restarting'
-  const checking = ['idle', 'checking'].includes(dependencyCheck.status)
-  const modelsReady = isConnected && ['ready', 'partial'].includes(dependencyCheck.status) && !dependencyCheck.hasBlockingIssues
 
   const refreshJobs = useCallback(() => {
+    if (sessionPromptIds.length === 0) return
     setJobs(getMusicJobs(sessionPromptIds))
-  }, [sessionPromptIds, projectHandle])
+  }, [sessionPromptIds])
 
   useEffect(() => {
     refreshJobs()
@@ -175,31 +148,29 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
     setQueueError('')
     try {
       const queued = await queueMusicGeneration({
-        backend,
         tags,
         lyrics,
         instrumental,
-        durationSeconds: resolvedLength.durationSeconds,
-        ...(isYue2 ? { lengthMode } : {}),
+        durationSeconds,
         variations,
-        ...(!isYue2 ? { bpm, keyScale, timeSignature } : {}),
+        bpm,
+        keyScale,
+        timeSignature,
       })
       appendSessionPromptIds(queued.map((job) => job.promptId))
     } catch (err) {
-      if (err?.queuedJobs?.length) appendSessionPromptIds(err.queuedJobs.map(job => job.promptId))
-      setQueueError(err?.message || 'Could not queue music. Check the ComfyUI connection and selected model.')
+      setQueueError(err?.message || 'Could not queue the music generation. Is ComfyUI connected and the ACE-Step model installed?')
     } finally {
       setIsQueueing(false)
     }
-  }, [backend, isYue2, tags, lyrics, instrumental, resolvedLength.durationSeconds, lengthMode, variations, bpm, keyScale, timeSignature, appendSessionPromptIds])
+  }, [tags, lyrics, instrumental, durationSeconds, variations])
 
   const handleAddToTimeline = useCallback((assetId) => {
     const asset = getAssetById(assetId)
     if (!asset) return
     const state = useTimelineStore.getState()
-    const audioTracks = (state.tracks || []).filter((track) => track.type === 'audio' && !track.locked)
-    const clipLength = Number(asset.duration)
-    if (!Number.isFinite(clipLength) || clipLength <= 0) return
+    const audioTracks = (state.tracks || []).filter((track) => track.type === 'audio')
+    const clipLength = Number(asset.duration) || durationSeconds
     // Prefer an audio track with free space at the drop time; otherwise add one.
     let targetTrack = audioTracks.find((track) => !(state.clips || []).some((clip) => (
       clip.trackId === track.id
@@ -213,7 +184,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
     }
     if (!targetTrack?.id) return
     useTimelineStore.getState().addClip(targetTrack.id, asset, dropTime)
-  }, [dropTime, getAssetById])
+  }, [dropTime, durationSeconds, getAssetById])
 
   const activeCount = useMemo(() => jobs.filter((job) => job.status === 'queued' || job.status === 'running').length, [jobs])
 
@@ -221,7 +192,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
   // overflow-hidden/overflow-x-auto containers (which clip an absolutely
   // positioned popover). Anchor under the triggering button, clamped to the
   // viewport; flip above the anchor if it would run off the bottom.
-  const PANEL_WIDTH = 360
+  const PANEL_WIDTH = 320
   const positionStyle = useMemo(() => {
     if (typeof window === 'undefined' || !anchorRect) {
       return { left: '50%', top: '20%', transform: 'translateX(-50%)' }
@@ -239,17 +210,14 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
     <>
       <div className="fixed inset-0 z-40" onMouseDown={onClose} aria-hidden="true" />
       <div
-        role="dialog"
-        aria-label="Generate Music"
-        className="fixed z-50 max-h-[85vh] w-[360px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg border border-sf-dark-600 bg-sf-dark-800 p-3 shadow-2xl"
+        className="fixed z-50 max-h-[80vh] w-80 overflow-y-auto rounded-lg border border-sf-dark-600 bg-sf-dark-800 p-3 shadow-2xl"
         style={positionStyle}
         onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') onClose() }}
       >
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-medium text-sf-text-primary">
           <Music className="h-3.5 w-3.5 text-sf-accent" />
-          Generate Music
+          Generate Music (ACE-Step)
         </span>
         <button
           onClick={onClose}
@@ -260,16 +228,8 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
         </button>
       </div>
 
-      <label className="mb-0.5 block text-[10px] text-sf-text-muted" htmlFor="music-backend">Music model</label>
-      <select id="music-backend" value={backend} disabled={isQueueing || modelsInstalling}
-        onChange={event => setMusicField('backend', event.target.value)}
-        className="mb-2 w-full rounded border border-sf-dark-600 bg-sf-dark-900 px-2 py-1.5 text-xs text-sf-text-primary">
-        {MUSIC_BACKENDS.map(entry => <option key={entry.id} value={entry.id}>{entry.label}{entry.id === 'ace-step' ? ' · Fast' : ''}</option>)}
-      </select>
-
-      <label className="mb-0.5 block text-[10px] text-sf-text-muted" htmlFor="music-style">Music style</label>
+      <label className="mb-0.5 block text-[10px] text-sf-text-muted">Style tags</label>
       <textarea
-        id="music-style"
         value={tags}
         onChange={(event) => setMusicField('tags', event.target.value)}
         rows={2}
@@ -292,7 +252,6 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
             Lyrics — use [verse], [chorus], [bridge] structure tags
           </label>
           <textarea
-            aria-label="Lyrics"
             value={lyrics}
             onChange={(event) => setMusicField('lyrics', event.target.value)}
             rows={4}
@@ -304,33 +263,20 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
 
       <div className="mb-2 grid grid-cols-2 gap-2">
         <div>
-          {isYue2 && <>
-            <label htmlFor="music-length-mode" className="mb-0.5 block text-[10px] text-sf-text-muted">Song length</label>
-            <select id="music-length-mode" value={lengthMode}
-              onChange={event => setMusicField('yue2LengthMode', event.target.value)}
-              className="w-full rounded border border-sf-dark-600 bg-sf-dark-900 px-2 py-1 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none">
-              <option value="automatic">Automatic</option>
-              <option value="custom">Custom maximum</option>
-            </select>
-          </>}
-          {lengthMode !== 'automatic' && <div className={isYue2 ? 'mt-2' : ''}>
-            <label className="mb-0.5 block text-[10px] text-sf-text-muted">
-              {isYue2 ? 'Maximum length' : 'Duration'} (s){matchesRange ? ' · In/Out' : ''}
-            </label>
-            <ClampedNumberField
-              label={isYue2 ? 'Maximum length (seconds)' : 'Duration (seconds)'}
-              value={resolvedLength.durationSeconds}
-              min={MUSIC_DURATION_MIN}
-              max={isYue2 ? YUE2_CUSTOM_DURATION_MAX : MUSIC_DURATION_MAX}
-              onCommit={(next) => setMusicField(durationField, next)}
-              className="w-full rounded border border-sf-dark-600 bg-sf-dark-900 px-2 py-1 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
-            />
-          </div>}
+          <label className="mb-0.5 block text-[10px] text-sf-text-muted">
+            Duration {hasRange ? '(from in/out range)' : '(s)'}
+          </label>
+          <ClampedNumberField
+            value={durationSeconds}
+            min={MUSIC_DURATION_MIN}
+            max={MUSIC_DURATION_MAX}
+            onCommit={(next) => setMusicField('durationSeconds', next)}
+            className="w-full rounded border border-sf-dark-600 bg-sf-dark-900 px-2 py-1 text-xs text-sf-text-primary focus:border-sf-accent focus:outline-none"
+          />
         </div>
         <div>
           <label className="mb-0.5 block text-[10px] text-sf-text-muted">Variations</label>
           <ClampedNumberField
-            label="Variations"
             value={variations}
             min={1}
             max={MUSIC_VARIATIONS_MAX}
@@ -340,17 +286,10 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
         </div>
       </div>
 
-      {isYue2 ? <p className="mb-2 text-[10px] leading-relaxed text-sf-text-muted">
-        {lengthMode === 'automatic'
-          ? `Let YuE2 finish the song, up to ${YUE2_AUTOMATIC_DURATION / 60} minutes. It may still reach the limit.`
-          : 'YuE2 may finish before this maximum or be cut off at the limit.'}
-        {' '}Describe tempo and key in Music style.
-        {instrumental ? ' Instrumental is a prompt preference; vocals may still occur.' : ''}
-      </p> : <div className="mb-2 grid grid-cols-3 gap-2">
+      <div className="mb-2 grid grid-cols-3 gap-2">
         <div>
           <label className="mb-0.5 block text-[10px] text-sf-text-muted">BPM</label>
           <ClampedNumberField
-            label="BPM"
             value={bpm}
             min={MUSIC_BPM_MIN}
             max={MUSIC_BPM_MAX}
@@ -382,27 +321,14 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
             ))}
           </select>
         </div>
-      </div>}
-
-      {isYue2 && <p className="mb-2 text-[10px] leading-relaxed text-sf-text-muted">
-        Local model · GPU support depends on your ComfyUI setup. <a className="text-sf-accent underline" href="https://github.com/multimodal-art-projection/YuE/blob/main/MODEL_LICENSE" target="_blank" rel="noreferrer">Model license</a>
-        {' '}permits individual creator use; commercial use by companies needs permission.
-      </p>}
-
-      {!projectHandle && <p className="mb-2 text-[10px] text-amber-200">Create or open a project to save generated music.</p>}
-      {checking ? <p role="status" className="mb-2 text-[10px] text-sf-text-muted">Checking ComfyUI and {model.label}…</p> : (!isConnected || dependencyCheck.status === 'error') && (
-        <p role="status" className="mb-2 text-[10px] text-amber-200">
-          {!isConnected ? 'Connect ComfyUI to generate music.' : 'Could not check this model.'}
-          {' '}<button className="underline" onClick={recheckModels}>Check again</button>
-        </p>
-      )}
+      </div>
 
       {isConnected && modelsMissing && (
         <div className="mb-2 rounded border border-amber-500/40 bg-amber-500/10 p-2">
           {setupFlow.mode === 'choose-root' ? (
             <>
               <p className="mb-1.5 text-[10px] text-amber-200/90">
-                {model.label} isn't set up yet. Point Belrog at your ComfyUI folder to download it.
+                The ACE-Step music model isn't set up yet. Point Belrog at your ComfyUI folder to download it.
               </p>
               <button
                 onClick={setupFlow.chooseComfyFolder}
@@ -414,8 +340,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
             </>
           ) : setupFlow.mode === 'manual-only' ? (
             <p className="text-[10px] text-amber-200/90">
-              {dependencyCheck.missingNodes?.length ? 'Update ComfyUI to add the required music nodes, then check again.' : `${model.label} needs a manual model install.`}
-              {' '}<button className="underline" onClick={recheckModels}>Check again</button>
+              The ACE-Step music models need a manual install — no curated download is available for one of the files.
             </p>
           ) : setupFlow.mode === 'needs-restart' ? (
             <>
@@ -431,7 +356,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
           ) : (
             <>
               <p className="mb-1.5 text-[10px] text-amber-200/90">
-                {model.label} isn't installed yet
+                The ACE-Step music model isn't installed yet
                 {setupFlow.totalDownloadBytes > 0 ? ` (~${formatBytes(setupFlow.totalDownloadBytes)}${setupFlow.unknownSizeCount > 0 ? ` + ${setupFlow.unknownSizeCount} more` : ''})` : ''}.
               </p>
               {setupFlow.insufficientDiskSpace && (
@@ -470,7 +395,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
 
       <button
         onClick={handleGenerate}
-        disabled={isQueueing || !tags.trim() || !projectHandle || !modelsReady || modelsInstalling}
+        disabled={isQueueing || !tags.trim() || (isConnected && modelsMissing) || modelsInstalling}
         className="mb-2 flex w-full items-center justify-center gap-1.5 rounded bg-sf-accent/90 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sf-accent disabled:cursor-not-allowed disabled:opacity-50"
       >
         {isQueueing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Music className="h-3.5 w-3.5" />}
@@ -492,7 +417,7 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
             <div key={job.promptId} className="rounded border border-sf-dark-700 bg-sf-dark-900 px-2 py-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-[10px] text-sf-text-secondary" title={job.tags}>
-                  {job.backendLabel}{job.measuredDurationSeconds ? ` · ${job.measuredDurationSeconds.toFixed(1)}s` : ''} · Seed {job.seed}
+                  Seed {job.seed} — {job.durationSeconds}s
                 </span>
                 {(job.status === 'queued' || job.status === 'running') && (
                   <span className="flex items-center gap-1 text-[10px] text-sf-text-muted">
@@ -504,22 +429,11 @@ function MusicPanel({ onClose, anchorRect = null, backend }) {
                   <span className="text-[10px] text-sf-error" title={job.error || ''}>failed</span>
                 )}
               </div>
-              <p className="mt-0.5 text-[9px] text-sf-text-muted">
-                {job.lengthMode === 'automatic'
-                  ? `Automatic · up to ${job.durationSeconds / 60} min`
-                  : `${job.durationSeconds}s${job.durationMode === 'maximum' || job.backend === 'yue2' ? ' max' : ''}`}
-              </p>
-              {job.status === 'completed' && job.completionWarning && (
-                <p role="status" className="mt-1 rounded border border-amber-500/40 bg-amber-500/10 p-1.5 text-[10px] leading-relaxed text-amber-200">
-                  {job.completionWarning}
-                </p>
-              )}
-              {job.error && (
+              {job.status === 'failed' && job.error && (
                 <p className="mt-0.5 text-[9px] text-sf-error/80">{job.error}</p>
               )}
-              {job.status === 'completed' && job.belongsToCurrentProject && job.assetIds.map((assetId) => {
+              {job.status === 'completed' && job.assetIds.map((assetId) => {
                 const asset = getAssetById(assetId)
-                if (!asset) return null
                 return (
                   <div key={assetId} className="mt-1 space-y-1">
                     {asset?.url && (

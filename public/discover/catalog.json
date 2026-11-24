@@ -3,7 +3,7 @@
   "updatedAt": "2026-08-27T18:11:01.000Z",
   "items": [
     {
-      "id": "velorn-overview",
+      "id": "Belrog-overview",
       "youtubeId": "RVuGlRZheps",
       "title": "Belrog Overview: AI Video Editing Powered by ComfyUI",
       "kind": "tutorial",
@@ -14,7 +14,7 @@
       "featured": true
     },
     {
-      "id": "velorn-mcp-ai-generations",
+      "id": "Belrog-mcp-ai-generations",
       "youtubeId": "AT9usQS3m48",
       "title": "Belrog MCP AI Generations",
       "kind": "tutorial",
@@ -25,7 +25,7 @@
       "featured": false
     },
     {
-      "id": "velorn-music-video-tutorial",
+      "id": "Belrog-music-video-tutorial",
       "youtubeId": "8BsFbUsq1kE",
       "title": "Belrog Music Video Tutorial",
       "kind": "tutorial",
@@ -58,7 +58,7 @@
       "featured": true
     },
     {
-      "id": "music-video-made-with-velorn",
+      "id": "music-video-made-with-Belrog",
       "youtubeId": "iX-YdjVMDhg",
       "title": "Music video made with Belrog",
       "kind": "showcase",

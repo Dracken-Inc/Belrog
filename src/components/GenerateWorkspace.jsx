@@ -28,35 +28,22 @@ import {
   loadImportedWorkflowsFromDisk,
 } from '../config/importedWorkflowRegistry'
 import { applyImportedWorkflowBindings } from '../services/importedWorkflowBindings'
-import { validateApiWorkflow } from '../../electron/workflowApiGraph.mjs'
 import { fetchComfyTemplateCatalog } from '../services/comfyTemplateCatalog'
 import { importComfyTemplate, reimportImportedWorkflow } from '../services/templateImporter'
 import { COMFY_PARTNER_KEY_CHANGED_EVENT } from '../services/comfyPartnerAuth'
-import { getMusicBackend, getMusicCompletion, resolveMusicLength, MUSIC_DURATION_MIN, YUE2_AUTOMATIC_DURATION, YUE2_CUSTOM_DURATION_MAX } from '../services/musicGenerationModels.mjs'
 import useComfyUI from '../hooks/useComfyUI'
 import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
 import useGenerationMonitorStore from '../stores/generationMonitorStore'
-import { useAssetLibraryStore, allLibraryEntries } from '../stores/assetLibraryStore'
-import { generationQueueOwner } from '../services/generationQueueStatus.mjs'
-import { APPROVAL_WAIT_LABEL, useAwaitingSpendApproval } from '../services/spendApprovalWait.mjs'
 import { useFrameForAIStore } from '../stores/frameForAIStore'
-import { captureMcpContext, assertMcpContext } from '../services/mcpContext'
-import { buildStagedGenerationSettings, createPreparedGenerationReviews, describeConditioningAudio,
-  getPreparedFrameIdentity, getStagedGenerationMismatches, supportsExplicitGenerationDuration } from '../../electron/generationHandoff.mjs'
+import { useAssetLibraryStore, allLibraryEntries } from '../stores/assetLibraryStore'
+import {
+  drainAssetLibraryReferences,
+  ASSET_LIBRARY_QUEUE_EVENT,
+} from '../services/assetLibraryBridge'
 import { BUILTIN_WORKFLOW_PATHS } from '../config/workflowRegistry'
 import { comfyui, validateCustomKeyframeWorkflow, validateCustomVideoWorkflow } from '../services/comfyui'
-import { FLUX2_KLEIN_WORKFLOW_ID, modifyFlux2KleinWorkflow } from '../services/flux2KleinWorkflow.mjs'
-import { buildPictureStarter, buildVideoStarter } from '../services/customWorkflowStarters.mjs'
-import { buildReadyCut, scriptTimeBelongsInsideLine, trimOverlapsOnLayer } from '../utils/musicVideoPlacement.mjs'
-import { splitPlaceFromReferences, switchOffUnusedPictureInputs } from '../services/customKeyframePlace.mjs'
-import { findPlace, normalizePlaces, placeHint, placesBriefBlock, withPlacePicture } from '../services/musicVideoPlaces.mjs'
-import { MINIMAX_H3_LOCAL_WORKFLOW_ID, modifyMinimaxH3LocalWorkflow, normalizeH3Quality, h3SizeFromPicture } from '../services/minimaxH3LocalWorkflow.mjs'
-import {
-  MINIMAX_H3_CLOUD_WORKFLOW_ID, MINIMAX_H3_LIP_SYNC_WORKFLOW_ID, h3CloudSeconds, h3LipSyncSeconds,
-  modifyMinimaxH3CloudWorkflow, modifyMinimaxH3LipSyncWorkflow, normalizeH3CloudLevel,
-} from '../services/minimaxH3CloudWorkflow.mjs'
 import { convertCustomLibraryWorkflowToApi } from '../services/customWorkflowLibrary'
 import { markPromptHandledByApp } from '../services/comfyPromptGuard'
 import {
@@ -79,11 +66,29 @@ import {
   buildYoloPlanFromScript,
   flattenYoloPlanVariants,
   parseStructuredDirectorScript,
+  parseAssetLegendLines,
+  parseInlineAssetDirectives,
 } from '../utils/yoloPlanning'
-import { buildCastGapDetection, buildCastStubs } from '../services/castGapDetectionWiring'
 import { extractVisualStyleNotes } from '../utils/musicVisualStyle'
-import { checkWorkflowDependencies, buildMissingDependencyClipboardText, buildWorkflowDependencyReport } from '../services/workflowDependencies'
-import { openApiWorkflowInComfyUi, openBundledWorkflowInComfyUi, openUiWorkflowInComfyUi } from '../services/workflowSetupManager'
+import { checkWorkflowDependencies, buildMissingDependencyClipboardText } from '../services/workflowDependencies'
+import { openApiWorkflowInComfyUi, openBundledWorkflowInComfyUi } from '../services/workflowSetupManager'
+import {
+  loadAssetLibrary,
+  saveAssetLibrary,
+  upsertLibraryEntry,
+  setEntryAssetId,
+  removeLibraryEntry,
+  findLibraryEntry,
+  importLibraryJson,
+  serializeLibraryForExport,
+} from '../services/assetLibraryStore'
+import {
+  detectScriptGaps,
+  buildStubUpserts,
+  buildRegenerateAllPreview,
+  buildReferencePrompt,
+  referenceNegative,
+} from '../services/scriptGapDetection'
 import { useWorkflowSetupFlow } from '../hooks/useWorkflowSetupFlow'
 import { useI18n } from '../i18n/I18nContext'
 import {
@@ -164,12 +169,12 @@ import {
   parseLyricsWithTags,
   parseTimedLyrics,
   parseTimeSpecToSeconds,
+  QWEN_KEYFRAME_EDIT_PREFIX,
+  QWEN_KEYFRAME_NEGATIVE,
+  applyTwoPersonIdentityMapping,
   resolveCastMembersFromNameList,
   resolveMusicVideoShotTypeFromText,
   splitCastNameList,
-  applyTwoPersonIdentityMapping,
-  QWEN_KEYFRAME_EDIT_PREFIX,
-  QWEN_KEYFRAME_NEGATIVE,
 } from '../config/musicVideoShotConfig'
 import { TOPAZ_VIDEO_UPSCALE_WORKFLOW_ID } from '../config/topazVideoUpscaleConfig'
 import {
@@ -191,7 +196,6 @@ function getMcpMyWorkflowLibraryId(workflowId = '') {
 
 const CATEGORY_ICONS = { video: Video, image: ImageIcon, audio: Music }
 const STORYBOARD_REFERENCE_WORKFLOW_IDS = new Set([
-  FLUX2_KLEIN_WORKFLOW_ID,
   'image-edit',
   'nano-banana-2',
   'nano-banana-pro',
@@ -220,6 +224,11 @@ const DIRECTOR_SUBTABS = [
     id: 'video-pass',
     label: '4. Videos',
     helper: 'Step 4: create videos from keyframe images.',
+  },
+  {
+    id: 'asset-library',
+    label: '5. Assets',
+    helper: 'Reference library: characters, props, and locations reused across scripts.',
   },
 ]
 
@@ -730,9 +739,6 @@ function sanitizeGenerationJobForStorage(job) {
 
   return {
     ...job,
-    // Captured Files are session-owned and must not serialize as an empty object.
-    // A recovered, not-yet-submitted frame job must be staged again.
-    timelineFrameFile: undefined,
     originProject: sanitizeProjectOriginForStorage(job.originProject),
     sourceAssets,
     node: null,
@@ -892,12 +898,6 @@ function getDirectorWorkflowShortToken(workflowId = '', stage = '') {
       return 'grok'
     case 'vidu-q2-i2v':
       return 'vidu'
-    case MINIMAX_H3_LOCAL_WORKFLOW_ID:
-      return 'h3_local'
-    case MINIMAX_H3_CLOUD_WORKFLOW_ID:
-      return 'h3_cloud'
-    case MINIMAX_H3_LIP_SYNC_WORKFLOW_ID:
-      return 'h3_lip_sync'
     case MUSIC_VIDEO_SHOT_WORKFLOW_ID:
       return 'ltx23_audio'
     case CUSTOM_MUSIC_VIDEO_WORKFLOW_ID:
@@ -908,7 +908,6 @@ function getDirectorWorkflowShortToken(workflowId = '', stage = '') {
     case 'nano-banana-pro':
       return 'keyframe'
     case 'z-image-turbo':
-    case FLUX2_KLEIN_WORKFLOW_ID:
       return 'keyframe'
     case 'grok-text-to-image':
       return 'keyframe'
@@ -1444,11 +1443,13 @@ function buildMusicVideoNegativePrompt(baseNegativePrompt = '', shotType = '') {
 }
 
 /**
- * Expands asset slug tokens in storyboard/keyframe prompts.
- * The director script names locations and props as `LOCATIONS: (forge)` so it
- * stays readable; the model needs the library's full description instead. A
- * slug the library does not know is left untouched so it is visible in the
- * prompt rather than silently dropped.
+ * Format-directive-v2 token expansion. Director-script shots reference
+ * locations/props as "(slug)" tokens and never re-paste the description —
+ * it lives once in the script legend / Cast Manager entry. At queue time
+ * each token expands to the entry's CURRENT description, so editing a
+ * description in Cast fixes every shot that uses it. Unknown slugs pass
+ * through untouched (visible, debuggable). The library is read from the
+ * live store so both queue callbacks see the same fresh state.
  */
 function expandAssetSlugTokensInPrompt(text = '') {
   const value = String(text || '')
@@ -1492,11 +1493,11 @@ function composeMusicShotReferencePrompt({
   const shotFocus = shotTypeOption?.id === 'b_roll'
     ? 'Environment-focused cinematic cutaway.'
     : shotTypeOption?.id === 'performance_wide'
-      ? 'Artist visible in a wider framing, natural body posture, readable expression.'
-      : 'Artist visible with a readable face, natural performance posture.'
+      ? 'Artist visible in a wider framing, natural body posture, readable expression. Preserve ONLY the facial identity from the input image; fully replace wardrobe, background, framing and pose per the keyframe description.'
+      : 'Artist visible with a readable face, natural performance posture. Preserve ONLY the facial identity from the input image; fully replace wardrobe, background, framing and pose per the keyframe description.'
   const continuityFocus = shotTypeOption?.id === 'b_roll'
     ? 'Use cohesive environment, lighting, art direction, and key props.'
-    : 'Maintain consistent subject identity and wardrobe across the video.'
+    : 'Keep ONLY the face consistent with the reference image. Re-dress and re-stage completely for every shot: new wardrobe, new background, new framing and pose. Never copy the source costume, pose or framing.'
   const renderRule = shotTypeOption?.id === 'b_roll'
     ? 'Create one full-frame cinematic still with one uninterrupted camera view.'
     : 'Render one cinematic keyframe still, no collage, no split screen, no multiple panels.'
@@ -1580,7 +1581,6 @@ function buildMusicVideoPlanFromScript(options = {}) {
     targetDuration = 30,
     songDurationSeconds = 0,
     cast = [],
-    places = [],
   } = options
 
   // Warnings accumulator lives at the top of the function so every tier —
@@ -1602,6 +1602,14 @@ function buildMusicVideoPlanFromScript(options = {}) {
   if (!Array.isArray(parsed) || parsed.length === 0) {
     return { scenes: [], warnings }
   }
+
+  // 0.4.8: location reference resolution lives in the queue layer
+  // (resolveLocationAssetIdForVariant), which re-scans each variant's raw
+  // LOCATION: directive text against the CURRENT Cast library — images are
+  // usually generated after the plan was built, so queue time is the right
+  // time to resolve. The parser already attaches directive text to
+  // keyframePromptRaw/motionPromptRaw, and flattenYoloPlanVariants carries
+  // those fields onto every variant.
 
   // Detect format on the single lyrics blob. 'srt' / 'lrc' route into the
   // timed path; 'unknown' / 'empty' route into the plain-lyrics path.
@@ -1641,8 +1649,6 @@ function buildMusicVideoPlanFromScript(options = {}) {
   const result = []
   const coverageRanges = [] // [{ start, end, shotIndex, label, source }]
   let runningAudioStart = 0
-  // The sung lines a shot already starts on (by start time), for shots that share a line.
-  const lyricLineStartsUsed = new Set()
   let flatShotIndex = 0
 
   for (const scene of parsed) {
@@ -1685,9 +1691,13 @@ function buildMusicVideoPlanFromScript(options = {}) {
       }
 
       // Tier 2 — fuzzy-match the Lyric moment against parsed SRT/LRC.
+      // 0.4.8.4: repeated lines (chorus!) match MULTIPLE SRT lines. Pick the
+      // occurrence closest to the script's Start at (or the running cursor
+      // when no Start at pinned it) instead of always the first — otherwise
+      // every chorus shot teleports to the chorus's first pass and the
+      // timeline plays the song out of order.
       const timedMatch = effectiveLyricMomentHint && hasTimedLyrics
-        // A repeated line is matched to the repeat nearest the script's own time.
-        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines, { nearSeconds: explicitStart })
+        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines, { preferNearSec: explicitStart ?? runningAudioStart })
         : null
 
       // Tier 3 — legacy linear estimate based on plain lyric line index.
@@ -1698,24 +1708,7 @@ function buildMusicVideoPlanFromScript(options = {}) {
       let audioStart
       let audioStartSource
       const hasTimedMatch = timedMatch && typeof timedMatch.startSec === 'number'
-      // Two shots written for ONE sung line: the first starts where the line
-      // starts; the second keeps the script's own, later time, which falls
-      // inside the same line. Sending both to the line's start put them on the
-      // same moment.
-      const lineAlreadyStarted = hasTimedMatch && lyricLineStartsUsed.has(timedMatch.startSec)
-      // One long, slowly sung line: a script time well inside it means "this
-      // part of the line". Sending the shot to the line's first word put it on
-      // top of the shots before it and left a hole where it belonged.
-      const scriptMeansInsideLine = hasTimedMatch && scriptTimeBelongsInsideLine(explicitStart, timedMatch, timedLyricLines)
-      if (isVocalAlignedShot && scriptMeansInsideLine) {
-        lyricLineStartsUsed.add(timedMatch.startSec)
-        audioStart = explicitStart
-        audioStartSource = 'start-at-inside-line'
-      } else if (isVocalAlignedShot && lineAlreadyStarted && explicitStart !== null && explicitStart > timedMatch.startSec) {
-        audioStart = explicitStart
-        audioStartSource = 'start-at-inside-line'
-      } else if (isVocalAlignedShot && hasTimedMatch) {
-        lyricLineStartsUsed.add(timedMatch.startSec)
+      if (isVocalAlignedShot && hasTimedMatch) {
         audioStart = timedMatch.startSec
         audioStartSource = 'srt-fuzzy'
         if (explicitStart !== null) {
@@ -1848,32 +1841,8 @@ function buildMusicVideoPlanFromScript(options = {}) {
           message: `Shot ${flatShotIndex}: ${resolvedMembers.length} cast members resolved, but only two reference slots are available (${dropped.join(', ')} were dropped).`,
         })
       }
-      // The shot's place, if the script names one. Its picture takes a slot the
-      // people have left free; with two people on screen it rides on words only.
-      const placeRaw = String(scriptShot.placeRaw || '').trim()
-      const shotPlace = placeRaw ? findPlace(placeRaw, places) : null
-      if (placeRaw && !shotPlace && Array.isArray(places) && places.length > 0) {
-        warnings.push({
-          shotIndex: flatShotIndex,
-          shotLabel: scriptShot.label || `Shot ${flatShotIndex}`,
-          kind: 'place-not-found',
-          raw: placeRaw,
-          message: `Shot ${flatShotIndex}: place "${placeRaw}" did not match any of your places.`,
-        })
-      }
-      const picturesWithPlace = withPlacePicture(resolvedMembers.slice(0, 2).map((m) => m?.assetId), shotPlace?.assetId)
-      if (shotPlace && !picturesWithPlace.placeUsed) {
-        warnings.push({
-          shotIndex: flatShotIndex,
-          shotLabel: scriptShot.label || `Shot ${flatShotIndex}`,
-          kind: 'place-picture-not-sent',
-          raw: shotPlace.label,
-          message: `Shot ${flatShotIndex}: two people are in this shot, so the picture of "${shotPlace.label}" is not sent. The place is described in words only.`,
-          severity: 'info',
-        })
-      }
-      const slot1 = picturesWithPlace.assetIds[0] || null
-      const slot2 = picturesWithPlace.assetIds[1] || null
+      const slot1 = resolvedMembers[0]?.assetId || null
+      const slot2 = resolvedMembers[1]?.assetId || null
 
       const videoPrompt = composeMusicShotVideoPrompt({
         motionPromptRaw: scriptShot.motionPromptRaw || scriptShot.videoBeat,
@@ -1889,7 +1858,7 @@ function buildMusicVideoPlanFromScript(options = {}) {
         concept,
         styleNotes,
         cameraDirection: scriptShot.cameraDirection,
-      }) + (picturesWithPlace.placeUsed ? ` ${placeHint(shotPlace)}` : '')
+      })
 
       // Each script shot becomes its own scene with exactly one shot, because
       // the shared storyboard/video pipeline flattens scene → shot → angle
@@ -1908,6 +1877,12 @@ function buildMusicVideoPlanFromScript(options = {}) {
         shots: [{
           id: shotIdStr,
           index: 1,
+          // Raw script prompts carried through so gap-detection (shotTexts)
+          // reads the director's actual words, not the composed reference
+          // prompt. Music plans previously dropped these, which left
+          // location/prop detection with empty text to scan.
+          keyframePromptRaw: String(scriptShot.keyframePromptRaw || scriptShot.imageBeat || '').trim(),
+          motionPromptRaw: String(scriptShot.motionPromptRaw || scriptShot.videoBeat || '').trim(),
           // Legacy pipeline fields so flattenYoloPlanVariants + the shared
           // queue code consume this without branching on music vs ad.
           beat: videoPrompt,
@@ -1935,14 +1910,6 @@ function buildMusicVideoPlanFromScript(options = {}) {
           resolvedArtistAssetIds: [slot1, slot2].filter(Boolean),
           resolvedArtistSource: resolvedSource,
           resolvedArtistLabels: resolvedMembers.slice(0, 2).map((m) => m?.label || m?.slug || ''),
-          // The place this shot is filmed in. When its picture is sent it is
-          // already among resolvedArtistAssetIds above.
-          resolvedPlaceLabel: shotPlace?.label || '',
-          resolvedPlaceAssetId: picturesWithPlace.placeUsed ? shotPlace.assetId : '',
-          // Always the place's picture, even when two people fill both
-          // slots: a person's own workflow can take it in its own input.
-          shotPlaceAssetId: shotPlace?.assetId || '',
-          scriptPlaceRaw: placeRaw,
           // Phase 8 timing diagnostics — surfaced in the shot inspector and
           // consumed by the validation/coverage passes below.
           audioStartSource,
@@ -2378,7 +2345,6 @@ function buildMusicVideoLLMPrompt(options = {}) {
     styleNotes = '',
     lyrics = '',
     cast = [],
-    places = [],
     pass = 'master',
     variantDescriptor = '',
     masterScript = '',
@@ -2436,8 +2402,6 @@ function buildMusicVideoLLMPrompt(options = {}) {
       sections.push('Cast: (no cast defined — you may omit the Artist: field entirely, or use "Artist: artist" as a generic slot).')
     }
   }
-  const placesBlock = placesBriefBlock(places)
-  if (placesBlock) sections.push(placesBlock)
 
   if (concept.trim()) {
     sections.push(`Concept / story:\n${concept.trim()}`)
@@ -2452,7 +2416,12 @@ function buildMusicVideoLLMPrompt(options = {}) {
   } else if (lyrics.trim()) {
     sections.push(`Lyrics (plain text — no timings provided, estimate evenly across the song):\n${lyrics.trim()}`)
   } else {
-    sections.push('Lyrics: (none provided — feel free to write an instrumental-style script; use "Shot type: b_roll" for every shot).')
+    // NOTE: this used to be one string that swallowed the timeline-rules
+    // bullet ("The script timeline MUST cover...") straight into the paren —
+    // the LLM then echoed the mangled fragment into every shot's
+    // Keyframe/Motion prompt, which is how brief text polluted reference
+    // prompts (v0.4.61). Keep this line self-contained.
+    sections.push('Lyrics: (none provided — write an instrumental-style video with "Shot type: b_roll" for every shot; pace the beats evenly across the full song duration and use the timeline rules below for total coverage.)')
   }
 
   // Universal format rules — these apply regardless of pass.
@@ -2487,6 +2456,8 @@ function buildMusicVideoLLMPrompt(options = {}) {
     '  8. "Motion prompt:" describes what moves in the clip: lip-sync/performance action, character movement, camera movement, atmosphere, and any story action. Include camera motion and character blocking/emotion, not just a static description.',
     '  9. Keep wardrobe, location, and lighting consistent across adjacent shots unless the script deliberately calls for a hard cut.',
     '  10. Do NOT invent lyrics. If the song is instrumental at a given moment, omit Lyric moment for that shot.',
+    '  11. Before the first shot, output an "ASSET LEGEND:" block, one line per asset in the EXACT form "TYPE: Name | slug | one-sentence visual description" (TYPE = CHARACTER | LOCATION | PROP). Location slugs start with location_ and prop slugs with prop_ (short, human-chosen: location_dpf, not location_dense-pine-forest-at). Character lines use the cast token verbatim as the slug and repeat it exactly in "Artist:" lines. Inside shots, reference a location/prop as "(slug)" right after the LOCATION:/PROP: module label — never re-paste the description. One slug = one asset. Never put instructions or structural labels ("Shot type:", "CONTINUITY RULES", "DIRECTOR STEER") in the legend.',
+    '  12. Never echo any brief instructions, rules, or bullet text inside "Keyframe prompt:" or "Motion prompt:". Write only visible scene content. A shot description containing the words "script", "brief", "rule", or "must" is a failure.',
   ]
   sections.push(rules.join('\n'))
 
@@ -3011,6 +2982,15 @@ function buildMusicVideoPassFormatSpec(pass, coveragePlan = null) {
 
   return [
     'Required output format (verbatim — one block per shot):',
+    '',
+    'First, list an ASSET LEGEND — every character, location, and prop the',
+    'video uses, one line each, BEFORE the first scene. Belrog parses these',
+    'into the Cast library automatically (exact name + description):',
+    '  CHARACTER: rose — the lead singer, silver braid, kind eyes',
+    '  LOCATION: neon-phone-booth — rain-slick street, warm sodium-lamp glow',
+    '  PROP: old-cassette — a worn cassette tape, green-glowing label',
+    'Use short lowercase slugs (the exact word used in "Artist:" lines).',
+    'Cast aliases work too: CAST: rose — ...',
     '',
     ...coverageHeader,
     'Scene 1: Opening',
@@ -3544,7 +3524,6 @@ function collectGenerateWorkspaceAssetIds(state) {
   ]
   Object.values(state?.selectedAssetFieldIds || {}).forEach((assetId) => ids.push(assetId))
   ;(Array.isArray(state?.yoloMusicCast) ? state.yoloMusicCast : []).forEach((entry) => ids.push(entry?.assetId))
-  ;(Array.isArray(state?.yoloMusicPlaces) ? state.yoloMusicPlaces : []).forEach((entry) => ids.push(entry?.assetId))
   return ids.map((id) => String(id || '').trim()).filter(Boolean)
 }
 
@@ -3587,7 +3566,6 @@ function loadPersistedGenerateWorkspaceState(project, projectHandle) {
 // ============================================
 function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const { t } = useI18n()
-  const awaitingSpendApproval = useAwaitingSpendApproval()
   const {
     currentProjectHandle,
     currentProject,
@@ -3605,9 +3583,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   ), [currentProject?.created, currentProject?.name, currentProjectHandle])
 
   // UI mode
-  // Always opens in Director ('yolo'). A saved 'single' mode is ignored now
-  // that the single-workflow view has no visible entry.
-  const [generationMode, setGenerationMode] = useState('yolo')
+  const [generationMode, setGenerationMode] = useState(persistedState?.generationMode || 'single')
 
   // Category + workflow selection
   const [category, setCategory] = useState(persistedState?.category || 'video')
@@ -3672,13 +3648,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const [musicTags, setMusicTags] = useState(persistedState?.musicTags || '')
   const [lyrics, setLyrics] = useState(persistedState?.lyrics || '')
   const [musicDuration, setMusicDuration] = useState(persistedState?.musicDuration || 30)
-  const [musicLengthMode, setMusicLengthMode] = useState(persistedState?.musicLengthMode === 'custom' ? 'custom' : 'automatic')
-  const [yue2CustomDuration, setYue2CustomDuration] = useState(persistedState?.yue2CustomDuration ?? persistedState?.musicDuration ?? 30)
-  const selectedMusicLength = resolveMusicLength({
-    backend: workflowId === 'music-gen-yue2' ? 'yue2' : 'ace-step',
-    lengthMode: workflowId === 'music-gen-yue2' ? musicLengthMode : undefined,
-    durationSeconds: workflowId === 'music-gen-yue2' ? yue2CustomDuration : musicDuration,
-  })
   const [bpm, setBpm] = useState(persistedState?.bpm || 120)
   const [keyscale, setKeyscale] = useState(persistedState?.keyscale || 'C major')
 
@@ -3794,11 +3763,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const plain = String(persistedState?.yoloMusicLyrics || '')
     return detectTimedLyricsFormat(plain) === 'srt' || detectTimedLyricsFormat(plain) === 'lrc'
   })
-  // Song parts (verse, chorus, ...) and "check this line" marks for the song
-  // screen. Line numbers refer to the timed lyrics in `yoloMusicLyrics`.
-  const [yoloMusicSongMap, setYoloMusicSongMap] = useState(() => (
-    persistedState?.yoloMusicSongMap && typeof persistedState.yoloMusicSongMap === 'object' ? persistedState.yoloMusicSongMap : null
-  ))
   const [yoloMusicConcept, setYoloMusicConcept] = useState(persistedState?.yoloMusicConcept || '')
   const [yoloMusicStyleNotes, setYoloMusicStyleNotes] = useState(persistedState?.yoloMusicStyleNotes || '')
   // Director script in the ad format (Scene/Shot/Shot type/Keyframe prompt/
@@ -3806,9 +3770,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // buildMusicVideoPlanFromScript. Empty by default — users click "Start from
   // template" or paste their own.
   const [yoloMusicScript, setYoloMusicScript] = useState(persistedState?.yoloMusicScript || '')
-  // Receive the director script from the embedded Perchance planner (Director
-  // Script tab in App.jsx). The text lands in yoloMusicScript; the user then
-  // presses the existing Parse button in the Director Script step.
+  // Receive the director script from the embedded Perchance planner
+  // (Director Script tab in App.jsx). The text lands in yoloMusicScript;
+  // the user then presses the existing Parse button in the Director Script step.
   useEffect(() => {
     const handler = (event) => {
       const text = String(event.detail?.text || '')
@@ -3887,8 +3851,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       }))
       .filter((entry) => entry.assetId || entry.label || entry.slug)
   })
-  // Places: named locations with one picture each, beside the cast.
-  const [yoloMusicPlaces, setYoloMusicPlaces] = useState(() => normalizePlaces(persistedState?.yoloMusicPlaces))
   const [yoloMusicTargetDuration, setYoloMusicTargetDuration] = useState(persistedState?.yoloMusicTargetDuration || 30)
   const [yoloMusicQualityProfile, setYoloMusicQualityProfile] = useState(persistedState?.yoloMusicQualityProfile || 'balanced')
   const [yoloMusicKeyframeWorkflowId, setYoloMusicKeyframeWorkflowId] = useState(() => {
@@ -3899,8 +3861,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const legacyWorkflowId = String(YOLO_MUSIC_PROFILES[legacyProfileId]?.storyboardWorkflowId || '').trim()
     if (YOLO_MUSIC_KEYFRAME_WORKFLOW_OPTIONS.some((option) => option.id === legacyWorkflowId)) return legacyWorkflowId
     if (legacyProfileId === 'draft') return 'image-edit'
-    // New music videos start on the light local model.
-    return FLUX2_KLEIN_WORKFLOW_ID
+    return 'nano-banana-2'
   })
   const [yoloMusicCustomKeyframeWorkflow, setYoloMusicCustomKeyframeWorkflow] = useState(() => (
     normalizeCustomKeyframeWorkflow(persistedState?.yoloMusicCustomKeyframeWorkflow)
@@ -3928,9 +3889,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       ? saved
       : YOLO_MUSIC_VIDEO_WORKFLOW_OPTIONS[0]?.id || MUSIC_VIDEO_SHOT_WORKFLOW_ID
   })
-  // Best (20 steps) or Fast (8 steps with the turbo add-on) for local MiniMax H3.
-  const [yoloMusicVideoQuality, setYoloMusicVideoQuality] = useState(() => normalizeH3Quality(persistedState?.yoloMusicVideoQuality))
-  const [yoloMusicCloudVideoLevel, setYoloMusicCloudVideoLevel] = useState(() => normalizeH3CloudLevel(persistedState?.yoloMusicCloudVideoLevel))
   const [yoloMusicPlan, setYoloMusicPlan] = useState(() => normalizePersistedYoloPlan(persistedState?.yoloMusicPlan || []))
   const [yoloMusicPlanSignature, setYoloMusicPlanSignature] = useState(persistedState?.yoloMusicPlanSignature || '')
   const [yoloMusicAgentSession, setYoloMusicAgentSession] = useState(() => (
@@ -3939,6 +3897,15 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // Planner warnings surfaced next to the build button: unresolved Artist: /
   // [Name] tags, too-many-artists overflow, etc. Advisory — does not block.
   const [yoloMusicPlanWarnings, setYoloMusicPlanWarnings] = useState([])
+
+  // ── Asset library (C4): global character/prop/location references ──────
+  // Now backed by the GLOBAL assetLibraryStore so the LEFT-PANEL Cast tab and
+  // this workspace share ONE library. The names below are kept as aliases so
+  // the many existing handlers/panels continue to work unchanged.
+  const assetLibrary = useAssetLibraryStore((s) => s.library)
+  const commitAssetLibrary = useAssetLibraryStore((s) => s.commit)
+  const assetLibraryNotice = useAssetLibraryStore((s) => s.notice)
+  const setAssetLibraryNotice = useAssetLibraryStore((s) => s.setNotice)
 
   // Generation queue state
   const [generationQueue, setGenerationQueue] = useState(() => loadPersistedGenerationQueue())
@@ -4011,7 +3978,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   }, [])
 
   // Hooks
-  const { isConnected, wsConnected, queueCount, recheckConnection, checkHttpConnection } = useComfyUI()
+  const { isConnected, wsConnected, queueCount, recheckConnection } = useComfyUI()
   const { addAsset, generateName, assets } = useAssetsStore()
   const timelineTracks = useTimelineStore((s) => s.tracks)
   const timelineAddTextClip = useTimelineStore((s) => s.addTextClip)
@@ -4020,11 +3987,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   const timelineFps = useTimelineStore((s) => s.timelineFps)
   const frameForAI = useFrameForAIStore((s) => s.frame)
   const clearFrameForAI = useFrameForAIStore((s) => s.clearFrame)
-  const appliedStagedFrame = useRef(null)
-  const workflowNormalizationFrame = useRef(null)
-  const durationNormalizationFrame = useRef(null)
-  const resolutionNormalizationFrame = useRef(null)
-  const preparedGenerationReviews = useMemo(() => createPreparedGenerationReviews(), [])
 
   // ComfyUI launcher state (drives gating banner and auto-dispatch behavior)
   const [launcherState, setLauncherState] = useState(() => (
@@ -4058,10 +4020,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   // the frame's category instead of forcing video — forcing video here
   // stomped staged image requests (#86). Frames without a category (the
   // in-app "use frame" flows) keep the historical video default.
-  const applyStagedFrame = useCallback((frame) => {
-    if (frame && appliedStagedFrame.current !== frame) {
-      const nextCategory = String(frame.category || 'video').trim().toLowerCase() || 'video'
-      const nextWorkflowId = String(frame.workflowId || '').trim()
+  useEffect(() => {
+    if (frameForAI) {
+      const nextCategory = String(frameForAI.category || 'video').trim().toLowerCase() || 'video'
+      const nextWorkflowId = String(frameForAI.workflowId || '').trim()
         || (nextCategory === 'image' ? 'image-edit' : 'wan22-i2v')
       const manifest = getWorkflowManifestByWorkflowId(nextWorkflowId)
       setGenerationMode('single')
@@ -4071,41 +4033,40 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         setSelectedWorkflowManifestId(manifest.id)
         setWorkflowRoute(manifest.route || 'local')
       }
-      if (frame.source === 'mcp') {
-        setWorkflowDetailOpen(true)
-        setSelectedAssetId(null)
-        setSelectedAsset(null)
-        if (typeof frame.prompt === 'string') { setPrompt(frame.prompt); setSelectedTags([]) }
-        if (typeof frame.negativePrompt === 'string') setNegativePrompt(frame.negativePrompt)
-        const settings = frame.generationSettings || {}
-        if (settings.durationSeconds !== undefined) setDuration(settings.durationSeconds)
-        if (settings.fps !== undefined) setFps(settings.fps)
-        if (settings.resolution) {
-          setResolution(settings.resolution)
-          if (nextCategory === 'image') setImageResolution(settings.resolution)
-        }
-        if (Object.prototype.hasOwnProperty.call(settings, 'audio') || manifest?.requiresAudio) {
-          const asset = useAssetsStore.getState().assets.find(item => item.id === settings.audio?.assetId && item.type === 'audio') || null
-          setSelectedAudioAssetId(asset?.id || null)
-          setSelectedAudioAsset(asset)
-        }
-      }
       setFormError(null)
-      appliedStagedFrame.current = frame
-      return true
     }
-    return false
-  }, [])
-  useEffect(() => { applyStagedFrame(frameForAI) }, [applyStagedFrame, frameForAI])
+  }, [frameForAI?.blobUrl, frameForAI?.workflowId, frameForAI?.category])
 
   useEffect(() => {
     const handler = (event) => {
-      const frame = useFrameForAIStore.getState().frame
-      if (applyStagedFrame(frame)) addComfyLog('status', `MCP staged ${getWorkflowDisplayLabel(frame.workflowId) || frame.workflowId}. Review the exact settings and conditioning audio before queueing.`)
+      const detail = event?.detail || {}
+      const nextWorkflowId = String(detail.workflowId || frameForAI?.workflowId || 'ltx23-i2v').trim() || 'ltx23-i2v'
+      const manifest = getWorkflowManifestByWorkflowId(nextWorkflowId)
+      setGenerationMode('single')
+      setCategory(String(detail.category || 'video').trim().toLowerCase() || 'video')
+      setWorkflowId(nextWorkflowId)
+      if (manifest) {
+        setSelectedWorkflowManifestId(manifest.id)
+        setWorkflowRoute(manifest.route || 'local')
+      }
+      setSelectedAssetId(null)
+      setSelectedAsset(null)
+      if (typeof detail.prompt === 'string' && detail.prompt.trim()) setPrompt(detail.prompt)
+      if (typeof detail.negativePrompt === 'string' && detail.negativePrompt.trim()) setNegativePrompt(detail.negativePrompt)
+      if (Number.isFinite(Number(detail.duration)) && Number(detail.duration) > 0) setDuration(Number(detail.duration))
+      if (Number.isFinite(Number(detail.fps)) && Number(detail.fps) > 0) setFps(Number(detail.fps))
+      if (detail.resolution && Number.isFinite(Number(detail.resolution.width)) && Number.isFinite(Number(detail.resolution.height))) {
+        setResolution({
+          width: Number(detail.resolution.width),
+          height: Number(detail.resolution.height),
+        })
+      }
+      setFormError(null)
+      addComfyLog('status', `MCP prepared timeline frame for ${getWorkflowDisplayLabel(nextWorkflowId) || nextWorkflowId}. Review settings, then click Generate when ready.`)
     }
     window.addEventListener('comfystudio-mcp-prepare-generation', handler)
     return () => window.removeEventListener('comfystudio-mcp-prepare-generation', handler)
-  }, [addComfyLog, applyStagedFrame])
+  }, [addComfyLog, frameForAI?.workflowId])
 
   // Restore selected asset from ID when assets are available
   useEffect(() => {
@@ -4194,8 +4155,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         musicTags,
         lyrics,
         musicDuration,
-        musicLengthMode,
-        yue2CustomDuration,
         bpm,
         keyscale,
         yoloCreationType,
@@ -4230,14 +4189,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         yoloMusicLyrics,
         yoloMusicProvidedLyrics,
         yoloMusicAlignProvidedLyrics,
-        yoloMusicSongMap,
         yoloMusicConcept,
         yoloMusicStyleNotes,
         yoloMusicScript,
         yoloMusicAltScripts,
         yoloMusicArtistAssetId,
         yoloMusicCast,
-        yoloMusicPlaces,
         yoloMusicTargetDuration,
         yoloMusicQualityProfile,
         yoloMusicKeyframeWorkflowId,
@@ -4247,8 +4204,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         customGenerateImageWorkflow,
         customGenerateVideoWorkflow,
         yoloMusicVideoWorkflowId,
-        yoloMusicVideoQuality,
-        yoloMusicCloudVideoLevel,
         yoloMusicPlan,
         yoloMusicPlanSignature,
         yoloMusicAgentSession,
@@ -4293,8 +4248,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     musicTags,
     lyrics,
     musicDuration,
-    musicLengthMode,
-    yue2CustomDuration,
     bpm,
     keyscale,
     yoloCreationType,
@@ -4329,14 +4282,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicLyrics,
     yoloMusicProvidedLyrics,
     yoloMusicAlignProvidedLyrics,
-    yoloMusicSongMap,
     yoloMusicConcept,
     yoloMusicStyleNotes,
     yoloMusicScript,
     yoloMusicAltScripts,
     yoloMusicArtistAssetId,
     yoloMusicCast,
-    yoloMusicPlaces,
     yoloMusicTargetDuration,
     yoloMusicQualityProfile,
     yoloMusicKeyframeWorkflowId,
@@ -4346,8 +4297,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     customGenerateImageWorkflow,
     customGenerateVideoWorkflow,
     yoloMusicVideoWorkflowId,
-    yoloMusicVideoQuality,
-    yoloMusicCloudVideoLevel,
     yoloMusicPlan,
     yoloMusicPlanSignature,
     yoloMusicAgentSession,
@@ -4363,9 +4312,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       jobs: generationQueue,
       activeJobId,
       isConnected,
-      owner: generationQueueOwner(currentProjectHandle, currentProject),
     })
-  }, [activeJobId, generationQueue, isConnected, publishGenerationMonitorQueue, currentProjectHandle, currentProject?.id, currentProject?.created, currentProject?.name])
+  }, [activeJobId, generationQueue, isConnected, publishGenerationMonitorQueue])
 
   useEffect(() => () => {
     resetGenerationMonitor()
@@ -4679,17 +4627,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
   // When category changes, pick default workflow
   useEffect(() => {
-    if (frameForAI?.source === 'mcp' && workflowNormalizationFrame.current !== frameForAI) {
-      workflowNormalizationFrame.current = frameForAI
-      return
-    }
     // Imported template ids live outside the static category lists — don't
     // stomp them back to a builtin default.
     if (isImportedWorkflowId(workflowId)) return
     if (currentCategoryWorkflows.length > 0 && !currentCategoryWorkflows.find((workflow) => workflow.id === workflowId)) {
       setWorkflowId(currentCategoryWorkflows[0].id)
     }
-  }, [currentCategoryWorkflows, frameForAI, workflowId])
+  }, [currentCategoryWorkflows, workflowId])
 
   const handleWorkflowManifestSelect = useCallback((manifest) => {
     if (!manifest) return
@@ -4749,35 +4693,22 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
 
   useEffect(() => {
-    // The first mount's other effects still close over pre-staging form values.
-    // Let the durable handoff render once before normalizing those values.
-    if (frameForAI?.source === 'mcp' && durationNormalizationFrame.current !== frameForAI) {
-      durationNormalizationFrame.current = frameForAI
-      return
-    }
     if (generationMode !== 'single' || category !== 'video' || videoDurationPresets.length === 0) return
-    // LTX supports explicit durations outside these convenient preset buttons.
-    // In particular, never turn an approved 3-second request into 5 seconds.
-    if (supportsExplicitGenerationDuration(workflowId)) return
     if (videoDurationPresets.includes(Number(duration))) return
 
     setDuration(videoDurationPresets.reduce((closest, candidate) => (
       Math.abs(candidate - duration) < Math.abs(closest - duration) ? candidate : closest
     ), videoDurationPresets[0]))
-  }, [category, duration, frameForAI, generationMode, videoDurationPresets, workflowId])
+  }, [category, duration, generationMode, videoDurationPresets])
 
   useEffect(() => {
-    if (frameForAI?.source === 'mcp' && resolutionNormalizationFrame.current !== frameForAI) {
-      resolutionNormalizationFrame.current = frameForAI
-      return
-    }
     if (generationMode !== 'single' || category !== 'video' || ['ltx23-i2v', 'ltx23-ia2v', 'ltx23-t2v'].includes(workflowId)) return
     if (resolution.width === 3840 && resolution.height === 2160) {
       setResolution({ width: 1920, height: 1080 })
     } else if (resolution.width === 2160 && resolution.height === 3840) {
       setResolution({ width: 1080, height: 1920 })
     }
-  }, [category, frameForAI, generationMode, resolution.height, resolution.width, workflowId])
+  }, [category, generationMode, resolution.height, resolution.width, workflowId])
 
   useEffect(() => {
     setFormError(null)
@@ -4959,9 +4890,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const tagStr = selectedTags.length > 0 ? selectedTags.join(', ') + '. ' : ''
     return tagStr + prompt
   }, [prompt, selectedTags])
-  const conditioningAudio = useMemo(() => selectedWorkflowManifest?.requiresAudio
-    ? describeConditioningAudio({ workflowId, asset: selectedAudioAsset, duration, frame: frameForAI }) : null,
-  [workflowId, selectedAudioAsset, duration, frameForAI, selectedWorkflowManifest?.requiresAudio])
 
   // Frame count helper
   const getFrameCount = () => Math.round(duration * fps) + 1
@@ -5094,7 +5022,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     () => getPlainMusicLyricLines(yoloMusicProvidedLyrics),
     [yoloMusicProvidedLyrics]
   )
-  const handleImportYoloMusicAudio = useCallback(async (droppedFile = null) => {
+  const handleImportYoloMusicAudio = useCallback(async () => {
     if (yoloMusicAudioImporting) return
     if (!currentProjectHandle) {
       setFormError('Open or create a project first so Belrog can import the song file.')
@@ -5102,13 +5030,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return
     }
 
-    // A file dropped on the song screen skips the picker. Button clicks pass
-    // an event here, which is not a File and falls through to the picker.
-    let selectedFile = typeof File !== 'undefined' && droppedFile instanceof File ? droppedFile : null
+    let selectedFile = null
     try {
-      if (selectedFile) {
-        // already chosen
-      } else if (isElectron() && window.electronAPI?.selectFile) {
+      if (isElectron() && window.electronAPI?.selectFile) {
         selectedFile = await window.electronAPI.selectFile({
           title: 'Select song audio',
           filters: [
@@ -5165,10 +5089,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     saveProject,
     yoloMusicAudioImporting,
   ])
-  // `{ addToCast: false }` only brings the picture into the project and hands
-  // it back, for the add-to-cast pop-up, which names the cast member itself.
-  const handleImportYoloMusicCastImage = useCallback(async (options = {}) => {
-    const addToCast = options?.addToCast !== false
+  const handleImportYoloMusicCastImage = useCallback(async () => {
     if (yoloMusicCastImageImporting) return null
     if (!currentProjectHandle) {
       setFormError('Open or create a project first so Belrog can import the reference image.')
@@ -5235,7 +5156,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       const rawName = String(newAsset.name || assetInfo.name || 'Cast reference')
       const displayName = rawName.replace(/\.[a-z0-9]{1,8}$/i, '').replace(/[_-]+/g, ' ').trim() || 'Cast reference'
       const slug = normalizeCastSlug(displayName) || `person_${Date.now()}`
-      if (addToCast) setYoloMusicCast((prev) => {
+      setYoloMusicCast((prev) => {
         const list = Array.isArray(prev) ? [...prev] : []
         list.push({
           id: `cast-${Date.now()}-${list.length}`,
@@ -5273,7 +5194,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'VELORN_INPUT_IMAGE',
+          title: 'Belrog_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5282,7 +5203,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the shot keyframe prompt here.',
         },
         _meta: {
-          title: 'VELORN_PROMPT',
+          title: 'Belrog_PROMPT',
         },
       },
       '3': {
@@ -5291,7 +5212,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'VELORN_SEED',
+          title: 'Belrog_SEED',
         },
       },
       '4': {
@@ -5300,7 +5221,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'VELORN_WIDTH',
+          title: 'Belrog_WIDTH',
         },
       },
       '5': {
@@ -5309,7 +5230,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'VELORN_HEIGHT',
+          title: 'Belrog_HEIGHT',
         },
       },
       '6': {
@@ -5332,20 +5253,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_keyframe_starter',
         },
         _meta: {
-          title: 'VELORN_OUTPUT_IMAGE',
+          title: 'Belrog_OUTPUT_IMAGE',
         },
-      },
-      // The person and the place of a shot. Not wired to anything yet: the
-      // builder connects them to their own model.
-      '8': {
-        class_type: 'LoadImage',
-        inputs: { image: '' },
-        _meta: { title: 'VELORN_REFERENCE_IMAGE_1' },
-      },
-      '9': {
-        class_type: 'LoadImage',
-        inputs: { image: '' },
-        _meta: { title: 'VELORN_PLACE_IMAGE' },
       },
     }
     const validation = validateCustomKeyframeWorkflow(starter)
@@ -5365,7 +5274,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'VELORN_INPUT_IMAGE',
+          title: 'Belrog_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5374,7 +5283,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the ad shot keyframe prompt here.',
         },
         _meta: {
-          title: 'VELORN_PROMPT',
+          title: 'Belrog_PROMPT',
         },
       },
       '3': {
@@ -5383,7 +5292,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'VELORN_SEED',
+          title: 'Belrog_SEED',
         },
       },
       '4': {
@@ -5392,7 +5301,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'VELORN_WIDTH',
+          title: 'Belrog_WIDTH',
         },
       },
       '5': {
@@ -5401,7 +5310,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'VELORN_HEIGHT',
+          title: 'Belrog_HEIGHT',
         },
       },
       '6': {
@@ -5424,7 +5333,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_ad_keyframe_starter',
         },
         _meta: {
-          title: 'VELORN_OUTPUT_IMAGE',
+          title: 'Belrog_OUTPUT_IMAGE',
         },
       },
     }
@@ -5445,7 +5354,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'VELORN_INPUT_IMAGE',
+          title: 'Belrog_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5454,7 +5363,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the shot video prompt here.',
         },
         _meta: {
-          title: 'VELORN_PROMPT',
+          title: 'Belrog_PROMPT',
         },
       },
       '3': {
@@ -5463,7 +5372,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'VELORN_SEED',
+          title: 'Belrog_SEED',
         },
       },
       '4': {
@@ -5472,7 +5381,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'VELORN_WIDTH',
+          title: 'Belrog_WIDTH',
         },
       },
       '5': {
@@ -5481,7 +5390,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'VELORN_HEIGHT',
+          title: 'Belrog_HEIGHT',
         },
       },
       '6': {
@@ -5490,7 +5399,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 24,
         },
         _meta: {
-          title: 'VELORN_FPS',
+          title: 'Belrog_FPS',
         },
       },
       '7': {
@@ -5499,7 +5408,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 5,
         },
         _meta: {
-          title: 'VELORN_DURATION',
+          title: 'Belrog_DURATION',
         },
       },
       '8': {
@@ -5508,7 +5417,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           audio: '',
         },
         _meta: {
-          title: 'VELORN_AUDIO',
+          title: 'Belrog_AUDIO',
         },
       },
       '9': {
@@ -5531,7 +5440,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'video/custom_video_starter',
         },
         _meta: {
-          title: 'VELORN_OUTPUT_VIDEO',
+          title: 'Belrog_OUTPUT_VIDEO',
         },
       },
     }
@@ -5600,7 +5509,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'image/custom_generate_starter',
         },
         _meta: {
-          title: 'VELORN_OUTPUT_IMAGE',
+          title: 'Belrog_OUTPUT_IMAGE',
         },
       },
     }
@@ -5625,7 +5534,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           image: '',
         },
         _meta: {
-          title: 'VELORN_INPUT_IMAGE',
+          title: 'Belrog_INPUT_IMAGE',
         },
       },
       '2': {
@@ -5634,7 +5543,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 'Belrog will inject the video prompt here.',
         },
         _meta: {
-          title: 'VELORN_PROMPT',
+          title: 'Belrog_PROMPT',
         },
       },
       '3': {
@@ -5643,7 +5552,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 0,
         },
         _meta: {
-          title: 'VELORN_SEED',
+          title: 'Belrog_SEED',
         },
       },
       '4': {
@@ -5652,7 +5561,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 1280,
         },
         _meta: {
-          title: 'VELORN_WIDTH',
+          title: 'Belrog_WIDTH',
         },
       },
       '5': {
@@ -5661,7 +5570,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 720,
         },
         _meta: {
-          title: 'VELORN_HEIGHT',
+          title: 'Belrog_HEIGHT',
         },
       },
       '6': {
@@ -5670,7 +5579,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 24,
         },
         _meta: {
-          title: 'VELORN_FPS',
+          title: 'Belrog_FPS',
         },
       },
       '7': {
@@ -5679,7 +5588,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           value: 5,
         },
         _meta: {
-          title: 'VELORN_DURATION',
+          title: 'Belrog_DURATION',
         },
       },
       '8': {
@@ -5688,7 +5597,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           audio: '',
         },
         _meta: {
-          title: 'VELORN_AUDIO',
+          title: 'Belrog_AUDIO',
         },
       },
       '9': {
@@ -5711,7 +5620,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           filename_prefix: 'video/custom_generate_starter',
         },
         _meta: {
-          title: 'VELORN_OUTPUT_VIDEO',
+          title: 'Belrog_OUTPUT_VIDEO',
         },
       },
     }
@@ -6140,28 +6049,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicCustomVideoWorkflow,
   ])
 
-  // Opens a starter in the ComfyUI tab and nothing else: the workflow in use
-  // stays as it is, so this can be offered at any time.
-  const handleOpenYoloMusicCustomStarter = useCallback(async (kind = 'keyframe') => {
-    try {
-      // For people who build workflows: the named nodes, each with a note,
-      // laid out ready to connect to a model.
-      const label = kind === 'video' ? 'Video starter' : 'Picture starter'
-      const result = await openUiWorkflowInComfyUi(kind === 'video' ? buildVideoStarter() : buildPictureStarter(), { label })
-      if (result.success) {
-        setFormError(null)
-        addComfyLog('info', result.hint || `Opened the ${label.toLowerCase()} in the ComfyUI tab.`)
-        return
-      }
-      setFormError(result.error || 'Could not open the starter in ComfyUI.')
-      addComfyLog('error', result.error || 'Could not open the starter in ComfyUI.')
-    } catch (error) {
-      const message = error?.message || 'Could not open the starter in ComfyUI.'
-      setFormError(message)
-      addComfyLog('error', message)
-    }
-  }, [addComfyLog])
-
   const handleClearYoloMusicCustomVideoWorkflow = useCallback(() => {
     setYoloMusicCustomVideoWorkflow({ ...EMPTY_CUSTOM_KEYFRAME_WORKFLOW })
     setFormError(null)
@@ -6456,12 +6343,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       })
       .filter(Boolean)
   }, [yoloMusicCast, assets])
-  // Places whose picture is really in the project.
-  const yoloMusicResolvedPlaces = useMemo(() => (
-    (Array.isArray(yoloMusicPlaces) ? yoloMusicPlaces : []).filter((entry) => (
-      entry?.slug && assets.some((asset) => asset?.id === entry.assetId && asset?.type === 'image')
-    ))
-  ), [yoloMusicPlaces, assets])
   // Active alt-script derivation.
   //
   // `yoloMusicActiveScriptId === null` means the user is editing the master
@@ -6732,7 +6613,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicLyrics,
     yoloMusicQualityProfile,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloMusicScript,
     yoloMusicStyleNotes,
     yoloMusicTargetDuration,
@@ -6771,88 +6651,92 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const slot = yoloMusicAltScripts.find((entry) => entry.id === yoloMusicActiveScriptId)
     return Array.isArray(slot?.planWarnings) ? slot.planWarnings : []
   }, [yoloMusicActiveScriptId, yoloMusicAltScripts, yoloMusicPlanWarnings])
-  // ── Cast: what the script names that Cast has no picture for ───────────
-  // (0.4.4-0.4.8 feature. The 0.5.0 upstream-base swap of this file dropped the
-  // wiring, which silently killed the "Detected from your Director Script" panel
-  // in the music workflow — the UI stayed in the tree with no props, so nothing
-  // looked broken. tests/castGapDetection.test.cjs fails if this breaks.)
-  // The rules live in src/services/castGapDetectionWiring.js so they can be
-  // tested without rendering this file.
-  const castLibrary = useAssetLibraryStore((s) => s.library)
-  const addCastEntries = useAssetLibraryStore((s) => s.addMany)
-  const setCastNotice = useAssetLibraryStore((s) => s.setNotice)
 
-  const assetLibraryGapDetection = useMemo(() => buildCastGapDetection({
-    isEnabled: isYoloMusicMode,
-    script: yoloMusicScript,
-    altScripts: yoloMusicAltScripts,
-    activeScriptId: yoloMusicActiveScriptId,
-    plan: yoloMusicActiveTargetPlan,
-    warnings: yoloMusicActiveTargetPlanWarnings,
-    cast: yoloMusicResolvedCast,
-    library: castLibrary,
-  }), [isYoloMusicMode, yoloMusicScript, yoloMusicAltScripts, yoloMusicActiveScriptId,
-    yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicResolvedCast, castLibrary])
+  // Asset-library gap detection for the ACTIVE target's plan (C4). Recomputes
+  // only when the plan, its warnings, the cast, or the library change — the
+  // detection itself is a cheap pure function over shot text.
+  // The authoritative asset legend is re-derived from the active target's raw
+  // script text (persisted for master + alt) so it survives reloads and is
+  // present even on a freshly-built plan that hasn't been re-parsed yet.
+  // Asset declarations for the active target's raw script text. Two sources,
+  // merged legend-first:
+  //   1. ASSET LEGEND block (0.4.5): explicit TYPE: slug — desc lines before
+  //      the first shot.
+  //   2. Inline directives (0.4.7): LOCATION:/PROP:/CHARACTER: slug: desc
+  //      declarations inside keyframe prompts — the format the Perchance
+  //      LTX director list has always emitted.
+  // The 0.4.5 legend call was silently broken (missing import, swallowed by
+  // the catch); verified fixed here.
+  const yoloMusicActiveLegend = useMemo(() => {
+    if (!isYoloMusicMode) return []
+    const raw = yoloMusicActiveScriptId
+      ? String(yoloMusicAltScripts.find((e) => e.id === yoloMusicActiveScriptId)?.script || '')
+      : String(yoloMusicScript || '')
+    try {
+      const legend = parseAssetLegendLines(raw)
+      const inline = parseInlineAssetDirectives(raw)
+      if (inline.length === 0) return legend
+      const seen = new Set(legend.map((e) => `${e.kind}:${e.slug}`))
+      return [...legend, ...inline.filter((e) => !seen.has(`${e.kind}:${e.slug}`))]
+    } catch {
+      return []
+    }
+  }, [isYoloMusicMode, yoloMusicActiveScriptId, yoloMusicAltScripts, yoloMusicScript])
 
-  // Auto-stub the declared gaps when a plan is (re)built, so a creator describes
-  // a character once and every later script reuses the same reference image.
-  // Idempotent: buildCastStubs skips entries Cast already knows, and the signature
-  // guard stops a re-render from running it twice.
+  const assetLibraryGapDetection = useMemo(() => {
+    try {
+      if (!isYoloMusicMode) return null
+      const plan = yoloMusicActiveTargetPlan
+      if (!Array.isArray(plan) || plan.length === 0) return null
+      // Alt targets build with cast:[] by design — unresolved-artist warnings
+      // are noise there, so character gap detection only runs on master.
+      const cast = yoloMusicActiveScriptId ? [] : yoloMusicResolvedCast
+      return detectScriptGaps({
+        scenes: plan,
+        warnings: yoloMusicActiveTargetPlanWarnings,
+        cast,
+        library: assetLibrary,
+        assets: yoloMusicActiveLegend,
+      })
+    } catch {
+      return null
+    }
+  }, [isYoloMusicMode, yoloMusicActiveTargetPlan, yoloMusicActiveTargetPlanWarnings, yoloMusicActiveScriptId, yoloMusicResolvedCast, assetLibrary, yoloMusicActiveLegend])
+
+  // ── Auto-stub detected gaps into the Cast library (0.4.4) ─────────────
+  // When a director-script plan is (re)built, every detected character/prop/
+  // location that is still reference-less becomes a Cast stub automatically.
+  // Idempotent: buildStubUpserts skips known entries, so re-parsing the same
+  // script adds nothing and re-renders never double-run (deduped by slug).
+  // The user then uses Regenerate-All (Generate all) to create the reference
+  // images, and Import-from-Cast to pull them into a music-video project.
   const lastAutoStubSignatureRef = useRef(null)
   useEffect(() => {
     if (!assetLibraryGapDetection) return
-    // Format contract: when the script declares an asset legend, only legend
-    // entries are auto-created. Prose guesses stay suggestion-only — Cast is
-    // never polluted from a heuristic reading of a shot description.
-    const stubs = buildCastStubs({
-      detection: assetLibraryGapDetection,
-      library: castLibrary,
-      scenes: yoloMusicActiveTargetPlan,
-      declaredOnly: true,
-    })
+    let stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
+    // Format-directive contract: when the script declares an asset legend,
+    // ONLY legend entries auto-stub. Heuristic prose guesses become
+    // suggestion-only (visible in the gaps panel, never silently in Cast).
+    if ((assetLibraryGapDetection?.legend?.length || 0) > 0) {
+      stubs = stubs.filter((stub) => stub.legendDeclared)
+    }
     if (stubs.length === 0) return
     if (lastAutoStubSignatureRef.current === yoloMusicPlanSignature) return
     lastAutoStubSignatureRef.current = yoloMusicPlanSignature
-    const withVersion = stubs.map((stub) => ({
-      ...stub,
-      provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
-    }))
-    const { added } = addCastEntries(withVersion)
-    if (added === 0) return
-    setCastNotice({
-      tone: 'success',
-      text: `Script parsed — added ${added} new reference${added === 1 ? '' : 's'} to Cast. Use Generate all to create the pictures, then Import from Cast in your music video.`,
-    })
-  }, [castLibrary, assetLibraryGapDetection, addCastEntries, setCastNotice,
-    yoloMusicPlanSignature, yoloMusicActiveTargetPlan])
-
-  // One-click "Add to Cast" on the People step. Same builder as the auto-stub
-  // path, so re-running only adds what is genuinely new.
-  const handleAddGapsToCast = useCallback(() => {
-    if (!assetLibraryGapDetection) return
-    const stubs = buildCastStubs({
-      detection: assetLibraryGapDetection,
-      library: castLibrary,
-      scenes: yoloMusicActiveTargetPlan,
-    })
-    if (stubs.length === 0) {
-      setCastNotice({ tone: 'info', text: 'Everything the script mentions is already in Cast.' })
-      return
+    let working = assetLibrary
+    for (const stub of stubs) {
+      const { library: next } = upsertLibraryEntry(working, {
+        ...stub,
+        provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+      })
+      working = next
     }
-    const withVersion = stubs.map((stub) => ({
-      ...stub,
-      provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
-    }))
-    const { added, total } = addCastEntries(withVersion)
-    setCastNotice({
+    commitAssetLibrary(working)
+    setAssetLibraryNotice({
       tone: 'success',
-      text: added === 0
-        ? 'Already in Cast — nothing new to add.'
-        : `Added ${added} reference${added === 1 ? '' : 's'} to Cast${total > added ? ` (${total - added} already known)` : ''}. Use Generate all to create the pictures.`,
+      text: `Script parsed — added ${stubs.length} new reference${stubs.length === 1 ? '' : 's'} to Cast automatically. Use Regenerate-All (Generate all) to create the reference images, then Import from Cast in your music video.`,
     })
-  }, [assetLibraryGapDetection, castLibrary, yoloMusicActiveTargetPlan, addCastEntries,
-    setCastNotice, yoloMusicPlanSignature])
-
+  }, [assetLibrary, assetLibraryGapDetection, commitAssetLibrary, setAssetLibraryNotice, yoloMusicPlanSignature])
   /**
    * Render the pass-switcher tab strip — Master + one chip per alt script,
    * each with badge, label, and a parse-status dot.
@@ -7277,7 +7161,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const imageWorkflowId = String(yoloAdStoryboardProfile?.storyboardWorkflowId || '').trim()
     const videoWorkflowId = String(yoloDefaultVideoWorkflowId || yoloAdVideoProfile?.videoWorkflowId || '').trim()
     const imageLabel = imageWorkflowId === 'image-edit-model-product'
-      ? 'Qwen Image Edit 2509'
+      ? 'Qwen Image Edit 2511'
       : imageWorkflowId === 'nano-banana-2'
         ? 'Nano Banana 2'
         : getWorkflowDisplayLabel(imageWorkflowId)
@@ -8015,8 +7899,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       category: 'image',
       workflowId,
       workflowLabel: String(overrides.workflowLabel || getWorkflowDisplayLabel(workflowId) || workflowId || 'People Wizard').trim(),
-      needsImage: Boolean(overrides.needsImage ?? !['z-image-turbo', FLUX2_KLEIN_WORKFLOW_ID].includes(workflowId)),
-      inputAssetType: ['z-image-turbo', FLUX2_KLEIN_WORKFLOW_ID].includes(workflowId) ? null : 'image',
+      needsImage: Boolean(overrides.needsImage ?? workflowId !== 'z-image-turbo'),
+      inputAssetType: workflowId === 'z-image-turbo' ? null : 'image',
       prompt: String(overrides.prompt || '').trim(),
       negativePrompt: String(overrides.negativePrompt || '').trim(),
       tags: [],
@@ -8078,6 +7962,209 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     imageResolution,
     seed,
   ])
+
+  // ── Asset library handlers (C4) ─────────────────────────────────────────
+  // One-click "add detected gaps to the library": every detected gap becomes
+  // a stub entry (verbatim description, shot provenance). Idempotent —
+  // re-running after a rebuild only adds what's genuinely new.
+  const handleAddGapsToLibrary = useCallback(() => {
+    if (!assetLibraryGapDetection) return
+    const stubs = buildStubUpserts({ detection: assetLibraryGapDetection, library: assetLibrary, scenes: yoloMusicActiveTargetPlan })
+    if (stubs.length === 0) {
+      setAssetLibraryNotice({ tone: 'info', text: 'Everything detected is already in the asset library.' })
+      return
+    }
+    let working = assetLibrary
+    for (const stub of stubs) {
+      const { library: next } = upsertLibraryEntry(working, {
+        ...stub,
+        provenance: { ...stub.provenance, scriptVersion: yoloMusicPlanSignature || null },
+      })
+      working = next
+    }
+    commitAssetLibrary(working)
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: `Added ${stubs.length} reference${stubs.length === 1 ? '' : 's'} to the asset library. Regenerate to create the reference images.`,
+    })
+  }, [assetLibrary, assetLibraryGapDetection, commitAssetLibrary, yoloMusicPlanSignature])
+
+  // Regenerate-All: queue a z-image-turbo reference-sheet job for every
+  // library entry that has a description but no reference image yet.
+  // Needs-description entries are skipped with a reason (A.5.5).
+  const handleRegenerateLibraryReferences = useCallback(() => {
+    const preview = buildRegenerateAllPreview({ library: assetLibrary, cap: 50 })
+    if (preview.items.length === 0) {
+      const why = preview.skipped.length > 0
+        ? ` ${preview.skipped.length} skipped (needs a description first).`
+        : ' Every entry already has a reference.'
+      setAssetLibraryNotice({ tone: 'info', text: `Nothing to regenerate.${why}` })
+      return
+    }
+    for (const item of preview.items) {
+      queuePeopleWizardJob({
+        workflowId: 'z-image-turbo',
+        prompt: item.prompt,
+        negativePrompt: item.negative,
+        assetPrefix: item.id,
+        peopleWizard: {
+          assetPrefix: item.id,
+          kind: 'asset-library-reference',
+          assetKind: item.kind,
+          assetLibraryEntryId: item.id,
+          assetName: item.name,
+        },
+      })
+    }
+    const skippedNote = preview.skipped.length > 0
+      ? ` ${preview.skipped.length} skipped (no description yet).`
+      : ''
+    const capNote = preview.remaining > 0
+      ? ` ${preview.remaining} more will wait for the next run.`
+      : ''
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: `Queued ${preview.items.length} reference image${preview.items.length === 1 ? '' : 's'} (~${Math.ceil(preview.totalEstimatedSeconds / 60)} min).${skippedNote}${capNote}`,
+    })
+  }, [assetLibrary, queuePeopleWizardJob])
+
+  const handleExportAssetLibrary = useCallback(() => {
+    const text = serializeLibraryForExport(assetLibrary)
+    const total = assetLibrary.characters.length + assetLibrary.props.length + assetLibrary.locations.length
+    if (total === 0) {
+      setAssetLibraryNotice({ tone: 'info', text: 'The asset library is empty — nothing to export.' })
+      return
+    }
+    const blob = new Blob([text], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `belrog-asset-library-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
+  }, [assetLibrary])
+
+  const handleImportAssetLibrary = useCallback((file) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const result = importLibraryJson(String(reader.result || ''), assetLibrary)
+        if (!result.ok) {
+          setAssetLibraryNotice({ tone: 'error', text: result.error || 'Could not import that file.' })
+          return
+        }
+        commitAssetLibrary(result.library)
+        setAssetLibraryNotice({
+          tone: 'success',
+          text: `Imported ${result.imported} new entr${result.imported === 1 ? 'y' : 'ies'}${result.skipped ? `, ${result.skipped} skipped (already known)` : ''}.`,
+        })
+      } catch (err) {
+        setAssetLibraryNotice({ tone: 'error', text: `Import failed: ${err?.message || err}` })
+      }
+    }
+    reader.onerror = () => setAssetLibraryNotice({ tone: 'error', text: 'Could not read that file.' })
+    reader.readAsText(file)
+  }, [assetLibrary, commitAssetLibrary])
+
+  // Manual add form state (Assets tab): the ONLY way to create entries that
+  // gap detection didn't find (named characters, custom props, etc.).
+  const [assetForm, setAssetForm] = useState({ kind: 'character', name: '', description: '' })
+  const handleAddAssetEntry = useCallback(() => {
+    const name = String(assetForm.name || '').trim()
+    if (!name) {
+      setAssetLibraryNotice({ tone: 'error', text: 'Give the entry a name first (e.g. "Rose", "the rusty gate", "Midnight Pier").' })
+      return
+    }
+    const { library: next, created } = upsertLibraryEntry(assetLibrary, {
+      kind: assetForm.kind,
+      name,
+      slug: slugifyNameToken(name, { fallback: 'entry', maxLength: 48 }),
+      description: String(assetForm.description || '').trim(),
+      provenance: { source: 'manual', scriptVersion: null, shots: [] },
+    })
+    commitAssetLibrary(next)
+    setAssetForm((prev) => ({ ...prev, name: '', description: '' }))
+    setAssetLibraryNotice({
+      tone: 'success',
+      text: created ? `Added "${name}" to the asset library.` : `"${name}" already existed — its description was kept/merged.`,
+    })
+  }, [assetForm, assetLibrary, commitAssetLibrary])
+
+  const handleEditAssetDescription = useCallback((id, description) => {
+    const found = findLibraryEntry(assetLibrary, id)
+    if (!found) return
+    const kindKey = found.kind === 'character' ? 'characters' : found.kind === 'prop' ? 'props' : 'locations'
+    const next = {
+      ...assetLibrary,
+      [kindKey]: (assetLibrary[kindKey] || []).map((entry) => (entry?.id === id
+        ? { ...entry, description: String(description || '').trim(), updatedAt: new Date().toISOString() }
+        : entry)),
+    }
+    commitAssetLibrary(next)
+  }, [assetLibrary, commitAssetLibrary])
+
+  const handleDeleteAssetEntry = useCallback((id) => {
+    const found = findLibraryEntry(assetLibrary, id)
+    if (!found) return
+    if (!window.confirm(`Delete "${found.name}" from the asset library? (The reference image itself is kept.)`)) return
+    const { library: next } = removeLibraryEntry(assetLibrary, id)
+    commitAssetLibrary(next)
+    setAssetLibraryNotice({ tone: 'info', text: `Deleted "${found.name}" from the asset library.` })
+  }, [assetLibrary, commitAssetLibrary])
+
+  const handleRegenerateOneReference = useCallback((entry) => {
+    const prompt = buildReferencePrompt(entry)
+    if (!prompt) {
+      setAssetLibraryNotice({ tone: 'error', text: `"${entry?.name || 'This entry'}" has no description yet — write one, then regenerate.` })
+      return
+    }
+    queuePeopleWizardJob({
+      workflowId: 'z-image-turbo',
+      prompt,
+      negativePrompt: referenceNegative(entry?.kind),
+      assetPrefix: entry?.id,
+      peopleWizard: {
+        assetPrefix: entry?.id,
+        kind: 'asset-library-reference',
+        assetKind: entry?.kind,
+        assetLibraryEntryId: entry?.id,
+        assetName: entry?.name,
+      },
+    })
+    setAssetLibraryNotice({ tone: 'success', text: `Queued a reference image for "${entry?.name || 'entry'}" (~1 min).` })
+  }, [queuePeopleWizardJob])
+
+  // ── Drain reference-generation requests from the Cast panel ────────────
+  // The Cast panel (left sidebar) queues reference images through the
+  // assetLibraryBridge because it can't reach this component's local queue
+  // directly. We drain that pending queue on mount (catches anything queued
+  // before the Generate tab was ever opened) and on every queued event,
+  // routing each through the same z-image-turbo job shape used above.
+  useEffect(() => {
+    const queueOne = (item) => {
+      if (!item?.entryId || !item?.prompt) return
+      queuePeopleWizardJob({
+        workflowId: 'z-image-turbo',
+        prompt: item.prompt,
+        negativePrompt: item.negative || referenceNegative(item.kind),
+        assetPrefix: item.entryId,
+        peopleWizard: {
+          assetPrefix: item.entryId,
+          kind: 'asset-library-reference',
+          assetKind: item.kind,
+          assetLibraryEntryId: item.entryId,
+          assetName: item.name,
+        },
+      })
+    }
+    const drain = () => { drainAssetLibraryReferences(queueOne) }
+    drain() // catch anything queued before this component mounted
+    window.addEventListener(ASSET_LIBRARY_QUEUE_EVENT, drain)
+    return () => window.removeEventListener(ASSET_LIBRARY_QUEUE_EVENT, drain)
+  }, [queuePeopleWizardJob])
 
   const buildPeopleWizardAssetName = useCallback((prefix, suffix, fallbackName) => {
     const base = slugifyNameToken(prefix || '', { fallback: '', maxLength: 48 })
@@ -8372,16 +8459,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       editCfg,
       musicTags,
       lyrics,
-      musicDuration: selectedMusicLength.durationSeconds,
-      ...(workflowId === 'music-gen-yue2' ? { musicBackend: 'yue2', musicWorkflowVersion: 1, musicLengthMode: selectedMusicLength.lengthMode } : {}),
+      musicDuration,
       bpm,
       keyscale,
       inputAssetId: selectedAsset?.id || null,
       inputAssetName: selectedAsset?.name || '',
       audioAssetId: selectedWorkflowManifest?.requiresAudio ? (selectedAudioAsset?.id || null) : null,
       audioAssetName: selectedWorkflowManifest?.requiresAudio ? (selectedAudioAsset?.name || '') : '',
-      audioStartSeconds: workflowId === 'ltx23-ia2v' ? (conditioningAudio?.startSeconds || 0) : 0,
-      conditioningAudio,
       assetFieldIds,
       templateParameters: { ...(templateParameterValues || {}) },
       inputFromTimelineFrame: false,
@@ -8396,16 +8480,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       ...overrides,
     }
 
-    if (baseJob.workflowId === 'music-gen-yue2' || baseJob.workflowId === 'music-gen') {
-      const length = resolveMusicLength({
-        backend: baseJob.workflowId === 'music-gen-yue2' ? 'yue2' : 'ace-step',
-        lengthMode: baseJob.workflowId === 'music-gen-yue2' ? baseJob.musicLengthMode : undefined,
-        durationSeconds: baseJob.musicDuration,
-      })
-      baseJob.musicLengthMode = length.lengthMode
-      baseJob.musicDuration = length.durationSeconds
-    }
-
     const findAssetSnapshot = (assetId) => {
       if (!assetId) return null
       return snapshotGenerationAsset(assets.find((asset) => asset.id === assetId))
@@ -8418,9 +8492,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     return {
       ...baseJob,
-      // Freeze the reviewed picture with the job. A later staged shot must not
-      // replace the input of an earlier job waiting in the queue.
-      timelineFrameFile: baseJob.inputFromTimelineFrame ? useFrameForAIStore.getState().frame?.file || null : null,
       originProject: currentProjectHandle ? {
         handle: currentProjectHandle,
         name: currentProject?.name || '',
@@ -8431,7 +8502,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         input: findAssetSnapshot(baseJob.inputAssetId),
         reference1: findAssetSnapshot(baseJob.referenceAssetId1),
         reference2: findAssetSnapshot(baseJob.referenceAssetId2),
-        place: findAssetSnapshot(baseJob.placeAssetId),
         audio: findAssetSnapshot(baseJob.musicAudioAssetId || baseJob.audioAssetId),
         assetFields: assetFieldSnapshots,
       },
@@ -8460,8 +8530,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     keyscale,
     lyrics,
     musicDuration,
-    selectedMusicLength.lengthMode,
-    selectedMusicLength.durationSeconds,
     musicTags,
     negativePrompt,
     primaryAssetSlot?.assetType,
@@ -8476,7 +8544,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     selectedAssetFields,
     selectedAudioAsset?.id,
     selectedAudioAsset?.name,
-    conditioningAudio,
     seedreamUsesInputResolution,
     selectedTags,
     selectedWorkflowManifest?.requiresAudio,
@@ -9220,7 +9287,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       targetDuration: effectiveTargetDuration,
       songDurationSeconds: effectiveSongDuration,
       cast: isAltTarget ? [] : effectiveCast,
-      places: yoloMusicResolvedPlaces,
     })
     if (!Array.isArray(nextPlan) || nextPlan.length === 0) {
       setFormError('Could not parse the director script. Make sure each shot starts with "Shot N:" and includes at least a Keyframe prompt and a Motion prompt.')
@@ -9287,7 +9353,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicAltScripts,
     yoloMusicAudioAssetId,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloMusicConcept,
     yoloMusicLyrics,
     yoloMusicScript,
@@ -9762,7 +9827,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       styleNotes: yoloMusicBriefStyleNotes,
       lyrics: yoloMusicLyrics,
       cast: yoloMusicResolvedCast,
-      places: yoloMusicResolvedPlaces,
       pass: passType,
       variantDescriptor,
       masterScript: yoloMusicScript,
@@ -9775,7 +9839,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicBriefStyleNotes,
     yoloMusicLyrics,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloMusicScript,
   ])
 
@@ -9788,16 +9851,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       styleNotes: yoloMusicBriefStyleNotes,
       lyrics: yoloMusicLyrics,
       cast: yoloMusicResolvedCast,
-      places: yoloMusicResolvedPlaces,
       coveragePlan: options.coveragePlan || null,
     })
-    // `copy: false` hands the brief back without touching the clipboard, for
-    // writing the script inside Belrog.
-    if (options.copy === false) return llmPrompt
     await copyTextToClipboard(llmPrompt)
     setFormError(null)
     addComfyLog('status', 'Music video LLM brief copied.')
-    return llmPrompt
   }, [
     addComfyLog,
     yoloMusicAudioAsset?.name,
@@ -9807,7 +9865,34 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicBriefStyleNotes,
     yoloMusicLyrics,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
+  ])
+  // Send the LLM brief to the embedded Director Script planner (App.jsx
+  // relays it into the Perchance iframe). Same payload as "Copy Brief":
+  // the standalone module-scope builder, fed from the current form state.
+  useEffect(() => {
+    const handler = () => {
+      const brief = buildMusicVideoLLMPrompt({
+        songName: yoloMusicAudioAsset?.name || '',
+        songDurationSeconds: yoloMusicSongDurationSeconds,
+        targetDuration: yoloMusicTargetDuration,
+        concept: yoloMusicConcept,
+        styleNotes: yoloMusicBriefStyleNotes,
+        lyrics: yoloMusicLyrics,
+        cast: yoloMusicResolvedCast,
+        coveragePlan: null,
+      })
+      window.dispatchEvent(new CustomEvent('director-script-brief-ready', { detail: { brief } }))
+    }
+    window.addEventListener('director-script-request-brief', handler)
+    return () => window.removeEventListener('director-script-request-brief', handler)
+  }, [
+    yoloMusicAudioAsset?.name,
+    yoloMusicSongDurationSeconds,
+    yoloMusicTargetDuration,
+    yoloMusicConcept,
+    yoloMusicBriefStyleNotes,
+    yoloMusicLyrics,
+    yoloMusicResolvedCast,
   ])
 
   /**
@@ -10300,35 +10385,17 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       }
     }
 
-    // `options.shape` ('wide' or 'tall') is the person's own choice, made next
-    // to the button. Without it the current picture size is used, as before.
-    const settingWidth = Number(resolution.width) || null
-    const settingHeight = Number(resolution.height) || null
-    // `options.size` is '720p' or '1080p'; without it the picture size is used.
-    const longSide = options?.size === '1080p' ? 1920 : options?.size === '720p' ? 1280 : (Math.max(settingWidth || 0, settingHeight || 0) || null)
-    const shortSide = options?.size === '1080p' ? 1080 : options?.size === '720p' ? 720 : (Math.min(settingWidth || 0, settingHeight || 0) || null)
-    const timelineResolution = options?.shape === 'tall' && longSide && shortSide
-      ? { width: shortSide, height: longSide }
-      : options?.shape === 'wide' && longSide && shortSide
-        ? { width: longSide, height: shortSide }
-        : { width: settingWidth, height: settingHeight }
+    const timelineResolution = {
+      width: Number(resolution.width) || null,
+      height: Number(resolution.height) || null,
+    }
     const timelineResolutionLabel = timelineResolution.width && timelineResolution.height
       ? `${timelineResolution.width}x${timelineResolution.height}`
       : ''
     const songName = String(yoloMusicAudioAsset?.name || 'Music Video').replace(/\.[a-z0-9]{2,5}$/i, '').trim()
     const requestedTimelineName = String(options?.timelineName || '').trim()
-    // `options.cut` is 'ready' for one layer that plays as a finished video;
-    // otherwise every pass gets its own layer, to edit by hand. A ready cut is
-    // always a timeline of its own, so making one again never mixes two cuts.
-    const isReadyCut = options?.cut === 'ready'
-    let generatedTimelineName = buildGeneratedEditTimelineName('Music Video', [songName || 'Music Video', timelineResolutionLabel, isReadyCut ? 'ready cut' : ''].filter(Boolean).join(' - '))
-    if (isReadyCut) {
-      const takenNames = new Set((useProjectStore.getState().currentProject?.timelines || []).map((timeline) => timeline?.name))
-      const firstName = generatedTimelineName
-      for (let n = 2; takenNames.has(buildGeneratedEditTimelineName(generatedTimelineName)) && n < 100; n += 1) generatedTimelineName = `${firstName} ${n}`
-    }
     const timelineResult = await ensureGeneratedEditTimeline({
-      name: requestedTimelineName || generatedTimelineName,
+      name: requestedTimelineName || buildGeneratedEditTimelineName('Music Video', [songName || 'Music Video', timelineResolutionLabel].filter(Boolean).join(' - ')),
       width: timelineResolution.width,
       height: timelineResolution.height,
       fps: Number(yoloVideoFps) || null,
@@ -10410,50 +10477,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           asset: videoAsset,
           startTime,
           duration: safeDuration,
-          sourceDuration: Number.isFinite(sourceDuration) && sourceDuration > 0 ? sourceDuration : safeDuration,
           coverage,
           coverageLabel,
         })
       }
-    }
-
-    // On one layer, a clip that runs into the next is cut to end where the next begins.
-    for (const group of groups.values()) trimOverlapsOnLayer(group.rows, Math.max(minClipDuration, 0.5))
-
-    // The ready cut: one layer. Each sung line gets one take, and the gaps get
-    // shots with nobody singing. See buildReadyCut.
-    if (isReadyCut) {
-      const everyRow = []
-      for (const group of groups.values()) {
-        for (const row of group.rows) {
-          const coverageType = String(row.coverage?.type || '')
-          const shotType = row.shot?.musicShotType || row.variant?.musicShotType || row.asset?.yolo?.shotType || ''
-          // The timeline keeps whole frames. Snapping here, before the cut is
-          // built, lets it see and close the one-frame holes snapping can open.
-          const fileSeconds = Math.max(Number(row.asset?.duration) || 0, row.sourceDuration)
-          const startFrame = Math.round(row.startTime * fps)
-          const endFrame = Math.max(startFrame + 1, Math.min(Math.round((row.startTime + row.duration) * fps), startFrame + Math.floor(fileSeconds * fps + 1e-6)))
-          everyRow.push({
-            ...row,
-            startTime: startFrame / fps,
-            duration: (endFrame - startFrame) / fps,
-            role: coverageType === 'performance_pass' ? 'take' : (coverageType === 'main_sequence' || !coverageType ? 'main' : 'fill'),
-            sync: Boolean(getMusicVideoShotTypeOption(shotType)?.needsVocalAlignment),
-            // How much more the file itself holds after the clip's end.
-            spare: Math.max(0, fileSeconds - (endFrame - startFrame) / fps),
-          })
-        }
-      }
-      const readyRows = buildReadyCut(everyRow, {
-        songDuration: Number(yoloMusicSongDurationSeconds) || 0,
-        minDuration: Math.max(minClipDuration, 0.5),
-      })
-      // A length such as 5.458333333333331 seconds is 131 frames, but the
-      // timeline rounds down and would keep 130, leaving one black frame. So
-      // each length is set to its whole number of frames, a hair over.
-      for (const row of readyRows) row.duration = (Math.round(row.duration * fps) + 0.001) / fps
-      groups.clear()
-      if (readyRows.length > 0) groups.set('ready-cut', { key: 'ready-cut', coverage: { type: 'ready_cut' }, label: 'Ready cut', trackName: 'MV - Ready cut', rows: readyRows })
     }
 
     const readyClipCount = Array.from(groups.values()).reduce((sum, group) => sum + group.rows.length, 0)
@@ -10597,7 +10624,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       `Assembled ${insertedVideoClips} video clip${insertedVideoClips === 1 ? '' : 's'}`,
       insertedAudioClips > 0 ? 'song audio' : '',
       `in "${timelineResult.timelineName}"`,
-      isReadyCut ? 'on one layer, ready to play' : `on ${groups.size} coverage track${groups.size === 1 ? '' : 's'}`,
+      `on ${groups.size} coverage track${groups.size === 1 ? '' : 's'}`,
       initialExistingVideoAssemblyCount > 0 ? `${initialExistingVideoAssemblyCount} existing clip${initialExistingVideoAssemblyCount === 1 ? '' : 's'} kept` : '',
       missingRows.length > 0 ? `${missingRows.length} missing/failed shot${missingRows.length === 1 ? '' : 's'} skipped` : '',
     ].filter(Boolean).join(' · ')
@@ -10727,8 +10754,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const usesCustomStoryboardWorkflow = usesCustomMusicStoryboardWorkflow || usesCustomAdStoryboardWorkflow
     const customMusicRequiresInputImage = usesCustomMusicStoryboardWorkflow
       && Boolean(yoloMusicCustomKeyframeValidation?.endpoints?.inputImage)
-    const usesKleinMusicStoryboardWorkflow = isYoloMusicMode && effectiveStoryboardWorkflowId === FLUX2_KLEIN_WORKFLOW_ID
-    const usesReferenceMusicStoryboardWorkflow = usesQwenMusicStoryboardWorkflow || usesKleinMusicStoryboardWorkflow || customMusicRequiresInputImage
+    const usesReferenceMusicStoryboardWorkflow = usesQwenMusicStoryboardWorkflow || customMusicRequiresInputImage
     const musicImageAssetById = new Map(
       (assets || [])
         .filter((asset) => asset?.type === 'image')
@@ -10762,23 +10788,60 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const shouldUseDefaultMusicPerformerReference = (variant) => (
       Boolean(getMusicVariantShotTypeOption(variant)?.needsVocalAlignment)
     )
+    // 0.4.8: location reference resolution at queue time. Prefer the plan's
+    // parse-time match; otherwise re-scan the shot's LOCATION: directive text
+    // against library locations that now have images (image generated AFTER
+    // the plan was built is the common case).
+    const musicLocationRefIndex = new Map()
+    for (const entry of allLibraryEntries(assetLibrary)) {
+      if (entry?._kind === 'location' && entry.assetId
+        && musicImageAssetById.has(String(entry.assetId))) {
+        musicLocationRefIndex.set(String(entry.slug || '').toLowerCase(), String(entry.assetId))
+      }
+    }
+    // Format-directive-v2: shots carry "(slug)" tokens: LOCATION: (location_dpf),
+    // prose... Legacy forms still supported: LOCATION: slug: prose.
+    const LOCATION_QUEUE_TOKEN_SRC = String.raw`\bLOCATIONS?\s*:\s*\(?\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)?\s*(?::|,|\s|$)`
+    const resolveLocationAssetIdForVariant = (variant) => {
+      if (musicLocationRefIndex.size === 0) return null
+      const planned = String(variant?.resolvedLocationAssetId || '').trim()
+      if (planned && musicImageAssetById.has(planned)) return planned
+      const text = `${variant?.keyframePromptRaw || ''} ${variant?.motionPromptRaw || ''}`
+      if (!text.trim()) return null
+      for (const match of text.matchAll(new RegExp(LOCATION_QUEUE_TOKEN_SRC, 'gi'))) {
+        const assetId = musicLocationRefIndex.get(match[1].toLowerCase())
+        if (assetId) return assetId
+      }
+      return null
+    }
+    // Format-directive-v2: shots reference locations/props as "(slug)" tokens
+    // and never carry the description (it lives once, in the script legend /
+    // Cast entry). Queue-time expansion is done by the module-level
+    // expandAssetSlugTokensInPrompt, fed with the live store state.
     const resolveQwenMusicStoryboardReferences = (variant) => {
       const resolvedArtistAssetIds = Array.isArray(variant?.resolvedArtistAssetIds)
         ? variant.resolvedArtistAssetIds.filter(Boolean)
         : []
-      const primaryAssetId = findExistingMusicImageAssetId([
+      // 0.4.8: location reference policy. A performer (face) is always the
+      // primary edit base when present — a location image must never replace
+      // a face as the identity source. Location becomes: primary only for
+      // shots with no performer (b_roll/establishing — the shot the image
+      // actually describes), or the second reference alongside a performer.
+      const locationAssetId = resolveLocationAssetIdForVariant(variant)
+      const performerPrimary = findExistingMusicImageAssetId([
         ...resolvedArtistAssetIds,
         ...(shouldUseDefaultMusicPerformerReference(variant) ? [defaultMusicReferenceAssetId] : []),
       ])
-      const secondaryAssetId = findExistingMusicImageAssetId(
+      const primaryAssetId = performerPrimary || locationAssetId
+      const secondaryPerformer = findExistingMusicImageAssetId(
         resolvedArtistAssetIds.filter((assetId) => assetId !== primaryAssetId)
       )
+      const secondaryAssetId = secondaryPerformer
+        || (performerPrimary && locationAssetId ? locationAssetId : null)
       return { primaryAssetId, secondaryAssetId }
     }
     let variantsForJobs = variantsToQueue
-    // Shots with nobody in them have no reference. Qwen cannot make those, so
-    // they fall back to Z-Image Turbo; klein makes them itself.
-    const fallbackWorkflowId = usesKleinMusicStoryboardWorkflow ? FLUX2_KLEIN_WORKFLOW_ID : 'z-image-turbo'
+    const fallbackWorkflowId = 'z-image-turbo'
     const fallbackVariantKeys = new Set()
     let skippedPerformerReferenceCount = 0
     let skippedFallbackUnavailableCount = 0
@@ -10822,7 +10885,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       return 0
     }
     let confirmed = true
-    if (fallbackVariantKeys.size > 0 && !skipMixedWorkflowConfirm && !usesKleinMusicStoryboardWorkflow) {
+    if (fallbackVariantKeys.size > 0 && !skipMixedWorkflowConfirm) {
       const selectedWorkflowName = usesCustomMusicStoryboardWorkflow
         ? (yoloMusicCustomKeyframeWorkflow?.name || 'Custom keyframe workflow')
         : (getWorkflowDisplayLabel(effectiveStoryboardWorkflowId) || effectiveStoryboardWorkflowId)
@@ -10880,13 +10943,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             ? mediumSeed
             : softSeed
       )
-      // Remaking a shot that already has a picture must give a new picture.
-      // The planned seed is the same every time, and local models then return
-      // the identical image, so the card looked as if nothing had happened.
-      const alreadyHasPicture = assets.some((asset) => (
-        asset?.type === 'image' && asset?.yolo?.stage === 'storyboard' && asset?.yolo?.key === variant.key
-      ))
-      const jobSeed = alreadyHasPicture ? storyboardSeed + 1 + Math.floor(Math.random() * 1000000000) : storyboardSeed
       const usesPromptOnlyFallback = fallbackVariantKeys.has(variant.key)
       const jobWorkflowId = usesPromptOnlyFallback ? fallbackWorkflowId : effectiveStoryboardWorkflowId
       const variantUsesReferenceMusicWorkflow = usesReferenceMusicStoryboardWorkflow && !usesPromptOnlyFallback
@@ -10938,46 +10994,37 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             return acc
           }, {})
         : {}
-      // Two things the merge dropped here, restored:
-      //  - LOCATIONS:/PROPS: slug tokens must resolve to their library
-      //    description before the model sees the prompt.
-      //  - Qwen image-edit needs the explicit preserve-face instruction, or it
-      //    treats the keyframe as a fresh generation and ignores the reference.
-      const usesQwenKeyframeEdit = !usesPromptOnlyFallback
-        && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit')
+      const QWEN_EDIT_PREFIX = QWEN_KEYFRAME_EDIT_PREFIX
       const rawStoryboardPrompt = usesPromptOnlyFallback
         ? buildPromptOnlyBrollFallbackPrompt(variant)
         : expandAssetSlugTokensInPrompt(variant.storyboardPrompt || variant.prompt)
-      const storyboardPromptBase = usesQwenKeyframeEdit
-        ? QWEN_KEYFRAME_EDIT_PREFIX + rawStoryboardPrompt
+      const storyboardPromptBase = (!usesPromptOnlyFallback && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit') && rawStoryboardPrompt && !rawStoryboardPrompt.includes('preserve ONLY the facial identity'))
+        ? QWEN_EDIT_PREFIX + rawStoryboardPrompt
         : rawStoryboardPrompt
-      // Two-person identity mapping: when BOTH reference slots hold DIFFERENT
-      // cast members, say which image index is which person. Labels come from
-      // the cast entries that actually produced these image ids, so sentence
-      // order always matches the image1/image2 send order. Head position —
-      // tail position caused text storms in split tests.
+      // 0.4.8.6 two-person identity mapping: when BOTH reference slots hold
+      // DIFFERENT cast members, prepend the index-mapping sentence (head
+      // position — split-tested; tail position caused text storms). Labels
+      // come from the cast entries that actually produced these image ids,
+      // so sentence order always matches image1/image2 send order.
       const castLabelForAsset = (assetId) => {
         if (!assetId) return ''
-        // Cast members ONLY: a location or prop image in a reference slot must
-        // not be announced as a person ("the second image shows the hallway").
+        // Cast members ONLY: a location/prop image in the second slot must
+        // not be announced as a person ("the second image shows hallway").
         const entry = (yoloMusicResolvedCast || []).find((e) => e?.assetId && String(e.assetId) === String(assetId))
         return entry?.label ? String(entry.label) : ''
       }
       const storyboardPrompt = (() => {
-        if (!usesQwenKeyframeEdit) return storyboardPromptBase
         const primaryId = storyboardInputAsset?.id
         const secondaryId = isYoloMusicMode ? storyboardReferenceAssetId1 : null
-        if (!primaryId || !secondaryId) return storyboardPromptBase
-        return applyTwoPersonIdentityMapping(
-          storyboardPromptBase,
-          castLabelForAsset(primaryId),
-          castLabelForAsset(secondaryId),
-        )
+        if (usesPromptOnlyFallback || !primaryId || !secondaryId) return storyboardPromptBase
+        const usesTwoPersonMapping = variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit'
+        if (!usesTwoPersonMapping) return storyboardPromptBase
+        return applyTwoPersonIdentityMapping(storyboardPromptBase, castLabelForAsset(primaryId), castLabelForAsset(secondaryId))
       })()
       return createQueuedJob({
         category: 'image',
         workflowId: jobWorkflowId,
-        workflowLabel: usesPromptOnlyFallback && !usesKleinMusicStoryboardWorkflow
+        workflowLabel: usesPromptOnlyFallback
           ? `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (Z-Image Turbo b-roll fallback)`
           : usesCustomStoryboardWorkflow
           ? `${DIRECTOR_MODE_BETA_LABEL} ${yoloModeLabel} Keyframe (${usesCustomAdStoryboardWorkflow ? (yoloAdCustomKeyframeWorkflow?.name || 'Custom Workflow') : (yoloMusicCustomKeyframeWorkflow?.name || 'Custom Workflow')})`
@@ -10985,7 +11032,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         needsImage: Boolean(storyboardInputAsset),
         inputAssetType: storyboardInputAsset ? 'image' : null,
         prompt: storyboardPrompt,
-        seed: jobSeed,
+        seed: storyboardSeed,
         resolution: storyboardResolution,
         inputAssetId: storyboardInputAsset?.id || null,
         inputAssetName: storyboardInputAsset?.name || '',
@@ -10995,9 +11042,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         // edit input, so only additional cast images go into reference slots.
         referenceAssetId1: storyboardReferenceAssetId1,
         referenceAssetId2: storyboardReferenceAssetId2,
-        placeAssetId: isYoloMusicMode && jobWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
-          ? (variant.placeAssetId || null)
-          : null,
         ...(Object.keys(storyboardAssetFieldIds).length > 0 ? { assetFieldIds: storyboardAssetFieldIds } : {}),
         directorLabel: yoloQueueNameLabel,
         customWorkflow: usesCustomStoryboardWorkflow && !usesPromptOnlyFallback
@@ -11088,7 +11132,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicCustomKeyframeWorkflow,
     yoloMusicCustomKeyframeValidation,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloMusicQualityProfile,
     yoloNormalizedAdStoryboardTier,
     yoloAdProductAsset,
@@ -11300,7 +11343,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       throw new Error('Both sceneId and shotId are required.')
     }
     if (!isYoloMusicMode) {
-      throw new Error('Open the Music Video workflow in Director before inspecting a Step 4 keyframe.')
+      throw new Error('Open the Music Video workflow in Generate before inspecting a Step 4 keyframe.')
     }
     if (!Array.isArray(yoloActivePlan) || yoloActivePlan.length === 0) {
       throw new Error('The Music Video workflow does not have a parsed director script yet.')
@@ -11369,7 +11412,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       ])
       const missingRequiredReference = selectedWorkflowNeedsInput && !primaryReferenceAssetId
       const usesPromptOnlyFallback = missingRequiredReference && !needsPerformerReference
-      const expectedWorkflowId = usesPromptOnlyFallback && selectedWorkflowId !== FLUX2_KLEIN_WORKFLOW_ID ? 'z-image-turbo' : selectedWorkflowId
+      const expectedWorkflowId = usesPromptOnlyFallback ? 'z-image-turbo' : selectedWorkflowId
       const blockedReason = missingRequiredReference && needsPerformerReference
         ? `${selectedWorkflowLabel} needs a cast/reference image for this performance shot.`
         : ''
@@ -11404,7 +11447,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         referenceAssetId: primaryReferenceAssetId,
         prompt: usesPromptOnlyFallback
           ? buildPromptOnlyBrollFallbackPrompt(variant)
-          : String(variant.storyboardPrompt || variant.prompt || ''),
+          : expandAssetSlugTokensInPrompt(String(variant.storyboardPrompt || variant.prompt || '')),
         blockedReason,
         activeJob: activeJobs[0] ? {
           id: activeJobs[0].id,
@@ -11421,7 +11464,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     const blockedReasons = []
     if (!isConnected) blockedReasons.push('ComfyUI is not connected.')
-    if (yoloActivePlanIsStale) blockedReasons.push('The director script changed. Press Use the changes in the Director Script step before remaking keyframes.')
+    if (yoloActivePlanIsStale) blockedReasons.push('The director script is out of date. Parse it again before regenerating keyframes.')
     if (!selectedWorkflowId) blockedReasons.push('No Step 4 keyframe workflow is selected.')
     if (
       selectedWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
@@ -11468,7 +11511,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicArtistAsset,
     yoloMusicCustomKeyframeValidation,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloStoryboardAssetMap,
     yoloStoryboardWorkflowId,
     yoloVideoFps,
@@ -11569,7 +11611,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (!isConnected) return 0
     if (yoloActivePlanIsStale) {
       setFormError(isYoloMusicMode
-        ? 'The director script changed. Press Use the changes in the Director Script step before remaking keyframes.'
+        ? 'Director plan is out of date. Click Parse Script again before re-rendering keyframes.'
         : 'Director plan is out of date. Click Build Plan again before re-rendering keyframes.')
       setDirectorSubTab('plan-script')
       return 0
@@ -11876,8 +11918,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         musicAudioAssetId: isYoloMusicMode ? yoloMusicAudioAssetId : (isAdLipSyncShot ? yoloAdVoiceoverAssetId : null),
         musicAudioKind: isYoloMusicMode ? yoloMusicAudioKind : (isAdLipSyncShot ? 'vocal_stem' : null),
         musicShot: musicShotPayload,
-        ...(effectiveWorkflowId === MINIMAX_H3_LOCAL_WORKFLOW_ID ? { videoQuality: yoloMusicVideoQuality } : {}),
-        ...(effectiveWorkflowId === MINIMAX_H3_CLOUD_WORKFLOW_ID && isYoloMusicMode ? { videoQuality: yoloMusicCloudVideoLevel } : {}),
         customWorkflow: usesCustomMusicVideoWorkflow
           ? {
             name: customVideoWorkflowName,
@@ -11958,8 +11998,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloAdVoiceoverAssetId,
     yoloDefaultVideoWorkflowId,
     yoloMusicAudioAssetId,
-    yoloMusicVideoQuality,
-    yoloMusicCloudVideoLevel,
     yoloMusicAudioKind,
     yoloMusicCustomVideoWorkflow,
     yoloMusicQualityProfile,
@@ -12209,7 +12247,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     const resolution = { width: Number(width) || 720, height: Number(height) || 1280 }
     const isLtx = model === 'ltx'
 
-    // LTX + references → compose a first frame LOCALLY (Qwen Image Edit 2509,
+    // LTX + references → compose a first frame LOCALLY (Qwen Image Edit 2511,
     // which combines a primary image + up to 2 reference images), then the
     // watcher effect animates it with LTX i2v. Keeps the whole LTX path local —
     // no paid cloud model. refs order is [creator, product, environment]:
@@ -12612,7 +12650,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
   const buildMcpMusicVideoPlanReport = useCallback(() => {
     if (!isYoloMusicMode) {
-      throw new Error('Open the Music Video workflow in Director before inspecting its plan.')
+      throw new Error('Open the Music Video workflow in Generate before inspecting its plan.')
     }
     if (!Array.isArray(yoloActivePlan) || yoloActivePlan.length === 0) {
       throw new Error('The Music Video workflow does not have a parsed director script yet.')
@@ -12786,7 +12824,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       throw new Error('Both sceneId and shotId are required.')
     }
     if (!isYoloMusicMode) {
-      throw new Error('Open the Music Video workflow in Director before inspecting a Step 5 video.')
+      throw new Error('Open the Music Video workflow in Generate before inspecting a Step 5 video.')
     }
     if (!Array.isArray(yoloActivePlan) || yoloActivePlan.length === 0) {
       throw new Error('The Music Video workflow does not have a parsed director script yet.')
@@ -12894,7 +12932,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
     const blockedReasons = []
     if (!isConnected) blockedReasons.push('ComfyUI is not connected.')
-    if (yoloActivePlanIsStale) blockedReasons.push('The director script changed. Press Use the changes in the Director Script step before remaking videos.')
+    if (yoloActivePlanIsStale) blockedReasons.push('The director script is out of date. Parse it again before regenerating videos.')
     if (selectedWorkflowIds.length === 0) blockedReasons.push('No Step 5 video workflow is selected.')
     if (
       selectedWorkflowIds.includes(CUSTOM_MUSIC_VIDEO_WORKFLOW_ID)
@@ -12908,7 +12946,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     for (const variant of variantReports) {
       if (!variant.inputKeyframe) blockedReasons.push(`${variant.key} needs a generated Step 4 keyframe first.`)
       if (variant.activeJob) blockedReasons.push(`${variant.scopedKey} is already ${variant.activeJob.status}.`)
-      if ([MUSIC_VIDEO_SHOT_WORKFLOW_ID, MINIMAX_H3_LOCAL_WORKFLOW_ID, MINIMAX_H3_CLOUD_WORKFLOW_ID, MINIMAX_H3_LIP_SYNC_WORKFLOW_ID].includes(variant.workflowId) && !yoloMusicAudioAsset) {
+      if (variant.workflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID && !yoloMusicAudioAsset) {
         blockedReasons.push(`${variant.workflowLabel} needs the song audio asset from Step 1.`)
       }
     }
@@ -13514,7 +13552,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             targetDuration: yoloMusicTargetDuration,
             songDurationSeconds: yoloMusicSongDurationSeconds,
             cast: targetPass ? [] : yoloMusicResolvedCast,
-            places: yoloMusicResolvedPlaces,
           }) : { scenes: [], warnings: [] }
           if (shouldParse && (!Array.isArray(parseResult.scenes) || parseResult.scenes.length === 0)) {
             throw new Error('Could not parse the director script. Each shot needs a Shot line plus Keyframe prompt and Motion prompt fields.')
@@ -13954,7 +13991,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     yoloMusicPlan,
     yoloMusicProvidedLyrics,
     yoloMusicResolvedCast,
-    yoloMusicResolvedPlaces,
     yoloMusicScript,
     yoloMusicSongDurationSeconds,
     yoloMusicStyleNotes,
@@ -13984,7 +14020,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     if (!isConnected) return 0
     if (yoloActivePlanIsStale && !skipStaleCheck) {
       setFormError(isYoloMusicMode
-        ? 'The director script changed. Press Use the changes in the Director Script step before making shot videos.'
+        ? 'Director plan is out of date. Click Parse Script again before creating shot videos.'
         : 'Director plan is out of date. Click Build Plan again before creating shot videos.')
       setDirectorSubTab('plan-script')
       return 0
@@ -14060,17 +14096,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         message: 'ComfyUI is not connected yet. Start ComfyUI, then queue generation.',
       }
     }
-    if (generationMode === 'single' && supportsExplicitGenerationDuration(workflowId)) {
-      try {
-        buildStagedGenerationSettings({ workflowId, durationSeconds: duration, fps, resolution })
-        if (conditioningAudio?.source === 'explicit_audio_asset_range' && !conditioningAudio.rangeWithinKnownSource) {
-          throw new Error('The conditioning-audio range exceeds its known source duration. Review the audio range before queueing.')
-        }
-      } catch (error) {
-        setFormError(error.message)
-        return { success: false, message: error.message }
-      }
-    }
     if (!isConnected && launcherCanAutoStart) {
       void startComfyLauncher()
     }
@@ -14094,16 +14119,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     }
     if (hasBlockingDependencies) {
       const message = 'Missing required workflow dependencies. Install the missing items listed below and re-check.'
-      setFormError(message)
-      return { success: false, message }
-    }
-    if (workflowId === 'music-gen-yue2' && !currentProjectHandle) {
-      const message = 'Create or open a project before generating YuE2 music so the audio can be saved with it.'
-      setFormError(message)
-      return { success: false, message }
-    }
-    if (workflowId === 'music-gen-yue2' && !String(musicTags || '').trim()) {
-      const message = 'Describe the music style, mood, or instruments first.'
       setFormError(message)
       return { success: false, message }
     }
@@ -14184,12 +14199,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         inputAssetId: job.inputAssetId || null,
         inputAssetName: job.inputAssetName || '',
         duration: job.duration,
-        ...(job.workflowId === 'music-gen-yue2' || job.workflowId === 'music-gen' ? {
-          musicLengthMode: job.musicLengthMode,
-          musicDuration: job.musicDuration,
-        } : {}),
         fps: job.fps,
-        conditioningAudio: job.conditioningAudio || null,
         resolution: job.resolution,
         status: job.status,
       },
@@ -14222,71 +14232,35 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         duration,
         fps,
         resolution: category === 'image' ? effectiveImageResolution : resolution,
-        conditioningAudio,
-        conditioningAudioNote: conditioningAudio
-          ? 'Uses this selected audio asset. A source range is verified only when explicitly reported here; timeline audio was not automatically matched.'
-          : 'No conditioning audio is selected. A timeline picture does not select a song segment.',
-        requestedSettings: usingTimelineFrame ? (frameForAI?.generationSettings || null) : null,
-        ...(workflowId === 'music-gen-yue2' || workflowId === 'music-gen' ? {
-          musicLengthMode: selectedMusicLength.lengthMode,
-          musicDuration: selectedMusicLength.durationSeconds,
-        } : {}),
       }
-      const blockers = []
-      if (frameForAI !== useFrameForAIStore.getState().frame) blockers.push('The staged frame is still updating. Inspect the prepared generation again after Generate restores it.')
-      if (generationMode !== 'single') blockers.push('Prepared generation supports single Generate mode only.')
-      if (!isConnected && !allowQueueWhileWaiting) blockers.push('ComfyUI is not connected and cannot currently accept this generation.')
-      if (selectedWorkflowManifest?.runnable === false) blockers.push('This workflow is a catalog preview, not a runnable workflow.')
-      if (dependencyCheckInProgress) blockers.push('Workflow dependencies are still being checked.')
-      if (hasBlockingDependencies) blockers.push('Required workflow dependencies are missing.')
-      if ((primaryAssetSlot || (currentWorkflow?.needsImage && assetInputSlots.length === 0)) && !selectedAsset && !usingTimelineFrame) blockers.push('Select the required input asset before queueing.')
-      if ((selectedWorkflowManifest?.fields || []).some(field => field?.type === 'assetSelect' && field.required && field.id !== 'audioAsset' && !selectedAssetFields[field.id])) blockers.push('Select all required workflow assets before queueing.')
-      if (workflowId === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID && !customGenerateImageValidation.ok) blockers.push('Load and validate the custom image workflow first.')
-      if (workflowId === CUSTOM_GENERATE_VIDEO_WORKFLOW_ID && !customGenerateVideoValidation.ok) blockers.push('Load and validate the custom video workflow first.')
-      if (detail.requireTimelineFrame !== false && !usingTimelineFrame) blockers.push('No usable timeline frame is staged. Prepare a frame first, or explicitly use requireTimelineFrame=false.')
-      if (selectedWorkflowManifest?.requiresAudio && !conditioningAudio) blockers.push('Select conditioning audio explicitly; staging a picture does not choose the matching song segment.')
-      if (conditioningAudio?.source === 'explicit_audio_asset_range' && !conditioningAudio.rangeWithinKnownSource) blockers.push('The explicit conditioning-audio range exceeds the known source duration.')
-      const mismatches = usingTimelineFrame ? getStagedGenerationMismatches(frameForAI, status) : []
-      if (mismatches.length) blockers.push(`The staged request differs from Generate in ${mismatches.join(', ')}. Stage the intended settings again; nothing will be queued.`)
-      try {
-        if (category === 'video' && supportsExplicitGenerationDuration(workflowId)) buildStagedGenerationSettings({ workflowId, durationSeconds: duration, fps, resolution })
-      } catch (error) { blockers.push(error.message) }
-      status.queueable = blockers.length === 0
-      status.blockers = blockers
-      if (blockers.length) {
-        respond({ success: false, previewOnly: detail.previewOnly !== false, error: blockers.join(' '), status })
+
+      if (detail.previewOnly !== false) {
+        respond({
+          success: true,
+          previewOnly: true,
+          action: 'queue_prepared_generation',
+          message: usingTimelineFrame
+            ? 'Prepared generation can be queued. No generation was queued in preview mode.'
+            : 'Generate state inspected. No generation was queued in preview mode.',
+          status,
+        })
         return
       }
 
-      const context = captureMcpContext()
-      const reviewSnapshot = {
-        generationMode, category, workflowId, prompt: fullPrompt, negativePrompt, seed, duration, fps,
-        resolution: status.resolution, conditioningAudio, requireTimelineFrame: detail.requireTimelineFrame !== false,
-        frameIdentity: usingTimelineFrame ? getPreparedFrameIdentity(frameForAI) : null,
-        inputIdentity: usingTimelineFrame ? null : getPreparedFrameIdentity(selectedAsset),
-        audioIdentity: getPreparedFrameIdentity(selectedAudioAsset),
-        selectedAssetFieldIds, referenceAssetId1, referenceAssetId2, templateParameterValues,
-        interpolationMultiplier, enableFpsMultiplier, wanQualityPreset, editSteps, editCfg,
-        musicTags, lyrics, musicDuration: selectedMusicLength.durationSeconds, musicLengthMode: selectedMusicLength.lengthMode, bpm, keyscale, frameTime,
-        importedWorkflow: isImportedWorkflowId(workflowId) ? getImportedWorkflowEntry(workflowId) : null,
-        customWorkflow: workflowId === CUSTOM_GENERATE_IMAGE_WORKFLOW_ID ? customGenerateImageWorkflow
-          : workflowId === CUSTOM_GENERATE_VIDEO_WORKFLOW_ID ? customGenerateVideoWorkflow : null,
+      if (generationMode !== 'single') {
+        respond({
+          success: false,
+          error: 'MCP queue_prepared_generation only supports the single Generate tab mode right now.',
+          status,
+        })
+        return
       }
-      try {
-        if (detail.previewOnly !== false) {
-          const previewToken = preparedGenerationReviews.preview(reviewSnapshot, context, detail.previewToken)
-          respond({ success: true, previewOnly: true, action: 'queue_prepared_generation',
-            message: 'Reviewed the exact prepared settings and inputs. No generation was queued.', status,
-            previewToken, expectedContext: context,
-            suggestedApplyPayload: { previewOnly: false, requireTimelineFrame: detail.requireTimelineFrame !== false,
-              previewToken, expectedContext: context } })
-          return
-        }
-        if (detail.expectedContext === undefined) throw new Error('Use the exact expectedContext returned by the prepared-generation preview. Nothing was queued.')
-        assertMcpContext(detail.expectedContext, 'prepared generation')
-        preparedGenerationReviews.consume(detail.previewToken, reviewSnapshot, context)
-      } catch (error) {
-        respond({ success: false, error: error.message, status })
+      if (detail.requireTimelineFrame !== false && !usingTimelineFrame) {
+        respond({
+          success: false,
+          error: 'No prepared timeline frame is staged in Generate. Run prepare_generation_from_timeline_context first, or call with requireTimelineFrame=false.',
+          status,
+        })
         return
       }
 
@@ -14333,41 +14307,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     resolution,
     selectedWorkflowManifest?.title,
     selectedWorkflowManifest?.needsImage,
-    selectedWorkflowManifest?.requiresAudio,
-    selectedWorkflowManifest?.runnable,
-    selectedWorkflowManifest?.fields,
-    dependencyCheckInProgress,
-    hasBlockingDependencies,
-    primaryAssetSlot,
-    assetInputSlots,
-    selectedAssetFields,
-    customGenerateImageValidation,
-    customGenerateVideoValidation,
-    conditioningAudio,
-    selectedAsset,
-    selectedAudioAsset,
-    selectedAssetFieldIds,
-    referenceAssetId1,
-    referenceAssetId2,
-    templateParameterValues,
-    seed,
-    interpolationMultiplier,
-    enableFpsMultiplier,
-    wanQualityPreset,
-    editSteps,
-    editCfg,
-    musicTags,
-    lyrics,
-    musicDuration,
-    selectedMusicLength.lengthMode,
-    selectedMusicLength.durationSeconds,
-    bpm,
-    keyscale,
-    frameTime,
-    customGenerateImageWorkflow,
-    customGenerateVideoWorkflow,
-    preparedGenerationReviews,
-    frameForAI,
     workflowId,
   ])
 
@@ -14437,13 +14376,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           respond({ success: false, error: `Workflow ${getWorkflowDisplayLabel(previewWorkflow) || previewWorkflow} is a catalog preview and cannot be queued yet.`, status })
           return
         }
-        const connectedForQueue = await checkHttpConnection()
-        status.isConnected = connectedForQueue
-        if (!connectedForQueue && !allowQueueWhileWaiting) {
+        if (!isConnected && !allowQueueWhileWaiting) {
           respond({ success: false, error: 'ComfyUI is not connected yet. Start ComfyUI, then queue generation.', status })
           return
         }
-        if (!connectedForQueue && launcherCanAutoStart) {
+        if (!isConnected && launcherCanAutoStart) {
           void startComfyLauncher()
         }
 
@@ -14512,8 +14449,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             inputFromTimelineFrame: true,
             audioAssetId: null,
             audioAssetName: '',
-            conditioningAudio: null,
-            audioStartSeconds: 0,
             assetFieldIds: {},
             referenceAssetId1: null,
             referenceAssetId2: null,
@@ -14578,7 +14513,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   }, [
     addComfyLog,
     allowQueueWhileWaiting,
-    checkHttpConnection,
     createQueuedJob,
     duration,
     fps,
@@ -14640,7 +14574,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             height: Math.max(1, Math.round(height / divisor)),
           }
         }
-        const mergeTemplateParameters = (settings, detail, requestedResolution, importedEntry) => {
+        const mergeTemplateParameters = (settings, detail, requestedResolution) => {
           const explicit = {
             ...(settings?.templateParameters && typeof settings.templateParameters === 'object' ? settings.templateParameters : {}),
             ...(settings?.parameters && typeof settings.parameters === 'object' ? settings.parameters : {}),
@@ -14648,12 +14582,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             ...(detail?.parameters && typeof detail.parameters === 'object' ? detail.parameters : {}),
           }
           const next = { ...explicit }
-          if (importedEntry?.source?.format === 'api') {
-            const allowed = new Set((importedEntry.bindings?.parameters || []).map(binding => binding.fieldId))
-            const unsupported = Object.keys(next).filter(key => !allowed.has(key))
-            if (unsupported.length) throw new Error(`Use exact inspected API workflow parameter field IDs: ${unsupported.join(', ')}.`)
-            return next
-          }
           const aspect = aspectParametersFromResolution(requestedResolution)
           if (aspect) {
             if (typeof next.target_aspect_w === 'undefined') next.target_aspect_w = aspect.width
@@ -14767,7 +14695,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           resolution
         )
         const seedValue = finiteOrNull(detail.seed ?? settings.seed) ?? Math.floor(Math.random() * 2147483647)
-        const requestedTemplateParameters = mergeTemplateParameters(settings, detail, requestedResolution, importedEntry)
+        const requestedTemplateParameters = mergeTemplateParameters(settings, detail, requestedResolution)
         const hasRequestedTemplateParameters = Object.keys(requestedTemplateParameters).length > 0
         const requiredAssetFieldIds = detail.assetFieldIds && typeof detail.assetFieldIds === 'object'
           ? detail.assetFieldIds
@@ -14819,58 +14747,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           } : null,
         }
 
-        const describeApiParameterSemantics = () => {
-          if (importedEntry?.source?.format !== 'api') return null
-          const parameters = importedEntry.bindings?.parameters || []
-          // Probe the actual binder, not a guessed duration/size mapping. API
-          // graph primitives may feed arbitrary math, crops or multiple outputs.
-          const probe = {}
-          for (const binding of parameters) {
-            probe[binding.nodeId] ||= { inputs: {} }
-            probe[binding.nodeId].inputs[binding.inputKey] = null
-          }
-          const bound = applyImportedWorkflowBindings(probe, { parameters }, { templateParameters: requestedTemplateParameters })
-          const applied = parameters.filter(binding => Object.prototype.hasOwnProperty.call(requestedTemplateParameters, binding.fieldId)
-            && bound[binding.nodeId]?.inputs?.[binding.inputKey] !== null)
-          const defaults = parameters.filter(binding => !applied.includes(binding))
-          const describe = (binding, value) => ({ fieldId: String(binding.fieldId).slice(0, 256),
-            nodeId: String(binding.nodeId).slice(0, 128), inputKey: String(binding.inputKey).slice(0, 128),
-            value: typeof value === 'number' || typeof value === 'boolean' ? value : null })
-          return {
-            mode: 'exact-api-bindings-only', genericControlsAffectGraph: false,
-            requestedMetadata: { durationSeconds: requestedDuration, fps: requestedFps, resolution: requestedResolution },
-            effectiveOutput: { verified: false, durationSeconds: null, fps: null, resolution: null },
-            exactAppliedBindings: applied.slice(0, 64).map(binding => describe(binding, bound[binding.nodeId].inputs[binding.inputKey])),
-            retainedDefaults: { count: defaults.length, bindings: defaults.slice(0, 64).map(binding => describe(binding, binding.defaultValue)) },
-            appliedBindingCount: applied.length, truncated: applied.length > 64 || defaults.length > 64,
-            warnings: ['Managed API duration, FPS and resolution are requested metadata only; they do not configure graph inputs. Inspect this workflow with includeGraph:true and set exact templateParameters field IDs. Only the listed input bindings are applied; untouched graph defaults remain. Actual output duration, FPS and resolution are unverified until the generated media is inspected.'],
-          }
-        }
-        let apiParameterSemantics = describeApiParameterSemantics()
-        const reportApiParameterSemantics = () => {
-          if (!apiParameterSemantics) return
-          Object.assign(previewPlan, { durationSeconds: null, fps: null, resolution: null,
-            requestedMetadata: apiParameterSemantics.requestedMetadata, apiParameterSemantics,
-            warnings: apiParameterSemantics.warnings })
-        }
-        reportApiParameterSemantics()
-
-        // For an existing import, inspect prerequisites before re-importing,
-        // starting ComfyUI or creating a queue job. Only this local control
-        // flow may attest that a dependency refusal had no setup side effects.
-        let templateSetupChanged = false
-        const dependencyFailure = (check) => ({
-          success: false, action: 'queue_timeline_template_generation',
-          code: 'WORKFLOW_DEPENDENCIES_MISSING', generationSubmitted: false,
-          outcome: templateSetupChanged ? 'setup-changed' : 'not-started',
-          workflowId: importedEntry.workflowId,
-          error: 'Missing required workflow dependencies for this template generation.',
-          dependencyCheck: buildWorkflowDependencyReport(check), status, plan: previewPlan,
-        })
-        const initialDependencyCheck = importedEntry ? await checkWorkflowDependencies(importedEntry.workflowId) : null
-        previewPlan.dependencyCheck = buildWorkflowDependencyReport(initialDependencyCheck)
-        previewPlan.readiness = initialDependencyCheck?.status || 'unchecked-needs-import'
-
         if (detail.previewOnly !== false) {
           respond({
             success: true,
@@ -14882,11 +14758,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             status,
             plan: previewPlan,
           })
-          return
-        }
-
-        if (initialDependencyCheck?.hasPack && initialDependencyCheck.hasBlockingIssues) {
-          respond(dependencyFailure(initialDependencyCheck))
           return
         }
 
@@ -14907,14 +14778,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           const importProgress = (_step, message) => {
             if (message) addComfyLog('status', `MCP template import: ${message}`)
           }
-          templateSetupChanged = true
           const importResult = importedEntry
             ? await reimportImportedWorkflow(importedEntry.workflowId, { onProgress: importProgress })
             : await importComfyTemplate(template, { onProgress: importProgress })
           importedEntry = importResult?.entry || null
           manifest = importedEntry?.manifest || null
-          apiParameterSemantics = describeApiParameterSemantics()
-          reportApiParameterSemantics()
         }
 
         if (!importedEntry || !manifest) {
@@ -14957,23 +14825,19 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           normalizedAssetFieldIds[field.id] = assetId
         }
 
-        const connectedForQueue = await checkHttpConnection()
-        status.isConnected = connectedForQueue
-        if (!connectedForQueue && !allowQueueWhileWaiting) {
+        if (!isConnected && !allowQueueWhileWaiting) {
           respond({ success: false, error: 'ComfyUI is not connected yet. Start ComfyUI, then queue generation.', status, plan: previewPlan })
           return
         }
-        // Recheck even after a successful preview/import: model availability
-        // may change before apply. An import attempt is a setup mutation, so
-        // a later refusal must never claim the stronger "not-started" outcome.
-        const finalDependencyCheck = await checkWorkflowDependencies(importedEntry.workflowId)
-        previewPlan.dependencyCheck = buildWorkflowDependencyReport(finalDependencyCheck)
-        previewPlan.readiness = finalDependencyCheck?.status || 'unknown'
-        if (finalDependencyCheck?.hasPack && finalDependencyCheck.hasBlockingIssues) {
-          respond(dependencyFailure(finalDependencyCheck))
+        if (!isConnected && launcherCanAutoStart) {
+          void startComfyLauncher()
+        }
+
+        const depsOk = await validateDependenciesForQueue([importedEntry.workflowId], 'MCP template generation')
+        if (!depsOk) {
+          respond({ success: false, error: 'Missing required workflow dependencies for this template generation.', status, plan: previewPlan })
           return
         }
-        if (!connectedForQueue && launcherCanAutoStart) void startComfyLauncher()
 
         const outputType = String(manifest.outputType || 'video').toLowerCase()
         const jobCategory = outputType === 'image' ? 'image' : outputType === 'audio' ? 'audio' : 'video'
@@ -14998,7 +14862,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           fps: requestedFps,
           resolution: requestedResolution,
           templateParameters: requestedTemplateParameters,
-          ...(apiParameterSemantics ? { apiParameterSemantics } : {}),
           folderId: detail.folderId || detail.outputFolderId || null,
           status: 'queued',
           progress: 0,
@@ -15037,11 +14900,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             inputAssetType: job.inputAssetType,
             prompt: job.prompt,
             seed: job.seed,
-            duration: apiParameterSemantics ? null : job.duration,
-            fps: apiParameterSemantics ? null : job.fps,
-            resolution: apiParameterSemantics ? null : job.resolution,
-            ...(apiParameterSemantics ? { requestedMetadata: apiParameterSemantics.requestedMetadata,
-              apiParameterSemantics, warnings: apiParameterSemantics.warnings } : {}),
+            duration: job.duration,
+            fps: job.fps,
+            resolution: job.resolution,
             templateParameters: job.templateParameters,
             folderId: job.folderId || null,
             status: job.status,
@@ -15062,7 +14923,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   }, [
     addComfyLog,
     allowQueueWhileWaiting,
-    checkHttpConnection,
     assets,
     createQueuedJob,
     duration,
@@ -15280,13 +15140,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           }
         }
 
-        const connectedForQueue = await checkHttpConnection()
-        status.isConnected = connectedForQueue
-        if (!connectedForQueue && !allowQueueWhileWaiting) {
+        if (!isConnected && !allowQueueWhileWaiting) {
           respond({ success: false, error: 'ComfyUI is not connected yet. Start ComfyUI, then queue generation.', status })
           return
         }
-        if (!connectedForQueue && launcherCanAutoStart) {
+        if (!isConnected && launcherCanAutoStart) {
           void startComfyLauncher()
         }
 
@@ -15443,7 +15301,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
   }, [
     addComfyLog,
     allowQueueWhileWaiting,
-    checkHttpConnection,
     createQueuedJob,
     duration,
     effectiveImageResolution,
@@ -15495,15 +15352,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           promptId: job.promptId || null,
           promptLabel: job.mcpBatch?.promptLabel || null,
           batchId: job.mcpBatch?.id || null,
-          duration: job.apiParameterSemantics ? null : job.duration || null,
-          conditioningAudio: job.conditioningAudio || null,
-          resolution: job.apiParameterSemantics ? null : job.resolution || null,
-          ...(job.apiParameterSemantics ? {
-            fps: null,
-            requestedMetadata: job.apiParameterSemantics.requestedMetadata,
-            apiParameterSemantics: job.apiParameterSemantics,
-            warnings: job.apiParameterSemantics.warnings,
-          } : {}),
+          duration: job.duration || null,
+          resolution: job.resolution || null,
           resultAssetIds: Array.isArray(job.resultAssetIds) ? job.resultAssetIds : [],
           error: job.error || null,
         })),
@@ -15999,16 +15849,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
   // Save generation result to project assets
   const saveGenerationResult = async (result, wfId, job) => {
-    const isYue2Music = (job?.workflowId || wfId) === 'music-gen-yue2'
-    const targetProjectHandle = isYue2Music ? job?.originProject?.handle : (job?.originProject?.handle || currentProjectHandle)
-    if (isYue2Music && !targetProjectHandle) throw new Error('The YuE2 job has no origin project. Its audio remains in ComfyUI output for recovery.')
+    const targetProjectHandle = job?.originProject?.handle || currentProjectHandle
     if (!targetProjectHandle) return { didImportAny: false, importedAssets: [] }
     const importsIntoActiveProject = areProjectHandlesSame(targetProjectHandle, currentProjectHandle)
-    // Generation and downloads can outlive the render that started them.
-    // For YuE2, decide against the live store at each mutation boundary.
-    const shouldImportIntoActiveProject = () => isYue2Music
-      ? areProjectHandlesSame(targetProjectHandle, useProjectStore.getState().currentProjectHandle)
-      : importsIntoActiveProject
     let didImportAny = false
     const importedAssets = []
 
@@ -16052,19 +15895,17 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     ]
     const requestedOutputFolderId = String(job?.folderId || job?.outputFolderId || '').trim() || null
     const activeFolderExists = (folderId) => {
-      if (!folderId || !shouldImportIntoActiveProject()) return false
+      if (!folderId || !importsIntoActiveProject) return false
       return (useAssetsStore.getState().folders || []).some((folder) => folder?.id === folderId)
     }
     const getGeneratedFolderId = (kind, pathSegments) => {
-      if (!shouldImportIntoActiveProject()) return null
+      if (!importsIntoActiveProject) return null
       if (requestedOutputFolderId && activeFolderExists(requestedOutputFolderId)) return requestedOutputFolderId
       return ensureAssetFolderPath(pathSegments || generatedFolderPath(kind))
     }
     const saveImportedAssetRecord = async (assetRecord, folderPathSegments) => {
-      if (shouldImportIntoActiveProject()) {
-        const addedAsset = addAsset(isYue2Music
-          ? { ...assetRecord, folderId: getGeneratedFolderId('audio', folderPathSegments) }
-          : assetRecord)
+      if (importsIntoActiveProject) {
+        const addedAsset = addAsset(assetRecord)
         try {
           await saveProject()
         } catch (error) {
@@ -16218,6 +16059,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           }, generatedImageFolderPath)
           if (newAsset) importedAssets.push(newAsset)
           didImportAny = true
+          // Asset-library reference job (C4): bind the generated image back
+          // to its library entry so the next Regenerate-All skips it.
+          if (newAsset?.id && imageIndex === 0 && job?.peopleWizard?.assetLibraryEntryId) {
+            const entryId = job.peopleWizard.assetLibraryEntryId
+            useAssetLibraryStore.getState().setAssetId(entryId, newAsset.id)
+          }
         } catch (err) {
           console.warn('Failed to save image:', err)
           if (!importsIntoActiveProject) throw err
@@ -16274,18 +16121,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       try {
         const url = comfyui.getMediaUrl(result.filename, result.subfolder, result.outputType)
         const resp = await fetch(url)
-        if (isYue2Music && !resp.ok) throw new Error(`YuE2 audio download failed (${resp.status}).`)
         const blob = await resp.blob()
-        const file = new File([blob], result.filename, { type: isYue2Music ? 'audio/flac' : 'audio/mpeg' })
+        const file = new File([blob], result.filename, { type: 'audio/mpeg' })
         const assetInfo = await importAsset(targetProjectHandle, file, 'audio')
-        if (isYue2Music && (!Number.isFinite(Number(assetInfo.duration)) || Number(assetInfo.duration) <= 0)) {
-          throw new Error(`YuE2 audio was saved, but its duration could not be read. Recover it from ${assetInfo.path || 'the origin project’s assets/audio folder'}.`)
-        }
-        const musicLength = isYue2Music ? resolveMusicLength({
-          backend: 'yue2', lengthMode: job?.musicLengthMode, durationSeconds: job?.musicDuration,
-        }) : null
-        const completion = isYue2Music ? getMusicCompletion({ backend: 'yue2', ...musicLength }, assetInfo.duration) : null
-        const blobUrl = shouldImportIntoActiveProject() ? URL.createObjectURL(file) : null
+        const blobUrl = importsIntoActiveProject ? URL.createObjectURL(file) : null
         const newAsset = await saveImportedAssetRecord({
           ...assetInfo,
           name: shortFilmVoiceName || (directorMeta ? resolvedName : autoName),
@@ -16296,30 +16135,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           yolo: directorMeta || undefined,
           shortFilm: shortFilmMeta || undefined,
           folderId: generatedAudioFolderId,
-          ...(isYue2Music ? {
-            generatedMusic: {
-              backend: 'yue2', version: 1, workflowId: 'music-gen-yue2',
-              modelFiles: getMusicBackend('yue2').modelFiles,
-              durationMode: 'maximum', lengthMode: musicLength.lengthMode, durationSeconds: musicLength.durationSeconds,
-              measuredDurationSeconds: assetInfo.duration,
-              completion,
-              tags: jobTags, lyrics: job?.lyrics || '', instrumental: !String(job?.lyrics || '').trim(), seed: jobSeed,
-            },
-          } : {}),
-          settings: isYue2Music
-            ? { musicBackend: 'yue2', musicWorkflowVersion: 1, musicLengthMode: musicLength.lengthMode, maximumDuration: musicLength.durationSeconds, duration: assetInfo.duration, musicTags: jobTags || undefined }
-            : { duration: job?.musicDuration, bpm: job?.bpm, keyscale: job?.keyscale, musicTags: jobTags || undefined, voice: shortFilmMeta?.voicePreset || job?.elevenLabsTts?.voice }
+          settings: { duration: job?.musicDuration, bpm: job?.bpm, keyscale: job?.keyscale, musicTags: jobTags || undefined, voice: shortFilmMeta?.voicePreset || job?.elevenLabsTts?.voice }
         }, generatedAudioFolderPath)
-        if (completion?.warning) addComfyLog('warning', completion.warning)
         if (newAsset) importedAssets.push(newAsset)
         didImportAny = true
       } catch (err) {
         console.warn('Failed to save audio:', err)
-        // Do not mark a temporary ComfyUI URL as a safely imported YuE2 take.
-        if (isYue2Music) {
-          importedMediaSignaturesRef.current.delete(`audio:${result.filename}|${result.subfolder || ''}|${result.outputType || 'output'}`)
-          throw err
-        }
         if (!importsIntoActiveProject) throw err
         const url = comfyui.getMediaUrl(result.filename, result.subfolder, result.outputType)
         const fallbackAsset = addAsset({
@@ -16455,12 +16276,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     let importedAssets = []
 
     try {
-      if (job.workflowId === 'music-gen-yue2' && !job?.originProject?.handle) {
-        throw new Error('This YuE2 job has no origin project. Open a project and queue a new music take.')
-      }
       let uploadedFilename = null
-      // The real size of the input picture, so a video can take its shape.
-      let inputPictureSize = null
       let uploadedVideoFilename = null
       let referenceFilenames = []
       let assetFieldFilenames = {}
@@ -16566,7 +16382,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           ? 'image'
           : importedJobEntry.manifest?.outputType === 'audio'
             ? 'audio'
-          : 'video'}/belrog_${outputToken}`
+          : 'video'}/Belrog_${outputToken}`
       ) : (
         isSingleVideoWorkflowId(job.workflowId) ||
         job.workflowId === 'ltx23-t2v' ||
@@ -16576,8 +16392,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         job.workflowId === 'seedance2-flf2v' ||
         job.workflowId === 'seedance2-r2v' ||
         job.workflowId === 'minimax-h3-r2v' ||
-        job.workflowId === MINIMAX_H3_LIP_SYNC_WORKFLOW_ID ||
-        job.workflowId === MINIMAX_H3_LOCAL_WORKFLOW_ID ||
         job.workflowId === TOPAZ_VIDEO_UPSCALE_WORKFLOW_ID
           ? `video/director_${outputToken}`
           : (
@@ -16586,7 +16400,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             job.workflowId === 'image-edit-model-product' ||
             job.workflowId === 'seedream-5-lite-image-edit' ||
             job.workflowId === 'z-image-turbo' ||
-            job.workflowId === FLUX2_KLEIN_WORKFLOW_ID ||
             job.workflowId === 'longcat-text-to-image' ||
             job.workflowId === 'ernie-image-turbo' ||
             job.workflowId === 'flux2-text-to-image' ||
@@ -16600,13 +16413,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             job.workflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID ||
             job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
           )
-            ? `image/belrog_${outputToken}`
+            ? `image/Belrog_${outputToken}`
             : (
-              job.workflowId === 'music-gen-yue2'
-                ? `audio/belrog_music_${outputToken}`
-                : job.workflowId === 'sonilo-v2m' || job.workflowId === ELEVENLABS_TTS_WORKFLOW_ID
-                  ? `audio/belrog_${outputToken}`
-                  : ''
+              job.workflowId === 'sonilo-v2m' || job.workflowId === ELEVENLABS_TTS_WORKFLOW_ID
+              ? `audio/Belrog_${outputToken}`
+                : ''
             )
       )
       const peopleWizardPrefix = slugifyNameToken(job?.peopleWizard?.assetPrefix || '', { fallback: '', maxLength: 48 })
@@ -16655,10 +16466,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             progress: 100,
             restoredFromLedger: false,
             resultAssetIds: importedAssets.map((asset) => asset?.id).filter(Boolean),
-            ...(job.workflowId === 'music-gen-yue2' ? {
-              completion: importedAssets[0]?.generatedMusic?.completion || null,
-              completionWarning: importedAssets[0]?.generatedMusic?.completion?.warning || null,
-            } : {}),
           })
         } else {
           const msg = 'Generation finished but the output could not be detected'
@@ -16677,8 +16484,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       if (job.needsImage) {
         let fileToUpload = null
         if (job.inputFromTimelineFrame) {
-          fileToUpload = job.timelineFrameFile
-          if (!fileToUpload) throw new Error('The reviewed timeline frame is no longer available. Stage and queue this shot again; another staged picture will not be substituted.')
+          const frame = useFrameForAIStore.getState().frame
+          fileToUpload = frame?.file
+          if (!fileToUpload) throw new Error('Timeline frame not available')
         } else {
           const inputAsset = findJobAsset(job.inputAssetId, 'input')
           if (!inputAsset) {
@@ -16693,13 +16501,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             fileToUpload = await extractFrameAsFile(inputUrl, job.frameTime || 0, `frame_${Date.now()}.png`)
           } else if (inputAsset.type === 'image') {
             fileToUpload = await createFileFromJobAsset(inputAsset, `input_${Date.now()}.png`)
-            try {
-              const bitmap = await createImageBitmap(fileToUpload)
-              inputPictureSize = { width: bitmap.width, height: bitmap.height }
-              bitmap.close?.()
-            } catch {
-              inputPictureSize = null
-            }
           }
           if (!fileToUpload) throw new Error('Unsupported input asset')
         }
@@ -16717,9 +16518,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       // upload it to Comfy's input folder, and keep the returned filename so
       // the modifier can reference it on the LoadAudio node.
       let uploadedAudioFilename = null
-      const isLipSyncShot = job.workflowId === MINIMAX_H3_LIP_SYNC_WORKFLOW_ID
-      const isCloudH3MusicShot = isLipSyncShot || (job.workflowId === MINIMAX_H3_CLOUD_WORKFLOW_ID && Boolean(job.musicShot))
-      const audioUploadAssetId = job.workflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID || job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID || job.workflowId === MINIMAX_H3_LOCAL_WORKFLOW_ID || isCloudH3MusicShot
+      const audioUploadAssetId = job.workflowId === MUSIC_VIDEO_SHOT_WORKFLOW_ID || job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID
         ? job.musicAudioAssetId
         : (job.workflowId === 'ltx23-ia2v' || job.workflowId === 'ltx23-id-lora' || job.workflowId === SHORT_FILM_DIALOGUE_VIDEO_WORKFLOW_ID ? job.audioAssetId : null)
       if (audioUploadAssetId) {
@@ -16729,8 +16528,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             ? 'Audio asset not found — re-select the song/voiceover in Director setup and rebuild the plan.'
             : 'Audio asset not found — re-select conditioning audio and queue again.')
         }
-        // The cloud H3 node uses the whole file it is given, so it gets only this shot's part of the song.
-        const shouldTrimMusicAudio = job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID || isCloudH3MusicShot
+        const shouldTrimMusicAudio = job.workflowId === CUSTOM_MUSIC_VIDEO_WORKFLOW_ID
         let cleanupPath = null
         try {
           let file = null
@@ -16743,8 +16541,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               throw new Error('Could not find the local song audio file to trim.')
             }
             const shotStart = Math.max(0, Number(job?.musicShot?.audioStart) || 0)
-            const askedDuration = Math.max(0.25, Number(job.duration || job?.musicShot?.length || 0) || 0)
-            const shotDuration = isLipSyncShot ? h3LipSyncSeconds(askedDuration) : isCloudH3MusicShot ? h3CloudSeconds(askedDuration) : askedDuration
+            const shotDuration = Math.max(0.25, Number(job.duration || job?.musicShot?.length || 0) || 0)
             const trimResult = await window.electronAPI.trimAudioSegment({
               inputPath: sourcePath,
               startSeconds: shotStart,
@@ -16790,7 +16587,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
       // Upload optional reference images for workflows that support them
       const supportsReferenceImages = (
-        job.workflowId === FLUX2_KLEIN_WORKFLOW_ID ||
         job.workflowId === 'image-edit' ||
         job.workflowId === 'image-edit-model-product' ||
         job.workflowId === 'seedream-5-lite-image-edit' ||
@@ -16900,7 +16696,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         modifyViduQ2I2VWorkflow,
         modifyKlingO3I2VWorkflow,
         modifyMusicWorkflow,
-        modifyYue2MusicWorkflow,
         modifyMusicVideoShotWorkflow,
         modifyElevenLabsTextToSpeechWorkflow,
         modifyLocalApiWorkflow,
@@ -16948,7 +16743,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             negativePrompt: job.negativePrompt,
             inputImage: uploadedFilename,
             inputAudio: uploadedAudioFilename,
-            audioStartSeconds: job.audioStartSeconds || 0,
             width: job.resolution?.width,
             height: job.resolution?.height,
             duration: job.duration,
@@ -16983,23 +16777,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           modifiedWorkflow = modifyTopazVideoUpscaleWorkflow(workflowJson, {
             inputVideo: uploadedVideoFilename,
             filenamePrefix: outputPrefix || 'video/topaz_video_upscale',
-          })
-          break
-        case MINIMAX_H3_LOCAL_WORKFLOW_ID:
-          // Local MiniMax H3: the keyframe is the first frame and the shot's
-          // part of the song (cut out inside the graph) drives the lips.
-          modifiedWorkflow = modifyMinimaxH3LocalWorkflow(workflowJson, {
-            prompt: job.prompt,
-            keyframePrompt: job.musicShot?.referenceImagePrompt,
-            inputImage: uploadedFilename,
-            inputAudio: uploadedAudioFilename,
-            audioStart: job.musicShot?.audioStart,
-            duration: job.duration || job.musicShot?.length,
-            // The video takes the shape of its own keyframe.
-            ...h3SizeFromPicture(inputPictureSize, job.resolution),
-            seed: job.seed,
-            quality: job.videoQuality,
-            filenamePrefix: outputPrefix || 'video/Belrog_h3',
           })
           break
         case MUSIC_VIDEO_SHOT_WORKFLOW_ID: {
@@ -17037,7 +16814,8 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             inputImage: uploadedFilename,
             inputAudio: uploadedAudioFilename,
             seed: job.seed,
-            ...h3SizeFromPicture(inputPictureSize, job.resolution),
+            width: job.resolution?.width,
+            height: job.resolution?.height,
             fps: job.fps,
             duration: job.duration,
             filenamePrefix: outputPrefix || 'video/custom_music',
@@ -17124,32 +16902,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           })
           break
         }
-        case MINIMAX_H3_LIP_SYNC_WORKFLOW_ID:
-          // Cloud lip sync: the keyframe sings this shot's part of the song.
-          modifiedWorkflow = modifyMinimaxH3LipSyncWorkflow(workflowJson, {
-            inputImage: uploadedFilename,
-            inputAudio: uploadedAudioFilename,
-            seed: job.seed,
-            filenamePrefix: outputPrefix || 'video/Belrog_h3_lip_sync',
-          })
-          break
         case 'minimax-h3-r2v': {
-          if (job.musicShot) {
-            // A music video shot: the keyframe and this shot's part of the song.
-            modifiedWorkflow = modifyMinimaxH3CloudWorkflow(workflowJson, {
-              prompt: job.prompt,
-              keyframePrompt: job.musicShot?.referenceImagePrompt,
-              inputImage: uploadedFilename,
-              inputAudio: uploadedAudioFilename,
-              duration: job.duration || job.musicShot?.length,
-              width: job.resolution?.width,
-              height: job.resolution?.height,
-              seed: job.seed,
-              level: job.videoQuality,
-              filenamePrefix: outputPrefix || 'video/Belrog_h3_cloud',
-            })
-            break
-          }
           modifiedWorkflow = modifyMinimaxH3ReferenceWorkflow(workflowJson, {
             prompt: job.prompt,
             width: job.resolution?.width,
@@ -17182,32 +16935,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           })
           break
         case CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID:
-        case CUSTOM_AD_KEYFRAME_WORKFLOW_ID: {
-          // A workflow with a VELORN_PLACE_IMAGE node gets the shot's place
-          // there, and its two reference inputs carry people only.
-          const hasPlaceInput = Boolean(validateCustomKeyframeWorkflow(workflowJson, {
-            requireInputImage: false,
-            requirePrompt: false,
-          })?.endpoints?.placeImage)
-          const placeSplit = splitPlaceFromReferences({
-            referenceIds: [job.referenceAssetId1, job.referenceAssetId2],
-            referenceFilenames,
-            placeAssetId: job.placeAssetId,
-            hasPlaceInput,
-          })
-          let placeFilename = ''
-          if (placeSplit.sendPlace) {
-            const placeAsset = findJobAsset(job.placeAssetId, 'place')
-            if (placeAsset?.type === 'image') {
-              try {
-                const placeFile = await createFileFromJobAsset(placeAsset, `place_${Date.now()}.png`)
-                const uploaded = placeFile ? await comfyui.uploadFile(placeFile) : null
-                placeFilename = uploaded?.name || placeFile?.name || ''
-              } catch (_) {
-                placeFilename = ''
-              }
-            }
-          }
+        case CUSTOM_AD_KEYFRAME_WORKFLOW_ID:
           modifiedWorkflow = modifyCustomKeyframeWorkflow(workflowJson, {
             requireInputImage: job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
               ? job?.customWorkflow?.requiresInputImage !== false
@@ -17217,40 +16945,10 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             seed: job.seed,
             width: job.resolution?.width,
             height: job.resolution?.height,
-            // If the place could not be sent, the pictures stay as they were.
-            referenceImages: placeFilename ? placeSplit.referenceFilenames : referenceFilenames,
-            placeImage: placeFilename,
+            referenceImages: referenceFilenames,
             filenamePrefix: outputPrefix || 'image/custom_keyframe',
           })
-          // A picture input this shot does not use is switched off for this
-          // run, so an old picture saved in the workflow cannot leak in.
-          if (job.workflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID) {
-            try {
-              const sentPeople = placeFilename ? placeSplit.referenceFilenames : referenceFilenames
-              const found = validateCustomKeyframeWorkflow(modifiedWorkflow, {
-                requireInputImage: false,
-                requirePrompt: false,
-              })?.endpoints || {}
-              const unusedInputs = [
-                !sentPeople[0] && found.referenceImage1,
-                !sentPeople[1] && found.referenceImage2,
-                !placeFilename && found.placeImage,
-              ].filter(Boolean)
-              if (unusedInputs.length > 0) {
-                const switched = switchOffUnusedPictureInputs(
-                  modifiedWorkflow,
-                  unusedInputs,
-                  await comfyui.getObjectInfoCached(),
-                  [found.outputImage].filter(Boolean),
-                )
-                modifiedWorkflow = switched.workflow
-              }
-            } catch (_) {
-              // Could not ask ComfyUI about its nodes: run the workflow as built.
-            }
-          }
           break
-        }
         case CUSTOM_GENERATE_IMAGE_WORKFLOW_ID:
           if (job?.customWorkflow?.agentControlled) {
             modifiedWorkflow = modifyCustomKeyframeWorkflow(workflowJson, {
@@ -17284,17 +16982,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               filenamePrefix: outputPrefix || 'image/custom_generate',
             })
           }
-          break
-        case FLUX2_KLEIN_WORKFLOW_ID:
-          modifiedWorkflow = modifyFlux2KleinWorkflow(workflowJson, {
-            prompt: job.prompt,
-            inputImage: uploadedFilename,
-            referenceImages: referenceFilenames,
-            seed: job.seed,
-            width: job.resolution?.width,
-            height: job.resolution?.height,
-            filenamePrefix: peopleWizardImagePrefix || outputPrefix || 'image/Belrog_klein',
-          })
           break
         case 'z-image-turbo':
           modifiedWorkflow = modifyZImageTurboWorkflow(workflowJson, {
@@ -17428,16 +17115,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             keyscale: job.keyscale,
           })
           break
-        case 'music-gen-yue2':
-          modifiedWorkflow = modifyYue2MusicWorkflow(workflowJson, {
-            tags: job.musicTags,
-            lyrics: job.lyrics,
-            duration: job.musicDuration,
-            lengthMode: job.musicLengthMode,
-            seed: job.seed,
-            filenamePrefix: outputPrefix || 'audio/belrog_music_yue2',
-          })
-          break
         case ELEVENLABS_TTS_WORKFLOW_ID:
           modifiedWorkflow = modifyElevenLabsTextToSpeechWorkflow(workflowJson, {
             ...(job.elevenLabsTts || {}),
@@ -17449,7 +17126,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           break
         default:
           if (importedJobEntry?.bindings) {
-            if (importedJobEntry.source?.format === 'api') workflowJson = validateApiWorkflow(workflowJson)
             modifiedWorkflow = applyImportedWorkflowBindings(workflowJson, importedJobEntry.bindings, {
               prompt: job.prompt,
               negativePrompt: job.negativePrompt,
@@ -17460,7 +17136,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               templateParameters: job.templateParameters,
               filenamePrefix: outputPrefix,
             })
-            if (importedJobEntry.source?.format === 'api') modifiedWorkflow = validateApiWorkflow(modifiedWorkflow)
             break
           }
           if (importedJobEntry) {
@@ -17470,14 +17145,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       }
 
       updateJob(job.id, { status: 'queuing', progress: 40 })
-      // Pictures or videos from a person's own workflow that are waiting behind this one
-      // can be approved together if the workflow is a paid one.
-      const waitingLikeThis = [CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID, CUSTOM_MUSIC_VIDEO_WORKFLOW_ID].includes(job.workflowId)
-        ? (queueRef.current || []).filter((other) => other?.id !== job.id
-          && other?.workflowId === job.workflowId && other?.status === 'queued'
-          && other?.customWorkflow?.jsonText === job?.customWorkflow?.jsonText).length
-        : 0
-      const promptId = await comfyui.queuePrompt(modifiedWorkflow, { batchCount: waitingLikeThis + 1 })
+      const promptId = await comfyui.queuePrompt(modifiedWorkflow)
       if (!promptId) throw new Error('Failed to queue prompt')
 
       // Claim this prompt ID so the ComfyUI-tab auto-import bridge
@@ -17510,10 +17178,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           status: 'done',
           progress: 100,
           resultAssetIds: importedAssets.map((asset) => asset?.id).filter(Boolean),
-          ...(job.workflowId === 'music-gen-yue2' ? {
-            completion: importedAssets[0]?.generatedMusic?.completion || null,
-            completionWarning: importedAssets[0]?.generatedMusic?.completion?.warning || null,
-          } : {}),
         })
       } else {
         const msg = 'Generation finished but the output could not be detected'
@@ -17527,13 +17191,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     } catch (err) {
       const msg = err?.message || 'Generation failed'
       addComfyLog('error', msg)
-      if (String(err?.code || '').startsWith('GENERATION_SPENDING_')) {
-        // A refusal/unknown submission is not an invitation to keep prompting
-        // for the next paid take. Leave the rest of this batch for user review.
-        queuePausedRef.current = true
-        setGenerationQueue(previous => previous.map(item => item.status === 'queued' ? { ...item, status: 'paused' } : item))
-        addComfyLog('warning', 'Generation queue paused after the spending safeguard stopped a submission. Review Generation spending in Assistant settings before resuming; inspect ComfyUI history if the result was uncertain.')
-      }
       updateJob(job.id, {
         status: 'error',
         error: msg,
@@ -17632,15 +17289,13 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     previewAssetIndex: workflowPreviewAssetIndex,
     selectedAsset,
     audioAsset: selectedAudioAsset,
-    conditioningAudio,
     ...selectedAssetFields,
     ...templateParameterValues,
     prompt,
     musicTags,
     lyrics,
     duration,
-    musicDuration: workflowId === 'music-gen-yue2' ? yue2CustomDuration : musicDuration,
-    musicLengthMode,
+    musicDuration,
     resolution,
     imageResolution,
     fps,
@@ -17725,11 +17380,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           setDuration(value)
           break
         case 'musicDuration':
-          if (workflowId === 'music-gen-yue2') setYue2CustomDuration(value)
-          else setMusicDuration(value)
-          break
-        case 'musicLengthMode':
-          setMusicLengthMode(value)
+          setMusicDuration(value)
           break
         case 'resolution':
           setResolution(value)
@@ -17766,7 +17417,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-sf-dark-950">
-      <p className="m-0 border-b border-sf-dark-700 px-4 py-1.5 text-xs text-sf-text-muted">Requires local ComfyUI; API-node workflows may use paid services.</p>
       {showLauncherBanner && (
         <div className="px-4 py-2.5 border-b border-sky-500/30 bg-sky-500/10 flex items-center gap-3">
           <Loader2 className={`w-4 h-4 text-sky-300 ${launcherIsBooting || launcherWaitingForExternal ? 'animate-spin' : ''}`} />
@@ -17807,24 +17457,28 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       {/* Header */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-sf-dark-700">
         <div className="flex items-center gap-3">
-          {/* The tab is "Director" and opens straight into it, so there is no
-              mode switch. The single-workflow view ('single') is hidden, not
-              deleted: "Extend with AI" / "Starting keyframe for AI" in the
-              editor and the agent's prepare-generation tools still open it,
-              and this button is the way back. */}
-          {generationMode === 'single' && (
+          {/* No wordmark: the app tab already says "Generate", and the mode
+              chips act as the page title. */}
+          <div className="flex items-center gap-1 p-1 rounded-lg bg-sf-dark-800 border border-sf-dark-700">
             <button
-              type="button"
+              onClick={() => {
+                setGenerationMode('single')
+                setWorkflowDetailOpen(false)
+              }}
+              className={`px-3 py-1 rounded text-xs transition-colors ${generationMode === 'single' ? 'bg-sf-accent text-white' : 'text-sf-text-muted hover:text-sf-text-primary'}`}
+            >
+              {t('generate.mode.generate')}
+            </button>
+            <button
               onClick={() => {
                 setGenerationMode('yolo')
                 setWorkflowDetailOpen(false)
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-sf-dark-700 bg-sf-dark-800 px-3 py-1.5 text-xs text-sf-text-secondary transition-colors hover:text-sf-text-primary"
+              className={`px-3 py-1 rounded text-xs transition-colors ${generationMode === 'yolo' ? 'bg-sf-accent text-white' : 'text-sf-text-muted hover:text-sf-text-primary'}`}
             >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              {t('generate.mode.backToDirector', undefined, 'Back to Director')}
+              {t('generate.mode.director')}
             </button>
-          )}
+          </div>
         </div>
 
         {/* Connection status */}
@@ -18278,34 +17932,11 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                   <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">Lyrics (optional)</label>
                   <textarea value={lyrics} onChange={e => setLyrics(e.target.value)} rows={4}
                     className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded-lg px-3 py-2 text-xs text-sf-text-primary focus:outline-none focus:border-sf-accent resize-none"
-                    placeholder={workflowId === 'music-gen-yue2' ? '[Verse]\nYour lyrics here\n\n[Chorus]\nYour chorus here' : 'Leave empty for instrumental...'}
+                    placeholder="Leave empty for instrumental..."
                   />
-                  {workflowId === 'music-gen-yue2' && (
-                    <p className="mt-1 text-[10px] text-sf-text-muted">Empty lyrics requests an instrumental, without guaranteeing no vocals. Describe tempo and key in Music style.</p>
-                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  {workflowId === 'music-gen-yue2' ? <div className="col-span-2 space-y-1.5">
-                    <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">Song length</label>
-                    <select aria-label="Song length" value={musicLengthMode} onChange={event => setMusicLengthMode(event.target.value)}
-                      className="w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary">
-                      <option value="automatic">Automatic</option>
-                      <option value="custom">Custom maximum</option>
-                    </select>
-                    {musicLengthMode === 'custom' && <label className="block text-[10px] text-sf-text-muted">
-                      Maximum seconds
-                      <input type="number" aria-label="YuE2 maximum seconds" min={MUSIC_DURATION_MIN} max={YUE2_CUSTOM_DURATION_MAX} step="1" value={yue2CustomDuration}
-                        onChange={event => {
-                          const value = event.target.value
-                          if (value === '' || Number.isFinite(Number(value))) setYue2CustomDuration(value === '' ? '' : Number(value))
-                        }}
-                        onBlur={event => setYue2CustomDuration(resolveMusicLength({ backend: 'yue2', lengthMode: 'custom', durationSeconds: event.target.value }).durationSeconds)}
-                        className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary" />
-                    </label>}
-                    <p className="text-[10px] text-sf-text-muted">{musicLengthMode === 'automatic'
-                      ? `YuE2 chooses the ending, with a ${YUE2_AUTOMATIC_DURATION / 60}-minute safety limit.`
-                      : 'The song can end earlier than this maximum.'} Reaching the limit may cut off the song.</p>
-                  </div> : <div>
+                  <div>
                     <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">Duration</label>
                     <div className="flex gap-1 mt-1">
                       {[15, 30, 60, 120].map(d => (
@@ -18314,14 +17945,14 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                         >{d}s</button>
                       ))}
                     </div>
-                  </div>}
-                  {workflowId !== 'music-gen-yue2' && <div>
+                  </div>
+                  <div>
                     <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">BPM</label>
                     <input type="number" value={bpm} onChange={e => setBpm(Number(e.target.value))} min={40} max={240}
                       className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary"
                     />
-                  </div>}
-                  {workflowId !== 'music-gen-yue2' && <div>
+                  </div>
+                  <div>
                     <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">Key / Scale</label>
                     <select value={keyscale} onChange={e => setKeyscale(e.target.value)}
                       className="mt-1 w-full bg-sf-dark-800 border border-sf-dark-600 rounded px-2 py-1 text-xs text-sf-text-primary"
@@ -18330,7 +17961,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                         <option key={k} value={k}>{k}</option>
                       ))}
                     </select>
-                  </div>}
+                  </div>
                   <div>
                     <label className="text-[10px] text-sf-text-muted uppercase tracking-wider">Seed</label>
                     <div className="flex gap-1 mt-1">
@@ -18364,7 +17995,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     <button
                       type="button"
                       onClick={() => setWorkflowDetailOpen(false)}
-                      className={`${isYoloMusicMode ? '' : 'sticky top-0 z-20 '}inline-flex items-center gap-2 self-start rounded-lg border border-sf-dark-700 bg-sf-dark-950/90 px-3 py-1.5 text-xs text-sf-text-secondary shadow-sm backdrop-blur transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary`}
+                      className="sticky top-0 z-20 inline-flex items-center gap-2 self-start rounded-lg border border-sf-dark-700 bg-sf-dark-950/90 px-3 py-1.5 text-xs text-sf-text-secondary shadow-sm backdrop-blur transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary"
                     >
                       <ChevronLeft className="h-3.5 w-3.5" />
                       Back to create workflows
@@ -18436,8 +18067,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     draftStorageScope={generateWorkspaceProjectScope}
                     assets={assets}
                     yoloMusicAudioAssets={yoloMusicAudioAssets}
-                    handleImportYoloMusicAudio={handleImportYoloMusicAudio}
-                    yoloMusicAudioImporting={yoloMusicAudioImporting}
                     yoloMusicAudioAssetId={yoloMusicAudioAssetId}
                     setYoloMusicAudioAssetId={setYoloMusicAudioAssetId}
                     yoloMusicAudioKind={yoloMusicAudioKind}
@@ -18454,22 +18083,16 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     setYoloMusicProvidedLyrics={setYoloMusicProvidedLyrics}
                     yoloMusicAlignProvidedLyrics={yoloMusicAlignProvidedLyrics}
                     setYoloMusicAlignProvidedLyrics={setYoloMusicAlignProvidedLyrics}
-                    yoloMusicConcept={yoloMusicConcept}
-                    setYoloMusicConcept={setYoloMusicConcept}
-                    yoloMusicSongMap={yoloMusicSongMap}
-                    setYoloMusicSongMap={setYoloMusicSongMap}
                     yoloMusicLyrics={yoloMusicLyrics}
                     setYoloMusicLyrics={setYoloMusicLyrics}
                     yoloMusicParsedLyrics={yoloMusicParsedLyrics}
                     yoloMusicScript={yoloMusicScript}
-                    setYoloMusicScript={setYoloMusicScript}
                     yoloMusicAltScripts={yoloMusicAltScripts}
+                    setYoloMusicScript={setYoloMusicScript}
                     yoloMusicCast={yoloMusicCast}
                     yoloMusicResolvedCast={yoloMusicResolvedCast}
                     assetLibraryGapDetection={assetLibraryGapDetection}
-                    onAddGapsToCast={handleAddGapsToCast}
-                    yoloMusicPlaces={yoloMusicPlaces}
-                    setYoloMusicPlaces={setYoloMusicPlaces}
+                    onAddGapsToCast={handleAddGapsToLibrary}
                     setYoloMusicCast={setYoloMusicCast}
                     yoloMusicKeyframeWorkflowId={yoloStoryboardWorkflowId}
                     setYoloMusicKeyframeWorkflowId={setYoloMusicKeyframeWorkflowId}
@@ -18485,17 +18108,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleCheckYoloMusicCustomKeyframeBridge={handleCheckYoloMusicCustomKeyframeBridge}
                     yoloMusicVideoWorkflowId={yoloDefaultVideoWorkflowId}
                     setYoloMusicVideoWorkflowId={setYoloMusicVideoWorkflowId}
-                    yoloMusicVideoQuality={yoloMusicVideoQuality}
-                    yoloMusicCloudVideoLevel={yoloMusicCloudVideoLevel}
-                    setYoloMusicCloudVideoLevel={setYoloMusicCloudVideoLevel}
-                    setYoloMusicVideoQuality={setYoloMusicVideoQuality}
                     yoloMusicVideoWorkflowOptions={YOLO_MUSIC_VIDEO_WORKFLOW_OPTIONS}
                     yoloMusicCustomVideoWorkflow={yoloMusicCustomVideoWorkflow}
                     yoloMusicCustomVideoValidation={yoloMusicCustomVideoValidation}
                     handleImportYoloMusicCustomVideoWorkflow={handleImportYoloMusicCustomVideoWorkflow}
                     handleOpenYoloMusicCustomVideoWorkflowInComfyUi={handleOpenYoloMusicCustomVideoWorkflowInComfyUi}
                     handleClearYoloMusicCustomVideoWorkflow={handleClearYoloMusicCustomVideoWorkflow}
-                    handleOpenYoloMusicCustomStarter={handleOpenYoloMusicCustomStarter}
                     handleUseYoloMusicLibraryWorkflow={handleUseYoloMusicLibraryWorkflow}
                     handleYoloMusicCastAdd={handleYoloMusicCastAdd}
                     handleYoloMusicCastRemove={handleYoloMusicCastRemove}
@@ -18507,7 +18125,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     handleImportYoloMusicCastImage={handleImportYoloMusicCastImage}
                     yoloMusicCastImageImporting={yoloMusicCastImageImporting}
                     queuePeopleWizardJob={queuePeopleWizardJob}
-                    canUsePeopleWizardGeneration={Boolean(BUILTIN_WORKFLOW_PATHS[FLUX2_KLEIN_WORKFLOW_ID])}
+                    canUsePeopleWizardGeneration={Boolean(BUILTIN_WORKFLOW_PATHS['z-image-turbo'] && BUILTIN_WORKFLOW_PATHS['multi-angles'])}
                     generationQueue={generationQueue}
                     yoloActivePlan={yoloActivePlan}
                     yoloQueueVariants={yoloQueueVariants}
@@ -18995,7 +18613,6 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                                         styleNotes: yoloMusicBriefStyleNotes,
                                         lyrics: yoloMusicLyrics,
                                         cast: yoloMusicResolvedCast,
-                                        places: yoloMusicResolvedPlaces,
                                       })
                                       void copyTextToClipboard(llmPrompt)
                                     }}
@@ -19444,7 +19061,322 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                             </div>
                           </div>
                         )}
+
+                        {/* Asset library (C4): detected reference gaps + Regenerate-All */}
+                        {assetLibraryGapDetection && assetLibraryGapDetection.gaps.length > 0 && (
+                          <div className="rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[10px] uppercase tracking-wider text-sf-text-secondary">
+                                Missing references ({assetLibraryGapDetection.gaps.length})
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={handleAddGapsToLibrary}
+                                  className="px-2 py-1 rounded bg-sf-accent text-white text-[10px] hover:opacity-90 transition-opacity"
+                                  title="Create library entries for every detected character, prop, and location (idempotent — re-runs only add what's new)"
+                                >
+                                  Add {assetLibraryGapDetection.gaps.length} to library
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleRegenerateLibraryReferences}
+                                  className="px-2 py-1 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                                  title="Queue a reference image for every library entry that doesn't have one yet"
+                                >
+                                  Regenerate-All
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {assetLibraryGapDetection.gaps.slice(0, 10).map((gap) => (
+                                <span
+                                  key={`asset-gap-${gap.kind}-${gap.slug}`}
+                                  className={`px-1.5 py-0.5 rounded text-[10px] leading-none ${
+                                    gap.kind === 'character'
+                                      ? 'bg-sf-accent/20 text-sf-accent'
+                                      : gap.kind === 'prop'
+                                        ? 'bg-sf-dark-600 text-sf-text-secondary'
+                                        : 'bg-sf-dark-600 text-sf-text-muted'
+                                  }`}
+                                  title={`${gap.kind} — seen in shot${(gap.shots || []).length === 1 ? '' : 's'} ${(gap.shots || []).join(', ') || '?'}`}
+                                >
+                                  {gap.name}
+                                </span>
+                              ))}
+                              {assetLibraryGapDetection.gaps.length > 10 && (
+                                <span className="text-[10px] text-sf-text-muted self-center">
+                                  +{assetLibraryGapDetection.gaps.length - 10} more
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[10px] text-sf-text-muted">
+                              Characters from unresolved cast names, props and locations from shot descriptions. Add them to the library, describe them once, and every future script reuses the same reference.
+                            </div>
+                          </div>
+                        )}
+
+                        {(assetLibrary.characters.length > 0 || assetLibrary.props.length > 0 || assetLibrary.locations.length > 0) && (
+                          <div className="flex items-center justify-between gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/40 px-3 py-1.5">
+                            <div className="text-[10px] text-sf-text-secondary">
+                              Asset library:{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.characters.length}</span> characters ·{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.props.length}</span> props ·{' '}
+                              <span className="text-sf-text-primary">{assetLibrary.locations.length}</span> locations
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleRegenerateLibraryReferences}
+                                className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                              >
+                                Regenerate-All
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleExportAssetLibrary}
+                                className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors"
+                              >
+                                Export
+                              </button>
+                              <label className="px-1.5 py-0.5 rounded border border-sf-dark-500 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 transition-colors cursor-pointer">
+                                Import
+                                <input
+                                  type="file"
+                                  accept="application/json,.json"
+                                  className="hidden"
+                                  onChange={(event) => {
+                                    handleImportAssetLibrary(event.target.files?.[0] || null)
+                                    event.target.value = ''
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </div>
+                        )}
+
+                        {assetLibraryNotice && (
+                          <div
+                            className={`rounded-lg px-3 py-1.5 text-[11px] leading-snug ${
+                              assetLibraryNotice.tone === 'error'
+                                ? 'border border-red-500/40 bg-red-500/10 text-red-200/90'
+                                : assetLibraryNotice.tone === 'success'
+                                  ? 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-200/90'
+                                  : 'border border-sf-dark-600 bg-sf-dark-800/60 text-sf-text-secondary'
+                            }`}
+                          >
+                            {assetLibraryNotice.text}
+                            <button
+                              type="button"
+                              onClick={() => setAssetLibraryNotice(null)}
+                              className="ml-2 opacity-60 hover:opacity-100"
+                              aria-label="Dismiss"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
                       </>
+                    )}
+
+                    {directorSubTab === 'asset-library' && (
+                      <div className="space-y-3">
+                        {/* Manual add */}
+                        <div className="rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 p-3">
+                          <div className="mb-2 text-[10px] uppercase tracking-wider text-sf-text-secondary">
+                            Add a reference entry
+                          </div>
+                          <div className="flex flex-wrap items-end gap-2">
+                            <div>
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">Type</label>
+                              <select
+                                value={assetForm.kind}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, kind: e.target.value }))}
+                                className="rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              >
+                                <option value="character">Character</option>
+                                <option value="prop">Prop</option>
+                                <option value="location">Location</option>
+                              </select>
+                            </div>
+                            <div className="min-w-[10rem] flex-1">
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">Name</label>
+                              <input
+                                type="text"
+                                value={assetForm.name}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, name: e.target.value }))}
+                                placeholder="e.g. Rose / the rusty gate / Midnight Pier"
+                                className="w-full rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              />
+                            </div>
+                            <div className="min-w-[16rem] flex-1">
+                              <label className="mb-0.5 block text-[10px] text-sf-text-muted">
+                                Description <span className="text-sf-text-muted/70">(this becomes the generation prompt)</span>
+                              </label>
+                              <input
+                                type="text"
+                                value={assetForm.description}
+                                onChange={(e) => setAssetForm((prev) => ({ ...prev, description: e.target.value }))}
+                                placeholder="Aging woman, silver braid, worn green dress, kind face, weathered hands…"
+                                className="w-full rounded border border-sf-dark-500 bg-sf-dark-900 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddAssetEntry}
+                              className="rounded bg-sf-accent px-3 py-1 text-[11px] font-medium text-white hover:opacity-90"
+                            >
+                              Add
+                            </button>
+                          </div>
+                          <div className="mt-1.5 text-[10px] text-sf-text-muted">
+                            Descriptions stay verbatim — they are exactly what the reference generator uses. Leave it empty to add a placeholder and fill it in below.
+                          </div>
+                        </div>
+
+                        {/* Library toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-900/40 px-3 py-2">
+                          <div className="text-[11px] text-sf-text-secondary">
+                            <span className="text-sf-text-primary">{assetLibrary.characters.length}</span> characters ·{' '}
+                            <span className="text-sf-text-primary">{assetLibrary.props.length}</span> props ·{' '}
+                            <span className="text-sf-text-primary">{assetLibrary.locations.length}</span> locations
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={handleRegenerateLibraryReferences}
+                              className="px-2 py-1 rounded border border-sf-accent/60 bg-sf-accent/15 text-[11px] text-sf-accent hover:bg-sf-accent/25"
+                              title="Queue reference images for every entry that has a description but no reference yet"
+                            >
+                              Regenerate-All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleExportAssetLibrary}
+                              className="px-2 py-1 rounded border border-sf-dark-500 text-[11px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400"
+                            >
+                              Export
+                            </button>
+                            <label className="px-2 py-1 rounded border border-sf-dark-500 text-[11px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400 cursor-pointer">
+                              Import
+                              <input
+                                type="file"
+                                accept="application/json,.json"
+                                className="hidden"
+                                onChange={(event) => {
+                                  handleImportAssetLibrary(event.target.files?.[0] || null)
+                                  event.target.value = ''
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Entry list */}
+                        {assetLibraryGapDetection && assetLibraryGapDetection.gaps.length > 0 && (
+                          <div className="flex items-center justify-between gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-800/60 px-3 py-2">
+                            <div className="text-[11px] text-sf-text-secondary">
+                              Detected from the current script: {assetLibraryGapDetection.gaps.map((g) => g.name).join(', ')}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleAddGapsToLibrary}
+                              className="rounded bg-sf-accent px-2.5 py-1 text-[11px] text-white hover:opacity-90"
+                            >
+                              Add all ({assetLibraryGapDetection.gaps.length})
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Legend contract violations — never auto-repaired, always shown (0.4.8.3) */}
+                        {assetLibraryGapDetection && (assetLibraryGapDetection.legendIssues?.length || 0) > 0 && (
+                          <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2">
+                            <div className="text-[11px] font-semibold text-amber-300">
+                              Script legend problems ({assetLibraryGapDetection.legendIssues.length}) — fix in the script, Cast keeps both versions until you do
+                            </div>
+                            <ul className="mt-1 space-y-0.5">
+                              {assetLibraryGapDetection.legendIssues.slice(0, 6).map((issue, idx) => (
+                                <li key={idx} className={`text-[11px] ${issue.severity === 'error' ? 'text-amber-200' : 'text-sf-text-secondary'}`}>
+                                  {issue.severity === 'error' ? '⛔' : '⚠'} {issue.message}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {(() => {
+                          const allEntries = [
+                            ...assetLibrary.characters.map((e) => ({ ...e, _kind: 'character' })),
+                            ...assetLibrary.props.map((e) => ({ ...e, _kind: 'prop' })),
+                            ...assetLibrary.locations.map((e) => ({ ...e, _kind: 'location' })),
+                          ]
+                          if (allEntries.length === 0) {
+                            return (
+                              <div className="rounded-lg border border-dashed border-sf-dark-600 px-4 py-8 text-center text-[11px] text-sf-text-muted">
+                                Empty asset library. Add entries above, or build a director-script plan and the 'Add all' button appears for anything detected in it.
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className="space-y-1.5">
+                              {allEntries.map((entry) => {
+                                const refAsset = entry.assetId ? assets.find((a) => a?.id === entry.assetId) : null
+                                return (
+                                  <div key={entry.id} className="flex items-start gap-2 rounded-lg border border-sf-dark-700 bg-sf-dark-800/40 p-2">
+                                    {refAsset?.url ? (
+                                      <img src={refAsset.url} alt="" className="h-14 w-14 shrink-0 rounded object-cover border border-sf-dark-600" />
+                                    ) : (
+                                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded border border-dashed border-sf-dark-600 text-[9px] uppercase text-sf-text-muted">
+                                        {entry._kind}
+                                      </div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`rounded px-1.5 py-0.5 text-[9px] leading-none ${
+                                          entry._kind === 'character' ? 'bg-sf-accent/20 text-sf-accent' : 'bg-sf-dark-600 text-sf-text-secondary'
+                                        }`}>
+                                          {entry._kind}
+                                        </span>
+                                        <span className="truncate text-[12px] font-medium text-sf-text-primary">{entry.name}</span>
+                                        {entry.gap?.source === 'director-script' && (
+                                          <span className="text-[9px] text-sf-text-muted" title={`From director script, shot${(entry.gap.shotRefs || []).length === 1 ? '' : 's'} ${(entry.gap.shotRefs || []).join(', ')}`}>
+                                            from script
+                                          </span>
+                                        )}
+                                      </div>
+                                      <input
+                                        type="text"
+                                        value={entry.description || ''}
+                                        onChange={(e) => handleEditAssetDescription(entry.id, e.target.value)}
+                                        placeholder="Write a description — it becomes the reference generation prompt…"
+                                        className="mt-1 w-full rounded border border-sf-dark-600 bg-sf-dark-900/70 px-2 py-1 text-[11px] text-sf-text-primary focus:outline-none focus:border-sf-accent"
+                                      />
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRegenerateOneReference(entry)}
+                                        className="rounded border border-sf-dark-500 px-2 py-1 text-[10px] text-sf-text-secondary hover:text-sf-text-primary hover:border-sf-dark-400"
+                                        title={refAsset ? 'Regenerate the reference image' : 'Generate the reference image'}
+                                      >
+                                        {refAsset ? 'Regenerate' : 'Generate'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteAssetEntry(entry.id)}
+                                        className="rounded border border-sf-dark-500 px-2 py-1 text-[10px] text-sf-text-muted hover:text-red-300 hover:border-red-500/40"
+                                        title="Delete this entry (keeps the generated image)"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )
+                        })()}
+                      </div>
                     )}
 
                     {directorSubTab === 'plan-script' && !isYoloMusicMode && (
@@ -20969,7 +20901,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                   : job.status === 'paused' ? 'Paused'
                   : job.status === 'uploading' ? 'Uploading input'
                   : job.status === 'configuring' ? 'Configuring workflow'
-                  : job.status === 'queuing' ? (awaitingSpendApproval ? APPROVAL_WAIT_LABEL : 'Queued in ComfyUI')
+                  : job.status === 'queuing' ? 'Queued in ComfyUI'
                   : job.status === 'running' ? 'Generating'
                   : job.status === 'saving' ? 'Saving to project'
                   : job.status === 'done' ? 'Complete'
@@ -21118,13 +21050,9 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                   )}
                   {category === 'audio' && (
                     <>
-                      <div><span className="text-sf-text-muted">{workflowId === 'music-gen-yue2' ? 'Song length:' : 'Duration:'}</span> {workflowId === 'music-gen-yue2'
-                        ? (selectedMusicLength.lengthMode === 'automatic' ? `Automatic (${selectedMusicLength.durationSeconds / 60}-minute safety limit)` : `Custom maximum ${selectedMusicLength.durationSeconds}s (may end earlier)`)
-                        : `${musicDuration}s`}</div>
-                      {workflowId !== 'music-gen-yue2' && <>
-                        <div><span className="text-sf-text-muted">BPM:</span> {bpm}</div>
-                        <div><span className="text-sf-text-muted">Key:</span> {keyscale}</div>
-                      </>}
+                      <div><span className="text-sf-text-muted">Duration:</span> {musicDuration}s</div>
+                      <div><span className="text-sf-text-muted">BPM:</span> {bpm}</div>
+                      <div><span className="text-sf-text-muted">Key:</span> {keyscale}</div>
                     </>
                   )}
                   <div><span className="text-sf-text-muted">{t('generate.info.seed')}:</span> {seed}</div>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and stage Belrog's pinned, PNG-only RIFE runtime.
+"""Build and stage belrog's pinned, PNG-only RIFE runtime.
 
 The builder deliberately avoids recursive submodules: the wrapper's obsolete
 libwebp revision is never fetched. Every source checkout and model/header input
@@ -63,7 +63,7 @@ WINDOWS_FORBIDDEN_CRT_DEPENDENCIES = (
     "libwinpthread",
 )
 
-WORK_MARKER = ".velorn-rife-build-root"
+WORK_MARKER = ".belrog-rife-build-root"
 
 
 class BuildError(RuntimeError):
@@ -436,7 +436,7 @@ def configure_and_build(
         if args.generator.startswith("Visual Studio"):
             configure.extend(["-A", "x64"])
     else:
-        prefix_map = f"-ffile-prefix-map={work_dir.resolve()}=/usr/src/velorn-rife"
+        prefix_map = f"-ffile-prefix-map={work_dir.resolve()}=/usr/src/belrog-rife"
         configure.extend(
             [
                 f"-DCMAKE_C_FLAGS={prefix_map}",

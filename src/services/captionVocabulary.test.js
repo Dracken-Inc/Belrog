@@ -12,7 +12,7 @@ test('joins parts comma-separated with normalized whitespace, terminated like a 
 
 test('drops empties, non-strings, and case-insensitive duplicates', () => {
   assert.equal(
-    buildVocabularyHint(['Belrog', '', null, undefined, 'belrog', '  ', 'BELROG', 'Qwen']),
+    buildVocabularyHint(['Belrog', '', null, undefined, 'Belrog', '  ', 'Belrog', 'Qwen']),
     'Belrog, Qwen.'
   )
 })

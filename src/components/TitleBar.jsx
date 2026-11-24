@@ -1,10 +1,8 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Copy, LayoutTemplate, Minus, PanelLeft, PlayCircle, Square, X } from 'lucide-react'
 import ComfyLauncherChip from './ComfyLauncherChip'
 import CreditsChip from './CreditsChip'
 import GenerationMonitorChip from './GenerationMonitorChip'
-import { DesktopAccountButton } from './DesktopAccount'
-import { SHOW_CREDITS_CHIP, SHOW_CLOUD_ACCOUNT_CHROME } from '../config/belrogProduct'
 import { useI18n } from '../i18n/I18nContext'
 
 const EDITOR_LAYOUTS = [
@@ -13,12 +11,8 @@ const EDITOR_LAYOUTS = [
 ]
 
 const TOP_TABS = [
-  { id: 'storyboard', label: 'Storyboard' },
   { id: 'editor', label: 'Editor' },
-  { id: 'generate', label: 'Director' },
-  // Pictures and video. The tab's internal id stays 'create'; people see "Visuals" beside "Sound" (Jaime, 2026-11-18).
-  { id: 'create', label: 'Visuals' },
-  { id: 'sound', label: 'Sound' },
+  { id: 'generate', label: 'Generate' },
   { id: 'agent', label: 'Agent' },
   { id: 'flow-ai', label: 'Flow AI' },
   { id: 'mog', label: 'MoGraph' },
@@ -26,7 +20,7 @@ const TOP_TABS = [
   { id: 'comfyui', label: 'ComfyUI' },
   { id: 'director-script', label: 'Director Script' },
   { id: 'export', label: 'Export' },
-  { id: 'discover', label: 'Tutorials' },
+  { id: 'discover', label: 'Discover' },
 ]
 
 const HIDDEN_TOP_TAB_IDS = new Set([
@@ -39,25 +33,14 @@ function TitleBar({
   projectName,
   activeTab = 'editor',
   onTabChange,
-  showGenerateTab = true,
   showDiscoverTab = true,
-  showStoryboardTab = false,
-  hiddenTabs = [],
   editorLayout = 'default',
   onEditorLayoutChange,
-  exportBusy = false,
 }) {
   const { t } = useI18n()
-  const activeTabRef = useRef(null)
-  useEffect(() => {
-    activeTabRef.current?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-  }, [activeTab, showStoryboardTab, showGenerateTab, showDiscoverTab])
   const tabs = TOP_TABS.filter((tab) => (
     !HIDDEN_TOP_TAB_IDS.has(tab.id)
-    && (tab.id !== 'generate' || showGenerateTab)
     && (tab.id !== 'discover' || showDiscoverTab)
-    && (tab.id !== 'storyboard' || showStoryboardTab)
-    && !hiddenTabs.includes(tab.id)
   ))
   const [windowState, setWindowState] = useState({
     isMaximized: false,
@@ -113,19 +96,20 @@ function TitleBar({
   }
   
   return (
-    <div className="h-10 flex-shrink-0 bg-black flex items-center justify-between gap-2 px-4 drag-region relative">
-      {/* Keep a window-drag target even when a narrow tab strip is full. */}
-      <div className="w-8 2xl:w-[120px] h-full flex-shrink-0" aria-hidden="true" />
+    <div className="h-10 bg-black flex items-center justify-between px-4 drag-region relative">
+      {/* Left - Spacer for center alignment */}
+      <div className="w-[120px] flex-shrink-0" />
       
       {/* Center - App mode tabs; extend 1px into content so grey touches with no black line */}
       <div
-        className="flex min-w-0 flex-1 items-center overflow-x-auto"
+        className="absolute left-1/2 top-0 flex -translate-x-1/2 items-center justify-center"
         style={{
+          bottom: -1,
           height: 'calc(100% + 1px)'
         }}
       >
         <nav
-          className="no-drag mx-auto flex flex-shrink-0 items-center gap-0 h-full bg-sf-dark-800 border-x border-sf-dark-700 border-t-0 rounded-none p-0.5"
+          className="no-drag flex items-center gap-0 h-full bg-sf-dark-800 border-x border-sf-dark-700 border-t-0 rounded-none p-0.5"
           aria-label={t('topTabs.navigation', undefined, 'Workspace modes')}
         >
           {tabs.map((tab, index) => (
@@ -140,9 +124,6 @@ function TitleBar({
               )}
               <div className="relative flex h-full items-center">
                 <button
-                  ref={activeTab === tab.id ? activeTabRef : undefined}
-                  onFocus={event => event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' })}
-                  disabled={exportBusy}
                   onClick={() => onTabChange?.(tab.id)}
                   aria-current={activeTab === tab.id ? 'page' : undefined}
                   className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] transition-colors ${
@@ -156,7 +137,7 @@ function TitleBar({
                   }`}
                 >
                   {tab.id === 'discover' && <PlayCircle className="hidden h-3.5 w-3.5 2xl:block" aria-hidden="true" />}
-                  {tab.id === 'comfyui' ? tab.label : t(`topTabs.${tab.id}`, undefined, tab.label)}
+                  {tab.id === 'comfyui' || tab.id === 'director-script' ? tab.label : t(`topTabs.${tab.id}`)}
                 </button>
                 {tab.id === 'mog' && activeTab === 'mog' && (
                   <div className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 rounded-full bg-pink-300/12 px-2 py-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-pink-200/65 shadow-[0_0_10px_rgba(244,114,182,0.12)]">
@@ -170,8 +151,7 @@ function TitleBar({
       </div>
       
       {/* Right - Launcher chip + Window Controls (Windows style) */}
-      <div className="no-drag flex flex-shrink-0 items-center">
-        <div className="contents" inert={exportBusy ? '' : undefined} aria-hidden={exportBusy ? true : undefined}>
+      <div className="no-drag flex items-center">
         {activeTab === 'editor' && onEditorLayoutChange && (
           <div className="mr-2 flex items-center gap-0.5 rounded bg-sf-dark-800 p-0.5">
             {EDITOR_LAYOUTS.map(({ id, Icon, label }) => (
@@ -190,13 +170,10 @@ function TitleBar({
             ))}
           </div>
         )}
-        {SHOW_CREDITS_CHIP && <CreditsChip size="xs" className="mr-1" />}
+        <CreditsChip size="xs" className="mr-1" />
         <GenerationMonitorChip onOpenGenerate={() => onTabChange?.('generate')} />
         <ComfyLauncherChip />
-        {SHOW_CLOUD_ACCOUNT_CHROME && <DesktopAccountButton disabled={exportBusy} />}
-        </div>
         <button
-          data-export-allowed="true"
           onClick={handleMinimize}
           className="no-drag w-10 h-10 flex items-center justify-center hover:bg-sf-dark-700 transition-colors"
           title="Minimize"
@@ -204,7 +181,6 @@ function TitleBar({
           <Minus className="w-4 h-4 text-sf-text-secondary" />
         </button>
         <button
-          data-export-allowed="true"
           onClick={handleToggleMaximize}
           className="no-drag w-10 h-10 flex items-center justify-center hover:bg-sf-dark-700 transition-colors"
           title={isRestoreDown ? 'Restore Down' : 'Maximize'}
@@ -216,7 +192,6 @@ function TitleBar({
           )}
         </button>
         <button
-          data-export-allowed="true"
           onClick={handleCloseWindow}
           className="no-drag w-10 h-10 flex items-center justify-center hover:bg-red-600 transition-colors"
           title="Close"

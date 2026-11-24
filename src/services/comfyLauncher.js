@@ -185,8 +185,7 @@ export async function pickComfyLauncherScript() {
   if (!bridge?.pickLauncherScript) return { success: false, error: 'Electron bridge unavailable.' }
   const result = await bridge.pickLauncherScript()
   if (result?.success && result.filePath) {
-    const saved = await updateComfyLauncherConfig({ launcherMode: 'script', launcherScript: result.filePath })
-    if (saved?.success === false) return saved
+    await updateComfyLauncherConfig({ launcherMode: 'script', launcherScript: result.filePath })
   }
   return result
 }
@@ -196,8 +195,7 @@ export async function pickComfyLauncherMacApp() {
   if (!bridge?.pickMacApp) return { success: false, error: 'Electron bridge unavailable.' }
   const result = await bridge.pickMacApp()
   if (result?.success && result.filePath) {
-    const saved = await updateComfyLauncherConfig({ launcherMode: 'mac-app', macAppPath: result.filePath })
-    if (saved?.success === false) return saved
+    await updateComfyLauncherConfig({ launcherMode: 'mac-app', macAppPath: result.filePath })
   }
   return result
 }

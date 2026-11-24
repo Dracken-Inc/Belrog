@@ -236,14 +236,14 @@ test('completed-output temp cleanup returns a warning instead of throwing', asyn
     api: {
       deleteDirectory: async () => ({ success: false, error: 'Antivirus lock' }),
     },
-    tempFolder: '/selected/My Edit_png/.velorn-export-temp',
+    tempFolder: '/selected/My Edit_png/.Belrog-export-temp',
   })
 
   assert.equal(warning, 'Antivirus lock')
 })
 
 test('owned output works against a real fresh filesystem directory', async () => {
-  const parent = await mkdtemp(join(tmpdir(), 'velorn-png-sequence-'))
+  const parent = await mkdtemp(join(tmpdir(), 'Belrog-png-sequence-'))
   const outputPath = join(parent, 'Real Export_png')
   const api = {
     exists: async path => {

@@ -1,24 +1,4 @@
 import { create } from 'zustand'
-import { nextShuttleRate } from '../utils/shuttlePlayback'
-import { createPlaybackJump, getCurrentPlaybackJump } from '../utils/playbackJump.mjs'
-import { createPlayAround, getCurrentPlayAround, stopPlayAroundPatch } from '../utils/playAround.mjs'
-import { planMultiClipInspectorEdit, planMultiClipInspectorUpdates } from '../utils/multiClipInspector'
-import { planMultiClipEffectsEdit } from '../utils/multiClipEffects'
-import { planMcpEditing } from '../utils/mcpEditingPlan'
-import { getPasteAttributesAvailability, planPasteAttributes } from '../utils/pasteAttributes'
-import { getEffectTypeDefinition } from '../utils/effects'
-import { planSourceTimelineEdit } from '../utils/sourceTimelineEdit.mjs'
-import { buildSmartReplacePlan } from '../utils/smartReplace.mjs'
-import { buildCreateCompoundPlan, validateCompoundDocument, getCompoundDocumentExtent, sanitizeCompoundChildren,
-  isCompoundClip, isCompoundLocked, isCompoundCacheBusy } from '../utils/compoundDocument.mjs'
-import { getClipPlaybackWindow } from '../utils/compoundPlayback.mjs'
-import { buildUncompoundPlan } from '../utils/uncompoundDocument.mjs'
-import { createRollEditSession, planRollEdit } from '../utils/rollEdit.mjs'
-import { buildRollEditPreviewFeedback } from '../utils/rollEditPreview.mjs'
-import { createSlipEditSession, planSlipEdit, buildSlipEditPreviewFeedback } from '../utils/slipEdit.mjs'
-import { createSlideEditSession, planSlideEdit, buildSlideEditPreviewFeedback } from '../utils/slideEdit.mjs'
-import { createRippleTrimSession, planRippleTrim, buildRippleTrimPreviewFeedback } from '../utils/rippleTrim.mjs'
-import { planCloseTimelineGap } from '../utils/closeTimelineGap.mjs'
 import { persist } from 'zustand/middleware'
 import { TRANSITION_DEFAULT_SETTINGS, FRAME_RATE } from '../constants/transitions'
 import { buildTextAnimationPresetKeyframes, TEXT_ANIMATION_KEYFRAME_PROPERTIES } from '../utils/textAnimationPresets'
@@ -28,9 +8,7 @@ import { normalizeAudioClipGainDb } from '../utils/audioClipGain'
 import { clampTrackPan, clampTrackVolume } from '../utils/audioTrackAudibility'
 import { hasVideoSolo, isVideoTrackVisible } from '../utils/videoTrackVisibility'
 import { normalizeAudioInserts } from '../utils/audioInserts'
-import { isAudioClipRole, normalizeVideoBackedAudioClips } from '../utils/audioClipSplit'
-import { normalizeAudioVolumeEnvelope, shiftAudioVolumeEnvelope, validateAudioVolumeEnvelope } from '../utils/audioVolumeEnvelope.mjs'
-import { normalizeAudioEq, validateAudioEq } from '../utils/audioEq.mjs'
+import { normalizeVideoBackedAudioClips } from '../utils/audioClipSplit'
 import { CLIP_COMPOSITE_MODE, normalizeClipCompositeMode } from '../utils/layerCompositing'
 import { getKeyframeTimeTolerance } from '../utils/keyframes'
 import { DEFAULT_SHAPE_MASK, normalizeShapeMask } from '../utils/shapeMask'
@@ -38,7 +16,7 @@ import { normalizeTrackMatte } from '../utils/trackMatte'
 import { translateTransitionsForClipMoves } from '../utils/transitionClipMoves.mjs'
 import { isBetweenClipTransition } from '../utils/transitionKinds'
 import { DEFAULT_LINE_THICKNESS, DEFAULT_SHAPE_PROPERTIES, getShapeDisplayName, normalizeShapeProperties } from '../utils/shapes'
-import { normalizeFrameSamplingMode, isOpticalFlowCacheUsable } from '../utils/frameSampling'
+import { normalizeFrameSamplingMode } from '../utils/frameSampling'
 import {
   quantizeTimeToFrame as roundToFrame,
   roundDurationToFrame,
@@ -46,18 +24,6 @@ import {
 
 // Maximum number of undo states to keep
 const MAX_HISTORY_SIZE = 50
-
-// A rate change invalidates an in-flight decoder landing, but must not let the
-// clock escape its frozen target before a replacement landing is presented.
-const playbackRateUpdate = (state, rate, { starting = false } = {}) => {
-  const request = getCurrentPlaybackJump(state)
-  const retry = starting && !state.isPlaying && Boolean(state.playbackJumpError)
-  if (!request && !retry) return { playbackRate: rate, playbackJump: null }
-  if (!retry && rate === state.playbackRate) return { playbackRate: rate }
-  const revision = (Number(state.playbackJumpRevision) || 0) + 1
-  return { playbackRate: rate, playbackJumpRevision: revision, playbackJumpError: null,
-    playbackJump: createPlaybackJump({ ...state, playbackRate: rate }, request?.targetTime ?? state.playheadPosition, revision, Date.now()) }
-}
 
 // The persist middleware fires on EVERY store write and re-serializes the
 // whole partialized state — it cannot know which field changed. During
@@ -508,7 +474,6 @@ const cleanupBrokenBetweenTransitions = (clips = [], transitions = []) => {
           startTime: transition.originalClipBStart,
           duration: clip.duration - durationDiff,
           trimStart: transition.originalClipBTrimStart,
-          ...(clip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(clip, -durationDiff) } : {}),
         }
       }
       return clip
@@ -618,7 +583,7 @@ const floorDurationToFrame = (duration, fps) => {
 }
 
 const clampFiniteMediaClipToSource = (clip, fps) => {
-  if (!clip || !['video', 'audio', 'compound'].includes(clip.type)) return clip
+  if (!clip || (clip.type !== 'video' && clip.type !== 'audio')) return clip
   if (isInfinitelyExtendableClipType(clip)) return clip
 
   const sourceDuration = parseClipSourceDuration(clip.sourceDuration)
@@ -790,20 +755,7 @@ const applyClipTrimUpdate = (clip, updates, timelineFps) => {
     }
   }
 
-  const trimmed = isSyncLockedClip(clip) ? applySyncLockToClip(normalized, fps) : normalized
-  if (clip.volumeEnvelope != null && updates.volumeEnvelope === undefined) {
-    const startDelta = Number(trimmed.startTime) - Number(clip.startTime)
-    const durationDelta = Number(clip.duration) - Number(trimmed.duration)
-    const sourceHeadChanged = Math.abs(Number(trimmed.trimStart) - Number(clip.trimStart)) > 1e-7
-    // A move keeps duration; a slip moves both source bounds. Neither changes
-    // the local envelope origin. Head trims use the actual normalized timeline
-    // delta, never source seconds (which differ for speed/FPS/reverse media).
-    const headDelta = Math.abs(durationDelta) <= 1e-7 ? 0
-      : updates.startTime != null && Math.abs(startDelta) > 1e-7 ? startDelta
-        : updates.trimStart != null && updates.trimEnd == null && sourceHeadChanged ? durationDelta : 0
-    if (headDelta !== 0) return { ...trimmed, volumeEnvelope: shiftAudioVolumeEnvelope(clip, headDelta) }
-  }
-  return trimmed
+  return isSyncLockedClip(clip) ? applySyncLockToClip(normalized, fps) : normalized
 }
 
 const createDefaultClipTransform = () => ({
@@ -834,171 +786,8 @@ const createDefaultClipTransform = () => ({
   blur: 0,
 })
 
-// Source-monitor edits are planned without touching the store. Opaque,
-// short-lived tokens bind the displayed destinations/range to that exact
-// timeline snapshot; neither previews nor rejected clicks create history.
-const sourceEditTokens = new WeakMap()
-const mcpEditingTokens = new WeakMap()
-const smartReplaceTokens = new WeakMap()
-const compoundCreateTokens = new WeakMap()
-const uncompoundTokens = new WeakMap()
-const rollEditTokens = new WeakMap()
-const slipEditTokens = new WeakMap()
-const slideEditTokens = new WeakMap()
-const rippleTrimTokens = new WeakMap()
-const SMART_REPLACE_STATE_KEYS = [
-  'clips', 'tracks', 'transitions', 'markers', 'timelineFps', 'timelineSessionId',
-  'history', 'historyIndex', 'duration', 'isPlaying', 'selectedClipIds',
-]
-const UNCOMPOUND_STATE_KEYS = [...SMART_REPLACE_STATE_KEYS, 'clipCounter', 'markerCounter', 'compoundEditContext']
-const ROLL_EDIT_STATE_KEYS = [...UNCOMPOUND_STATE_KEYS, 'transitionCounter', 'zoom', 'masterAudioVolume', 'masterAudioInserts']
-const SLIDE_EDIT_STATE_KEYS = [...ROLL_EDIT_STATE_KEYS, 'rippleEditMode', 'snappingEnabled', 'snappingThreshold']
-const RIPPLE_TRIM_STATE_KEYS = [...ROLL_EDIT_STATE_KEYS, 'rippleEditMode', 'snappingEnabled', 'snappingThreshold', 'playheadPosition', 'inPoint', 'outPoint']
-const publicRollSession = session => pickFields(session, ['clipAId', 'clipBId', 'originalEditPoint',
-  'clipAOriginalDuration', 'clipBOriginalStart', 'clipBOriginalDuration'])
-const publicRollResult = (session, plan, changed = plan.changed) => ({ ok: true, changed, delta: plan.delta,
-  session: publicRollSession(session), bounds: structuredClone(session.bounds), feedback: plan.feedback })
-const publicSlipResult = (session, plan, changed = plan.changed) => ({ ok: true, changed, delta: plan.delta,
-  session: pickFields(session, ['clipId', 'originalTrimStart', 'originalTrimEnd', 'originalStartTime', 'originalDuration', 'timeScale']),
-  bounds: structuredClone(session.bounds), feedback: plan.feedback })
-const publicSlideResult = (session, plan, changed = plan.changed) => ({ ok: true, changed, delta: plan.delta,
-  session: structuredClone(pickFields(session, ['clipId', 'previousClipId', 'nextClipId', 'originalStartTime', 'originalDuration', 'snapExcludedClipIds'])),
-  bounds: structuredClone(session.bounds), feedback: plan.feedback })
-const publicRippleTrimResult = (session, plan, changed = plan.changed) => ({ ok: true, changed,
-  delta: plan.delta, durationDelta: plan.durationDelta,
-  session: structuredClone(pickFields(session, ['clipId', 'edge', 'primaryEdgeTime', 'originalStartTime', 'originalDuration',
-    'targetClipIds', 'snapExcludedClipIds', 'affectedTrackNames', 'shiftedClipCount', 'linkedTargetCount'])),
-  bounds: structuredClone(session.bounds), feedback: plan.feedback })
-const smartReplaceRequestKey = request => JSON.stringify([
-  request.clipId, Object.hasOwn(request, 'sourceInSeconds'), request.sourceInSeconds, request.asset,
-])
-const SOURCE_EDIT_STATE_KEYS = [
-  'clips', 'tracks', 'transitions', 'markers', 'timelineFps', 'activeTrackId',
-  'playheadPosition', 'timelineSessionId', 'clipCounter', 'duration',
-  'history', 'historyIndex', 'isPlaying',
-]
-const sourceEditRequestKey = (request) => JSON.stringify([
-  request.mode, request.inPoint ?? null, request.outPoint ?? null,
-  request.sourceDuration ?? null, request.asset, request.trackId, request.audioTrackId, request.startSeconds,
-])
-
-const buildSourceEditPlan = (state, request = {}) => {
-  const asset = request.asset
-  const mode = request.mode
-  const info = { mode, targetTrackNames: [], affectedTrackNames: [], videoTrackName: null, audioTrackName: null }
-  const fail = reason => ({ ...info, ok: false, reason })
-  if (!['insert', 'overwrite', 'append'].includes(mode)) return fail('Choose Insert, Overwrite, or Add to End.')
-  if (!asset?.id || !['video', 'audio'].includes(asset.type)) return fail('Preview a video or audio source first.')
-  if (!asset.url) return fail('This source is unavailable. Relink it before editing.')
-  const fps = Number(state.timelineFps)
-  if (!Number.isFinite(fps) || fps <= 0) return fail('Set a valid timeline frame rate first.')
-  const isAudio = asset.type === 'audio'
-  const compatible = track => track.type === (isAudio ? 'audio' : 'video')
-    && track.locked !== true && !isCaptionsTrack(track)
-  const explicitTarget = request.trackId == null ? null : state.tracks.find(track => track.id === request.trackId)
-  if (request.trackId != null && (!explicitTarget || !compatible(explicitTarget) || isCompoundLocked(explicitTarget))) return fail('Choose one unlocked compatible destination track.')
-  const target = explicitTarget || state.tracks.find(track => track.id === state.activeTrackId && compatible(track))
-    || state.tracks.find(compatible)
-  if (!target) return fail(`No unlocked ${isAudio ? 'audio' : 'video'} destination is available. Add or unlock a track.`)
-  const needsAudio = !isAudio && asset.hasAudio !== false && asset.audioEnabled !== false
-  const explicitAudio = request.audioTrackId == null ? null : state.tracks.find(track => track.id === request.audioTrackId)
-  if (request.audioTrackId != null && (!explicitAudio || explicitAudio.type !== 'audio' || isCompoundLocked(explicitAudio) || explicitAudio.visible === false || isCaptionsTrack(explicitAudio))) return fail('Choose one unlocked audio destination track.')
-  const audioTrack = isAudio ? target : needsAudio
-    ? explicitAudio || state.tracks.find(track => track.type === 'audio' && track.locked !== true && track.visible !== false)
-    : null
-  info.videoTrackName = isAudio ? null : target.name || target.id
-  info.audioTrackName = audioTrack ? audioTrack.name || audioTrack.id : null
-  const destinations = isAudio || !audioTrack ? [target] : [target, audioTrack]
-  info.targetTrackNames = destinations.map(track => track.name || track.id)
-  if (needsAudio && !audioTrack) return fail('This source includes audio. Add or unlock an audio track, or disable the source audio first.')
-  if (state.isPlaying) return fail('Pause timeline playback before editing from the source viewer.')
-
-  // Stay inside both the known file extent and the auditioned extent. Never
-  // invent the old five-second fallback for a source which has not loaded.
-  const extents = [request.sourceDuration, asset.duration, asset.settings?.duration]
-    .map(Number).filter(value => Number.isFinite(value) && value > 0)
-  if (!extents.length) return fail('Wait for the source duration to load before editing.')
-  const sourceDuration = Math.min(...extents)
-  const sourceIn = request.inPoint == null ? 0 : Number(request.inPoint)
-  const sourceOut = request.outPoint == null ? sourceDuration : Number(request.outPoint)
-  if (!Number.isFinite(sourceIn) || !Number.isFinite(sourceOut) || sourceIn < 0
-    || sourceOut > sourceDuration + 1e-7 || sourceOut <= sourceIn) {
-    return fail('Choose an In/Out range inside the available source.')
-  }
-  // A whole timeline-frame duration must fit inside the requested range.
-  // Keep source seconds real-time even when source and timeline FPS differ.
-  const frames = Math.floor((Math.min(sourceOut, sourceDuration) - sourceIn) * fps + 1e-7)
-  if (frames < 1) return fail('Choose a source range at least one timeline frame long.')
-  const duration = frames / fps
-  const destinationIds = new Set(destinations.map(track => track.id))
-  const destinationEnd = state.clips.filter(clip => destinationIds.has(clip.trackId))
-    .reduce((end, clip) => Math.max(end, Number(clip.startTime) + Number(clip.duration)), 0)
-  if (request.startSeconds !== undefined && (typeof request.startSeconds !== 'number' || !Number.isFinite(request.startSeconds) || request.startSeconds < 0)) return fail('Destination time must be finite and non-negative.')
-  const startTime = mode === 'append'
-    ? Math.ceil(destinationEnd * fps - 1e-7) / fps
-    : roundToFrame(request.startSeconds ?? Math.max(0, Number(state.playheadPosition) || 0), fps)
-  Object.assign(info, { startTime, duration })
-  if (!Number.isFinite(startTime)) return fail('The destination contains invalid clip timing. Fix it before adding a source.')
-  if (resolveClipSyncLock({ asset, startTime, duration, fps })) {
-    return fail('This source is tied to song timing. Use its sync-aware placement workflow instead.')
-  }
-
-  let counter = getNextClipCounter(state.clips, state.clipCounter || 1)
-  const firstId = `clip-${counter}`
-  const usedLinks = new Set(state.clips.map(clip => clip.linkGroupId).filter(Boolean))
-  let linkGroupId = needsAudio ? `link-source-edit-${counter}` : null
-  while (linkGroupId && usedLinks.has(linkGroupId)) linkGroupId += '-new'
-  const defaults = asset.settings?.defaultTransform && typeof asset.settings.defaultTransform === 'object'
-    ? structuredClone(asset.settings.defaultTransform) : {}
-  const newClips = destinations.map(track => {
-    const idNumber = counter++
-    const type = track.type === 'audio' ? 'audio' : 'video'
-    const sourceFps = Number(asset.settings?.fps ?? asset.fps)
-    return {
-      id: `clip-${idNumber}`, trackId: track.id, assetId: asset.id,
-      name: asset.name, url: asset.url, thumbnail: asset.url, type, enabled: true,
-      startTime, duration, trimStart: sourceIn, trimEnd: sourceIn + duration,
-      sourceDuration, sourceTimeScale: 1, timelineFps: fps,
-      sourceFps: Number.isFinite(sourceFps) && sourceFps > 0 ? sourceFps : null,
-      speed: 1, reverse: false,
-      color: type === 'video' ? getVideoColor(idNumber) : getAudioColor(track.id),
-      transform: { ...createDefaultClipTransform(), ...structuredClone(defaults) },
-      ...(type === 'video' ? { frameSampling: normalizeFrameSamplingMode(), compositeLowerLayers: CLIP_COMPOSITE_MODE.AUTO }
-        : { gainDb: 0, fadeIn: 0, fadeOut: 0 }),
-      ...(linkGroupId ? { linkGroupId } : {}),
-      metadata: {
-        addedBySourcePlayer: true,
-        ...(needsAudio && type === 'audio' ? { linkedVideoClipId: firstId, embeddedAudioFromVideoAsset: true } : {}),
-      },
-    }
-  })
-  const plan = planSourceTimelineEdit({
-    clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-    markers: state.markers, fps, mode, startTime, duration, newClips, clipCounter: counter,
-  })
-  if (!plan.ok) return fail(plan.reason)
-  // Whole-compound moves are safe; splitting, removing or extending its
-  // embedded source through overwrite/insert is not supported yet.
-  for (const compound of state.clips.filter(isCompoundClip)) {
-    const retained = plan.clips.find(clip => clip.id === compound.id)
-    if (!retained || retained.duration !== compound.duration || retained.trimStart !== compound.trimStart
-      || retained.trimEnd !== compound.trimEnd || plan.clips.some(clip => isCompoundClip(clip) && !state.clips.some(old => old.id === clip.id))) {
-      return fail('Source edits cannot cut or overwrite a compound yet. Move the compound or open it to edit its layers.')
-    }
-  }
-  if (state.compoundEditContext) {
-    const valid = validateCompoundDocument({ ...getLiveChildDocument(state), clips: plan.clips,
-      transitions: plan.transitions, markers: plan.markers })
-    if (!valid.ok) return fail(valid.reason)
-  }
-  return {
-    ...info, ok: true, plan, clipIds: newClips.map(clip => clip.id),
-    affectedTrackNames: state.tracks.filter(track => plan.affectedTrackIds.includes(track.id)).map(track => track.name || track.id),
-  }
-}
-
 const sanitizeClipForHistory = (clip) => {
-  const cloned = sanitizeCompoundChildren(JSON.parse(JSON.stringify(clip)), sanitizeClipForHistory)
+  const cloned = JSON.parse(JSON.stringify(clip))
   if (!cloned?.opticalFlowCache) return cloned
   const {
     url: _url,
@@ -1017,36 +806,17 @@ const sanitizeClipForHistory = (clip) => {
   }
 }
 
-const opticalFlowDescriptorKey = cache => {
-  if (!cache?.path || !cache.sourceSignature) return null
-  const { url, status, progress, error, jobId, frame, fps, ...descriptor } = cache
-  return JSON.stringify(Object.fromEntries(Object.entries(descriptor).sort(([a], [b]) => a.localeCompare(b))))
-}
-
-const restoreHistoryClips = (snapshotClips = [], currentClips = [], verifiedSourceCaches = null) => {
-  // Uncompound changes instance IDs, not source-cache identity. Carry only
-  // verified source interpolation across that remap, never a full render bake.
-  const caches = verifiedSourceCaches || currentClips.flatMap(clip => isCompoundClip(clip)
-    ? clip.compound?.document?.clips || [] : [clip]).filter(clip => clip.assetId
-      && clip.opticalFlowCache?.status === 'ready' && !clip.opticalFlowCache.jobId
-      && opticalFlowDescriptorKey(clip.opticalFlowCache) && isOpticalFlowCacheUsable(clip))
+const restoreHistoryClips = (snapshotClips = [], currentClips = []) => {
   const currentById = new Map(currentClips.map((clip) => [clip.id, clip]))
   return snapshotClips.map((snapshotClip) => {
     const currentClip = currentById.get(snapshotClip.id)
     const canKeepRuntimeCache = currentClip
       && currentClip.assetId === snapshotClip.assetId
       && currentClip.opticalFlowCache
-    const descriptor = opticalFlowDescriptorKey(snapshotClip.opticalFlowCache)
-    const remappedCacheClip = !currentClip && descriptor && caches.find(clip => clip.assetId === snapshotClip.assetId
-      && opticalFlowDescriptorKey(clip.opticalFlowCache) === descriptor
-      && isOpticalFlowCacheUsable({ ...snapshotClip, opticalFlowCache: clip.opticalFlowCache }))
-    const restored = sanitizeCompoundChildren(snapshotClip,
-      child => restoreHistoryClips([child], currentClip?.compound?.document?.clips || [], caches)[0])
     return {
-      ...restored,
+      ...snapshotClip,
       opticalFlowCache: canKeepRuntimeCache
         ? { ...currentClip.opticalFlowCache }
-        : remappedCacheClip ? { ...remappedCacheClip.opticalFlowCache }
         : snapshotClip.opticalFlowCache,
     }
   })
@@ -1085,179 +855,18 @@ const reconcileSelectionWithSnapshot = (state, snapshot) => ({
   textEditRequest: null,
 })
 
-const DOCUMENT_KEYS = ['duration', 'zoom', 'masterAudioVolume', 'masterAudioInserts', 'tracks', 'clips', 'transitions',
-  'markers', 'clipCounter', 'transitionCounter', 'markerCounter', 'snappingEnabled', 'snappingThreshold', 'rippleEditMode']
-const COMPOUND_UI_KEYS = ['timelineFps', 'playheadPosition', 'selectedClipIds', 'selectedTransitionId', 'selectedMarkerId',
-  'selectedGap', 'activeTrackId', 'inPoint', 'outPoint', 'history', 'historyIndex', 'historyLastChangedAt', 'zoom', 'viewportNavigation']
-const pickFields = (state, keys) => Object.fromEntries(keys.map(key => [key, state[key]]))
-// Selection focus is a temporary view, not a saved zoom/compound child edit.
-// Ordinary zoom controls still author their existing saved zoom preference.
-const getDocumentZoom = state => {
-  const navigation = state.viewportNavigation
-  return navigation && navigation.zoom === state.zoom && navigation.context === state.compoundEditContext
-    ? navigation.documentZoom : state.zoom
-}
-const rawActiveDocument = state => ({ ...pickFields(state, DOCUMENT_KEYS), zoom: getDocumentZoom(state) })
-const compoundProjectionCache = new WeakMap()
-const getLiveChildDocument = state => {
-  const context = state.compoundEditContext
-  const active = rawActiveDocument(state)
-  const document = { ...context.originalChildDocument, ...active,
-    fps: context.originalChildDocument.fps, width: context.originalChildDocument.width, height: context.originalChildDocument.height,
-    duration: getCompoundDocumentExtent({ ...context.originalChildDocument, clips: state.clips }, context.originalChildDocument.duration) }
-  const valid = validateCompoundDocument(document)
-  if (!valid.ok) throw new Error(valid.reason)
-  return document
-}
-const clearCompoundRenderCache = clip => ({ ...clip, cacheStatus: 'none', cacheProgress: 0, cacheUrl: null,
-  cachePath: null, cacheKind: null, cacheSignature: null, opticalFlowCache: undefined })
-const compoundCacheKeys = new Set(['cacheStatus', 'cacheProgress', 'cacheUrl', 'cachePath', 'cacheKind', 'cacheSignature', 'opticalFlowCache'])
-const compoundAuthoringKey = document => JSON.stringify({ ...document,
-  clips: document.clips.map(clip => Object.fromEntries(Object.entries(clip).filter(([key]) => !compoundCacheKeys.has(key)))) })
-const getRootDocument = state => {
-  const context = state.compoundEditContext
-  if (!context) return rawActiveDocument(state)
-  const cached = compoundProjectionCache.get(context)
-  if (cached && DOCUMENT_KEYS.every(key => cached.fields[key] === (key === 'zoom' ? getDocumentZoom(state) : state[key]))) return cached.document
-  const child = getLiveChildDocument(state)
-  const changed = compoundAuthoringKey(child) !== compoundAuthoringKey(context.originalChildDocument)
-  const document = JSON.stringify(child) === JSON.stringify(context.originalChildDocument) ? context.parentDocument
-    : { ...context.parentDocument, clips: context.parentDocument.clips.map(clip => clip.id !== context.compoundClipId ? clip
-    : { ...(changed ? clearCompoundRenderCache(clip) : clip), sourceDuration: Math.max(clip.sourceDuration, child.duration), compound: { version: 1, document: child } }) }
-  compoundProjectionCache.set(context, { fields: rawActiveDocument(state), document, changed })
-  return document
-}
-const sanitizeProjectClip = clip => sanitizeCompoundChildren({ ...clip,
-  ...(clip.opticalFlowCache ? { opticalFlowCache: { ...clip.opticalFlowCache, url: undefined,
-    status: clip.opticalFlowCache.path ? 'ready' : 'none', progress: clip.opticalFlowCache.path ? 100 : 0, error: undefined, jobId: undefined } } : {}),
-}, child => sanitizeProjectClip({ ...child, cacheUrl: null }))
-const serializedProjectClips = new WeakMap()
-const serializeRootDocument = state => {
-  const document = getRootDocument(state)
-  let clips = serializedProjectClips.get(document.clips)
-  if (!clips) { clips = document.clips.map(sanitizeProjectClip); serializedProjectClips.set(document.clips, clips) }
-  return { ...document, clips }
-}
-const compoundNavigationReset = { isPlaying: false, playbackRate: 1, shuttleMode: false, loopMode: 'normal',
-  playheadSeekIntent: null, playbackJump: null, playbackJumpError: null, playAround: null,
-  activeSnapTime: null, textEditRequest: null, maskPickerRequest: null, maskEditActive: false,
-  maskDrawActive: false, copiedClips: [], attributeClipboard: null, keyframeClipboard: null,
-  previewProxyStatus: 'none', previewProxyProgress: 0, previewProxyPath: null, previewProxySignature: null, rangeRenderState: null }
-
-// These checks run BEFORE each action can save history. Existing ordinary
-// clip paths remain unchanged; unsupported parent-compound mutations and
-// overlapping writes fail closed until their semantics are implemented.
-const withCompoundGuards = (actions, get) => {
-  const parentUnsupported = new Set(['setClipBypass', 'updateClipSpeed', 'updateClipReverse', 'updateClipFrameSampling',
-    'updateClipTransform', 'updateClipCompositeMode', 'updateClipTrackMatte', 'updateClipAdjustments', 'updateClipShapeMask',
-    'updateAudioClipProperties', 'resetClipTransform', 'setKeyframe', 'removeKeyframe', 'moveKeyframeTime',
-    'moveKeyframesAtTime', 'pasteKeyframesFromClipboard', 'toggleKeyframe', 'updateKeyframeEasing', 'clearPropertyKeyframes',
-    'clearAllKeyframes', 'addEffect', 'removeEffect', 'updateEffect', 'toggleEffect', 'reorderEffect', 'addMaskEffect', 'addEdgeTransition'])
-  const childUnsupported = new Set(['placeLiveCaptions', 'addAdjustmentClip', 'addTransition', 'addEdgeTransition',
-    'toggleTrackSolo', 'setTrackInserts', 'setMasterAudioVolume', 'setMasterAudioInserts', 'setTimelineFps', 'clearProject'])
-  const intersects = (a, b) => a.trackId === b.trackId && a.startTime < b.startTime + b.duration - 1e-7 && a.startTime + a.duration > b.startTime + 1e-7
-  const badPositions = (state, changes) => {
-    const ids = new Set(changes.map(clip => clip.id))
-    const candidates = [...state.clips.filter(clip => !ids.has(clip.id)), ...changes]
-    return changes.some(clip => {
-      const track = state.tracks.find(track => track.id === clip.trackId)
-      if (isCompoundClip(clip) && (!track || track.type !== 'video' || isCaptionsTrack(track) || isCompoundLocked(clip)
-        || isCompoundLocked(track) || track.visible === false || track.muted)) return true
-      return candidates.some(other => other.id !== clip.id && (isCompoundClip(other) || isCompoundClip(clip)) && intersects(clip, other))
-    })
-  }
-  const denied = name => /^(preview|apply|rename)/.test(name)
-    ? { ok: false, changed: false, reason: 'This operation is not supported for compound clips yet. Open the compound to edit its layers.' } : null
-  for (const [name, action] of Object.entries(actions)) {
-    if (typeof action !== 'function') continue
-    actions[name] = (...args) => {
-      const state = get()
-      const compounds = state.clips.filter(isCompoundClip)
-      if (name === 'pasteClipsAtPlayhead' && state.copiedClips.some(isCompoundClip)) return denied(name)
-      if (name === 'addClip' && args[1]?.type === 'compound') return denied(name)
-      if (!state.compoundEditContext && !compounds.length) return action(...args)
-      const first = state.clips.find(clip => clip.id === args[0])
-      if (state.compoundEditContext) {
-        if (childUnsupported.has(name)) return denied(name)
-        if (name === 'addClip' && (!['video', 'image', 'audio'].includes(args[1]?.type)
-          || args[1]?.settings?.defaultTransform?.blendMode && args[1].settings.defaultTransform.blendMode !== 'normal'
-          || args[4]?.transform?.blendMode && args[4].transform.blendMode !== 'normal')) return denied(name)
-        if (name === 'pasteClipsAtPlayhead' && state.copiedClips.some(clip => !validateCompoundDocument({
-          ...state.compoundEditContext.originalChildDocument, clips: [{ ...clip, startTime: 0 }] }).ok)) return denied(name)
-        if (['applyPasteAttributes', 'applyMultiClipInspectorEdit'].includes(name)) {
-          const changes = args[0]?.changes || args[0]?.updates || args[0] || {}
-          if (changes.trackMatte && changes.trackMatte !== 'none' || changes.compositeLowerLayers === 'off'
-            || changes.transform?.blendMode && changes.transform.blendMode !== 'normal') return denied(name)
-        }
-        if (name === 'addTrack' && (!['video', 'audio'].includes(args[0]) || args[1]?.role === 'captions')) return denied(name)
-        if (name === 'updateClipTrackMatte' && args[1] !== 'none' || name === 'updateClipCompositeMode' && args[1] === 'off'
-          || name === 'updateClipTransform' && args[1]?.blendMode && args[1].blendMode !== 'normal') return denied(name)
-      }
-      if (compounds.length) {
-        if (name === 'setTimelineFps' && args[0] !== state.timelineFps) return denied(name)
-        if (isCompoundClip(first) && parentUnsupported.has(name)) return denied(name)
-        if (name === 'addTransition' && [args[0], args[1]].some(id => compounds.some(clip => clip.id === id))) return denied(name)
-        if (['copySelectedClips', 'linkSelectedClips', 'unlinkSelectedClips'].includes(name)
-          && compounds.some(clip => state.selectedClipIds.includes(clip.id))) return denied(name)
-        if (name === 'duplicateClipsForDrag' && compounds.some(clip => (args[0] || []).includes(clip.id))) return denied(name)
-        if (['getPasteAttributesPreview', 'applyPasteAttributes', 'applyMultiClipInspectorEdit', 'applyMultiClipEffectsEdit'].includes(name)
-          && compounds.some(clip => (args[0]?.clipIds || state.selectedClipIds).includes(clip.id))) return denied(name)
-        const deleting = name === 'removeClip' ? [args[0]] : name === 'removeSelectedClips' ? state.selectedClipIds
-          : name === 'rippleDeleteClipIds' || name === 'setClipsEnabled' ? args[0] : []
-        if (compounds.some(clip => deleting?.includes(clip.id) && (isCompoundLocked(clip) || isCompoundLocked(state.tracks.find(track => track.id === clip.trackId))))) return denied(name)
-      }
-      let changes = []
-      if (name === 'moveClip' && first) changes = [{ ...first, trackId: args[1], startTime: Math.max(0, args[2]) }]
-      if (['setSelectedClipPositions', 'setSelectedClipsStartTimes'].includes(name)) changes = (args[0] || []).map(update => ({ ...state.clips.find(clip => clip.id === update.id), ...update }))
-      if (name === 'moveSelectedClips') changes = state.clips.filter(clip => (args[3] || state.selectedClipIds).includes(clip.id))
-        .map(clip => ({ ...clip, startTime: Math.max(0, clip.startTime + args[0]), trackId: args[1] || clip.trackId }))
-      if (name === 'resizeClip' && first) changes = [{ ...first, duration: isCompoundClip(first) ? Math.min(args[1], first.sourceDuration - first.trimStart) : args[1] }]
-      if (name === 'updateClipTrim' && first) {
-        if (isCompoundClip(first) && Object.keys(args[1] || {}).some(key => !['startTime', 'duration', 'trimStart', 'trimEnd'].includes(key))) return denied(name)
-        changes = [applyClipTrimUpdate(first, args[1], state.timelineFps)]
-      }
-      if (name === 'updateClipsTrim') {
-        for (const item of args[0] || []) {
-          const clip = state.clips.find(clip => clip.id === item.id)
-          if (isCompoundClip(clip)) {
-            if (Object.keys(item.updates || {}).some(key => !['startTime', 'duration', 'trimStart', 'trimEnd'].includes(key))) return denied(name)
-          }
-          if (clip) changes.push(applyClipTrimUpdate(clip, item.updates, state.timelineFps))
-        }
-      }
-      if (compounds.length && changes.length && (badPositions(state, changes) || state.rippleEditMode)) return denied(name)
-      if (compounds.length && ['addClip', 'addTextClip', 'addShapeClip', 'addAdjustmentClip', 'pasteClipsAtPlayhead'].includes(name)) {
-        const trackId = args[0]
-        const options = name === 'addClip' ? args[4] : name === 'addAdjustmentClip' ? args[2] : args[1]
-        const startTime = name === 'addAdjustmentClip' ? args[1] : name === 'pasteClipsAtPlayhead' ? args[1] : args[2]
-        const start = startTime ?? Math.max(0, ...state.clips.filter(clip => clip.trackId === trackId).map(clip => clip.startTime + clip.duration))
-        const duration = options?.duration ?? (name === 'addClip' && args[1]?.type !== 'image' ? args[1]?.duration || args[1]?.settings?.duration : 5) ?? 5
-        const candidates = name === 'pasteClipsAtPlayhead' ? state.copiedClips.map(clip => ({ ...clip, trackId, startTime: start + (clip.relativeStart || 0) })) : [{ trackId, startTime: start, duration }]
-        if (candidates.some(candidate => compounds.some(clip => intersects(clip, candidate)))) return denied(name)
-      }
-      return action(...args)
-    }
-  }
-  return actions
-}
-
 /**
  * Store for managing timeline state
  * Persisted to localStorage for data survival across refreshes
  */
 export const useTimelineStore = create(
   persist(
-    (set, get) => withCompoundGuards({
+    (set, get) => ({
   // Timeline settings
   duration: 60, // Total timeline duration in seconds
   timelineFps: 24, // Timeline frame rate; clips are quantized to frame boundaries
   timelineSessionId: 1, // Increments whenever a project/timeline payload replaces the store
-  compoundEditContext: null,
-  compoundNavigationRevision: 0,
-  compoundNavigationChangedDocument: false,
   zoom: 100, // Zoom level (100 = 1 second = ~20px)
-  viewportNavigation: null, // Transient selection-focus zoom; never serialized
-  viewportNavigationRevision: 0,
   playheadPosition: 0, // Current playhead position in seconds
   // Transient transport intent. A one-frame step must survive preview-source
   // swaps (for example Canvas -> rendered In→Out chunk) long enough for the
@@ -1265,11 +874,6 @@ export const useTimelineStore = create(
   // clear it in setPlayheadPosition.
   playheadSeekIntent: null,
   playheadSeekRevision: 0,
-  playbackJump: null, // Transient target-picture handoff during active playback
-  playbackJumpRevision: 0, // Never reset on timeline replacement: stale tokens cannot recur
-  playbackJumpError: null,
-  playAround: null, // Temporary Play Around range; never saved or added to Undo
-  playAroundRevision: 0,
   isPlaying: false,
   
   // JKL Shuttle playback
@@ -1328,9 +932,6 @@ export const useTimelineStore = create(
 
   // Copy/paste: clips copied from timeline (not persisted)
   copiedClips: [],
-  // Independent, deep attribute snapshots. Never persisted or reused after a
-  // project/timeline switch; normal clip paste keeps its existing buffer.
-  attributeClipboard: null,
 
   // Preview proxy (flattened timeline for smooth playback; not persisted)
   previewProxyStatus: 'none', // 'none' | 'generating' | 'ready'
@@ -1673,519 +1274,6 @@ export const useTimelineStore = create(
     set({ history: [], historyIndex: -1, historyLastChangedAt: 0 })
   },
 
-  getActiveDocumentData: () => {
-    const state = get()
-    return state.compoundEditContext ? getLiveChildDocument(state) : rawActiveDocument(state)
-  },
-
-  // Both sides are validated before any write. The private token retains the
-  // original pair so pointer moves are cumulative, including envelope offsets.
-  // Compound parents and same-track compound overlaps are rejected by the
-  // planner itself, not only by the generic single-clip mutation wrappers.
-  beginRollEdit: (request = {}) => {
-    const state = get()
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before rolling a cut.' }
-    const result = createRollEditSession({ clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-      clipAId: request?.clipAId, clipBId: request?.clipBId, fps: state.timelineFps })
-    if (!result.ok) return result
-    const plan = planRollEdit({ session: result.session, requestedDelta: 0 })
-    if (!plan.ok) return plan
-    const token = {}
-    rollEditTokens.set(token, { session: result.session, expected: pickFields(state, ROLL_EDIT_STATE_KEYS),
-      originalHistory: state.history, originalHistoryIndex: state.historyIndex,
-      originalHistoryChangedAt: state.historyLastChangedAt, checkpointed: false, delta: 0 })
-    return { ...publicRollResult(result.session, plan, false), token }
-  },
-
-  applyRollEdit: (token, requestedDelta) => {
-    const state = get(), record = token && rollEditTokens.get(token)
-    if (!record || record.writing || ROLL_EDIT_STATE_KEYS.some(key => state[key] !== record.expected[key])) {
-      return { ok: false, changed: false, reason: 'The timeline or selection changed. Start a new rolling edit.' }
-    }
-    const plan = planRollEdit({ session: record.session, requestedDelta })
-    if (!plan.ok) return plan
-    if (plan.delta === record.delta) return publicRollResult(record.session, { ...plan,
-      feedback: buildRollEditPreviewFeedback({ session: record.session, clips: state.clips,
-        fps: state.timelineFps, requestedDelta, bounds: record.session.bounds }) }, false)
-    const update = { clips: plan.clips }
-    if (!record.checkpointed) {
-      let snapshot
-      try { snapshot = createHistorySnapshot(state) } catch (_) {
-        return { ok: false, changed: false, reason: 'These clips cannot be checkpointed safely.' }
-      }
-      let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-      if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-      Object.assign(update, { history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    }
-    const expected = { ...record.expected }
-    for (const key of ROLL_EDIT_STATE_KEYS) if (Object.hasOwn(update, key)) expected[key] = update[key]
-    record.writing = true
-    try { set(update) } finally { record.writing = false }
-    record.checkpointed = true
-    record.delta = plan.delta
-    record.expected = expected
-    if (ROLL_EDIT_STATE_KEYS.some(key => get()[key] !== expected[key])) {
-      return { ok: false, changed: true, reason: 'The timeline changed during this rolling edit. Start a new gesture.' }
-    }
-    return publicRollResult(record.session, plan, true)
-  },
-
-  endRollEdit: token => {
-    const state = get(), record = token && rollEditTokens.get(token)
-    if (!record) return { ok: false, changed: false, reason: 'This rolling edit has already ended.' }
-    rollEditTokens.delete(token)
-    // Returning to the original pair is not an authored edit. Restore the exact
-    // pre-gesture history (including a Redo branch), but never erase a later edit.
-    if (record.checkpointed && record.delta === 0
-      && ROLL_EDIT_STATE_KEYS.every(key => state[key] === record.expected[key])) {
-      set({ history: record.originalHistory, historyIndex: record.originalHistoryIndex,
-        historyLastChangedAt: record.originalHistoryChangedAt })
-    }
-    return { ok: true, changed: false }
-  },
-
-  // Slip changes only one ordinary source range. The private original clip
-  // prevents cumulative drift; an idle gesture never checkpoints the document.
-  beginSlipEdit: (request = {}) => {
-    const state = get()
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before using Slip.' }
-    const result = createSlipEditSession({ clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-      clipId: request?.clipId, fps: state.timelineFps })
-    if (!result.ok) return result
-    const plan = planSlipEdit({ session: result.session, requestedDelta: 0 })
-    if (!plan.ok) return plan
-    const token = {}
-    slipEditTokens.set(token, { session: result.session, expected: pickFields(state, ROLL_EDIT_STATE_KEYS),
-      originalHistory: state.history, originalHistoryIndex: state.historyIndex,
-      originalHistoryChangedAt: state.historyLastChangedAt, checkpointed: false, delta: 0 })
-    return { ...publicSlipResult(result.session, plan, false), token }
-  },
-
-  applySlipEdit: (token, requestedDelta) => {
-    const state = get(), record = token && slipEditTokens.get(token)
-    if (!record || record.writing || ROLL_EDIT_STATE_KEYS.some(key => state[key] !== record.expected[key])) {
-      return { ok: false, changed: false, reason: 'The timeline or selection changed. Start a new Slip gesture.' }
-    }
-    const plan = planSlipEdit({ session: record.session, requestedDelta })
-    if (!plan.ok) return plan
-    if (plan.delta === record.delta) return publicSlipResult(record.session, { ...plan,
-      feedback: buildSlipEditPreviewFeedback({ session: record.session, clips: state.clips,
-        fps: state.timelineFps, requestedDelta, bounds: record.session.bounds }) }, false)
-    const update = { clips: plan.clips }
-    if (!record.checkpointed) {
-      let snapshot
-      try { snapshot = createHistorySnapshot(state) } catch (_) {
-        return { ok: false, changed: false, reason: 'This clip cannot be checkpointed safely.' }
-      }
-      let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-      if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-      Object.assign(update, { history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    }
-    const expected = { ...record.expected }
-    for (const key of ROLL_EDIT_STATE_KEYS) if (Object.hasOwn(update, key)) expected[key] = update[key]
-    record.writing = true
-    try { set(update) } finally { record.writing = false }
-    record.checkpointed = true
-    record.delta = plan.delta
-    record.expected = expected
-    if (ROLL_EDIT_STATE_KEYS.some(key => get()[key] !== expected[key])) {
-      return { ok: false, changed: true, reason: 'The timeline changed during this Slip edit. Start a new gesture.' }
-    }
-    return publicSlipResult(record.session, plan, true)
-  },
-
-  endSlipEdit: token => {
-    const state = get(), record = token && slipEditTokens.get(token)
-    if (!record) return { ok: false, changed: false, reason: 'This Slip gesture has already ended.' }
-    slipEditTokens.delete(token)
-    if (record.checkpointed && record.delta === 0
-      && ROLL_EDIT_STATE_KEYS.every(key => state[key] === record.expected[key])) {
-      set({ history: record.originalHistory, historyIndex: record.originalHistoryIndex,
-        historyLastChangedAt: record.originalHistoryChangedAt })
-    }
-    return { ok: true, changed: false }
-  },
-
-  beginSlideEdit: (request = {}) => {
-    const state = get()
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before using Slide.' }
-    if (!Array.isArray(state.selectedClipIds) || state.selectedClipIds.length > 1
-      || state.selectedClipIds.length === 1 && state.selectedClipIds[0] !== request?.clipId) {
-      return { ok: false, changed: false, reason: 'Select only the middle clip before using Slide.' }
-    }
-    const result = createSlideEditSession({ clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-      clipId: request?.clipId, fps: state.timelineFps })
-    if (!result.ok) return result
-    const plan = planSlideEdit({ session: result.session, requestedDelta: 0 })
-    if (!plan.ok) return plan
-    const token = {}
-    slideEditTokens.set(token, { session: result.session, expected: pickFields(state, SLIDE_EDIT_STATE_KEYS),
-      originalHistory: state.history, originalHistoryIndex: state.historyIndex,
-      originalHistoryChangedAt: state.historyLastChangedAt, checkpointed: false, delta: 0 })
-    return { ...publicSlideResult(result.session, plan, false), token }
-  },
-
-  applySlideEdit: (token, requestedDelta) => {
-    const state = get(), record = token && slideEditTokens.get(token)
-    if (!record || record.writing || SLIDE_EDIT_STATE_KEYS.some(key => state[key] !== record.expected[key])) {
-      return { ok: false, changed: false, reason: 'The timeline, selection or edit mode changed. Start a new Slide gesture.' }
-    }
-    const plan = planSlideEdit({ session: record.session, requestedDelta })
-    if (!plan.ok) return plan
-    if (plan.delta === record.delta) return publicSlideResult(record.session, { ...plan,
-      feedback: buildSlideEditPreviewFeedback({ session: record.session, clips: state.clips, requestedDelta }) }, false)
-    const update = { clips: plan.clips }
-    if (!record.checkpointed) {
-      let snapshot
-      try { snapshot = createHistorySnapshot(state) } catch (_) {
-        return { ok: false, changed: false, reason: 'The Slide clips cannot be checkpointed safely.' }
-      }
-      let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-      if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-      Object.assign(update, { history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    }
-    const expected = { ...record.expected }
-    for (const key of SLIDE_EDIT_STATE_KEYS) if (Object.hasOwn(update, key)) expected[key] = update[key]
-    record.writing = true
-    try { set(update) } finally { record.writing = false }
-    record.checkpointed = true
-    record.delta = plan.delta
-    record.expected = expected
-    if (SLIDE_EDIT_STATE_KEYS.some(key => get()[key] !== expected[key])) {
-      return { ok: false, changed: true, reason: 'The timeline changed during this Slide edit. Start a new gesture.' }
-    }
-    return publicSlideResult(record.session, plan, true)
-  },
-
-  endSlideEdit: token => {
-    const state = get(), record = token && slideEditTokens.get(token)
-    if (!record) return { ok: false, changed: false, reason: 'This Slide gesture has already ended.' }
-    slideEditTokens.delete(token)
-    if (record.checkpointed && record.delta === 0
-      && SLIDE_EDIT_STATE_KEYS.every(key => state[key] === record.expected[key])) {
-      set({ history: record.originalHistory, historyIndex: record.originalHistoryIndex,
-        historyLastChangedAt: record.originalHistoryChangedAt })
-    }
-    return { ok: true, changed: false }
-  },
-
-  beginRippleTrim: (request = {}) => {
-    const state = get()
-    if (state.rippleEditMode !== true) return { ok: false, changed: false, reason: 'Turn on Ripple Edit before ripple trimming.' }
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before ripple trimming.' }
-    const result = createRippleTrimSession({ clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-      clipId: request?.clipId, edge: request?.edge, targetClipIds: request?.targetClipIds, fps: state.timelineFps })
-    if (!result.ok) return result
-    const plan = planRippleTrim({ session: result.session, requestedDelta: 0 })
-    if (!plan.ok) return plan
-    const token = {}
-    rippleTrimTokens.set(token, { session: result.session, expected: pickFields(state, RIPPLE_TRIM_STATE_KEYS),
-      originalHistory: state.history, originalHistoryIndex: state.historyIndex,
-      originalHistoryChangedAt: state.historyLastChangedAt, originalDuration: state.duration, checkpointed: false, delta: 0 })
-    return { ...publicRippleTrimResult(result.session, plan, false), token }
-  },
-
-  applyRippleTrim: (token, requestedDelta) => {
-    const state = get(), record = token && rippleTrimTokens.get(token)
-    if (!record || record.writing || RIPPLE_TRIM_STATE_KEYS.some(key => state[key] !== record.expected[key])) {
-      return { ok: false, changed: false, reason: 'The timeline, selection or ripple settings changed. Start a new ripple trim.' }
-    }
-    const plan = planRippleTrim({ session: record.session, requestedDelta })
-    if (!plan.ok) return plan
-    if (plan.delta === record.delta) return publicRippleTrimResult(record.session, { ...plan,
-      feedback: buildRippleTrimPreviewFeedback({ session: record.session, clips: state.clips, requestedDelta }) }, false)
-    const update = { clips: plan.clips, transitions: plan.transitions,
-      duration: Math.max(record.originalDuration, ...plan.clips.map(clip => clip.startTime + clip.duration)) }
-    if (!record.checkpointed) {
-      let snapshot
-      try { snapshot = createHistorySnapshot(state) } catch (_) {
-        return { ok: false, changed: false, reason: 'The affected clips cannot be checkpointed safely.' }
-      }
-      let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-      if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-      Object.assign(update, { history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    }
-    const expected = { ...record.expected }
-    for (const key of RIPPLE_TRIM_STATE_KEYS) if (Object.hasOwn(update, key)) expected[key] = update[key]
-    record.writing = true
-    try { set(update) } finally { record.writing = false }
-    record.checkpointed = true
-    record.delta = plan.delta
-    record.expected = expected
-    if (RIPPLE_TRIM_STATE_KEYS.some(key => get()[key] !== expected[key])) {
-      return { ok: false, changed: true, reason: 'The timeline changed during this ripple trim. Start a new gesture.' }
-    }
-    return publicRippleTrimResult(record.session, plan, true)
-  },
-
-  endRippleTrim: token => {
-    const state = get(), record = token && rippleTrimTokens.get(token)
-    if (!record) return { ok: false, changed: false, reason: 'This ripple trim has already ended.' }
-    rippleTrimTokens.delete(token)
-    if (record.checkpointed && record.delta === 0
-      && RIPPLE_TRIM_STATE_KEYS.every(key => state[key] === record.expected[key])) {
-      set({ history: record.originalHistory, historyIndex: record.originalHistoryIndex,
-        historyLastChangedAt: record.originalHistoryChangedAt })
-    }
-    return { ok: true, changed: false }
-  },
-
-  previewUncompound: (request = {}) => {
-    const state = get()
-    if (state.compoundEditContext) return { ok: false, changed: false, reason: 'Return to the parent timeline before uncompounding.' }
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before uncompounding.' }
-    const plan = buildUncompoundPlan({ clips: state.clips, tracks: state.tracks, transitions: state.transitions, markers: state.markers,
-      clipId: request?.clipId, clipCounter: state.clipCounter, markerCounter: state.markerCounter, fps: state.timelineFps })
-    if (!plan.ok) return plan
-    const token = {}
-    uncompoundTokens.set(token, { plan, clipId: request.clipId, snapshot: pickFields(state, UNCOMPOUND_STATE_KEYS) })
-    return { ok: true, changed: true, summary: structuredClone(plan.summary), token }
-  },
-
-  applyUncompound: (request = {}, token = null) => {
-    const state = get(), record = token && uncompoundTokens.get(token)
-    if (!record || request?.clipId !== record.clipId || UNCOMPOUND_STATE_KEYS.some(key => state[key] !== record.snapshot[key])) {
-      return { ok: false, changed: false, reason: 'The timeline or selection changed. Review Uncompound again.' }
-    }
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) { return { ok: false, changed: false, reason: 'The compound cannot be checkpointed safely.' } }
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    uncompoundTokens.delete(token)
-    const plan = record.plan
-    const restoredIds = new Set(plan.restoredClipIds)
-    const restoredClips = plan.clips.filter(clip => restoredIds.has(clip.id))
-    const firstVisual = restoredClips.find(clip => clip.type !== 'audio'
-      && plan.tracks.some(track => track.id === clip.trackId && track.visible !== false && !track.muted))
-    const activeTrackId = (firstVisual || restoredClips.find(clip => clip.type === 'audio') || restoredClips[0])?.trackId || state.activeTrackId
-    set({ clips: plan.clips, tracks: plan.tracks, markers: plan.markers, clipCounter: plan.clipCounter, markerCounter: plan.markerCounter,
-      activeTrackId,
-      selectedClipIds: plan.restoredClipIds, selectedTransitionId: null, selectedMarkerId: null, selectedGap: null,
-      history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    return { ok: true, changed: true, summary: structuredClone(plan.summary), restoredClipIds: [...plan.restoredClipIds] }
-  },
-
-  previewCreateCompound: (request = {}) => {
-    const state = get()
-    if (state.compoundEditContext) return { ok: false, reason: 'Nested compounds are not supported. Return to the parent timeline first.' }
-    if (state.isPlaying) return { ok: false, reason: 'Pause playback before creating a compound.' }
-    const plan = buildCreateCompoundPlan({ ...request, clips: state.clips, tracks: state.tracks, transitions: state.transitions,
-      markers: state.markers, fps: state.timelineFps, clipCounter: state.clipCounter })
-    if (!plan.ok) return plan
-    const token = {}
-    compoundCreateTokens.set(token, { plan, requestKey: JSON.stringify(request),
-      snapshot: pickFields(state, SMART_REPLACE_STATE_KEYS) })
-    return { ok: true, changed: true, summary: structuredClone(plan.summary), token }
-  },
-
-  applyCreateCompound: (request = {}, token = null) => {
-    const state = get()
-    const record = token && compoundCreateTokens.get(token)
-    if (!record || state.compoundEditContext || SMART_REPLACE_STATE_KEYS.some(key => state[key] !== record.snapshot[key])
-      || JSON.stringify(request) !== record.requestKey) return { ok: false, reason: 'The timeline or selection changed. Review the compound again.' }
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) { return { ok: false, reason: 'The selection cannot be checkpointed safely.' } }
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    compoundCreateTokens.delete(token)
-    set({ clips: record.plan.clips, clipCounter: record.plan.clipCounter, selectedClipIds: [record.plan.compoundClip.id],
-      selectedTransitionId: null, selectedMarkerId: null, selectedGap: null,
-      history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    return { ok: true, changed: true, summary: structuredClone(record.plan.summary), clipId: record.plan.compoundClip.id }
-  },
-
-  openCompound: (clipId, expectedClip = null) => {
-    const state = get()
-    const matches = state.clips.filter(clip => clip.id === clipId)
-    const clip = matches[0]
-    if (state.compoundEditContext || matches.length !== 1 || !isCompoundClip(clip) || clip.compound?.version !== 1
-      || expectedClip && expectedClip !== clip) return { ok: false, reason: 'Select one current top-level compound to open.' }
-    const track = state.tracks.find(item => item.id === clip.trackId)
-    if (isCompoundLocked(clip) || isCompoundLocked(track) || isCompoundCacheBusy(clip)) return { ok: false, reason: 'Unlock the compound and wait for render jobs before opening it.' }
-    const valid = validateCompoundDocument(clip.compound.document)
-    if (!valid.ok) return valid
-    const child = structuredClone(clip.compound.document)
-    const originalChildDocument = { ...child, zoom: child.zoom ?? 100, masterAudioVolume: child.masterAudioVolume ?? 100,
-      masterAudioInserts: child.masterAudioInserts || [], markers: child.markers || [], transitions: child.transitions || [],
-      clipCounter: child.clipCounter || getNextClipCounter(child.clips), transitionCounter: child.transitionCounter || 1,
-      markerCounter: child.markerCounter || 1, snappingEnabled: child.snappingEnabled ?? true,
-      snappingThreshold: child.snappingThreshold ?? 10, rippleEditMode: child.rippleEditMode ?? false }
-    const context = { compoundClipId: clip.id, compoundName: clip.name, sessionKey: state.timelineSessionId + 1,
-      parentDocument: rawActiveDocument(state), parentUi: pickFields(state, COMPOUND_UI_KEYS), originalChildDocument }
-    set({ ...pickFields(originalChildDocument, DOCUMENT_KEYS), ...compoundNavigationReset, timelineFps: child.fps,
-      viewportNavigation: null,
-      compoundEditContext: context, timelineSessionId: state.timelineSessionId + 1, compoundNavigationRevision: state.compoundNavigationRevision + 1,
-      compoundNavigationChangedDocument: false, playheadPosition: Math.max(0, Math.min(child.duration,
-        state.playheadPosition - clip.startTime + clip.trimStart)), selectedClipIds: [], selectedTransitionId: null,
-      selectedMarkerId: null, selectedGap: null, activeTrackId: child.tracks[0]?.id || null, inPoint: null, outPoint: null,
-      history: [], historyIndex: -1, historyLastChangedAt: 0 })
-    return { ok: true, changed: false }
-  },
-
-  closeCompound: () => {
-    const state = get()
-    const context = state.compoundEditContext
-    if (!context) return { ok: true, changed: false }
-    if (state.clips.some(isCompoundCacheBusy)) return { ok: false, reason: 'Wait for child clip render jobs to finish before returning to the parent timeline.' }
-    let root
-    try { root = getRootDocument(state) } catch (error) { return { ok: false, reason: error.message } }
-    const changed = compoundProjectionCache.get(context)?.changed === true
-    let history = context.parentUi.history
-    if (changed) {
-      let snapshot
-      try { snapshot = createHistorySnapshot(context.parentDocument) } catch (_) { return { ok: false, reason: 'The parent timeline cannot be checkpointed safely.' } }
-      history = context.parentUi.historyIndex >= 0 ? history.slice(0, context.parentUi.historyIndex + 1) : [...history]
-      if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-      history = history.slice(-MAX_HISTORY_SIZE)
-    }
-    set({ ...root, ...context.parentUi, ...compoundNavigationReset, compoundEditContext: null,
-      history, historyIndex: changed ? -1 : context.parentUi.historyIndex,
-      historyLastChangedAt: changed ? Date.now() : context.parentUi.historyLastChangedAt,
-      timelineSessionId: state.timelineSessionId + 1, compoundNavigationRevision: state.compoundNavigationRevision + 1,
-      compoundNavigationChangedDocument: changed })
-    return { ok: true, changed }
-  },
-
-  renameCompound: (clipId, name, expectedClip = null) => {
-    const state = get()
-    const clip = state.clips.find(item => item.id === clipId)
-    if (!isCompoundClip(clip) || expectedClip && expectedClip !== clip || isCompoundLocked(clip)
-      || isCompoundLocked(state.tracks.find(track => track.id === clip.trackId))) return { ok: false, reason: 'Select an unlocked current compound to rename.' }
-    if (typeof name !== 'string' || !name.trim() || name.trim().length > 160) return { ok: false, reason: 'Enter a name between 1 and 160 characters.' }
-    if (name.trim() === clip.name) return { ok: true, changed: false }
-    get().saveToHistory()
-    set({ clips: state.clips.map(item => item === clip ? { ...clip, name: name.trim() } : item) })
-    return { ok: true, changed: true }
-  },
-
-  // MCP editing uses the same pure editorial planners as the UI. Explicit
-  // targets never change UI selection, and only this store owns the atomic
-  // document/history commit. Opaque one-use tokens cannot carry caller patches.
-  previewMcpEditing: (request = {}) => {
-    const state = get()
-    const plan = planMcpEditing(state, request, { getDefinition: getEffectTypeDefinition,
-      makeId: () => `effect-${globalThis.crypto.randomUUID()}`, applyClipTrimUpdate,
-      buildTransitionSettings: state.buildTransitionSettings,
-      getMaxEdgeTransitionDuration: state.getMaxEdgeTransitionDuration,
-      getMaxTransitionDurationForAlignment: state.getMaxTransitionDurationForAlignment,
-      getTransitionContributions })
-    if (!plan.ok) return plan
-    const token = {}
-    mcpEditingTokens.set(token, { plan, requestKey: JSON.stringify(request), snapshot: pickFields(state, RIPPLE_TRIM_STATE_KEYS) })
-    return { ok: true, changed: plan.changed, summary: structuredClone(plan.summary), token }
-  },
-
-  applyMcpEditing: (request = {}, token = null) => {
-    const state = get(), record = token && mcpEditingTokens.get(token)
-    if (!record || RIPPLE_TRIM_STATE_KEYS.some(key => state[key] !== record.snapshot[key]) || JSON.stringify(request) !== record.requestKey) {
-      return { ok: false, changed: false, reason: 'The timeline changed. Preview this edit again.' }
-    }
-    mcpEditingTokens.delete(token)
-    const { plan } = record
-    if (!plan.changed) return { ok: true, changed: false, summary: structuredClone(plan.summary) }
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) { return { ok: false, changed: false, reason: 'This edit cannot be checkpointed safely.' } }
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    set({ ...plan.patch, history: history.slice(-MAX_HISTORY_SIZE), historyIndex: -1, historyLastChangedAt: Date.now() })
-    return { ok: true, changed: true, summary: structuredClone(plan.summary) }
-  },
-
-  previewSmartReplace: (request = {}) => {
-    const state = get()
-    if (state.isPlaying) return { ok: false, changed: false, reason: 'Pause playback before replacing a clip source.' }
-    try {
-      const plan = buildSmartReplacePlan({ ...request, clips: state.clips, tracks: state.tracks,
-        transitions: state.transitions, timelineFps: state.timelineFps })
-      if (!plan.ok) return plan
-      const { updates, ...publicPreview } = plan
-      const token = {}
-      smartReplaceTokens.set(token, {
-        updates, publicPreview: structuredClone(publicPreview), requestKey: smartReplaceRequestKey(request),
-        snapshot: Object.fromEntries(SMART_REPLACE_STATE_KEYS.map(key => [key, state[key]])),
-      })
-      return { ...publicPreview, token }
-    } catch (_) {
-      return { ok: false, changed: false, reason: 'This clip or source contains unsupported data. No changes were made.' }
-    }
-  },
-
-  applySmartReplace: (request = {}, token = null) => {
-    const state = get()
-    const record = token && smartReplaceTokens.get(token)
-    const stale = () => ({ ok: false, changed: false, reason: 'The selected clip, replacement source, or timeline changed. Review Smart Replace again.' })
-    if (!record || SMART_REPLACE_STATE_KEYS.some(key => state[key] !== record.snapshot[key])) return stale()
-    try {
-      if (smartReplaceRequestKey(request) !== record.requestKey) return stale()
-    } catch (_) { return stale() }
-    const { updates, publicPreview } = record
-    if (!publicPreview.changed) {
-      smartReplaceTokens.delete(token)
-      return structuredClone(publicPreview)
-    }
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) {
-      return { ok: false, changed: false, reason: 'This timeline cannot be checkpointed safely. No changes were made.' }
-    }
-    // Keep a single atomic document/history write: linked companions, clip
-    // identity, selection, timing, and every authored editing field survive.
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    if (history.length > MAX_HISTORY_SIZE) history = history.slice(-MAX_HISTORY_SIZE)
-    smartReplaceTokens.delete(token)
-    set({
-      clips: state.clips.map(clip => clip.id === request.clipId ? { ...clip, ...updates } : clip),
-      history, historyIndex: -1, historyLastChangedAt: Date.now(),
-    })
-    return structuredClone(publicPreview)
-  },
-
-  previewSourceEdit: (request = {}) => {
-    const state = get()
-    try {
-      const preview = buildSourceEditPlan(state, request)
-      if (!preview.ok) return preview
-      const { plan, ...publicPreview } = preview
-      const token = {}
-      sourceEditTokens.set(token, {
-        requestKey: sourceEditRequestKey(request), plan, publicPreview: structuredClone(publicPreview),
-        snapshot: Object.fromEntries(SOURCE_EDIT_STATE_KEYS.map(key => [key, state[key]])),
-      })
-      return { ...publicPreview, token }
-    } catch (_) {
-      return { ok: false, reason: 'This source or timeline contains unsupported data. No changes were made.', targetTrackNames: [], affectedTrackNames: [] }
-    }
-  },
-
-  applySourceEdit: (request = {}, token = null) => {
-    const state = get()
-    const record = token && sourceEditTokens.get(token)
-    const stale = () => ({ ok: false, reason: 'The source or timeline changed. Review the destinations and try again.' })
-    if (!record || SOURCE_EDIT_STATE_KEYS.some(key => state[key] !== record.snapshot[key])) return stale()
-    try {
-      if (sourceEditRequestKey(request) !== record.requestKey) return stale()
-    } catch (_) { return stale() }
-    // Consume once and commit picture, sound, existing edits and their history
-    // together. No sequential addClip calls or partially placed A/V pair.
-    const { plan, publicPreview } = record
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) {
-      return { ok: false, reason: 'This timeline cannot be checkpointed safely. No changes were made.' }
-    }
-    sourceEditTokens.delete(token)
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    if (history.length > MAX_HISTORY_SIZE) history = history.slice(-MAX_HISTORY_SIZE)
-    set({
-      clips: plan.clips, transitions: plan.transitions, markers: plan.markers,
-      clipCounter: plan.clipCounter, selectedClipIds: [...publicPreview.clipIds],
-      selectedTransitionId: null, selectedMarkerId: null, selectedGap: null,
-      duration: Math.max(state.duration, ...plan.clips.map(clip => clip.startTime + clip.duration + 10)),
-      history, historyIndex: -1, historyLastChangedAt: Date.now(),
-    })
-    return publicPreview
-  },
-
   /**
    * Handle clip overlaps on the same track (NLE overwrite behavior)
    * When a clip is placed, it cuts/trims any overlapping clips on the same track
@@ -2233,7 +1321,6 @@ export const useTimelineStore = create(
             ...updatedClips[idx],
             startTime: newEndTime,
             duration: clipEnd - newEndTime,
-            ...(clip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(clip, trimAmount) } : {}),
             trimStart: (clip.trimStart || 0) + trimAmountSource
           }
         }
@@ -2276,7 +1363,6 @@ export const useTimelineStore = create(
             id: nextId,
             startTime: secondPartStart,
             duration: secondPartDuration,
-            ...(clip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(clip, secondPartStart - clip.startTime) } : {}),
             trimStart: secondPartTrimStart,
             trimEnd: getClipTrimEnd(clip),
             opticalFlowCache: undefined,
@@ -2408,8 +1494,6 @@ export const useTimelineStore = create(
       gainDb: asset.type === 'audio' ? normalizeAudioClipGainDb(options?.gainDb) : undefined,
       fadeIn: asset.type === 'audio' ? clampAudioFadeDuration(options?.fadeIn, finalDuration) : undefined,
       fadeOut: asset.type === 'audio' ? clampAudioFadeDuration(options?.fadeOut, finalDuration) : undefined,
-      ...(asset.type === 'audio' && options?.volumeEnvelope != null ? { volumeEnvelope: normalizeAudioVolumeEnvelope(options.volumeEnvelope) } : {}),
-      ...(asset.type === 'audio' && options?.audioEq != null ? { audioEq: normalizeAudioEq(options.audioEq) } : {}),
       color: track.type === 'video' ? getVideoColor(safeClipCounter) : getAudioColor(track.id),
       type: asset.type,
       enabled: options?.enabled !== false,
@@ -2986,33 +2070,73 @@ export const useTimelineStore = create(
     return get().rippleDeleteClipIds(state.selectedClipIds)
   },
 
-  previewSelectedGapDelete: () => {
-    const state = get()
-    const { clips, transitions, ...preview } = planCloseTimelineGap({ clips: state.clips, tracks: state.tracks,
-      transitions: state.transitions, gap: state.selectedGap, fps: state.timelineFps })
-    return { ...preview, changed: false }
-  },
-
   rippleDeleteSelectedGap: () => {
     const state = get()
-    // Re-plan from current state; a preview must never authorize stale edits.
-    const plan = planCloseTimelineGap({ clips: state.clips, tracks: state.tracks,
-      transitions: state.transitions, gap: state.selectedGap, fps: state.timelineFps })
-    if (!plan.ok) return false
-    let snapshot
-    try { snapshot = createHistorySnapshot(state) } catch (_) { return false }
-    let history = state.historyIndex >= 0 ? state.history.slice(0, state.historyIndex + 1) : [...state.history]
-    if (!history.length || !areHistorySnapshotsEqual(history[history.length - 1], snapshot)) history.push(snapshot)
-    // Publish the checkpoint and every track together so subscribers never see
-    // an intermediate edit with picture and independently recorded audio apart.
-    set({ clips: plan.clips, transitions: plan.transitions, selectedClipIds: [], selectedTransitionId: null,
-      selectedMarkerId: null, selectedGap: null, history: history.slice(-MAX_HISTORY_SIZE),
-      historyIndex: -1, historyLastChangedAt: Date.now() })
+    const selectedGap = state.selectedGap
+    if (!selectedGap?.trackId || !Number.isFinite(selectedGap?.startTime) || !Number.isFinite(selectedGap?.endTime)) {
+      return false
+    }
+
+    const gapRange = mergeTimeRanges([{
+      start: Math.max(0, selectedGap.startTime),
+      end: Math.max(0, selectedGap.endTime),
+    }])
+    if (gapRange.length === 0) {
+      set({ selectedGap: null })
+      return false
+    }
+
+    const fps = state.timelineFps || 24
+    get().saveToHistory()
+
+    set((currentState) => {
+      const linkGroupShiftAmounts = new Map()
+
+      currentState.clips.forEach((clip) => {
+        if (clip.trackId !== selectedGap.trackId) return
+
+        const shiftAmount = getRippleShiftAmount(clip.startTime, gapRange)
+        if (shiftAmount <= RIPPLE_TIME_EPSILON) return
+
+        const linkGroupId = getNormalizedLinkGroupId(clip.linkGroupId)
+        if (!linkGroupId) return
+
+        const existingShiftAmount = linkGroupShiftAmounts.get(linkGroupId) || 0
+        linkGroupShiftAmounts.set(linkGroupId, Math.max(existingShiftAmount, shiftAmount))
+      })
+
+      const shiftedClips = currentState.clips.map((clip) => {
+        const directTrackShift = clip.trackId === selectedGap.trackId
+          ? getRippleShiftAmount(clip.startTime, gapRange)
+          : 0
+        const linkedShift = linkGroupShiftAmounts.get(getNormalizedLinkGroupId(clip.linkGroupId)) || 0
+        const shiftAmount = Math.max(directTrackShift, linkedShift)
+
+        if (shiftAmount <= RIPPLE_TIME_EPSILON) return clip
+
+        return {
+          ...clip,
+          startTime: roundToFrame(Math.max(0, clip.startTime - shiftAmount), fps),
+        }
+      })
+
+      const cleanedState = cleanupBrokenBetweenTransitions(shiftedClips, currentState.transitions)
+
+      return {
+        clips: cleanedState.clips,
+        transitions: cleanedState.transitions,
+        selectedClipIds: [],
+        selectedTransitionId: null,
+        selectedMarkerId: null,
+        selectedGap: null,
+      }
+    })
+
     return true
   },
 
   /**
-   * Copy selected clips for normal paste and independent attribute snapshots.
+   * Copy selected clips to internal buffer (for paste at playhead)
    */
   copySelectedClips: () => {
     const state = get()
@@ -3021,56 +2145,8 @@ export const useTimelineStore = create(
     const selected = state.clips.filter(c => selectedIds.includes(c.id))
     if (selected.length === 0) return
     const minStart = Math.min(...selected.map(c => c.startTime))
-    const withRelative = selected.map(c => ({ ...c, relativeStart: c.startTime - minStart,
-      ...(c.volumeEnvelope != null ? { volumeEnvelope: structuredClone(c.volumeEnvelope) } : {}),
-      ...(c.audioEq != null ? { audioEq: structuredClone(c.audioEq) } : {}),
-    }))
-    let attributeClipboard = null
-    try {
-      const keys = ['id', 'name', 'type', 'duration', 'transform', 'adjustments', 'effects', 'keyframes', 'bypass', 'gainDb', 'fadeIn', 'fadeOut']
-      const snapshots = selected.map(clip => structuredClone(Object.fromEntries(
-        keys.filter(key => Object.prototype.hasOwnProperty.call(clip, key)).map(key => [key, clip[key]])
-      )))
-      attributeClipboard = { id: globalThis.crypto.randomUUID(), clips: snapshots }
-    } catch (error) {
-      // A non-cloneable legacy value must not break ordinary Copy or leave an
-      // older attribute source silently active.
-      console.warn('[timelineStore] Could not capture clip attributes:', error)
-    }
-    set({ copiedClips: withRelative, attributeClipboard })
-  },
-
-  getPasteAttributesPreview: (request = {}) => {
-    const state = get()
-    const clipboard = state.attributeClipboard
-    const source = clipboard?.clips.find(clip => clip.id === request.sourceId)
-    if (!source || clipboard.id !== request.clipboardId) {
-      return { ok: false, error: 'Copy a source clip again before pasting attributes.', groups: [] }
-    }
-    return getPasteAttributesAvailability(state, { source, clipIds: request.clipIds }, { getDefinition: getEffectTypeDefinition })
-  },
-
-  applyPasteAttributes: (request = {}) => {
-    const state = get()
-    const clipboard = state.attributeClipboard
-    const source = clipboard?.clips.find(clip => clip.id === request.sourceId)
-    const fail = error => ({ ok: false, error, changedCount: 0 })
-    if (!source || clipboard.id !== request.clipboardId) return fail('The copied source changed. Reopen Paste Attributes.')
-    if (request.expectedClips !== state.clips || request.expectedTracks !== state.tracks) {
-      return fail('The timeline changed. Reopen Paste Attributes to review the destinations.')
-    }
-    const plan = planPasteAttributes(state, { source, clipIds: request.clipIds, groups: request.groups }, {
-      getDefinition: getEffectTypeDefinition,
-      makeId: () => `effect-${globalThis.crypto.randomUUID()}`,
-    })
-    if (!plan.ok || !plan.changedCount) return plan
-    if (state.compoundEditContext) {
-      const valid = validateCompoundDocument({ ...getLiveChildDocument(state), clips: plan.clips })
-      if (!valid.ok) return fail(valid.reason)
-    }
-    get().saveToHistory()
-    set({ clips: plan.clips })
-    return { ok: true, changedCount: plan.changedCount, targetCount: plan.targetCount }
+    const withRelative = selected.map(c => ({ ...c, relativeStart: c.startTime - minStart }))
+    set({ copiedClips: withRelative })
   },
 
   /**
@@ -3248,8 +2324,6 @@ export const useTimelineStore = create(
           gainDb: template.type === 'audio' ? normalizeAudioClipGainDb(template.gainDb) : undefined,
           fadeIn: template.type === 'audio' ? clampAudioFadeDuration(template.fadeIn, duration) : undefined,
           fadeOut: template.type === 'audio' ? clampAudioFadeDuration(template.fadeOut, duration) : undefined,
-          ...(template.type === 'audio' && template.volumeEnvelope != null ? { volumeEnvelope: normalizeAudioVolumeEnvelope(template.volumeEnvelope) } : {}),
-          ...(template.type === 'audio' && template.audioEq != null ? { audioEq: normalizeAudioEq(template.audioEq) } : {}),
           color: isVideoTrack ? getVideoColor(clipCounter) : getAudioColor(track.id),
           type: template.type,
           enabled: template.enabled !== false,
@@ -3430,7 +2504,6 @@ export const useTimelineStore = create(
                     ...updatedClips[idx],
                     startTime: newEndTime,
                     duration: clipEnd - newEndTime,
-                    ...(existingClip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(existingClip, trimAmount) } : {}),
                     trimStart: (existingClip.trimStart || 0) + trimAmountSource
                   }
                 }
@@ -3470,7 +2543,6 @@ export const useTimelineStore = create(
                     opticalFlowCache: undefined,
                     startTime: secondPartStart,
                     duration: secondPartDuration,
-                    ...(existingClip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(existingClip, secondPartStart - existingClip.startTime) } : {}),
                     trimStart: secondPartTrimStart,
                     trimEnd: getClipTrimEnd(existingClip)
                   })
@@ -3514,9 +2586,7 @@ export const useTimelineStore = create(
                 }
                 if (c.id === t.clipBId && t.originalClipBStart != null && t.originalClipBTrimStart != null) {
                   const durationDiff = c.startTime - t.originalClipBStart
-                  return { ...c, startTime: t.originalClipBStart, duration: c.duration - durationDiff, trimStart: t.originalClipBTrimStart,
-                    ...(c.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(c, -durationDiff) } : {}),
-                  }
+                  return { ...c, startTime: t.originalClipBStart, duration: c.duration - durationDiff, trimStart: t.originalClipBTrimStart }
                 }
                 return c
               })
@@ -3672,7 +2742,6 @@ export const useTimelineStore = create(
                 ...updatedClips[idx],
                 startTime: newEndTime,
                 duration: clipEnd - newEndTime,
-                ...(existingClip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(existingClip, trimAmount) } : {}),
                 trimStart: (existingClip.trimStart || 0) + trimAmountSource
               }
             }
@@ -3710,7 +2779,6 @@ export const useTimelineStore = create(
                 opticalFlowCache: undefined,
                 startTime: secondPartStart,
                 duration: secondPartDuration,
-                ...(existingClip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(existingClip, secondPartStart - existingClip.startTime) } : {}),
                 trimStart: secondPartTrimStart,
                 trimEnd: getClipTrimEnd(existingClip)
               })
@@ -3751,9 +2819,7 @@ export const useTimelineStore = create(
               }
               if (c.id === t.clipBId && t.originalClipBStart != null && t.originalClipBTrimStart != null) {
                 const durationDiff = c.startTime - t.originalClipBStart
-                return { ...c, startTime: t.originalClipBStart, duration: c.duration - durationDiff, trimStart: t.originalClipBTrimStart,
-                  ...(c.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(c, -durationDiff) } : {}),
-                }
+                return { ...c, startTime: t.originalClipBStart, duration: c.duration - durationDiff, trimStart: t.originalClipBTrimStart }
               }
               return c
             })
@@ -4076,86 +3142,11 @@ export const useTimelineStore = create(
     }))
   },
 
-  /** Author one clip's manual volume envelope. UI drafts commit once per
-   * gesture with the original clip identity, so stale/cancelled/no-op edits
-   * cannot create history or land on a replacement clip. */
-  updateAudioVolumeEnvelope: (clipId, envelope, saveHistory = true, expectedClip = null) => {
-    const state = get()
-    const fail = reason => ({ ok: false, changed: false, reason })
-    const matches = state.clips.filter(clip => clip.id === clipId)
-    const clip = matches[0]
-    if (matches.length !== 1 || !clip) return fail('The audio clip changed. Select it again before editing volume.')
-    if (expectedClip != null && expectedClip !== clip) return fail('The audio clip changed while editing. Try again.')
-    const tracks = state.tracks.filter(track => track.id === clip.trackId)
-    const track = tracks[0]
-    if (tracks.length !== 1 || track?.type !== 'audio' || !isAudioClipRole(clip, track)) return fail('Select one audio clip on an audio track to edit its volume envelope.')
-    if (track.locked || track.syncLocked || track.lockMode === 'sync' || track.syncLock?.mode === 'sync'
-      || clip.locked || clip.syncLocked || clip.lockMode === 'sync' || clip.syncLock?.mode === 'sync') {
-      return fail('Unlock the audio clip and its track before editing its volume envelope.')
-    }
-    const validated = validateAudioVolumeEnvelope(envelope)
-    if (!validated.ok) return fail(validated.reason)
-    const current = normalizeAudioVolumeEnvelope(clip.volumeEnvelope)
-    if (JSON.stringify(current) === JSON.stringify(validated.envelope)) return { ok: true, changed: false }
-    if (saveHistory) get().saveToHistory()
-    set({ clips: state.clips.map(candidate => candidate === clip ? { ...clip, volumeEnvelope: validated.envelope } : candidate) })
-    return { ok: true, changed: true }
-  },
-
-  /** Fixed-band per-clip audio EQ. Bypass retains the authored values; this is
-   * separate from gain/fades, volume envelopes, and static Paste Attributes. */
-  updateAudioEq: (clipId, eq, saveHistory = true, expectedClip = null) => {
-    const state = get()
-    const fail = reason => ({ ok: false, changed: false, reason })
-    const matches = state.clips.filter(clip => clip.id === clipId)
-    const clip = matches[0]
-    if (matches.length !== 1 || !clip) return fail('The audio clip changed. Select it again before editing EQ.')
-    if (expectedClip != null && expectedClip !== clip) return fail('The audio clip changed while editing EQ. Try again.')
-    const tracks = state.tracks.filter(track => track.id === clip.trackId)
-    const track = tracks[0]
-    if (tracks.length !== 1 || track?.type !== 'audio' || !isAudioClipRole(clip, track)) return fail('Select one audio clip on an audio track to edit its EQ.')
-    if (track.locked || track.syncLocked || track.lockMode === 'sync' || track.syncLock?.mode === 'sync'
-      || clip.locked || clip.syncLocked || clip.lockMode === 'sync' || clip.syncLock?.mode === 'sync') {
-      return fail('Unlock the audio clip and its track before editing EQ.')
-    }
-    const validated = validateAudioEq(eq)
-    if (!validated.ok) return fail(validated.reason)
-    if (JSON.stringify(normalizeAudioEq(clip.audioEq)) === JSON.stringify(validated.eq)) return { ok: true, changed: false }
-    if (saveHistory) get().saveToHistory()
-    set({ clips: state.clips.map(candidate => candidate === clip ? { ...clip, audioEq: validated.eq } : candidate) })
-    return { ok: true, changed: true }
-  },
-
   /**
-   * Apply one validated multi-selection property change as a single undo step.
-   */
-  applyMultiClipInspectorEdit: (request = {}, saveHistory = true) => {
-    const state = get()
-    // A draft from a previous selection must never land on the new one.
-    const requestedIds = new Set(request.clipIds || [])
-    const currentIds = new Set(state.selectedClipIds)
-    if (requestedIds.size < 2 || requestedIds.size !== currentIds.size
-      || [...requestedIds].some(id => !currentIds.has(id))) {
-      return { ok: false, error: 'Selection changed. Review the selected clips and try again.', changedCount: 0 }
-    }
-    const plan = request.updates
-      ? planMultiClipInspectorUpdates(state, request)
-      : planMultiClipInspectorEdit(state, request)
-    if (!plan.ok || plan.changedCount === 0) return plan
-    if (state.compoundEditContext) {
-      const valid = validateCompoundDocument({ ...getLiveChildDocument(state), clips: plan.clips })
-      if (!valid.ok) return { ok: false, error: valid.reason, changedCount: 0 }
-    }
-    if (saveHistory) get().saveToHistory()
-    set({ clips: plan.clips })
-    return { ok: true, changedCount: plan.changedCount, targetCount: plan.targetCount }
-  },
-
-  /**
-   * Update clip transform properties (position, scale, rotation, flip, crop, opacity).
+   * Update clip transform properties (position, scale, rotation, flip, crop, opacity)
    * @param {string} clipId - The clip to update
    * @param {object} transformUpdates - Partial transform object with properties to update
-   * @param {boolean} saveHistory - Whether to save history (false for realtime sliders)
+   * @param {boolean} saveHistory - Whether to save to history (default: false for realtime sliders)
    */
   updateClipTransform: (clipId, transformUpdates, saveHistory = false) => {
     if (saveHistory) {
@@ -4967,25 +3958,6 @@ export const useTimelineStore = create(
 
   // ==================== EFFECTS MANAGEMENT ====================
 
-  // Multi-clip effects share the normal history/dirty paths, but validate and
-  // publish the entire edit at once rather than looping single-clip actions.
-  applyMultiClipEffectsEdit: (request = {}, saveHistory = true) => {
-    const state = get()
-    const requested = new Set(request.clipIds || [])
-    const current = new Set(state.selectedClipIds)
-    if (requested.size < 2 || requested.size !== current.size || [...requested].some(id => !current.has(id))) {
-      return { ok: false, error: 'Selection changed. Review the selected clips and try again.', changedCount: 0 }
-    }
-    const plan = planMultiClipEffectsEdit(state, request, {
-      getDefinition: getEffectTypeDefinition,
-      makeId: () => `effect-${globalThis.crypto.randomUUID()}`,
-    })
-    if (!plan.ok || !plan.changedCount) return plan
-    if (saveHistory) get().saveToHistory()
-    set({ clips: plan.clips })
-    return { ok: true, changedCount: plan.changedCount }
-  },
-
   /**
    * Add an effect to a clip
    * @param {string} clipId - The clip ID
@@ -5366,8 +4338,7 @@ export const useTimelineStore = create(
           ...clip,
           trimStart: newTrimStart,
           startTime: clip.startTime + trimDeltaTimeline,
-          duration: clip.duration - trimDeltaTimeline,
-          ...(clip.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(clip, trimDeltaTimeline) } : {}),
+          duration: clip.duration - trimDeltaTimeline
         }
       })
     }))
@@ -5774,8 +4745,8 @@ export const useTimelineStore = create(
   /**
    * Get all active clips at a specific time (for compositing)
    */
-  getActiveClipsAtTime: (time, renderState = null) => {
-    const state = renderState || get()
+  getActiveClipsAtTime: (time) => {
+    const state = get()
     const anyVideoSolo = hasVideoSolo(state.tracks)
     const activeClips = []
     const addedClipIds = new Set()
@@ -5818,8 +4789,8 @@ export const useTimelineStore = create(
       const trackClips = state.clips.filter(c =>
         c.trackId === track.id &&
         isClipEnabled(c) &&
-        time >= getClipPlaybackWindow(c).start &&
-        time < getClipPlaybackWindow(c).end
+        time >= c.startTime &&
+        time < c.startTime + c.duration
       )
       trackClips
         .sort((a, b) => a.startTime - b.startTime)
@@ -5858,8 +4829,8 @@ export const useTimelineStore = create(
    * - transitionStart = clipB.startTime (which is now earlier than original edit point)
    * - transitionEnd = clipA.startTime + clipA.duration (which is now later than original edit point)
    */
-  getTransitionAtTime: (time, renderState = null) => {
-    const state = renderState || get()
+  getTransitionAtTime: (time) => {
+    const state = get()
     const anyVideoSolo = hasVideoSolo(state.tracks)
     const safeTime = Number(time)
     if (!Number.isFinite(safeTime)) return null
@@ -6117,17 +5088,10 @@ export const useTimelineStore = create(
   },
 
   /**
-   * User navigation during playback freezes the target until its picture lands.
-   * Continuous transport writers must identify themselves; loop wraps additionally
-   * set discontinuity so they receive the same handoff as a user jump.
+   * Set playhead position. Playback stays continuous; seek/scrub UI can request frame snapping.
    */
   setPlayheadPosition: (position, options = {}) => {
-    const initial = get()
-    const isTransport = options?.source === 'transport'
-    const cancelPatch = !isTransport ? stopPlayAroundPatch(initial) : {}
-    const state = !isTransport && initial.playAround ? { ...initial, ...cancelPatch } : initial
-    const currentJump = getCurrentPlaybackJump(state)
-    if (isTransport && (!state.isPlaying || currentJump)) return false
+    const state = get()
     const fps = state.timelineFps || FRAME_RATE
     const parsedPosition = Number(position)
     const safePosition = Number.isFinite(parsedPosition) ? parsedPosition : 0
@@ -6135,83 +5099,13 @@ export const useTimelineStore = create(
     const shouldSnap = options?.snap === true || options?.snapToFrame === true
     const nextPosition = shouldSnap ? roundToFrame(clampedPosition, fps) : clampedPosition
     const nextRevision = (Number(state.playheadSeekRevision) || 0) + 1
-    const isNavigation = !isTransport || options?.discontinuity === true
-    const needsJump = state.isPlaying && isNavigation
-    const reuseJump = needsJump && currentJump && Math.abs(currentJump.targetTime - nextPosition) < 1e-9
-    const jumpRevision = (Number(state.playbackJumpRevision) || 0) + (needsJump && !reuseJump ? 1 : 0)
     set({
-      ...cancelPatch,
       playheadPosition: nextPosition,
       playheadSeekRevision: nextRevision,
       playheadSeekIntent: options?.intent === 'frame-step'
         ? { type: 'frame-step', targetTime: nextPosition, revision: nextRevision }
         : null,
-      playbackJump: needsJump
-        ? (reuseJump ? currentJump : createPlaybackJump(state, nextPosition, jumpRevision, Date.now()))
-        : null,
-      playbackJumpRevision: jumpRevision,
-      ...(isNavigation ? { playbackJumpError: null } : {}),
     })
-    return true
-  },
-
-  // Only a committed target composite may release a matching live request.
-  completePlaybackJump: (token) => {
-    const request = getCurrentPlaybackJump(get())
-    if (!request || request.token !== token) return false
-    set({ playbackJump: null, playbackJumpError: null })
-    return true
-  },
-
-  failPlaybackJump: (token, reason = 'The requested playback frame could not be loaded.') => {
-    const state = get()
-    const request = getCurrentPlaybackJump(state)
-    if (!request || request.token !== token) return false
-    const audition = getCurrentPlayAround(state)
-    set({ playbackJump: null, playbackJumpError: String(reason || 'The requested playback frame could not be loaded.'),
-      isPlaying: false, playbackRate: audition?.previousRate ?? 1,
-      shuttleMode: audition?.previousShuttleMode ?? false, playAround: null })
-    return true
-  },
-
-  startPlayAround: (centerTime = null, auditionClip = null) => {
-    const state = get()
-    const revision = (Number(state.playAroundRevision) || 0) + 1
-    const session = createPlayAround(state, centerTime, revision)
-    if (!session) return false
-    // Used only by the music-ducking dialog. Reuse the same bounded playback
-    // clock and context ownership without altering ordinary Play Around.
-    if (auditionClip) {
-      if (state.clips.filter(clip => clip === auditionClip).length !== 1 || auditionClip.type !== 'audio'
-        || !Number.isFinite(auditionClip.startTime) || !Number.isFinite(auditionClip.duration)
-        || auditionClip.startTime < 0 || auditionClip.duration < 1 / state.timelineFps) return false
-      session.startTime = auditionClip.startTime
-      session.endTime = auditionClip.startTime + auditionClip.duration
-    }
-    const jumpRevision = (Number(state.playbackJumpRevision) || 0) + 1
-    set({ playAround: session, playAroundRevision: revision, isPlaying: true, playbackRate: 1, shuttleMode: false,
-      playheadPosition: session.startTime, playheadSeekIntent: null,
-      playheadSeekRevision: (Number(state.playheadSeekRevision) || 0) + 1,
-      playbackJump: createPlaybackJump({ ...state, playbackRate: 1 }, session.startTime, jumpRevision, Date.now()),
-      playbackJumpRevision: jumpRevision, playbackJumpError: null })
-    return session.token
-  },
-
-  finishPlayAround: (token) => {
-    const state = get(), session = getCurrentPlayAround(state)
-    if (!session || session.token !== token) return false
-    const revision = (Number(state.playheadSeekRevision) || 0) + 1
-    set({ ...stopPlayAroundPatch(state), playheadPosition: session.returnTime,
-      playheadSeekRevision: revision,
-      playheadSeekIntent: { type: 'frame-step', targetTime: session.returnTime, revision }, playbackJumpError: null })
-    return true
-  },
-
-  cancelPlayAround: (token = null) => {
-    const state = get()
-    if (!state.playAround || (token !== null && state.playAround.token !== token)) return false
-    set(stopPlayAroundPatch(state))
-    return true
   },
 
   /**
@@ -6225,29 +5119,22 @@ export const useTimelineStore = create(
    * Toggle play/pause
    */
   togglePlay: () => {
-    if (get().playAround) { get().cancelPlayAround(); return }
     set((state) => {
       const nextIsPlaying = !state.isPlaying
       const timelineEnd = state.getTimelineEndTime()
       const atOrPastEnd = timelineEnd > 0 && state.playheadPosition >= (timelineEnd - 0.001)
-      const retry = nextIsPlaying && Boolean(state.playbackJumpError)
-      const nextPosition = retry ? state.playheadPosition : roundToFrame(
-        (!state.isPlaying && nextIsPlaying && state.loopMode === 'normal' && atOrPastEnd) ? 0 : state.playheadPosition,
-        state.timelineFps || FRAME_RATE
-      )
-      const nextRate = state.isPlaying ? state.playbackRate : 1
-      const jumpRevision = (Number(state.playbackJumpRevision) || 0) + (retry ? 1 : 0)
 
       return {
         isPlaying: nextIsPlaying,
         playheadSeekIntent: null,
-        playbackJump: retry ? createPlaybackJump({ ...state, playbackRate: nextRate }, nextPosition, jumpRevision, Date.now()) : null,
-        playbackJumpRevision: jumpRevision,
-        playbackJumpError: null,
         // Restart from beginning when pressing play at the timeline end in normal mode.
-        // A failed landing retries that exact target instead.
-        playheadPosition: nextPosition,
-        playbackRate: nextRate, // Reset to 1x when starting
+        playheadPosition: roundToFrame(
+          (!state.isPlaying && nextIsPlaying && state.loopMode === 'normal' && atOrPastEnd)
+            ? 0
+            : state.playheadPosition,
+          state.timelineFps || FRAME_RATE
+        ),
+        playbackRate: state.isPlaying ? state.playbackRate : 1, // Reset to 1x when starting
         shuttleMode: false
       }
     })
@@ -6257,39 +5144,61 @@ export const useTimelineStore = create(
    * Set playback rate (for JKL shuttle)
    */
   setPlaybackRate: (rate) => {
-    set((state) => ({ ...playbackRateUpdate(state, rate), playAround: null }))
+    set({ playbackRate: rate })
   },
 
   /**
    * JKL Shuttle: J key - play reverse (multiple presses increase speed)
    */
   shuttleReverse: () => {
-    set((state) => ({ isPlaying: true, ...playbackRateUpdate(state, nextShuttleRate(state, 'reverse'), { starting: true }), shuttleMode: true, playAround: null }))
+    set((state) => {
+      const speeds = [-1, -2, -4, -8]
+      
+      if (!state.isPlaying || state.playbackRate > 0) {
+        // Not playing or playing forward - start reverse at 1x
+        return { isPlaying: true, playbackRate: -1, shuttleMode: true }
+      }
+      
+      // Already playing reverse - increase speed
+      const currentIndex = speeds.indexOf(state.playbackRate)
+      const nextIndex = Math.min(currentIndex + 1, speeds.length - 1)
+      return { playbackRate: speeds[nextIndex], shuttleMode: true }
+    })
   },
 
   /**
    * JKL Shuttle: K key - pause
    */
   shuttlePause: () => {
-    if (get().playAround) { get().cancelPlayAround(); return }
-    set({ isPlaying: false, playbackRate: 1, shuttleMode: false, playbackJump: null })
+    set({ isPlaying: false, playbackRate: 1, shuttleMode: false })
   },
 
   /**
    * JKL Shuttle: L key - play forward (multiple presses increase speed)
    */
   shuttleForward: () => {
-    set((state) => ({ isPlaying: true, ...playbackRateUpdate(state, nextShuttleRate(state, 'forward'), { starting: true }), shuttleMode: true, playAround: null }))
+    set((state) => {
+      const speeds = [1, 2, 4, 8]
+      
+      if (!state.isPlaying || state.playbackRate < 0) {
+        // Not playing or playing reverse - start forward at 1x
+        return { isPlaying: true, playbackRate: 1, shuttleMode: true }
+      }
+      
+      // Already playing forward - increase speed
+      const currentIndex = speeds.indexOf(state.playbackRate)
+      const nextIndex = Math.min(currentIndex + 1, speeds.length - 1)
+      return { playbackRate: speeds[nextIndex], shuttleMode: true }
+    })
   },
 
   /**
    * JKL Shuttle: K+J or K+L - slow shuttle (hold K and tap J or L)
    */
-  shuttleSlow: (direction, step = false) => {
+  shuttleSlow: (direction) => {
     set((state) => {
-      // K+J/L retains fixed half-speed; Shift+J/L steps down to 1/8x.
-      const rate = step ? nextShuttleRate(state, direction, true) : direction === 'reverse' ? -0.5 : 0.5
-      return { isPlaying: true, ...playbackRateUpdate(state, rate, { starting: true }), shuttleMode: true, playAround: null }
+      const rate = direction === 'reverse' ? -0.5 : 0.5
+      return { isPlaying: true, playbackRate: rate, shuttleMode: true }
     })
   },
 
@@ -6298,24 +5207,15 @@ export const useTimelineStore = create(
    * @param {'normal' | 'loop' | 'loop-in-out' | 'loop-selection' | 'ping-pong'} mode
    */
   setLoopMode: (mode) => {
-    set({ ...stopPlayAroundPatch(get()), loopMode: mode })
+    set({ loopMode: mode })
   },
 
   /**
    * Set zoom level (0.5% - 2000%). Absolute bounds only — the timeline
    * enforces its content-aware floor (getMinZoom) at the call sites.
    */
-  setZoom: (zoom, options = {}) => {
-    if (!Number.isFinite(zoom)) return
-    const state = get()
-    const value = Math.max(0.5, Math.min(2000, zoom))
-    if (value === state.zoom) return
-    if (options?.navigationOnly === true) {
-      set({ zoom: value, viewportNavigationRevision: state.viewportNavigationRevision + 1,
-        viewportNavigation: { zoom: value, documentZoom: getDocumentZoom(state), context: state.compoundEditContext } })
-    } else {
-      set({ zoom: value, viewportNavigation: null })
-    }
+  setZoom: (zoom) => {
+    set({ zoom: Math.max(0.5, Math.min(2000, zoom)) })
   },
 
   /**
@@ -6648,15 +5548,10 @@ export const useTimelineStore = create(
     set((state) => ({
       timelineSessionId: (Number(state.timelineSessionId) || 0) + 1,
       duration: 60,
-      attributeClipboard: null,
-      viewportNavigation: null,
       zoom: 100,
       playheadPosition: 0,
       playheadSeekIntent: null,
       playheadSeekRevision: 0,
-      playbackJump: null,
-      playbackJumpError: null,
-      playAround: null,
       isPlaying: false,
       playbackRate: 1,
       shuttleMode: false,
@@ -6696,10 +5591,6 @@ export const useTimelineStore = create(
    */
   loadFromProject: (timelineData, assets = [], timelineFps = null) => {
     if (!timelineData) return
-    if (get().compoundEditContext) {
-      const closed = get().closeCompound()
-      if (!closed.ok) throw new Error(closed.reason)
-    }
     const fps = Number(timelineFps) || 24
     const assetsById = buildAssetByIdMap(assets)
     const projectTracks = timelineData.tracks || [
@@ -6712,13 +5603,6 @@ export const useTimelineStore = create(
     )
     // Align all clip start times and durations to frame boundaries (no sub-frame)
     const frameAlignedClips = normalizedClips.map((clip) => {
-      if (isCompoundClip(clip)) {
-        const hydrated = sanitizeCompoundChildren(clip, child => ({ ...child,
-          ...(isInfinitelyExtendableClipType(child) ? { sourceDuration: Infinity } : {}), cacheUrl: null,
-          opticalFlowCache: child.opticalFlowCache ? { ...child.opticalFlowCache, url: undefined,
-            status: child.opticalFlowCache.path ? 'hydrating' : 'none', progress: 0, jobId: undefined, error: undefined } : undefined }))
-        return clampFiniteMediaClipToSource(hydrated, fps)
-      }
       const startTime = roundToFrame(Math.max(0, clip.startTime || 0), fps)
       const duration = roundDurationToFrame(clip.duration || 0.5, fps)
       const timeScale = getClipTimeScale(clip)
@@ -6760,8 +5644,6 @@ export const useTimelineStore = create(
               gainDb: normalizeAudioClipGainDb(clip.gainDb),
               fadeIn: clampAudioFadeDuration(clip.fadeIn, duration),
               fadeOut: clampAudioFadeDuration(clip.fadeOut, duration),
-              ...(clip.volumeEnvelope != null ? { volumeEnvelope: normalizeAudioVolumeEnvelope(clip.volumeEnvelope) } : {}),
-              ...(clip.audioEq != null ? { audioEq: normalizeAudioEq(clip.audioEq) } : {}),
             }
           : {}),
         ...(supportsLowerLayerCompositeMode(clip)
@@ -6775,10 +5657,7 @@ export const useTimelineStore = create(
 
     set((state) => ({
       timelineSessionId: (Number(state.timelineSessionId) || 0) + 1,
-      compoundEditContext: null,
-      viewportNavigation: null,
       duration: timelineData.duration || 60,
-      attributeClipboard: null,
       timelineFps: fps,
       zoom: timelineData.zoom || 100,
       masterAudioVolume: clampTrackVolume(timelineData.masterAudioVolume),
@@ -6797,9 +5676,6 @@ export const useTimelineStore = create(
       playheadPosition: 0,
       playheadSeekIntent: null,
       playheadSeekRevision: 0,
-      playbackJump: null,
-      playbackJumpError: null,
-      playAround: null,
       isPlaying: false,
       playbackRate: 1,
       shuttleMode: false,
@@ -6825,7 +5701,40 @@ export const useTimelineStore = create(
    * Get timeline data for saving to project
    */
   getProjectData: () => {
-    return serializeRootDocument(get())
+    const state = get()
+    return {
+      duration: state.duration,
+      zoom: state.zoom,
+      masterAudioVolume: state.masterAudioVolume,
+      masterAudioInserts: state.masterAudioInserts,
+      tracks: state.tracks,
+      clips: state.clips.map((clip) => ({
+        ...clip,
+        ...(clip.opticalFlowCache
+          ? {
+              opticalFlowCache: {
+                ...clip.opticalFlowCache,
+                // Native file URLs and live progress belong to this renderer
+                // session. The portable project keeps only the relative path
+                // and deterministic cache metadata.
+                url: undefined,
+                status: clip.opticalFlowCache.path ? 'ready' : 'none',
+                progress: clip.opticalFlowCache.path ? 100 : 0,
+                error: undefined,
+                jobId: undefined,
+              },
+            }
+          : {}),
+      })),
+      transitions: state.transitions,
+      markers: state.markers,
+      clipCounter: state.clipCounter,
+      transitionCounter: state.transitionCounter,
+      markerCounter: state.markerCounter,
+      snappingEnabled: state.snappingEnabled,
+      snappingThreshold: state.snappingThreshold,
+      rippleEditMode: state.rippleEditMode,
+    }
   },
 
   /**
@@ -6835,11 +5744,9 @@ export const useTimelineStore = create(
     const value = Number(fps)
     if (Number.isFinite(value) && value > 0) {
       set((state) => ({
-        ...(value !== state.timelineFps ? stopPlayAroundPatch(state) : {}),
         timelineFps: value,
         playheadPosition: roundToFrame(state.playheadPosition, value),
         playheadSeekIntent: null,
-        ...(value !== state.timelineFps ? { playbackJump: null, playbackJumpError: null } : {}),
         inPoint: state.inPoint !== null ? roundToFrame(state.inPoint, value) : null,
         outPoint: state.outPoint !== null ? roundToFrame(state.outPoint, value) : null,
         markers: (state.markers || []).map((marker) => ({
@@ -7076,17 +5983,28 @@ export const useTimelineStore = create(
       selectedMarkerId: null
     })
   }
-    }, get),
+    }),
     {
       name: 'comfystudio-timeline', // localStorage key
       storage: createDebouncedJSONStorage(() => localStorage),
       partialize: (state) => ({
         // Only persist these fields (exclude transient UI state)
-        ...serializeRootDocument(state),
-        timelineFps: state.compoundEditContext?.parentUi.timelineFps ?? state.timelineFps,
+        duration: state.duration,
+        timelineFps: state.timelineFps,
+        zoom: state.zoom,
+        tracks: state.tracks,
+        clips: state.clips,
+        transitions: state.transitions,
+        markers: state.markers,
+        clipCounter: state.clipCounter,
+        transitionCounter: state.transitionCounter,
+        markerCounter: state.markerCounter,
+        snappingEnabled: state.snappingEnabled,
+        snappingThreshold: state.snappingThreshold,
+        rippleEditMode: state.rippleEditMode,
         // Note: Transient UI state NOT persisted:
         // - activeSnapTime, selectedClipIds, playheadPosition, playheadSeekIntent
-        // - isPlaying, playbackRate, shuttleMode, playbackJump, playbackJumpRevision, playbackJumpError, playAround, playAroundRevision
+        // - isPlaying, playbackRate, shuttleMode
         // - inPoint, outPoint, selectedMarkerId, selectedGap (session-specific)
       }),
     }

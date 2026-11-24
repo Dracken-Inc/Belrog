@@ -17,10 +17,10 @@ import {
 import lmstudio from '../services/lmstudio'
 import { getAgentToolInstructions, runAgentTool } from '../services/agentTools'
 
-const ACCEPTED_STORAGE_KEY = 'velorn-agent-disclaimer-accepted'
-const CHAT_STORAGE_KEY = 'velorn-agent-chat-history'
-const MODEL_STORAGE_KEY = 'velorn-agent-selected-model'
-const ENDPOINT_STORAGE_KEY = 'velorn-agent-endpoint'
+const ACCEPTED_STORAGE_KEY = 'belrog-agent-disclaimer-accepted'
+const CHAT_STORAGE_KEY = 'belrog-agent-chat-history'
+const MODEL_STORAGE_KEY = 'belrog-agent-selected-model'
+const ENDPOINT_STORAGE_KEY = 'belrog-agent-endpoint'
 const DEFAULT_ENDPOINT = 'http://localhost:1234'
 
 const BASE_AGENT_PROMPT = `You are Belrog Agent, an AI assistant built into Belrog.
@@ -95,7 +95,7 @@ function formatToolResultForChat(toolName, result, summary = '') {
 
 function parseAgentToolCalls(text) {
   const calls = []
-  const blockPattern = /```(?:velorn-tool|velorn_tool)\s*([\s\S]*?)```/gi
+  const blockPattern = /```(?:Belrog-tool|Belrog_tool)\s*([\s\S]*?)```/gi
   let match
   while ((match = blockPattern.exec(text || '')) !== null) {
     const body = match[1].trim()
@@ -115,7 +115,7 @@ function parseAgentToolCalls(text) {
 
 function cleanAssistantText(text) {
   let cleaned = String(text || '')
-  cleaned = cleaned.replace(/```(?:velorn-tool|velorn_tool)\s*[\s\S]*?```/gi, '')
+  cleaned = cleaned.replace(/```(?:Belrog-tool|Belrog_tool)\s*[\s\S]*?```/gi, '')
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, '')
   cleaned = cleaned.replace(/<\|(?:analysis|thought|reasoning)\|>[\s\S]*?(?=<\|(?:final|answer|assistant)\|>|$)/gi, '')
   cleaned = cleaned.replace(/<\|(?:final|answer|assistant)\|>/gi, '')
@@ -125,11 +125,10 @@ function cleanAssistantText(text) {
   cleaned = cleaned.replace(/<channel>\s*(?:thought|analysis|reasoning)[\s\S]*?(?=<channel>\s*(?:final|answer|assistant)|$)/gi, '')
   cleaned = cleaned.replace(/<channel>\s*(?:final|answer|assistant)\s*/gi, '')
   cleaned = cleaned.replace(/<\/?channel[^>]*>/gi, '')
-  // Chats saved before the rename still say "Velorn tool result", so strip both.
-  cleaned = cleaned.replace(/(?:Belrog|Velorn) tool result for [\s\S]*$/gi, '')
+  cleaned = cleaned.replace(/Belrog tool result for [\s\S]*$/gi, '')
   cleaned = cleaned.replace(/^\s*(?:tool call|tool use)\s*:?.*$/gim, '')
   cleaned = cleaned.replace(/^\s*\d+\.\s*\*\*Tool Call\*\*[\s\S]*$/gim, '')
-  cleaned = cleaned.replace(/^\s*["']?velorn-tool["']?\s*$/gim, '')
+  cleaned = cleaned.replace(/^\s*["']?Belrog-tool["']?\s*$/gim, '')
   cleaned = cleaned.replace(/^\s*["']?tool["']?\s*:\s*["'][^"']+["'].*$/gim, '')
   cleaned = cleaned.replace(/^\s*["']?arguments["']?\s*:\s*\{.*$/gim, '')
   cleaned = cleaned.replace(/^\s*(?:I should|I need to|The user is asking|The user asked|I have the result|The summary states|I will state|We need to).*$/gim, '')
@@ -166,7 +165,7 @@ function shouldUseToolSummary(response) {
   const text = String(response || '').trim()
   if (!text) return true
   if (text.length > 900) return true
-  if (/```|<channel>|<think>|(?:Belrog|Velorn) tool result|Technical result JSON/i.test(text)) return true
+  if (/```|<channel>|<think>|Belrog tool result|Technical result JSON/i.test(text)) return true
   if (/"tool"\s*:|\"arguments\"\s*:|^\s*\{[\s\S]*\}\s*$/m.test(text)) return true
   return false
 }
@@ -791,3 +790,4 @@ function AgentWorkspace() {
 }
 
 export default AgentWorkspace
+

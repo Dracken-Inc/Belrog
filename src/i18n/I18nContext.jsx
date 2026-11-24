@@ -3,7 +3,6 @@ import {
   DEFAULT_LANGUAGE,
   LANGUAGE_STORAGE_KEY,
   normalizeLocale,
-  readStoredLanguage,
   resolveLanguage,
   translate,
 } from './core'
@@ -21,8 +20,12 @@ function getAssetUrl(filename) {
 }
 
 function getInitialLocale() {
-  const stored = readStoredLanguage(typeof localStorage !== 'undefined' ? localStorage : null)
-  if (stored) return normalizeLocale(stored)
+  try {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY)
+    if (stored) return normalizeLocale(stored)
+  } catch (_) {
+    // Storage can be unavailable in restricted browser contexts.
+  }
   return normalizeLocale(typeof navigator !== 'undefined' ? navigator.language : DEFAULT_LANGUAGE)
 }
 

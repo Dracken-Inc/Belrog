@@ -197,7 +197,6 @@ async function runLocalTranscription({
   alreadyNormalized = false,
   language = 'Auto',
   modelId,
-  strictModel = false,
   vocabularyHint = '',
   audibleSpans = null,
   onProgress,
@@ -238,7 +237,6 @@ async function runLocalTranscription({
       alreadyNormalized,
       language: mapLanguageToWhisper(language),
       modelId,
-      strictModel,
       vocabularyHint: String(vocabularyHint || '').trim(),
       // VAD stays off: Silero chops sung vocals (mangled and missing words on
       // real songs — a music-video product cannot afford that), and the
@@ -279,7 +277,7 @@ async function runLocalTranscription({
 }
 
 /** Transcribe a single asset (video or audio) with the local engine. */
-export async function transcribeAssetLocally(asset, { onProgress, language = 'Auto', modelId, strictModel = false, vocabularyHint = '' } = {}) {
+export async function transcribeAssetLocally(asset, { onProgress, language = 'Auto', modelId, vocabularyHint = '' } = {}) {
   if (!asset) {
     throw new Error('A source audio or video asset is required to generate captions.')
   }
@@ -314,7 +312,6 @@ export async function transcribeAssetLocally(asset, { onProgress, language = 'Au
     mediaName,
     language,
     modelId,
-    strictModel,
     vocabularyHint,
     onProgress,
     audioDuration,
@@ -327,7 +324,7 @@ export async function transcribeAssetLocally(asset, { onProgress, language = 'Au
  * Reuses the same pre-mixed WAV pipeline as the ComfyUI path, so cue timings
  * come back in timeline time. Unlike that path, word timings survive here.
  */
-export async function transcribeTimelineLocally({ onProgress, modelId, strictModel = false, vocabularyHint = '' } = {}) {
+export async function transcribeTimelineLocally({ onProgress, modelId, vocabularyHint = '' } = {}) {
   const report = (stage, message, progress) => {
     if (typeof onProgress === 'function') onProgress({ stage, message, progress })
   }
@@ -344,7 +341,6 @@ export async function transcribeTimelineLocally({ onProgress, modelId, strictMod
     mediaName: 'timeline.wav',
     alreadyNormalized: true,
     modelId,
-    strictModel,
     vocabularyHint,
     audibleSpans: mix.audibleSpans || null,
     onProgress,

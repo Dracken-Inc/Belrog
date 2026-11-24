@@ -98,335 +98,86 @@
       "glslCameraShake": {
         "label": "カメラシェイク",
         "description": "GPU上で位置、回転、ズーム、シャッターブラーを生成するカメラシェイクです。",
-        "presets": {
-          "handheld": "手持ち撮影",
-          "runAndGun": "ラン＆ガン",
-          "impact": "インパクト"
-        }
+        "presets": { "handheld": "手持ち撮影", "runAndGun": "ラン＆ガン", "impact": "インパクト" }
       },
       "gaussianBlur": {
         "label": "ガウスブラー",
         "description": "均一で柔らかなぼかしです。夢のようなフォーカス移動、プライバシー保護、背景ぼかしに使用できます。",
-        "presets": {
-          "soft": "ソフト",
-          "dream": "ドリーミー",
-          "heavy": "強め"
-        }
+        "presets": { "soft": "ソフト", "dream": "ドリーミー", "heavy": "強め" }
       },
       "glslDirectionalBlur": {
         "label": "方向ブラー",
         "description": "GPU上で指定方向へ像を流し、動きの軌跡やスピードランプのアクセントを作ります。",
-        "presets": {
-          "horizontal": "水平",
-          "vertical": "垂直",
-          "speedLine": "スピードライン"
-        }
+        "presets": { "horizontal": "水平", "vertical": "垂直", "speedLine": "スピードライン" }
       },
       "glslLensBlur": {
         "label": "レンズブラー",
         "description": "ハイライトのブルームと控えめな色収差を備えた、GPUによる多角形ボケです。",
-        "presets": {
-          "soft": "ソフト",
-          "cinematic": "シネマティック",
-          "dream": "ドリームボケ"
-        }
+        "presets": { "soft": "ソフト", "cinematic": "シネマティック", "dream": "ドリームボケ" }
       },
       "glslSharpen": {
         "label": "シャープ",
         "description": "標準のシャープエフェクトと比較できるGPUシェーダー版のシャープ処理です。",
-        "presets": {
-          "subtle": "控えめ",
-          "crisp": "くっきり",
-          "strong": "強め"
-        }
+        "presets": { "subtle": "控えめ", "crisp": "くっきり", "strong": "強め" }
       },
       "glslFisheye": {
         "label": "魚眼",
         "description": "GPUによる樽型および逆樽型のレンズ歪みです。",
-        "presets": {
-          "subtle": "控えめ",
-          "fisheye": "魚眼",
-          "wide": "広角レンズ"
-        }
+        "presets": { "subtle": "控えめ", "fisheye": "魚眼", "wide": "広角レンズ" }
       },
       "glslChromaWarp": {
         "label": "クロマワープ",
         "description": "任意の樽型歪みを加えられる、放射状スペクトル風の色収差です。",
-        "presets": {
-          "subtle": "控えめ",
-          "prism": "プリズム",
-          "warp": "ワープ"
-        }
+        "presets": { "subtle": "控えめ", "prism": "プリズム", "warp": "ワープ" }
       },
       "glslFilmGrain": {
         "label": "フィルムグレイン",
         "description": "フィルムストックの再グレインシェーダーを参考にした、GPUによるプロシージャル粒子です。",
-        "presets": {
-          "fine5245": "Fine 5245",
-          "vision500t": "5218 500T",
-          "bw": "白黒",
-          "push": "増感"
-        }
+        "presets": { "fine5245": "Fine 5245", "vision500t": "5218 500T", "bw": "白黒", "push": "増感" }
       },
       "glslFilmLook": {
         "label": "フィルムルック",
         "description": "Flameのフィルムルックプリセットを参考にした、GPUによるフィルムプリント風の色表現です。",
-        "presets": {
-          "kodak2395": "Kodak 2395",
-          "agfa1978": "Agfa 1978",
-          "polaroid": "Polaroid",
-          "bw": "白黒"
-        }
+        "presets": { "kodak2395": "Kodak 2395", "agfa1978": "Agfa 1978", "polaroid": "Polaroid", "bw": "白黒" }
       },
       "glslFlicker": {
         "label": "フリッカー",
         "description": "露出、彩度、コントラストを時間とともにちらつかせます。",
-        "presets": {
-          "projector": "映写機",
-          "fluorescent": "蛍光灯",
-          "unstable": "不安定"
-        }
+        "presets": { "projector": "映写機", "fluorescent": "蛍光灯", "unstable": "不安定" }
       },
       "halation": {
         "label": "ハレーション",
         "description": "フィルムのハレーションのように、明るい部分の周囲へ暖色の赤橙色グローを加えます。",
-        "presets": {
-          "subtle": "控えめなフィルム",
-          "print": "プリントグロー",
-          "neonBleed": "ネオンのにじみ"
-        }
+        "presets": { "subtle": "控えめなフィルム", "print": "プリントグロー", "neonBleed": "ネオンのにじみ" }
       },
       "glow": {
         "label": "グロー",
         "description": "柔らかな拡散とブルームです。しきい値で発光させる明るさの範囲を調整します。",
-        "presets": {
-          "dreamy": "ドリーミー拡散",
-          "soft": "ソフトグロー",
-          "bloom": "ブルーム",
-          "neon": "ネオン"
-        }
+        "presets": { "dreamy": "ドリーミー拡散", "soft": "ソフトグロー", "bloom": "ブルーム", "neon": "ネオン" }
       },
       "glslVhsLook": {
         "label": "VHSルック",
         "description": "テープの波打ち、走査線、色にじみ、アナログ色調を再現するGPU版VHS表現です。",
-        "presets": {
-          "clean": "クリーンテープ",
-          "analog": "アナログ",
-          "damaged": "劣化"
-        }
+        "presets": { "clean": "クリーンテープ", "analog": "アナログ", "damaged": "劣化" }
       },
       "glslDigitalGlitch": {
         "label": "デジタルグリッチ",
         "description": "水平スライス、RGBずれ、ブロックノイズ、走査線バーストを加えるGPUグリッチです。",
-        "presets": {
-          "signalHit": "信号ヒット",
-          "datamosh": "データモッシュ",
-          "corrupt": "破損"
-        }
+        "presets": { "signalHit": "信号ヒット", "datamosh": "データモッシュ", "corrupt": "破損" }
       },
       "letterbox": {
         "label": "レターボックス",
         "description": "黒帯を加え、指定したシネマティックなアスペクト比に切り抜きます。",
-        "presets": {
-          "cinemascope": "シネマスコープ 2.39",
-          "anamorphic": "アナモフィック 2.35",
-          "widescreen": "ワイドスクリーン 1.85",
-          "academy": "アカデミー 1.37",
-          "square": "正方形 1:1",
-          "vertical": "縦長 9:16"
-        }
+        "presets": { "cinemascope": "シネマスコープ 2.39", "anamorphic": "アナモフィック 2.35", "widescreen": "ワイドスクリーン 1.85", "academy": "アカデミー 1.37", "square": "正方形 1:1", "vertical": "縦長 9:16" }
       },
       "glslVignette": {
         "label": "ビネット",
         "description": "標準版と同じ基本調整を備えた、GPUシェーダーによるビネットです。",
-        "presets": {
-          "soft": "ソフト",
-          "cinematic": "シネマティック",
-          "tunnel": "トンネル"
-        }
+        "presets": { "soft": "ソフト", "cinematic": "シネマティック", "tunnel": "トンネル" }
       }
     }
   },
   "export": {
-    "readiness": {
-      "checking": "確認中…",
-      "stale": "再確認が必要",
-      "warningCount": "警告 {{count}}件",
-      "optional": "任意",
-      "title": "書き出し前の確認",
-      "help": "この範囲のソースの利用可否、Optical Flowキャッシュの情報、映像や音声の空白の可能性を確認します。警告は参考情報です。意図した黒画面や無音は許容されます。",
-      "refresh": "再確認",
-      "check": "この範囲を確認",
-      "cancel": "確認をキャンセル",
-      "staleHelp": "タイムライン、ソースの登録情報、または書き出し設定が変更されました。現在の範囲を再確認してください。",
-      "failed": "確認を完了できませんでした。もう一度お試しください。メディアやプロジェクトのデータは変更されていません。",
-      "noWarnings": "今回の確認では警告は見つかりませんでした。",
-      "warnings": "書き出し前の確認で見つかった警告",
-      "inspect": "位置を確認",
-      "limitations": "ファイルの利用可否とタイムラインのみを確認します。デコードやレンダリングのテストではありません。ソースの変更とキャッシュの識別情報は書き出し時に検証されます。ファイルを移動した場合は再確認してください。書き出し時の安全確認も引き続き行われます。",
-      "warning": {
-        "invalid-range": {
-          "title": "書き出し範囲を選択してください",
-          "detail": "選択した範囲の長さがありません。"
-        },
-        "missing-asset": {
-          "title": "メディアの登録情報がありません",
-          "detail": "「{{name}}」は、このプロジェクトに存在しないメディアを参照しています。"
-        },
-        "missing-location": {
-          "title": "メディアの場所がありません",
-          "detail": "「{{name}}」には、ファイルの場所もメディアURLも登録されていません。"
-        },
-        "media-unverified": {
-          "title": "一部のメディアを確認できませんでした",
-          "detail": "「{{name}}」のファイルの利用可否を確認できませんでした。ブラウザー内やリモートのメディアは書き出し時の検証が必要です。"
-        },
-        "missing-source": {
-          "title": "ソースファイルを利用できません",
-          "detail": "「{{name}}」の登録されたソースが見つからないか、アクセスできません。必要に応じてエディターで再リンクしてください。"
-        },
-        "missing-proxy-source": {
-          "title": "元のソースファイルを利用できません",
-          "detail": "「{{name}}」の元ファイルが見つからないか、アクセスできません。確認用プロキシは利用できる可能性がありますが、最終納品前に元ファイルを確認してください。"
-        },
-        "missing-mask": {
-          "title": "マスクのメディアを利用できません",
-          "detail": "「{{name}}」で使用するマスクファイルが見つからないか、アクセスできません。"
-        },
-        "optical-unready": {
-          "title": "Optical Flowの確認が必要です",
-          "detail": "「{{name}}」のキャッシュを利用できないか、現在の編集範囲をカバーしていません。インスペクターでOptical Flowを確認してください。"
-        },
-        "optical-path": {
-          "title": "Optical Flowの保存場所が無効です",
-          "detail": "「{{name}}」のキャッシュには、対応するプロジェクト相対の保存場所が設定されていません。インスペクターで再作成してください。"
-        },
-        "optical-unsaved": {
-          "title": "Optical Flowにはプロジェクトの保存が必要です",
-          "detail": "プロジェクトを保存し、インスペクターで「{{name}}」のキャッシュを確認してください。"
-        },
-        "optical-signature": {
-          "title": "Optical Flowのソースが未確認です",
-          "detail": "「{{name}}」のキャッシュにはソースの識別情報がありません。書き出しには、現在のソースから作成された有効なキャッシュが必要です。"
-        },
-        "missing-optical": {
-          "title": "Optical Flowのファイルを利用できません",
-          "detail": "「{{name}}」のキャッシュファイルが見つからないか、アクセスできません。インスペクターで再作成してください。"
-        },
-        "file-unverified": {
-          "title": "ファイルの利用可否を確認できませんでした",
-          "detail": "「{{name}}」に登録されたファイルを確認できませんでした。メディアは変更されていません。"
-        },
-        "picture-gap": {
-          "title": "映像に空白がある可能性があります",
-          "detail": "この区間をカバーする有効な映像クリップがありません。黒画面や透明部分は意図したものかもしれません。"
-        },
-        "picture-tail": {
-          "title": "末尾が空白になる可能性があります",
-          "detail": "書き出し範囲の末尾をカバーする有効な映像クリップがありません。黒画面や透明部分は意図したものかもしれません。"
-        },
-        "no-audio": {
-          "title": "この範囲に有効な音声クリップがありません",
-          "detail": "音声の書き出しが指定されていますが、有効で音声を出力する音声クリップが見つかりませんでした。無音は意図したものかもしれません。"
-        },
-        "master-muted": {
-          "title": "マスター音声がミュートされています",
-          "detail": "マスター音量がゼロです。音声の書き出しが指定されていますが、出力は無音になります。"
-        },
-        "compound-unverified": {
-          "title": "コンパウンドを確認できませんでした",
-          "detail": "「{{name}}」には、対応していないコンパウンドの内容またはタイミング設定があります。書き出す前にエディターで確認してください。"
-        }
-      }
-    },
-    "overview": {
-      "regionLabel": "書き出しタイムラインの概要",
-      "title": "タイムラインの概要",
-      "readOnly": "読み取り専用",
-      "fullTimeline": "タイムライン全体",
-      "inOut": "イン／アウト",
-      "audioTrack": "音声 {{number}}",
-      "videoTrack": "映像 {{number}}",
-      "audioClip": "音声クリップ",
-      "clip": "クリップ",
-      "timecodeHint": "タイムコードはノンドロップフレームで表示します。",
-      "frameRate": "{{fps}} fps",
-      "muted": "ミュート",
-      "hidden": "非表示",
-      "excludedBySolo": "ソロ設定により除外",
-      "inactive": "無効",
-      "empty": "このタイムラインにはクリップがありません",
-      "startBoundary": "書き出し範囲の最初のフレーム",
-      "endBoundary": "アウト点のフレーム自体は書き出されません。",
-      "scrubLabel": "書き出しプレビューをスクラブ",
-      "scrubValue": "{{timecode}}、毎秒{{fps}}フレーム、ノンドロップフレーム"
-    },
-    "deliveryPresets": {
-      "title": "用途別プリセット",
-      "more": "その他のプリセット",
-      "customHelp": "下の設定を調整するか、プリセットを選んで開始してください。",
-      "hdLimit": "YouTube HD上限",
-      "uhdLimit": "YouTube 4K上限",
-      "sizeHelp": "タイムラインの縦横比を維持し、HDまたは4Kの範囲に収めます。小さいタイムラインは拡大しません。",
-      "items": {
-        "youtube-1080p": {
-          "label": "YouTube 1080p",
-          "detail": "最大HD · MP4",
-          "summary": "HDを上限とするH.264アップロード用設定。縦横比とプロジェクトのFPSを維持し、拡大しません。"
-        },
-        "youtube-4k": {
-          "label": "YouTube 4K",
-          "detail": "最大4K · MP4",
-          "summary": "4Kを上限とするH.264アップロード用設定。縦横比とプロジェクトのFPSを維持し、拡大しません。"
-        },
-        "h264-master": {
-          "label": "H.264マスター",
-          "detail": "高品質MP4",
-          "summary": "元のメディアを使用し、プロジェクトの解像度でCRF 16の高品質H.264を書き出します。"
-        },
-        "prores-master": {
-          "label": "ProResマスター",
-          "detail": "ProRes HQ · MOV",
-          "summary": "プロジェクトの解像度で、追加編集に適した大容量のProRes HQ MOVを書き出します。"
-        },
-        "review-copy": {
-          "label": "確認用コピー",
-          "detail": "小容量ですばやく共有",
-          "summary": "解像度を半分にした確認用MP4。利用可能なプロキシでレンダーを高速化します。"
-        }
-      }
-    },
-    "workspace": {
-      "preview": "タイムラインのプレビュー",
-      "previewHelp": "タイムライン設定で確認できます。書き出しの解像度、エンコード、音声設定はレンダリング時に適用されます。",
-      "hideQueue": "キューを隠す",
-      "resizeSettings": "書き出し設定パネルの幅を変更",
-      "resizeQueue": "書き出しキューパネルの幅を変更",
-      "resizePanelHelp": "ドラッグで幅を変更します。ダブルクリックまたは Enter でリセット。矢印キーで調整し、Shift で大きく変更します。",
-      "showQueue": "キューを表示",
-      "customPreset": "カスタム設定",
-      "width": "幅",
-      "height": "高さ",
-      "audioSettings": "音声設定",
-      "advancedEncoding": "エンコードの詳細設定",
-      "encodingPerformance": "エンコードとパフォーマンス",
-      "handoff": "別の編集ソフトに送る",
-      "duration": "長さ",
-      "missingMarks": "この範囲を使うには、エディターでイン点とアウト点の両方を設定してください。",
-      "missingMarksFallback": "イン点またはアウト点が未設定のため、タイムライン全体を書き出します。",
-      "collapsedMarks": "イン点とアウト点が同じ位置です。エディターで別々の位置に設定するか、タイムライン全体を選択してください。",
-      "queueHelp": "開始時のタイムラインとイン点／アウト点を使用します。保存先は書き出し時に選択します。",
-      "pauseAfterCurrent": "現在の処理後に一時停止",
-      "clearQueue": "キューを空にする",
-      "exportNow": "今すぐ書き出す",
-      "status": {
-        "queued": "待機中",
-        "rendering": "レンダリング中",
-        "completed": "完了",
-        "failed": "失敗",
-        "stopped": "停止"
-      }
-    },
     "title": "書き出し",
     "headerReady": "キューと設定の準備完了",
     "ready": "書き出し可能",
@@ -572,7 +323,6 @@
   },
   "topTabs": {
     "navigation": "ワークスペースモード",
-    "storyboard": "ストーリーボード",
     "editor": "編集",
     "generate": "生成",
     "agent": "エージェント",
@@ -583,7 +333,6 @@
     "export": "書き出し"
   },
   "bottomBar": {
-    "openStoryboard": "ストーリーボードを開く",
     "saveProject": "プロジェクトを保存",
     "undo": "元に戻す",
     "redo": "やり直す",
@@ -593,9 +342,6 @@
     "minimize": "最小化",
     "maximize": "最大化",
     "projectSelection": "プロジェクト選択"
-  },
-  "storyboard": {
-    "backToEditor": "編集に戻る"
   },
   "inspector": {
     "title": "インスペクター",
@@ -638,23 +384,6 @@
     "title": "見つける",
     "subtitle": "Belrogでクリエイターが制作した作品を見て、その制作ワークフローを学びましょう。",
     "visibilityHint": "Discoverタブは「設定」→「外観」からいつでも非表示にできます。",
-    "groups": {
-      "start": "はじめに",
-      "tabs": "各タブの紹介",
-      "editor": "エディターを順番に学ぶ",
-      "project": "作品を最初から最後まで"
-    },
-    "actions": {
-      "watch": "{{title}}を再生",
-      "openYouTube": "YouTubeで開く",
-      "close": "閉じる",
-      "submit": "YouTube動画を投稿",
-      "retry": "再試行"
-    },
-    "player": {
-      "title": "YouTube動画: {{title}}",
-      "privacy": "サムネイルはYouTubeから提供されます。Belrogは動画の再生を選択した後にのみプレーヤーを読み込みます。"
-    },
     "tabs": {
       "featured": "おすすめ",
       "showcase": "Belrog作品",
@@ -668,8 +397,19 @@
       "tutorials": "チュートリアル",
       "tutorialsDescription": "実践的な解説を通してBelrogの使い方を学べます。"
     },
+    "actions": {
+      "watch": "{{title}}を再生",
+      "openYouTube": "YouTubeで開く",
+      "submit": "YouTube動画を投稿",
+      "retry": "再試行",
+      "close": "閉じる"
+    },
     "labels": {
       "by": "{{creator}}"
+    },
+    "player": {
+      "title": "YouTube動画: {{title}}",
+      "privacy": "サムネイルはYouTubeから提供されます。Belrogは動画の再生を選択した後にのみプレーヤーを読み込みます。"
     },
     "states": {
       "loading": "Discoverを読み込み中...",
@@ -724,58 +464,19 @@
     "languageHelp": "Belrogで使用する言語を選択します。変更はすぐに反映されます。",
     "fallbackHelp": "未翻訳の項目は自動的に英語で表示されます。",
     "sections": {
-      "storage": {
-        "title": "プロジェクトとストレージ",
-        "description": "プロジェクトの保存先と自動保存を設定します。"
-      },
-      "stock": {
-        "title": "ストック素材（Pexels）",
-        "description": "ストックメディア検索の認証情報を管理します。"
-      },
-      "connection": {
-        "title": "ComfyUI接続",
-        "description": "ローカルComfyUI、パートナーAPIキー、詳細タブを設定します。"
-      },
-      "agents": {
-        "title": "エージェント（MCP）",
-        "description": "Claude、Codex、CursorなどのMCPクライアントを開いているプロジェクトに接続します。"
-      },
-      "launcher": {
-        "title": "ComfyUIランチャー",
-        "description": "BelrogからローカルComfyUIを起動、停止、再起動します。"
-      },
-      "paths": {
-        "title": "ファイルパス",
-        "description": "出力先とワークフローのパスを確認します。"
-      },
-      "workflow-setup": {
-        "title": "ワークフロー設定",
-        "description": "ワークフローを検査し、不足する依存関係やモデルをインストールします。"
-      },
-      "language": {
-        "title": "言語",
-        "description": "Belrogの画面で使用する言語を選択します。"
-      },
-      "appearance": {
-        "title": "外観",
-        "description": "Belrogのテーマとワークスペースのナビゲーションを設定します。"
-      },
-      "notifications": {
-        "title": "通知",
-        "description": "完了音とアプリ内通知を設定します。"
-      },
-      "hotkeys": {
-        "title": "ショートカット",
-        "description": "エディターのショートカットとキーマップを設定します。"
-      },
-      "project": {
-        "title": "新規プロジェクトの初期値",
-        "description": "新しいプロジェクトの解像度とフレームレートを設定します。"
-      },
-      "feedback": {
-        "title": "フィードバックを送信",
-        "description": "不具合やアイデアをチームへ直接送信します。"
-      }
+      "storage": { "title": "プロジェクトとストレージ", "description": "プロジェクトの保存先と自動保存を設定します。" },
+      "stock": { "title": "ストック素材（Pexels）", "description": "ストックメディア検索の認証情報を管理します。" },
+      "connection": { "title": "ComfyUI接続", "description": "ローカルComfyUI、パートナーAPIキー、詳細タブを設定します。" },
+      "agents": { "title": "エージェント（MCP）", "description": "Claude、Codex、CursorなどのMCPクライアントを開いているプロジェクトに接続します。" },
+      "launcher": { "title": "ComfyUIランチャー", "description": "BelrogからローカルComfyUIを起動、停止、再起動します。" },
+      "paths": { "title": "ファイルパス", "description": "出力先とワークフローのパスを確認します。" },
+      "workflow-setup": { "title": "ワークフロー設定", "description": "ワークフローを検査し、不足する依存関係やモデルをインストールします。" },
+      "language": { "title": "言語", "description": "Belrogの画面で使用する言語を選択します。" },
+      "appearance": { "title": "外観", "description": "Belrogのテーマとワークスペースのナビゲーションを設定します。" },
+      "notifications": { "title": "通知", "description": "完了音とアプリ内通知を設定します。" },
+      "hotkeys": { "title": "ショートカット", "description": "エディターのショートカットとキーマップを設定します。" },
+      "project": { "title": "新規プロジェクトの初期値", "description": "新しいプロジェクトの解像度とフレームレートを設定します。" },
+      "feedback": { "title": "フィードバックを送信", "description": "不具合やアイデアをチームへ直接送信します。" }
     },
     "storage": {
       "projectsLocation": "プロジェクトの保存先",
@@ -808,22 +509,6 @@
         "failedSuffix": "（{{count}}件失敗）",
         "rebuildFailed": "動画キャッシュを再作成できませんでした。"
       }
-    },
-    "comfySetup": {
-      "title": "ComfyUIに接続",
-      "openHelp": "このコンピューターでComfyUIを開いてから、ここで検索してください。Comfy Desktopでは、使用したいローカルインスタンスを起動してください。起動スクリプトは不要です。",
-      "find": "起動中のComfyUIを検索",
-      "choose": "使用するローカル接続先を選択してください。検索だけでは設定は変更されません。",
-      "ready": "ComfyUIは接続できます",
-      "connect": "接続",
-      "notFound": "通常のローカルポートでは、起動中のComfyUIが見つかりませんでした。ComfyUIを開いて初期設定を完了し、ローカルインスタンスを起動してから、もう一度お試しください。別のポートを使用している場合は、下に入力してください。",
-      "manual": "ポートを手動で入力",
-      "port": "ComfyUIポート",
-      "testConnect": "テストして接続",
-      "connected": "ポート{{port}}のComfyUIに接続しました。",
-      "failed": "接続できませんでした。もう一度お試しください。",
-      "advanced": "接続の詳細設定",
-      "localOnly": "ローカル接続専用です。この操作では、インストール、ComfyUIの起動、素材の生成は行いません。ComfyUIがなくても編集はできます。"
     },
     "connection": {
       "localPort": "ローカルComfyUIポート",
@@ -862,15 +547,6 @@
     },
     "launcher": {
       "desktopOnly": "ComfyUIランチャーはデスクトップ版でのみ利用できます。",
-      "connectedExternally": "接続済み（Belrogの管理外）",
-      "connectedManaged": "接続済み・Belrogで管理",
-      "externalConnectionHelp": "ComfyUIに接続しています。停止や再起動は、ComfyUIのアプリまたはターミナルで行ってください。Belrogで起動を管理しなくても生成できます。",
-      "optionalStartup": "BelrogからComfyUIを起動する（任意）",
-      "optionalStartupHelp": "ComfyUIを自分で開いている場合は、そのまま利用できます。ここから起動したい場合は、検出されたインストール先を選ぶか、起動スクリプトを参照してください。",
-      "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて上の項目から接続してください。",
-      "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて、上の項目から接続することもできます。",
-      "scriptChoiceHelp": "Windowsの.batファイルやLinux／macOSの.shファイルなど、普段ComfyUIの起動に使っているスクリプトを選択してください。デスクトップアプリの場合は、アプリを開いて使用したいインスタンスを起動してください。",
-      "detectedInstallations": "検出されたインストール先",
       "saveFailed": "ランチャー設定を保存できませんでした。",
       "actionFailed": "操作に失敗しました。",
       "states": {
@@ -999,24 +675,19 @@
       "theme": "テーマ",
       "active": "使用中",
       "themes": {
-        "velorn": "深い青と紫を基調に、読みやすい古金色をアクセントにした標準テーマ",
+        "Belrog": "深い青と紫を基調に、読みやすい古金色をアクセントにした標準テーマ",
         "midnight": "DaVinci Resolveを参考にしたニュートラルなダークグレー",
         "soft-dark": "控えめな寒色系の紫を加えた、柔らかなコントラスト",
         "high-contrast": "鮮やかな青をアクセントに、視認性を最大限に高めたテーマ",
         "arctic": "北欧の編集環境を参考にした寒色系のブルーグレー",
-        "ember": "琥珀色をアクセントにした暖かみのあるダークトーン",
-        "Belrog": "深い青と紫を基調に、読みやすい古金色をアクセントにした標準テーマ"
+        "ember": "琥珀色をアクセントにした暖かみのあるダークトーン"
       },
       "timelineThumbnails": "タイムラインのクリップサムネイル",
       "timelineThumbnailsHelp": "負荷の高い編集ではオフにすると、クリップを軽量な色付きブロックとして表示します。",
       "discoverTab": "Discoverタブを表示",
-      "generateTab": "ディレクタータブを表示",
-      "generateTabHelp": "エージェント中心のレイアウトにするにはタブを非表示にします。ComfyUI、エージェントツール、生成キューは引き続き利用でき、タブはいつでも再表示できます。",
       "discoverTabHelp": "コミュニティ作品とチュートリアルへのショートカットを上部のタブバーに表示します。",
       "hideDiscoverTab": "Discoverタブを非表示",
-      "showDiscoverTab": "Discoverタブを表示",
-      "otherTabs": "Other tabs",
-      "otherTabsHelp": "Switch off the tabs you do not use. Editor and Export always stay."
+      "showDiscoverTab": "Discoverタブを表示"
     },
     "notifications": {
       "completionSound": "生成完了音",
@@ -1029,18 +700,9 @@
       "preview": "試聴",
       "active": "使用中",
       "sounds": {
-        "soft-chime": {
-          "label": "ソフトチャイム",
-          "description": "穏やかな3音の完了音です。"
-        },
-        "clean-ding": {
-          "label": "クリアディング",
-          "description": "明るめの2音による通知音です。"
-        },
-        "subtle-beep": {
-          "label": "控えめなビープ",
-          "description": "短くシンプルな通知音です。"
-        }
+        "soft-chime": { "label": "ソフトチャイム", "description": "穏やかな3音の完了音です。" },
+        "clean-ding": { "label": "クリアディング", "description": "明るめの2音による通知音です。" },
+        "subtle-beep": { "label": "控えめなビープ", "description": "短くシンプルな通知音です。" }
       }
     },
     "hotkeys": {
@@ -1061,7 +723,6 @@
       },
       "actions": {
         "timeline": {
-          "playAround": "編集点の前後を再生",
           "selectToEnd": "再生ヘッドから末尾までのクリップを選択",
           "selectFromStart": "先頭から再生ヘッドまでのクリップを選択",
           "splitActive": "再生ヘッド位置で現在のトラックを分割",
@@ -1077,7 +738,6 @@
           "previousMarker": "前のマーカーへ移動",
           "nextMarker": "次のマーカーへ移動",
           "frameAll": "タイムライン全体を表示",
-          "zoomToSelection": "選択範囲を表示 / 前の表示に戻す",
           "zoomOut": "タイムラインを縮小",
           "zoomIn": "タイムラインを拡大",
           "openMoveBy": "移動量ダイアログを開く",
@@ -1085,13 +745,7 @@
           "addTextClip": "再生ヘッド位置にテキストクリップを追加",
           "addTransition": "選択したクリップ間にトランジションを追加",
           "linkSelection": "選択したクリップをリンク",
-          "unlinkSelection": "選択したクリップのリンクを解除",
-          "trimStartToPlayhead": "Trim Start to Playhead",
-          "trimEndToPlayhead": "Trim End to Playhead",
-          "nudgeLeft": "Nudge Left",
-          "nudgeRight": "Nudge Right",
-          "nudgeLeftBig": "Nudge Left (Large)",
-          "nudgeRightBig": "Nudge Right (Large)"
+          "unlinkSelection": "選択したクリップのリンクを解除"
         }
       },
       "categories": {
@@ -1184,26 +838,11 @@
       "ImagetoImage": "Image to Image"
     },
     "items": {
-      "wan22-i2v": {
-        "name": "WAN 2.2 Image to Video",
-        "description": "高品質な画像から動画への生成"
-      },
-      "cinematic-txt2img": {
-        "name": "Cinematic Text to Image",
-        "description": "映画のようなストーリーボードフレーム"
-      },
-      "anime-style": {
-        "name": "Anime Style Frames",
-        "description": "日本のアニメーション風の表現"
-      },
-      "sketch-to-render": {
-        "name": "Sketch to Render",
-        "description": "スケッチを完成フレームへ変換"
-      },
-      "motion-test": {
-        "name": "Motion Test",
-        "description": "短いモーションテスト"
-      }
+      "wan22-i2v": { "name": "WAN 2.2 Image to Video", "description": "高品質な画像から動画への生成" },
+      "cinematic-txt2img": { "name": "Cinematic Text to Image", "description": "映画のようなストーリーボードフレーム" },
+      "anime-style": { "name": "Anime Style Frames", "description": "日本のアニメーション風の表現" },
+      "sketch-to-render": { "name": "Sketch to Render", "description": "スケッチを完成フレームへ変換" },
+      "motion-test": { "name": "Motion Test", "description": "短いモーションテスト" }
     }
   },
   "fontPicker": {
@@ -1241,33 +880,16 @@
     "noVideoTrack": "テキストを配置するにはビデオトラックを追加してください",
     "presets": "プリセット",
     "weights": {
-      "normal": "標準",
-      "bold": "太字",
-      "thin": "極細",
-      "light": "細字",
-      "medium": "中",
-      "semiBold": "やや太字",
-      "extraBold": "極太",
-      "black": "最太"
+      "normal": "標準", "bold": "太字", "thin": "極細", "light": "細字",
+      "medium": "中", "semiBold": "やや太字", "extraBold": "極太", "black": "最太"
     },
-    "animationModes": {
-      "in": "開始",
-      "out": "終了",
-      "inOut": "開始＋終了"
-    },
+    "animationModes": { "in": "開始", "out": "終了", "inOut": "開始＋終了" },
     "animationPresets": {
-      "fade": "フェード",
-      "slideUp": "上へスライド",
-      "slideDown": "下へスライド",
-      "slideLeft": "左へスライド",
-      "pop": "ポップ",
-      "spinIn": "回転イン"
+      "fade": "フェード", "slideUp": "上へスライド", "slideDown": "下へスライド",
+      "slideLeft": "左へスライド", "pop": "ポップ", "spinIn": "回転イン"
     },
     "stylePresets": {
-      "Title": "タイトル",
-      "Subtitle": "サブタイトル",
-      "LowerThird": "ローワーサード",
-      "Caption": "キャプション"
+      "Title": "タイトル", "Subtitle": "サブタイトル", "LowerThird": "ローワーサード", "Caption": "キャプション"
     }
   },
   "feedback": {
@@ -1289,18 +911,10 @@
     "unknown": "不明",
     "yes": "はい",
     "no": "いいえ",
-    "categories": {
-      "bug": "不具合",
-      "idea": "アイデア",
-      "other": "その他"
-    },
+    "categories": { "bug": "不具合", "idea": "アイデア", "other": "その他" },
     "diagnostics": {
-      "appVersion": "Belrogバージョン",
-      "platform": "プラットフォーム",
-      "os": "OS",
-      "gpu": "GPU",
-      "comfyConnected": "ComfyUI接続",
-      "screen": "画面"
+      "appVersion": "Belrogバージョン", "platform": "プラットフォーム", "os": "OS",
+      "gpu": "GPU", "comfyConnected": "ComfyUI接続", "screen": "画面"
     }
   },
   "logViewer": {
@@ -1327,203 +941,43 @@
     "lineSummary": "{{total}}行中{{visible}}行{{rolling}}{{paused}}"
   },
   "launcherChip": {
-    "connectedExternally": "接続済み（Belrogの管理外）",
-    "externalConnectionHelp": "ComfyUIに接続しています。通常どおり生成できます。停止や再起動はComfyUIのアプリまたはターミナルで行うか、Belrogで安全に管理できるか再確認してください。",
-    "recheckControls": "操作できるか再確認",
-    "optionalStartup": "BelrogからComfyUIを起動する（任意）",
-    "optionalStartupHelp": "Belrogから起動したい場合だけ、インストール先を選択してください。それ以外の場合は、ComfyUIを自分で開き、「起動中のComfyUIを検索」から接続してください。",
-    "noAppOptional": "アプリは選択されていません。ComfyUI.appを参照するか、自分で開いて接続してください。",
-    "noScriptOptional": "起動スクリプトは選択されていません。ComfyUIを自分で開いて接続するか、普段使っている.batまたは.shスクリプトを参照してください。",
-    "detectedInstallations": "検出されたインストール先",
-    "troubleshootingLogs": "トラブルシューティングとログ",
-    "states": {
-      "unknown": "ComfyUI",
-      "idle": "オフライン",
-      "starting": "起動中…",
-      "running": "実行中",
-      "external": "外部プロセス",
-      "stopping": "停止中…",
-      "stopped": "停止済み",
-      "crashed": "異常終了"
-    },
-    "summary": {
-      "unavailable": "ランチャーを利用できません（Electron外）。",
-      "running": "実行中 • PID {{pid}}{{uptime}}",
-      "up": "稼働時間",
-      "external": "外部プロセスを検出：{{endpoint}}",
-      "notRunning": "ComfyUIは実行されていません。",
-      "unknown": "ComfyUIの状態は不明です。",
-      "managedApp": "接続済み・ComfyUI.appをBelrogで管理{{uptime}}",
-      "managed": "接続済み・Belrogで管理{{uptime}}",
-      "connectedExternal": "{{endpoint}}に接続済み・起動はBelrogの管理外"
-    },
-    "reprobeHelp": "ComfyUIの状態を再確認",
-    "start": "起動",
-    "stop": "停止",
-    "restart": "再起動",
-    "script": "ランチャースクリプト",
-    "pickScript": ".bat／.shランチャースクリプトを選択",
-    "browse": "参照...",
-    "logTail": "最新ログ",
-    "openViewerHelp": "検索・絞り込み対応のログビューアーを開く",
-    "openViewer": "ログビューアーを開く",
-    "noLogFile": "ログファイルはまだ作成されていません",
-    "openLogFile": "ログファイルを開く",
-    "noLogs": "ログ出力はまだありません。ComfyUIを起動するとここに表示されます。",
-    "manage": "設定で管理 → ComfyUIランチャー",
-    "apiKeySet": "APIキー設定済み",
-    "apiKeyNeeded": "APIキーが必要",
-    "apiKeySetHelp": "クラウドAPIキーは設定済みです。クリックして管理します。",
-    "apiKeyNeededHelp": "クラウドワークフローを利用するにはComfy.org APIキーを設定してください。"
+    "states": { "unknown": "ComfyUI", "idle": "オフライン", "starting": "起動中…", "running": "実行中", "external": "外部プロセス", "stopping": "停止中…", "stopped": "停止済み", "crashed": "異常終了" },
+    "summary": { "unavailable": "ランチャーを利用できません（Electron外）。", "running": "実行中 • PID {{pid}}{{uptime}}", "up": "稼働時間", "external": "外部プロセスを検出：{{endpoint}}", "notRunning": "ComfyUIは実行されていません。", "unknown": "ComfyUIの状態は不明です。" },
+    "reprobeHelp": "ComfyUIの状態を再確認", "start": "起動", "stop": "停止", "restart": "再起動", "script": "ランチャースクリプト", "pickScript": ".bat／.shランチャースクリプトを選択", "browse": "参照...", "logTail": "最新ログ", "openViewerHelp": "検索・絞り込み対応のログビューアーを開く", "openViewer": "ログビューアーを開く", "noLogFile": "ログファイルはまだ作成されていません", "openLogFile": "ログファイルを開く", "noLogs": "ログ出力はまだありません。ComfyUIを起動するとここに表示されます。", "manage": "設定で管理 → ComfyUIランチャー", "apiKeySet": "APIキー設定済み", "apiKeyNeeded": "APIキーが必要", "apiKeySetHelp": "クラウドAPIキーは設定済みです。クリックして管理します。", "apiKeyNeededHelp": "クラウドワークフローを利用するにはComfy.org APIキーを設定してください。"
   },
   "preview": {
-    "title": "プレビュー",
-    "escExit": "（ESCで終了）",
-    "captureHelp": "プレビューの静止画をプロジェクト素材として保存",
-    "savingStill": "静止画を保存中...",
-    "stillSaved": "静止画を保存しました",
-    "still": "静止画",
-    "hideInfo": "情報表示を隠す",
-    "showInfo": "情報表示を表示",
-    "info": "情報",
-    "guides": "ガイド",
-    "guidesHelp": "セーフガイドとレターボックス",
-    "safeGuides": "セーフガイド",
-    "letterbox": "レターボックスプレビュー",
-    "noLetterbox": "レターボックスなし",
-    "clear": "プレビューを消去",
-    "hideTransform": "変形ハンドルを隠す",
-    "showTransform": "変形ハンドルを表示",
-    "selectVisual": "変形操作を切り替えるには表示クリップを選択してください",
-    "closePopout": "別ウィンドウのプレビューを閉じる",
-    "openPopout": "プレビューを別ウィンドウで表示（別モニターへ移動可能。ダブルクリックで全画面表示）",
-    "exitFullscreen": "全画面表示を終了（ESC）",
-    "fullscreen": "全画面表示",
-    "emptyTitle": "プレビューが選択されていません",
-    "emptyHelp": "映像を生成するか、素材から選択してください",
-    "previewTimeline": "タイムラインをプレビュー",
-    "resetView": "表示をリセット（Home）",
-    "zoomOut": "縮小",
-    "zoomIn": "拡大",
-    "fit": "全体表示",
+    "title": "プレビュー", "escExit": "（ESCで終了）", "captureHelp": "プレビューの静止画をプロジェクト素材として保存", "savingStill": "静止画を保存中...", "stillSaved": "静止画を保存しました", "still": "静止画", "hideInfo": "情報表示を隠す", "showInfo": "情報表示を表示", "info": "情報", "guides": "ガイド", "guidesHelp": "セーフガイドとレターボックス", "safeGuides": "セーフガイド", "letterbox": "レターボックスプレビュー", "noLetterbox": "レターボックスなし", "clear": "プレビューを消去", "hideTransform": "変形ハンドルを隠す", "showTransform": "変形ハンドルを表示", "selectVisual": "変形操作を切り替えるには表示クリップを選択してください", "closePopout": "別ウィンドウのプレビューを閉じる", "openPopout": "プレビューを別ウィンドウで表示（別モニターへ移動可能。ダブルクリックで全画面表示）", "exitFullscreen": "全画面表示を終了（ESC）", "fullscreen": "全画面表示", "emptyTitle": "プレビューが選択されていません", "emptyHelp": "映像を生成するか、素材から選択してください", "previewTimeline": "タイムラインをプレビュー", "resetView": "表示をリセット（Home）", "zoomOut": "縮小", "zoomIn": "拡大", "fit": "全体表示",
     "guide": {
-      "none": {
-        "label": "ガイドなし",
-        "description": "すべてのガイドを隠します"
-      },
-      "title-safe": {
-        "label": "タイトルセーフ",
-        "description": "90% — テキストを内側に配置"
-      },
-      "action-safe": {
-        "label": "アクションセーフ",
-        "description": "93% — 重要な動きを内側に配置"
-      },
-      "rule-of-thirds": {
-        "label": "三分割法",
-        "description": "3×3のグリッドを表示"
-      },
-      "center": {
-        "label": "中央十字線",
-        "description": "中心位置を表示"
-      },
-      "all-safe": {
-        "label": "タイトル＋アクションセーフ",
-        "description": "両方のセーフ領域を表示"
-      }
+      "none": { "label": "ガイドなし", "description": "すべてのガイドを隠します" },
+      "title-safe": { "label": "タイトルセーフ", "description": "90% — テキストを内側に配置" },
+      "action-safe": { "label": "アクションセーフ", "description": "93% — 重要な動きを内側に配置" },
+      "rule-of-thirds": { "label": "三分割法", "description": "3×3のグリッドを表示" },
+      "center": { "label": "中央十字線", "description": "中心位置を表示" },
+      "all-safe": { "label": "タイトル＋アクションセーフ", "description": "両方のセーフ領域を表示" }
     }
   },
   "generate": {
-    "mode": {
-      "generate": "生成",
-      "director": "ディレクター",
-      "backToDirector": "ディレクターに戻る"
-    },
+    "mode": { "generate": "生成", "director": "ディレクター" },
     "browser": {
-      "tabs": {
-        "featured": "おすすめ",
-        "custom": "マイワークフロー",
-        "templates": "テンプレート"
-      },
+      "tabs": { "featured": "おすすめ", "custom": "マイワークフロー", "templates": "テンプレート" },
       "searchTemplates": "ComfyUIテンプレート、モデル、タグを検索...",
       "searchWorkflows": "ワークフロー、プロバイダー、タグを検索...",
-      "filters": {
-        "all": "すべて",
-        "image": "画像",
-        "video": "映像",
-        "image-to-video": "画像から映像",
-        "text-to-video": "テキストから映像",
-        "text-to-image": "テキストから画像",
-        "image-edit": "画像編集",
-        "video-tools": "映像ツール",
-        "audio": "音声",
-        "utility": "ユーティリティ"
-      },
-      "sources": {
-        "all": "すべて",
-        "local": "ローカル",
-        "cloud": "クラウド"
-      },
-      "sort": {
-        "popular": "使用数順",
-        "newest": "新着順"
-      },
+      "filters": { "all": "すべて", "image": "画像", "video": "映像", "image-to-video": "画像から映像", "text-to-video": "テキストから映像", "text-to-image": "テキストから画像", "image-edit": "画像編集", "video-tools": "映像ツール", "audio": "音声", "utility": "ユーティリティ" },
+      "sources": { "all": "すべて", "local": "ローカル", "cloud": "クラウド" },
+      "sort": { "popular": "使用数順", "newest": "新着順" },
       "showingWorkflows": "{{tab}}ワークフローを{{count}}件表示"
     },
     "assets": {
-      "inputSource": "入力ソース",
-      "search": "素材を検索...",
-      "assets": "素材",
-      "searchingAll": "すべてのフォルダーを検索中",
-      "assignTo": "選択した素材の割り当て先",
-      "nothingSelected": "未選択",
-      "noMatches": "一致する素材がありません",
-      "noneHere": "ここには{{type}}素材がありません",
-      "tryDifferent": "別の検索語またはフォルダー名をお試しください",
-      "importHelp": "別のフォルダーを開くか、素材タブでメディアを読み込んでください",
-      "selectInput": "入力素材を選択するか、タイムラインのフレームを使用してください（プレビューを右クリック → AIで拡張）"
+      "inputSource": "入力ソース", "search": "素材を検索...", "assets": "素材", "searchingAll": "すべてのフォルダーを検索中", "assignTo": "選択した素材の割り当て先", "nothingSelected": "未選択", "noMatches": "一致する素材がありません", "noneHere": "ここには{{type}}素材がありません", "tryDifferent": "別の検索語またはフォルダー名をお試しください", "importHelp": "別のフォルダーを開くか、素材タブでメディアを読み込んでください", "selectInput": "入力素材を選択するか、タイムラインのフレームを使用してください（プレビューを右クリック → AIで拡張）"
     },
     "queue": {
-      "title": "キュー",
-      "expand": "キューパネルを展開",
-      "collapse": "パネルを折りたたむ",
-      "clear": "キューを消去",
-      "video": "映像をキューに追加",
-      "image": "画像をキューに追加",
-      "audio": "音声をキューに追加",
-      "keyframes": "{{mode}}キーフレームをキューに追加"
+      "title": "キュー", "expand": "キューパネルを展開", "collapse": "パネルを折りたたむ", "clear": "キューを消去", "video": "映像をキューに追加", "image": "画像をキューに追加", "audio": "音声をキューに追加", "keyframes": "{{mode}}キーフレームをキューに追加"
     },
     "dependencies": {
-      "title": "ワークフローの依存関係",
-      "recheck": "再チェック",
-      "recheckHelp": "必要なノードとモデルを再チェック",
-      "offline": "ComfyUIはオフラインです。依存関係を確認するにはComfyUIを起動してください。",
-      "checking": "インストール済みのノードとモデルを確認中...",
-      "missing": "必要な依存関係が不足しています。インストールされるまでキューへ追加できません。",
-      "missingNodes": "不足しているノード：",
-      "missingModels": "不足しているモデル：",
-      "cloudKey": "このワークフローはComfy.org APIで動作します。利用するにはキーを追加してください。",
-      "setUpKey": "キーを設定",
-      "copyReport": "レポートをコピー",
-      "loadComfy": "ComfyUIで読み込む",
-      "workflowSetup": "ワークフロー設定",
-      "openRegistry": "ノードレジストリを開く",
-      "notRunning": "ComfyUIが実行されていません。生成するには起動してください。"
+      "title": "ワークフローの依存関係", "recheck": "再チェック", "recheckHelp": "必要なノードとモデルを再チェック", "offline": "ComfyUIはオフラインです。依存関係を確認するにはComfyUIを起動してください。", "checking": "インストール済みのノードとモデルを確認中...", "missing": "必要な依存関係が不足しています。インストールされるまでキューへ追加できません。", "missingNodes": "不足しているノード：", "missingModels": "不足しているモデル：", "cloudKey": "このワークフローはComfy.org APIで動作します。利用するにはキーを追加してください。", "setUpKey": "キーを設定", "copyReport": "レポートをコピー", "loadComfy": "ComfyUIで読み込む", "workflowSetup": "ワークフロー設定", "openRegistry": "ノードレジストリを開く", "notRunning": "ComfyUIが実行されていません。生成するには起動してください。"
     },
     "info": {
-      "title": "ワークフロー情報",
-      "category": "カテゴリー",
-      "workflow": "ワークフロー",
-      "hardware": "ハードウェア区分",
-      "unknown": "不明",
-      "runtime": "実行環境",
-      "cloudEstimate": "クラウド予想使用量／回",
-      "needsInput": "入力の必要性",
-      "yesImage": "あり（画像）",
-      "no": "なし",
-      "output": "出力",
-      "resolution": "解像度",
-      "seed": "シード"
+      "title": "ワークフロー情報", "category": "カテゴリー", "workflow": "ワークフロー", "hardware": "ハードウェア区分", "unknown": "不明", "runtime": "実行環境", "cloudEstimate": "クラウド予想使用量／回", "needsInput": "入力の必要性", "yesImage": "あり（画像）", "no": "なし", "output": "出力", "resolution": "解像度", "seed": "シード"
     }
   },
   "stock": {
@@ -1640,32 +1094,12 @@
     },
     "tour": {
       "intro": "このクイックガイドでは、次にどこへ進めばよいかを案内します。詳しい編集方法やプロンプト作成方法は動画で確認できます。",
-      "editorTitle": "編集ワークスペース",
-      "editorDescription": "プロジェクトに素材を追加した後、日常的な編集を行う画面です。",
-      "editor1": "素材パネル：映像、音声、画像を読み込み、タイムラインへドラッグします。",
-      "editor2": "プレビュー：素材を確認し、フレームを開始キーフレームとして「生成」へ送ります。",
-      "editor3": "タイムライン：トリミング、リップル、スナップ、マーカーを使って編集します。",
-      "editor4": "インスペクター：選択項目の変形、クロップ、タイミング、エフェクト、テキスト、調整を設定します。",
-      "openEditor": "編集画面を開く",
-      "generateTitle": "生成",
-      "generateDescription": "ローカルまたはクラウドのワークフローで画像、映像、音声を作成します。",
-      "generate1": "シングルモードは、画像、映像、音声を個別に生成する場合に使用します。",
-      "generate2": "ディレクターモードでは、設定、台本、キーフレーム、映像の順に作業します。",
-      "generate3": "モデルやノードが不足している場合は、キューへ追加する前に再チェックします。",
-      "stockTitle": "ストック",
-      "stockDescription": "Pexelsを検索し、映像や静止画を現在のプロジェクトへ直接読み込みます。",
-      "stock1": "仮素材、アイデア探し、背景素材がすぐ必要な場合に便利です。",
-      "stock2": "設定画面でPexels APIキーが必要です。",
-      "openStock": "ストックを開く",
-      "exportTitle": "書き出し",
-      "exportDescription": "現在のタイムラインをファイルへレンダリングし、書き出しキューを管理します。",
-      "export1": "形式、コーデック、範囲、解像度、FPS、音声設定を選択します。",
-      "export2": "複数の出力形式が必要な場合は、複数の書き出しをキューへ追加できます。",
-      "openExport": "書き出しを開く",
-      "settingsTitle": "設定",
-      "settingsDescription": "コンピューター固有の構成が変わった場合は、ここで更新します。",
-      "settings1": "プロジェクトフォルダー、ComfyUIポート、ComfyアカウントのAPIキー、Pexelsキー、新規プロジェクトの初期値を設定できます。",
-      "settings2": "別のコンピューターで動作が異なる場合は、最初にこの設定を比較してください。"
+      "editorTitle": "編集ワークスペース", "editorDescription": "プロジェクトに素材を追加した後、日常的な編集を行う画面です。",
+      "editor1": "素材パネル：映像、音声、画像を読み込み、タイムラインへドラッグします。", "editor2": "プレビュー：素材を確認し、フレームを開始キーフレームとして「生成」へ送ります。", "editor3": "タイムライン：トリミング、リップル、スナップ、マーカーを使って編集します。", "editor4": "インスペクター：選択項目の変形、クロップ、タイミング、エフェクト、テキスト、調整を設定します。", "openEditor": "編集画面を開く",
+      "generateTitle": "生成", "generateDescription": "ローカルまたはクラウドのワークフローで画像、映像、音声を作成します。", "generate1": "シングルモードは、画像、映像、音声を個別に生成する場合に使用します。", "generate2": "ディレクターモードでは、設定、台本、キーフレーム、映像の順に作業します。", "generate3": "モデルやノードが不足している場合は、キューへ追加する前に再チェックします。",
+      "stockTitle": "ストック", "stockDescription": "Pexelsを検索し、映像や静止画を現在のプロジェクトへ直接読み込みます。", "stock1": "仮素材、アイデア探し、背景素材がすぐ必要な場合に便利です。", "stock2": "設定画面でPexels APIキーが必要です。", "openStock": "ストックを開く",
+      "exportTitle": "書き出し", "exportDescription": "現在のタイムラインをファイルへレンダリングし、書き出しキューを管理します。", "export1": "形式、コーデック、範囲、解像度、FPS、音声設定を選択します。", "export2": "複数の出力形式が必要な場合は、複数の書き出しをキューへ追加できます。", "openExport": "書き出しを開く",
+      "settingsTitle": "設定", "settingsDescription": "コンピューター固有の構成が変わった場合は、ここで更新します。", "settings1": "プロジェクトフォルダー、ComfyUIポート、ComfyアカウントのAPIキー、Pexelsキー、新規プロジェクトの初期値を設定できます。", "settings2": "別のコンピューターで動作が異なる場合は、最初にこの設定を比較してください。"
     },
     "footer": "アプリ内ガイドでは要点のみを案内します。詳しい編集方法やプロンプト作成方法は動画をご覧ください。",
     "actions": {
@@ -1712,7 +1146,6 @@
       "toolTrim": "クリップの先頭または末尾を端からトリミングします。",
       "toolRazor": "クリップをクリックし、カーソル位置で分割します。",
       "toolSlip": "映像／音声クリップ内をドラッグし、位置を変えずにソースのタイミングをスリップします。",
-      "toolSlide": "隣接する2つのクリップの間でスライドします。素材と長さは変えずに、両隣の端を一緒にトリムします。",
       "snapping": "スナップ {{state}}（{{shortcut}}で切り替え）",
       "ripple": "リップル編集 {{state}}（{{shortcut}}で切り替え）— クリップ移動時に後続クリップも移動します",
       "generateMusic": "ACE-Stepで音楽を生成 — イン／アウト範囲から長さを自動入力します",
@@ -1722,9 +1155,6 @@
       "durationBy": "選択したクリップの長さを指定量だけ変更{{shortcut}}",
       "moreTools": "その他のツール",
       "frameAll": "全体表示 — タイムラインまたは全クリップを表示範囲に合わせる",
-      "zoomToSelection": "選択範囲を表示",
-      "restoreSelectionView": "前の表示に戻す",
-      "zoomToSelectionHelp": "選択したクリップを表示範囲に合わせます。もう一度実行すると、以前のズームとスクロール位置に戻ります",
       "trackHeightCompact": "コンパクト — 画面に多くのトラックを表示",
       "trackHeightNormal": "標準のトラック高さ",
       "trackHeightTall": "高く表示 — 波形とキーフレーム用の領域を確保",

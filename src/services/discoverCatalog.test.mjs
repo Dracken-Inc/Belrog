@@ -98,16 +98,16 @@ test('builds all playback URLs from a validated ID rather than caller-provided U
 test('allows only the fixed Belrog catalog endpoint and resolves a relative bundled asset', () => {
   assert.equal(isTrustedDiscoverCatalogUrl(DEFAULT_DISCOVER_CATALOG_URL), true)
   assert.equal(
-    isTrustedDiscoverCatalogUrl('https://raw.githubusercontent.com/VelornLabs/velorn/main/public/discover/catalog.json'),
+    isTrustedDiscoverCatalogUrl('https://raw.githubusercontent.com/BelrogLabs/Belrog/main/public/discover/catalog.json'),
     true,
   )
   assert.equal(
-    isTrustedDiscoverCatalogUrl('https://raw.githubusercontent.com/VelornLabs/other/main/public/discover/catalog.json'),
+    isTrustedDiscoverCatalogUrl('https://raw.githubusercontent.com/BelrogLabs/other/main/public/discover/catalog.json'),
     false,
   )
-  assert.equal(isTrustedDiscoverCatalogUrl('https://velorn.ai/discover/catalog.json'), true)
-  assert.equal(isTrustedDiscoverCatalogUrl('https://www.velorn.ai/discover/catalog.json'), true)
-  assert.equal(isTrustedDiscoverCatalogUrl('https://velorn.ai/discover/catalog.json?redirect=evil'), false)
+  assert.equal(isTrustedDiscoverCatalogUrl('https://Belrog.ai/discover/catalog.json'), true)
+  assert.equal(isTrustedDiscoverCatalogUrl('https://www.Belrog.ai/discover/catalog.json'), true)
+  assert.equal(isTrustedDiscoverCatalogUrl('https://Belrog.ai/discover/catalog.json?redirect=evil'), false)
   assert.equal(isTrustedDiscoverCatalogUrl('https://cdn.example/discover/catalog.json'), false)
   assert.equal(getBundledDiscoverCatalogUrl('./'), './discover/catalog.json')
   assert.equal(getBundledDiscoverCatalogUrl('/app/'), '/app/discover/catalog.json')

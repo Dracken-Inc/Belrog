@@ -115,41 +115,6 @@ Longer-term areas of interest include:
 - Stronger automation between prompts, assets, and timeline structure
 - Better project templates for repeatable creative workflows
 
-## Phase 6: Local Audio, No Cloud Required (Next Major Update)
-
-Belrog is local-first. Audio is the last area where the guided flows still send
-work to someone else's service. The next major update replaces those with
-services running on the creator's own machine or on a server they own.
-
-Preferred local engine: a **koko** server on the creator's box (the same
-local-server pattern Belrog already uses for ComfyUI and LM Studio: detect it,
-show what it can do, and fall back with a clear reason when it is missing).
-
-What changes:
-
-- **Voiceover and speech**: the koko server is the default voice engine, with the
-  existing built-in local voice as the no-server fallback. No cloud text-to-speech.
-- **Music generation**: local models run through ComfyUI (for example LTX Music,
-  or another music graph the creator installs), so a song is queued like any other
-  job and shows up in the same queue and history.
-- **Video-to-music and audio reference**: local graph alternatives for the current
-  cloud-only paths, so a music video can be scored without any account.
-- **Stock sound**: keep the current stock search optional and clearly separate from
-  local generation. Nothing is fetched just to preview a workflow.
-- **Cloud paths stay available but demoted**: still there for people who want them,
-  never the default, never required to finish a project, and labeled as what they
-  are.
-
-How we will know it is done:
-
-- A creator can finish a music video, including voiceover and score, with no
-  account, no key and no internet.
-- Every audio feature states which engine it used, on screen, in plain words.
-- A missing or offline koko server produces one clear message and one working
-  next step, not a dead panel.
-- Local audio jobs appear in the same queue, history and cost view as video jobs,
-  and the guided workflows still do not turn into node editing.
-
 ## Product Principles
 
 As belrog grows, we want to stay grounded in a few principles:

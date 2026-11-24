@@ -11,8 +11,8 @@
 set -eu
 BELROG_REPO="${BELROG_REPO:-/home/henlafon/belrog-src}"
 RUNDIR="${H3_RUNDIR:-$HOME/h3-oneshot-runs/run_$(date +%Y%m%d_%H%M%S)}"
-AUDIO="${1:?usage: 04-run.sh song.mp3 [script.txt|--auto] [style] [chunk]}"
-SCRIPT="${2:---auto}"
+AUDIO="${1:?usage: 04-run.sh song.mp3 script.txt [style] [chunk]}"
+SCRIPT="${2:?need script}"
 STYLE="${3:-}"
 CHUNK="${4:-20}"
 INPUT_DIR="/home/henlafon/spark-comfyui/data/input"
@@ -24,15 +24,6 @@ SRC="$AUDIO"
 [ -f "$SRC" ] || { echo "FAIL: audio not found: $AUDIO (give a path or stage it in $INPUT_DIR)"; exit 1; }
 cp -n "$SRC" "$INPUT_DIR/" || true
 BASE=$(basename "$AUDIO")
-
-# --auto: build the tiled director script from the track itself (duration +
-# embedded lyrics via ffprobe). Deterministic; same file = same script.
-if [ "$SCRIPT" = "--auto" ]; then
-  SCRIPT="$RUNDIR/auto-script.txt"
-  node "$BELROG_REPO/scripts/oneshot/suno-script.mjs" --audio "$SRC" --style "$STYLE" --out "$SCRIPT" \
-    || { echo "FAIL: suno-script.mjs could not build a script from $SRC"; exit 1; }
-  echo "auto-script: $SCRIPT"
-fi
 
 echo "=== ONE-SHOT run starting $(date -Is) ==="
 echo "run dir: $RUNDIR"

@@ -5,7 +5,7 @@ import {
   Plus, Video, Type, Image as ImageIcon,
   Sparkles, GripVertical, Magnet, ArrowRightLeft, Square, X, Check, Pencil,
   Diamond, Zap, AlertTriangle, Loader2, ChevronLeft, ChevronRight, Maximize2, Flag, Scissors, Clock,
-  Copy, ClipboardPaste, Trash2, Music as MusicIcon, MoreHorizontal, Layers, ArrowLeft,
+  Copy, ClipboardPaste, Trash2, Music as MusicIcon, MoreHorizontal,
 } from 'lucide-react'
 import useTimelineStore, { buildClipSyncLock, isMusicVideoSyncCapableClip, isSyncLockedClip, isCaptionsTrack, isCaptionClip } from '../stores/timelineStore'
 import useProjectStore from '../stores/projectStore'
@@ -16,28 +16,12 @@ import { deleteRenderCache } from '../services/fileSystem'
 import { clearDiskCacheUrl } from './VideoLayerRenderer'
 import useAssetsStore from '../stores/assetsStore'
 import CaptionWorkspace from './CaptionWorkspace'
-import PasteAttributesDialog from './PasteAttributesDialog'
-import SmartReplaceDialog, { captureSmartReplaceSession, getSmartReplaceEligibility } from './SmartReplaceDialog'
-import CompoundClipDialog, { captureCompoundClipSession, captureUncompoundSession, navigateCompoundContents, UncompoundDialog } from './CompoundClipDialog'
-import TrimEdgePreview from './TrimEdgePreview'
-import RollEditPreview from './RollEditPreview'
-import SlipEditPreview from './SlipEditPreview'
-import SlideEditPreview from './SlideEditPreview'
-import AudioVolumeEnvelope, { getSingleAudioEnvelopeTarget, resetAudioVolumeEnvelopeEditor } from './AudioVolumeEnvelope'
-import { buildTrimPreviewFeedback } from '../utils/trimPreview.mjs'
-import { resolveTimelineSelectionViewport } from '../utils/timelineSelectionViewport.mjs'
-import { createTimelineScrubScheduler, resolveTimelineScrubSample } from '../utils/timelineScrubScheduler.mjs'
-import { canSplitActiveTrackAtPlayhead, getActiveTrackSplitTarget } from '../utils/timelineSplitTarget.mjs'
-import { findTransitionCutTarget, isTransitionCutTargetCurrent, isTransitionDrag, parseTransitionDrag } from '../utils/transitionCutTarget.mjs'
-import { isFrameStepSeekIntentAtTime } from '../utils/previewVideoSeeking'
 import { useSnapping, SNAP_TYPES } from '../hooks/useSnapping'
 import useViewportClampedPosition from '../hooks/useViewportClampedPosition'
 import { getAllKeyframeTimes } from '../utils/keyframes'
 import { TRANSITION_TYPES, TRANSITION_DURATIONS, FRAME_RATE } from '../constants/transitions'
 import { getAudioClipFadeValues } from '../utils/audioClipFades'
 import { buildAudioClipSplitState } from '../utils/audioClipSplit'
-import { buildSplitLeftPieceUpdates, buildSplitRightPieceCarryOver } from '../utils/clipSplit.mjs'
-import { nudgeSelectedClips, trimToPlayhead } from '../utils/playheadEdits.mjs'
 import {
   createMultiClipTrimSession,
   getMultiClipTrimTargetIds,
@@ -46,7 +30,6 @@ import {
 import { getSpriteFramePosition } from '../services/thumbnailSprites'
 import { getEffectTypeDefinition } from '../utils/effects'
 import { isTextEditingElement } from '../utils/keyboardFocus'
-import { hasVisibleKeyboardModal, isNativeTextKeyboardEvent } from '../utils/transportKeyboardGuards.mjs'
 import {
   formatSecondsFrames,
   formatTimecode as formatFrameTimecode,
@@ -66,22 +49,18 @@ import {
 import MasterAudioMeter from './AudioMeter'
 import GenerateMusicPopover from './GenerateMusicPopover'
 import { analyzeAudioSource } from '../services/audioAnalysis'
-import { captureBeatMarkerRequest, isBeatMarkerRequestCurrent, buildDetectedBeatMarkers } from '../utils/beatMarkers.mjs'
 import { getClipPlaybackTimeAtTimeline } from '../utils/clipPlaybackTiming'
 import { canRevealAssetInFileManager, getRevealInFileManagerLabel, revealAssetInFileManager } from '../utils/revealInFileManager'
 import { useI18n } from '../i18n/I18nContext'
 import { quoteCssFontFamily } from '../utils/fontFamily'
 
 const TRANSITION_DEFAULT_DURATION_KEY = 'comfystudio-transition-default-duration-frames'
-const TRANSITION_TYPE_IDS = TRANSITION_TYPES.map(type => type.id)
 const DEFAULT_WAVEFORM_SAMPLES = 8192
 const MARQUEE_DRAG_THRESHOLD_PX = 6
 const MARQUEE_AUTO_SCROLL_EDGE_PX = 32
 const MARQUEE_AUTO_SCROLL_STEP_PX = 24
 const PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX = 40
 const PLAYHEAD_SCRUB_AUTO_SCROLL_MAX_STEP_PX = 28
-const SCRUB_CONTEXT_KEYS = ['timelineSessionId', 'compoundEditContext', 'timelineFps', 'zoom', 'duration',
-  'isPlaying', 'playbackRate', 'shuttleMode']
 const MIN_INTERACTIVE_CLIP_WIDTH_PX = 24
 const TIMELINE_VIDEO_THUMB_WIDTH_PX = 90
 const MAX_TIMELINE_VIDEO_THUMBNAILS = 12
@@ -115,15 +94,7 @@ const AUDIO_WAVEFORM_FILL = 'rgba(196, 208, 202, 0.6)'
 const AUDIO_WAVEFORM_CENTER_LINE = 'rgba(255,255,255,0.32)'
 const AUDIO_CLIP_ACCENT = '#4a6b5c'
 const ADJACENT_CLIP_UI_GAP_SECONDS = 0.5
-const ROLL_GESTURE_STATE_KEYS = ['clips', 'tracks', 'transitions', 'markers', 'history', 'historyIndex',
-  'timelineSessionId', 'timelineFps', 'selectedClipIds', 'duration', 'isPlaying', 'compoundEditContext',
-  'clipCounter', 'transitionCounter', 'markerCounter', 'masterAudioVolume', 'masterAudioInserts', 'zoom']
-const captureRollGestureState = state => Object.fromEntries(ROLL_GESTURE_STATE_KEYS.map(key => [key, state[key]]))
-const SLIDE_GESTURE_STATE_KEYS = [...ROLL_GESTURE_STATE_KEYS, 'rippleEditMode', 'snappingEnabled', 'snappingThreshold']
-const captureSlideGestureState = state => Object.fromEntries(SLIDE_GESTURE_STATE_KEYS.map(key => [key, state[key]]))
-const RIPPLE_TRIM_STATE_KEYS = [...ROLL_GESTURE_STATE_KEYS, 'rippleEditMode', 'snappingEnabled', 'snappingThreshold',
-  'playheadPosition', 'inPoint', 'outPoint']
-const captureRippleTrimState = state => Object.fromEntries(RIPPLE_TRIM_STATE_KEYS.map(key => [key, state[key]]))
+const ROLL_EDIT_MAX_GAP_SECONDS = 1 / FRAME_RATE
 const AUDIO_WAVEFORM_CACHE = new Map()
 const AUDIO_WAVEFORM_PENDING = new Map()
 let audioWaveformContext = null
@@ -134,7 +105,6 @@ const TIMELINE_TOOLS = Object.freeze({
   TRIM: 'trim',
   RAZOR: 'razor',
   SLIP: 'slip',
-  SLIDE: 'slide',
 })
 const TIMELINE_TOOL_LABELS = Object.freeze({
   [TIMELINE_TOOLS.AUTO]: 'Auto tool',
@@ -142,7 +112,6 @@ const TIMELINE_TOOL_LABELS = Object.freeze({
   [TIMELINE_TOOLS.TRIM]: 'Trim tool',
   [TIMELINE_TOOLS.RAZOR]: 'Razor tool',
   [TIMELINE_TOOLS.SLIP]: 'Slip tool',
-  [TIMELINE_TOOLS.SLIDE]: 'Slide tool',
 })
 const sanitizeTimelineOffsetInput = (value) => {
   const raw = String(value || '').replace(/\s+/g, '')
@@ -561,30 +530,16 @@ const TIMELINE_STORE_KEYS = [
   'toggleRippleEdit', 'setActiveSnapTime', 'clearActiveSnap', 'removeTrack',
   'renameTrack', 'reorderTrack', 'undo', 'redo', 'canUndo', 'canRedo',
   'saveToHistory', 'clearClipCache', 'requestMaskPicker', 'requestTextEdit',
-  'copySelectedClips', 'pasteClipsAtPlayhead', 'copiedClips', 'attributeClipboard',
+  'copySelectedClips', 'pasteClipsAtPlayhead', 'copiedClips',
   'getLinkedClipIds', 'linkSelectedClips', 'unlinkSelectedClips',
   'lockSyncClips', 'unlockSyncLockedClips', 'addMarker', 'removeMarker',
   'selectMarker', 'selectGap', 'addAdjustmentClip',
-  'compoundEditContext',
 ]
 const pickTimelineStoreSlice = (state) => {
   const slice = {}
   for (const key of TIMELINE_STORE_KEYS) slice[key] = state[key]
   return slice
 }
-
-// Keep playhead-driven enablement local to the button. The clip area remains
-// unsubscribed from playback ticks, while crossing a cut/gap updates Split.
-const ActiveTrackSplitButton = memo(function ActiveTrackSplitButton({ onClick, className, showLabel, availableTitle, unavailableTitle }) {
-  const canSplit = useTimelineStore(canSplitActiveTrackAtPlayhead)
-  return (
-    <button onClick={onClick} disabled={!canSplit} className={className}
-      title={canSplit ? availableTitle : unavailableTitle}>
-      <Scissors className="w-3 h-3" />
-      {showLabel && 'Split'}
-    </button>
-  )
-})
 
 // Ruler ticks live in their own memoized component: at frame-level zoom a
 // long timeline emits thousands of tick elements, and re-reconciling them on
@@ -625,11 +580,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const playheadElRef = useRef(null)
   const trackHeadersRef = useRef(null)
   const trackContentRef = useRef(null)
-  const selectionViewRef = useRef(null)
-  const pendingSelectionViewRef = useRef(null)
-  const viewportNavigationSequenceRef = useRef(0)
-  const selectionViewPointerDownRef = useRef(false)
-  const [selectionViewRevision, setSelectionViewRevision] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
   const [dragClip, setDragClip] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
@@ -734,20 +684,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   
   // Trimming state
   const [trimState, setTrimState] = useState(null) // { clipId, edge: 'left' | 'right', startX, startValue }
-  const [trimPreview, setTrimPreview] = useState(null)
-  const trimGestureRef = useRef(null)
-  const [rippleTrimState, setRippleTrimState] = useState(null)
-  const [rippleTrimPreview, setRippleTrimPreview] = useState(null)
-  const [rippleTrimRefusal, setRippleTrimRefusal] = useState(null)
-  const rippleTrimGestureRef = useRef(null)
-  const [slipState, setSlipState] = useState(null) // Validated public session plus pointer startX; token stays private in the gesture ref.
-  const [slipPreview, setSlipPreview] = useState(null)
-  const [slipRefusal, setSlipRefusal] = useState(null)
-  const slipGestureRef = useRef(null)
-  const [slideState, setSlideState] = useState(null)
-  const [slidePreview, setSlidePreview] = useState(null)
-  const [slideRefusal, setSlideRefusal] = useState(null)
-  const slideGestureRef = useRef(null)
+  const [slipState, setSlipState] = useState(null) // { clipId, startX, startTrimStart, startTrimEnd, timeScale, minSourceDelta, maxSourceDelta }
   const [fadeDragState, setFadeDragState] = useState(null) // { clipId, edge: 'in' | 'out', startX, startFade }
 
   useEffect(() => {
@@ -767,7 +704,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const trimHandlesEnabled = isTrimToolActive || isAutoToolActive
   const isRazorToolActive = activeTimelineTool === TIMELINE_TOOLS.RAZOR
   const isSlipToolActive = activeTimelineTool === TIMELINE_TOOLS.SLIP
-  const isSlideToolActive = activeTimelineTool === TIMELINE_TOOLS.SLIDE
 
   const getTimeScale = (clip) => {
     if (!clip) return 1
@@ -778,11 +714,17 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return baseScale * speedScale
   }
 
+  const getSourceDuration = (clip) => {
+    if (!clip) return Infinity
+    const raw = clip.sourceDuration
+    if (raw === Infinity || raw === 'Infinity') return Infinity
+    if (raw === null || raw === undefined || raw === '') return Infinity
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : Infinity
+  }
+  
   // Scrubbing state (for dragging playhead)
   const [isScrubbing, setIsScrubbing] = useState(false)
-  const scrubGestureRef = useRef(null)
-  const scrubToolRef = useRef(activeTimelineTool)
-  scrubToolRef.current = activeTimelineTool
   
   // Clip dragging state (moving clips within timeline)
   const [clipDragState, setClipDragState] = useState(null) // { clipId, startX, originalStartTime, originalTrackId }
@@ -795,10 +737,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const [marqueeState, setMarqueeState] = useState(null) // { startX, startY, currentX, currentY, scrollLeft, scrollTop }
   const [pendingLanePointerState, setPendingLanePointerState] = useState(null) // Click on empty lane; becomes gap selection or marquee after drag threshold
   
-  // Direct-cut menu snapshots never change the current clip selection.
-  const [transitionMenu, setTransitionMenu] = useState(null) // { x, y, target }
-  const transitionMenuRef = useRef(null)
-  const transitionMenuPosition = useViewportClampedPosition(transitionMenu, transitionMenuRef)
+  // Transition type menu state
+  const [transitionMenu, setTransitionMenu] = useState(null) // { x, y, clipA, clipB }
   const [defaultTransitionFrames, setDefaultTransitionFrames] = useState(() => {
     try {
       const raw = localStorage.getItem(TRANSITION_DEFAULT_DURATION_KEY)
@@ -815,10 +755,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const [transitionDragState, setTransitionDragState] = useState(null) // { transitionId, startX, startDuration }
   
   // Roll edit state (dragging between two adjacent clips)
-  const [rollEditState, setRollEditState] = useState(null) // Validated public session plus pointer startX; the private token lives only in the gesture ref.
-  const [rollPreview, setRollPreview] = useState(null)
-  const [rollRefusal, setRollRefusal] = useState(null)
-  const rollGestureRef = useRef(null)
+  const [rollEditState, setRollEditState] = useState(null) // { clipAId, clipBId, startX, originalEditPoint, clipAOriginalDuration, clipBOriginalStart, clipBOriginalDuration, clipAOriginalTrimStart, clipASourceDuration, clipATimeScale, clipBOriginalTrimStart, clipBOriginalTrimEnd, clipBTimeScale }
   
   // Spacebar panning state
   const [isPanning, setIsPanning] = useState(false)
@@ -830,14 +767,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   
   // Clip context menu state
   const [clipContextMenu, setClipContextMenu] = useState(null) // { x, y, clipId }
-  const [pasteAttributesSession, setPasteAttributesSession] = useState(null)
-  const [smartReplaceSession, setSmartReplaceSession] = useState(null)
-  const [compoundClipSession, setCompoundClipSession] = useState(null)
-  const [uncompoundSession, setUncompoundSession] = useState(null)
-  const [compoundNavigationError, setCompoundNavigationError] = useState('')
-  const parentTimelineScrollRef = useRef(null)
-  const pasteAttributesOpenRef = useRef(false)
-  pasteAttributesOpenRef.current = !!pasteAttributesSession || !!smartReplaceSession || !!compoundClipSession || !!uncompoundSession
   const [maskSubmenuOpen, setMaskSubmenuOpen] = useState(false)
   // Refs + viewport-clamped positions keep the menus from spilling below
   // the taskbar or off the right edge when you right-click near a screen
@@ -864,47 +793,50 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const [musicPopoverAnchor, setMusicPopoverAnchor] = useState(null)
   const [beatAnalysisClipId, setBeatAnalysisClipId] = useState(null)
   const [beatAnalysisError, setBeatAnalysisError] = useState('')
-  const beatAnalysisRequestRef = useRef(null)
-  useEffect(() => () => { beatAnalysisRequestRef.current = null }, [])
 
   // "Detect Beats → Markers": run the audio-analysis engine on the clip's
   // trimmed source range and drop a marker on every beat, in one undo step.
   // The context menu stays open while analyzing (and on error) so the user
   // sees the status; it closes itself on success.
   const handleDetectBeatsForClip = useCallback(async (clipId) => {
-    if (beatAnalysisRequestRef.current) return
     const state = useTimelineStore.getState()
-    const project = useProjectStore.getState()
     const clip = (state.clips || []).find((candidate) => candidate.id === clipId)
     const asset = clip?.assetId ? useAssetsStore.getState().getAssetById(clip.assetId) : null
     if (!clip || !asset) return
 
-    const requestToken = {}
-    beatAnalysisRequestRef.current = requestToken
     setBeatAnalysisError('')
     setBeatAnalysisClipId(clipId)
     try {
-      const request = captureBeatMarkerRequest(state, project, clip, asset)
+      if (clip.reverse) throw new Error('Beat markers are not supported on reversed clips.')
+      if ((clip.keyframes?.speed?.length || 0) > 0) throw new Error('Beat markers are not supported on speed-ramped clips yet.')
+
+      const baseScale = clip.sourceTimeScale || (clip.timelineFps && clip.sourceFps ? clip.timelineFps / clip.sourceFps : 1)
+      const speed = Number(clip.speed) > 0 ? Number(clip.speed) : 1
+      const timeScale = baseScale * speed
+      const trimStart = Number(clip.trimStart) || 0
+      const trimEnd = Number.isFinite(Number(clip.trimEnd))
+        ? Number(clip.trimEnd)
+        : trimStart + (Number(clip.duration) || 0) * timeScale
+
       const analysis = await analyzeAudioSource(
-        { url: asset.url || '', absolutePath: asset.absolutePath || '', path: asset.path || '',
-          projectPath: typeof project.currentProjectHandle === 'string' ? project.currentProjectHandle : '' },
-        { startSeconds: request.startSeconds, endSeconds: request.endSeconds, includeLoudnessCurve: false }
+        { url: asset.url || '', absolutePath: asset.absolutePath || asset.path || '' },
+        { startSeconds: trimStart, endSeconds: trimEnd, includeLoudnessCurve: false }
       )
-      if (beatAnalysisRequestRef.current !== requestToken) return
-      const currentState = useTimelineStore.getState()
-      if (!isBeatMarkerRequestCurrent(request, currentState, useProjectStore.getState(),
-        useAssetsStore.getState().getAssetById(request.assetId))) {
-        throw new Error('The clip or timeline changed during analysis. No markers were added; detect beats again.')
-      }
-      currentState.addMarkersBatch(buildDetectedBeatMarkers(request, analysis))
+      if (analysis?.error) throw new Error(analysis.error)
+      if (!analysis?.beats?.length) throw new Error('No steady beat detected in this clip.')
+
+      const clipStart = Number(clip.startTime) || 0
+      const markers = analysis.beats.slice(0, 600).map((beat, index) => ({
+        time: clipStart + beat / timeScale,
+        label: index === 0 ? `Beats ${analysis.bpm ? `${analysis.bpm} BPM` : ''}`.trim() : '',
+        color: '#38bdf8',
+      }))
+      useTimelineStore.getState().addMarkersBatch(markers)
       setClipContextMenu(null)
     } catch (err) {
-      if (beatAnalysisRequestRef.current === requestToken) setBeatAnalysisError(err?.message || 'Beat detection failed.')
+      setBeatAnalysisError(err?.message || 'Beat detection failed.')
     } finally {
-      if (beatAnalysisRequestRef.current === requestToken) {
-        beatAnalysisRequestRef.current = null
-        setBeatAnalysisClipId(null)
-      }
+      setBeatAnalysisClipId(null)
     }
   }, [])
   const [moveOffsetDialogOpen, setMoveOffsetDialogOpen] = useState(false)
@@ -997,7 +929,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     copySelectedClips,
     pasteClipsAtPlayhead,
     copiedClips,
-    attributeClipboard,
     getLinkedClipIds,
     linkSelectedClips,
     unlinkSelectedClips,
@@ -1008,9 +939,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     selectMarker,
     selectGap,
     addAdjustmentClip,
-    compoundEditContext,
   } = useTimelineStore(useShallow(pickTimelineStoreSlice))
-  const rippleHandlesEnabled = rippleEditMode && trimHandlesEnabled
 
   // Deliberately not subscribed (see TIMELINE_STORE_KEYS): read the playhead
   // live wherever a handler or render-time expression needs the current value.
@@ -1041,13 +970,13 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   // Assets store needs to be available before we derive sync-lock state.
   // The sync-lock helpers below read asset metadata during render, so keep
   // this destructure above any memo that uses getAssetById.
-  const { assets, currentPreview, mediaPreparation, setPreviewMode, getAssetUrl, getAssetById, updateAsset, isPlaying: assetIsPlaying, setIsPlaying: setAssetIsPlaying, folders, addFolder, addAsset, removeAsset } = useAssetsStore()
+  const { assets, currentPreview, setPreviewMode, getAssetUrl, getAssetById, updateAsset, isPlaying: assetIsPlaying, setIsPlaying: setAssetIsPlaying, folders, addFolder, addAsset, removeAsset } = useAssetsStore()
   const timelineFps = getCurrentTimelineSettings()?.fps
   const timecodeFps = Number.isFinite(Number(timelineFps)) && Number(timelineFps) > 0
     ? Number(timelineFps)
     : FRAME_RATE
-  const projectCanUndo = !compoundEditContext && canUndoTimelineStructureChange()
-  const projectCanRedo = !compoundEditContext && canRedoTimelineStructureChange()
+  const projectCanUndo = canUndoTimelineStructureChange()
+  const projectCanRedo = canRedoTimelineStructureChange()
   const timelineHistoryLastChangedAt = useTimelineStore((state) => state.historyLastChangedAt)
   const timelineIsPlaying = useTimelineStore((state) => state.isPlaying)
   const preferredVideoTrack = useMemo(() => {
@@ -1073,14 +1002,12 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return addShapeClip(targetTrack.id, options, getLivePlayhead())
   }, [preferredVideoTrack, addShapeClip])
   const handleUndoAction = useCallback(() => {
-    if (useTimelineStore.getState().compoundEditContext) return undo()
     if (projectCanUndo && (!canUndo() || projectHistoryLastChangedAt > timelineHistoryLastChangedAt)) {
       return undoTimelineStructureChange()
     }
     return undo()
   }, [projectCanUndo, canUndo, projectHistoryLastChangedAt, timelineHistoryLastChangedAt, undoTimelineStructureChange, undo])
   const handleRedoAction = useCallback(() => {
-    if (useTimelineStore.getState().compoundEditContext) return redo()
     if (projectCanRedo && (!canRedo() || projectHistoryLastChangedAt > timelineHistoryLastChangedAt)) {
       return redoTimelineStructureChange()
     }
@@ -1103,10 +1030,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const addTextClipHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.ADD_TEXT_CLIP])
   const addTransitionHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.ADD_TRANSITION])
   const frameAllHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.FRAME_ALL])
-  // A previously customized U binding keeps its existing action. The tool
-  // button remains available without advertising an occupied shortcut.
-  const slideShortcutAvailable = !Object.values(editorHotkeys).some(binding => matchEditorHotkey({ key: 'u' }, binding))
-  const selectionViewHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.ZOOM_TO_SELECTION])
   const zoomOutHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.ZOOM_OUT])
   const zoomInHotkeyLabel = formatEditorHotkey(editorHotkeys[EDITOR_HOTKEY_IDS.ZOOM_IN])
   const isMacPlatform = typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || '')
@@ -1301,7 +1224,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   }, [selectedTransitionTargetClips])
   const canAddTransitionBetweenClips = useCallback((clipA, clipB) => {
     if (!clipA || !clipB) return false
-    if (clipA.type === 'compound' || clipB.type === 'compound') return false
     if (clipA.trackId !== clipB.trackId) return false
     const clipAEnd = Number(clipA.startTime) + Number(clipA.duration)
     const clipBStart = Number(clipB.startTime)
@@ -1339,11 +1261,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     () => [...new Set(clipContextSelectionClips.map((clip) => clip.linkGroupId).filter(Boolean))],
     [clipContextSelectionClips]
   )
-  const clipContextCanLink = !clipContextSelectionClips.some(clip => clip.type === 'compound') && clipContextSelectionClips.length > 1 && !(
+  const clipContextCanLink = clipContextSelectionClips.length > 1 && !(
     clipContextLinkedGroupIds.length === 1 &&
     clipContextSelectionClips.every((clip) => clip.linkGroupId === clipContextLinkedGroupIds[0])
   )
-  const clipContextCanUnlink = !clipContextSelectionClips.some(clip => clip.type === 'compound') && clipContextLinkedGroupIds.length > 0
+  const clipContextCanUnlink = clipContextLinkedGroupIds.length > 0
   const clipContextCanAddTransition = useMemo(() => {
     if (selectedTransitionClipsOnSameTrack.length < 2) return false
 
@@ -1428,19 +1350,23 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     () => selectedClips.length > 0 && selectedClips.every((clip) => !isClipEnabled(clip)),
     [selectedClips, isClipEnabled]
   )
-  const hasCompoundSelection = selectedClips.some(clip => clip.type === 'compound')
-  const contextCompoundClip = clips.find(clip => clip.id === clipContextMenu?.clipId && clip.type === 'compound')
+  const activeTrackClipAtPlayhead = useMemo(() => {
+    if (!activeTrackId) return null
+    const playheadPosition = getLivePlayhead()
+    return clips.find(
+      (clip) => clip.trackId === activeTrackId
+        && playheadPosition > clip.startTime
+        && playheadPosition < clip.startTime + clip.duration
+    ) || null
+    // getLivePlayhead is intentionally unreactive: this value feeds toolbar
+    // enablement, which any interaction re-render refreshes soon enough.
+  }, [activeTrackId, clips])
   const canDeleteCurrentSelection = selectedClipIds.length > 0
     || Boolean(selectedGap)
     || Boolean(selectedTransitionId)
     || Boolean(selectedMarkerId)
-  const [gapDeleteError, setGapDeleteError] = useState('')
-  useEffect(() => {
-    setGapDeleteError('')
-  }, [selectedGap, clips, tracks])
 
   const handleDeleteCurrentSelection = useCallback(() => {
-    setGapDeleteError('')
     if (selectedClipIds.length > 0) {
       if (rippleEditMode) {
         rippleDeleteSelectedClips()
@@ -1450,13 +1376,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       return true
     }
     if (selectedGap) {
-      const preview = useTimelineStore.getState().previewSelectedGapDelete()
-      if (!preview.ok) {
-        setGapDeleteError(preview.reason || 'This gap cannot be closed safely. No clips were moved.')
-      } else if (!rippleDeleteSelectedGap()) {
-        setGapDeleteError(useTimelineStore.getState().previewSelectedGapDelete().reason
-          || 'This gap could not be closed safely. No clips were moved.')
-      }
+      rippleDeleteSelectedGap()
       return true
     }
     if (selectedTransitionId) {
@@ -1483,139 +1403,9 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
   const handleCopySelection = useCallback(() => {
     if (selectedClipIds.length === 0) return false
-    if (useTimelineStore.getState().clips.some(clip => selectedClipIds.includes(clip.id) && clip.type === 'compound')) return false
     copySelectedClips()
     return true
   }, [copySelectedClips, selectedClipIds])
-
-  const openPasteAttributes = useCallback(() => {
-    const state = useTimelineStore.getState()
-    if (!state.attributeClipboard?.clips?.length || !state.selectedClipIds.length) return
-    if (state.clips.some(clip => state.selectedClipIds.includes(clip.id) && clip.type === 'compound')) return
-    setPasteAttributesSession({
-      clipboard: state.attributeClipboard,
-      clipIds: [...state.selectedClipIds],
-      expectedClips: state.clips,
-      expectedTracks: state.tracks,
-      returnFocus: document.activeElement,
-    })
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-  }, [])
-  const closePasteAttributes = useCallback(() => setPasteAttributesSession(null), [])
-  const openSmartReplace = useCallback((clipId) => {
-    const active = document.activeElement
-    const returnFocus = active && active !== document.body && !clipContextMenuRef.current?.contains(active)
-      ? active : timelineRef.current
-    const session = captureSmartReplaceSession(useTimelineStore.getState(), clipId, returnFocus)
-    if (!session) return
-    setSmartReplaceSession(session)
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-  }, [])
-  const closeSmartReplace = useCallback(() => setSmartReplaceSession(null), [])
-  const openCompoundCreate = useCallback(() => {
-    const active = document.activeElement
-    const returnFocus = active && active !== document.body && !clipContextMenuRef.current?.contains(active) ? active : timelineRef.current
-    const session = captureCompoundClipSession(useTimelineStore.getState(), useProjectStore.getState().getCurrentTimelineSettings?.(), returnFocus)
-    if (!session) return
-    setCompoundClipSession(session)
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-  }, [])
-  const closeCompoundCreate = useCallback(() => setCompoundClipSession(null), [])
-  const openUncompound = useCallback((clipId) => {
-    const active = document.activeElement
-    const returnFocus = active && active !== document.body && !clipContextMenuRef.current?.contains(active) ? active : timelineRef.current
-    const session = captureUncompoundSession(useTimelineStore.getState(), clipId, returnFocus, timelineRef.current)
-    if (!session) return
-    setUncompoundSession(session)
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-  }, [])
-  const closeUncompound = useCallback(() => setUncompoundSession(null), [])
-  const openCompoundContents = useCallback((clip) => {
-    const result = navigateCompoundContents(clip)
-    setCompoundNavigationError(result.ok ? '' : result.reason || 'The compound could not be opened.')
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-  }, [])
-  const backFromCompound = useCallback(() => {
-    const result = navigateCompoundContents()
-    setCompoundNavigationError(result.ok ? '' : result.reason || 'The contents could not be returned to the parent timeline. Review the edits or undo them and try again.')
-  }, [])
-
-  useEffect(() => {
-    let previousContext = useTimelineStore.getState().compoundEditContext
-    let frame = null
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      if (state.compoundEditContext === previousContext) return
-      const entering = !previousContext && !!state.compoundEditContext
-      const leaving = !!previousContext && !state.compoundEditContext
-      if (entering) parentTimelineScrollRef.current = {
-        left: timelineRef.current?.scrollLeft || 0,
-        top: trackContentRef.current?.scrollTop || 0,
-      }
-      previousContext = state.compoundEditContext
-      trimGestureRef.current = null
-      setTrimState(null)
-      setTrimPreview(null)
-      const rippleGesture = rippleTrimGestureRef.current
-      rippleTrimGestureRef.current = null
-      if (rippleGesture?.token) state.endRippleTrim?.(rippleGesture.token)
-      setRippleTrimState(null)
-      setRippleTrimPreview(null)
-      setRippleTrimRefusal(null)
-      setClipDragState(null)
-      setTransitionDragState(null)
-      setRollEditState(null)
-      const rollGesture = rollGestureRef.current
-      rollGestureRef.current = null
-      if (rollGesture?.token) state.endRollEdit?.(rollGesture.token)
-      setRollPreview(null)
-      setRollRefusal(null)
-      const slipGesture = slipGestureRef.current
-      slipGestureRef.current = null
-      if (slipGesture?.token) state.endSlipEdit?.(slipGesture.token)
-      setSlipState(null)
-      setSlipPreview(null)
-      setSlipRefusal(null)
-      const slideGesture = slideGestureRef.current
-      slideGestureRef.current = null
-      if (slideGesture?.token) state.endSlideEdit?.(slideGesture.token)
-      setSlideState(null)
-      setSlidePreview(null)
-      setSlideRefusal(null)
-      setFadeDragState(null)
-      setMarqueeState(null)
-      setPendingLanePointerState(null)
-      setIsPanning(false)
-      setIsScrubbing(false)
-      setPanStart(null)
-      setIsSpaceHeld(false)
-      spacePanningKeyDownRef.current = false
-      setClipContextMenu(null)
-      setMaskSubmenuOpen(false)
-      setPasteAttributesSession(null)
-      setSmartReplaceSession(null)
-      setCompoundClipSession(null)
-      setUncompoundSession(null)
-      setMoveOffsetDialogOpen(false)
-      setDurationDeltaDialogOpen(false)
-      setCompoundNavigationError('')
-      resetAudioVolumeEnvelopeEditor()
-      state.clearActiveSnap?.()
-      if (frame != null) cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const scroll = leaving ? parentTimelineScrollRef.current : { left: 0, top: 0 }
-        if (timelineRef.current) { timelineRef.current.scrollLeft = scroll?.left || 0; timelineRef.current.focus({ preventScroll: true }) }
-        if (trackContentRef.current) trackContentRef.current.scrollTop = scroll?.top || 0
-        if (trackHeadersRef.current) trackHeadersRef.current.scrollTop = scroll?.top || 0
-        if (leaving) parentTimelineScrollRef.current = null
-      })
-    })
-    return () => { unsubscribe(); if (frame != null) cancelAnimationFrame(frame) }
-  }, [])
 
   // Responsive toolbar: full (icon+label) → compact (icons only, tooltips
   // carry the labels) → overflow (low-priority groups spill into a ⋯ menu;
@@ -1712,14 +1502,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       icon: ArrowRightLeft,
       title: t('timelineEditor.tooltips.toolSlip'),
     },
-    {
-      id: TIMELINE_TOOLS.SLIDE,
-      label: 'Slide',
-      shortcut: slideShortcutAvailable ? 'U' : '',
-      icon: ArrowRightLeft,
-      title: t('timelineEditor.tooltips.toolSlide'),
-    },
-  ]), [t, slideShortcutAvailable])
+  ]), [t])
   
   const edgeTransitionsByClipId = useMemo(() => {
     const map = new Map()
@@ -1747,7 +1530,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const [captionWorkspaceSession, setCaptionWorkspaceSession] = useState(null) // { asset, scope, replaceClipId, seedFromClipId }
   const handlePasteAtPlayhead = useCallback(() => {
     if (!activeTrackId || copiedClips.length === 0) return false
-    if (copiedClips.some(clip => clip.type === 'compound')) return false
     pasteClipsAtPlayhead(activeTrackId, getLivePlayhead(), assets)
     return true
   }, [activeTrackId, assets, copiedClips, pasteClipsAtPlayhead])
@@ -1766,7 +1548,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   // Helper to get clip URL - uses asset store URL if available (handles refreshed blob URLs)
   const getClipUrl = (clip) => {
     if (!clip) return null
-    if (clip.type === 'text' || clip.type === 'shape' || clip.type === 'captions' || clip.type === 'compound') return null
+    if (clip.type === 'text' || clip.type === 'shape' || clip.type === 'captions') return null
     // Try to get current URL from assets store (may have been regenerated after refresh)
     if (clip.assetId) {
       const assetUrl = getAssetUrl(clip.assetId)
@@ -2085,12 +1867,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   // per-clip render path stays free of asset lookups. Other clip types keep
   // double-click unbound.
   const handleClipDoubleClick = (e, clip) => {
-    if (clip?.type === 'compound') {
-      e.preventDefault()
-      e.stopPropagation()
-      openCompoundContents(clip)
-      return
-    }
     const isLiveCaptions = clip?.type === 'captions'
     const clipAsset = !isLiveCaptions && clip?.assetId ? getAssetById(clip.assetId) : null
     const isCaptionOverlay = isLiveCaptions || Boolean(
@@ -2277,116 +2053,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   }, [clips, duration])
   const sliderMinZoom = Math.max(1, Math.floor(getMinZoom()))
 
-  // A selection focus is transient navigation, not a document edit. Keep one
-  // baseline across selection changes and manual panning; Frame All clears it.
-  const selectionViewBlockedRef = useRef(false)
-  selectionViewBlockedRef.current = !!(trimState || rippleTrimState || rollEditState || slipState || slideState
-    || clipDragState || fadeDragState || transitionDragState || marqueeState || pendingLanePointerState
-    || isScrubbing || isPanning || isResizingHeaders || trackDragState || trackResizeState
-    || isDragging || draggedAssetId || draggedAssetIds.length || moveOffsetDialogOpen || durationDeltaDialogOpen)
-  const getSelectionViewKey = (ids) => JSON.stringify([...new Set(ids || [])].sort())
-  const canChangeSelectionView = useCallback(() => {
-    if (selectionViewBlockedRef.current || selectionViewPointerDownRef.current || pasteAttributesOpenRef.current
-      || scrubGestureRef.current || trimGestureRef.current || rippleTrimGestureRef.current || rollGestureRef.current || slipGestureRef.current || slideGestureRef.current) return false
-    // Some older app dialogs predate aria-modal. Their visible full-screen
-    // backdrops must shield this global command too (for example Settings).
-    return ![...document.querySelectorAll('[aria-modal="true"], [role="dialog"], .fixed.inset-0')]
-      .some((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden')
-  }, [])
-
-  useEffect(() => {
-    const pointerDown = () => { selectionViewPointerDownRef.current = true }
-    const pointerUp = () => { selectionViewPointerDownRef.current = false }
-    const unsubscribe = useTimelineStore.subscribe((state, previous) => {
-      if (state.timelineSessionId === previous.timelineSessionId && state.compoundEditContext === previous.compoundEditContext) return
-      selectionViewRef.current = null
-      pendingSelectionViewRef.current = null
-      viewportNavigationSequenceRef.current += 1
-      setSelectionViewRevision((revision) => revision + 1)
-    })
-    window.addEventListener('pointerdown', pointerDown, true)
-    window.addEventListener('pointerup', pointerUp, true)
-    window.addEventListener('pointercancel', pointerUp, true)
-    window.addEventListener('blur', pointerUp)
-    return () => {
-      unsubscribe()
-      selectionViewRef.current = null
-      pendingSelectionViewRef.current = null
-      viewportNavigationSequenceRef.current += 1
-      window.removeEventListener('pointerdown', pointerDown, true)
-      window.removeEventListener('pointerup', pointerUp, true)
-      window.removeEventListener('pointercancel', pointerUp, true)
-      window.removeEventListener('blur', pointerUp)
-    }
-  }, [])
-
-  const handleZoomToSelection = useCallback(({ focusTimeline = false } = {}) => {
-    const viewport = timelineRef.current
-    const content = trackContentRef.current
-    if (!viewport || !content || !canChangeSelectionView()) return
-    const state = useTimelineStore.getState()
-    const selectionKey = getSelectionViewKey(state.selectedClipIds)
-    let saved = selectionViewRef.current
-    if (saved && (saved.sessionId !== state.timelineSessionId || saved.context !== state.compoundEditContext)) saved = null
-    const restore = saved && (saved.selectionKey === selectionKey || !state.selectedClipIds.length)
-    const fit = restore ? null : resolveTimelineSelectionViewport({
-      clips: state.clips, selectedClipIds: state.selectedClipIds, viewportWidth: viewport.clientWidth,
-    })
-    if (!restore && !fit) return
-
-    let scrollTop = saved?.scrollTop ?? content.scrollTop
-    if (!restore) {
-      const selected = new Set(state.selectedClipIds.map(String))
-      const contentRect = content.getBoundingClientRect()
-      const lanes = [...content.querySelectorAll('[data-clip-id]')]
-        .filter((element) => selected.has(element.dataset.clipId))
-        .map((element) => element.closest('[data-track-lane]')?.getBoundingClientRect())
-        .filter(Boolean)
-      if (lanes.length) {
-        const top = Math.min(...lanes.map((rect) => rect.top)) - contentRect.top + content.scrollTop
-        const bottom = Math.max(...lanes.map((rect) => rect.bottom)) - contentRect.top + content.scrollTop
-        scrollTop = Math.max(0, top - Math.max(0, (content.clientHeight - (bottom - top)) / 2))
-      }
-      selectionViewRef.current = {
-        ...(saved || { zoom: state.zoom, scrollLeft: viewport.scrollLeft, scrollTop: content.scrollTop }),
-        sessionId: state.timelineSessionId, context: state.compoundEditContext, selectionKey,
-      }
-    } else {
-      selectionViewRef.current = null
-    }
-    const nextZoom = restore ? saved.zoom : fit.zoom
-    pendingSelectionViewRef.current = {
-      sequence: ++viewportNavigationSequenceRef.current,
-      sessionId: state.timelineSessionId, context: state.compoundEditContext, selectionKey,
-      zoom: nextZoom, scrollLeft: restore ? saved.scrollLeft : fit.scrollLeft, scrollTop, focusTimeline,
-    }
-    state.setZoom(nextZoom, { navigationOnly: true })
-    setSelectionViewRevision((revision) => revision + 1)
-  }, [canChangeSelectionView])
-
-  useLayoutEffect(() => {
-    const pending = pendingSelectionViewRef.current
-    if (!pending) return
-    pendingSelectionViewRef.current = null
-    const state = useTimelineStore.getState()
-    if (pending.sequence !== viewportNavigationSequenceRef.current || pending.sessionId !== state.timelineSessionId
-      || pending.context !== state.compoundEditContext || pending.selectionKey !== getSelectionViewKey(state.selectedClipIds)
-      || pending.zoom !== state.zoom || !timelineRef.current || !trackContentRef.current) return
-    const viewport = timelineRef.current
-    const content = trackContentRef.current
-    viewport.scrollLeft = Math.max(0, Math.min(pending.scrollLeft, viewport.scrollWidth - viewport.clientWidth))
-    content.scrollTop = Math.max(0, Math.min(pending.scrollTop, content.scrollHeight - content.clientHeight))
-    if (trackHeadersRef.current) trackHeadersRef.current.scrollTop = content.scrollTop
-    if (pending.focusTimeline) viewport.focus({ preventScroll: true })
-  }, [zoom, selectionViewRevision])
-
-  const selectionViewWillRestore = !!selectionViewRef.current
-    && (selectionViewRef.current.selectionKey === getSelectionViewKey(selectedClipIds) || !selectedClipIds.length)
-
   // Zoom with playhead as pivot so the timeline zooms into/out of the playhead position
   const applyZoomWithPlayheadPivot = useCallback((newZoomValue) => {
-    const sequence = ++viewportNavigationSequenceRef.current
-    pendingSelectionViewRef.current = null
     const clamped = Math.max(getMinZoom(), Math.min(2000, newZoomValue))
     if (clamped === zoom) return
     if (!timelineRef.current) {
@@ -2399,7 +2067,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     setZoom(clamped)
     const newPixelsPerSecond = clamped / 5
     requestAnimationFrame(() => {
-      if (timelineRef.current && sequence === viewportNavigationSequenceRef.current) {
+      if (timelineRef.current) {
         const el = timelineRef.current
         const newScrollLeft = playheadPosition * newPixelsPerSecond - playheadViewportX
         el.scrollLeft = Math.max(0, Math.min(newScrollLeft, el.scrollWidth - el.clientWidth))
@@ -2409,10 +2077,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
   // Frame all: fit full timeline or all clips in view
   const handleFrameAll = useCallback(() => {
-    const sequence = ++viewportNavigationSequenceRef.current
-    pendingSelectionViewRef.current = null
-    selectionViewRef.current = null
-    setSelectionViewRevision((revision) => revision + 1)
     if (!timelineRef.current) return
     const visibleWidth = timelineRef.current.clientWidth
     if (visibleWidth <= 0) return
@@ -2428,7 +2092,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     setZoom(newZoom)
     const newPixelsPerSecond = newZoom / 5
     requestAnimationFrame(() => {
-      if (timelineRef.current && sequence === viewportNavigationSequenceRef.current) {
+      if (timelineRef.current) {
         timelineRef.current.scrollLeft = Math.max(0, startTime * newPixelsPerSecond)
       }
     })
@@ -2533,6 +2197,25 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return getTimeFromClientX(e.clientX)
   }
 
+  function getPlayheadScrubAutoScrollDelta(clientX) {
+    if (!timelineRef.current) return 0
+    const rect = timelineRef.current.getBoundingClientRect()
+    const rightThreshold = rect.right - PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX
+    const leftThreshold = rect.left + PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX
+
+    if (clientX >= rightThreshold) {
+      const intensity = Math.min(1.5, Math.max(0.2, (clientX - rightThreshold) / PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX))
+      return Math.round(PLAYHEAD_SCRUB_AUTO_SCROLL_MAX_STEP_PX * intensity)
+    }
+
+    if (clientX <= leftThreshold) {
+      const intensity = Math.min(1.5, Math.max(0.2, (leftThreshold - clientX) / PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX))
+      return -Math.round(PLAYHEAD_SCRUB_AUTO_SCROLL_MAX_STEP_PX * intensity)
+    }
+
+    return 0
+  }
+
   function getTimelinePointerPosition(clientX, clientY) {
     if (!timelineRef.current) return null
     const rect = timelineRef.current.getBoundingClientRect()
@@ -2560,19 +2243,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         setAssetIsPlaying(false)
       }
     }
-  }
-
-  const handleTimelinePointerFocus = (event) => {
-    const target = event.target
-    // Scrub/drag handlers prevent the browser's normal focus transfer. Claim
-    // focus before those handlers run, or Space keeps typing into the Agent
-    // (or another previously focused field) after a timeline gesture.
-    // Portalled dialogs and inline controls keep their own keyboard ownership.
-    if (event.button !== 0 || event.isPrimary === false
-      || !event.currentTarget.contains(target) || hasVisibleKeyboardModal()
-      || isTextEditingElement(target)
-      || target.closest('input, textarea, select, summary, a[href], button:not([data-marker-handle]), [role="button"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="slider"], [role="separator"], [role="menu"], [role="menuitem"], [role="listbox"]')) return
-    timelineRef.current?.focus({ preventScroll: true })
   }
 
   // Container clicks should only pan/marquee. Playhead scrubbing starts from the ruler or playhead handle.
@@ -2616,165 +2286,92 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     // Normal timeline clicks are selection/scrolling only; playhead movement belongs to the ruler/handle.
   }
 
-  const cancelTimelineScrub = useCallback(({ updateUi = true } = {}) => {
-    const gesture = scrubGestureRef.current
-    if (!gesture) return
-    scrubGestureRef.current = null
-    gesture.scheduler?.cancel()
-    gesture.cleanup?.()
-    if (updateUi) setIsScrubbing(false)
-  }, [])
+  const handleTimelineRulerMouseDown = (e) => {
+    if (e.button !== 0 || e.target.closest('[data-marker-handle]')) return
+    e.stopPropagation()
 
-  // Set up synchronously on press: even a same-task move/release cannot get
-  // lost while waiting for React effects. All coordinates remain CSS pixels.
-  const beginTimelineScrub = (event, { ruler = false } = {}) => {
-    if (event.button !== 0 || !Number.isFinite(event.clientX)) return
-    event.stopPropagation()
-    event.preventDefault()
-    cancelTimelineScrub()
-    const viewport = timelineRef.current
-    if (!viewport) return
-    if (ruler) startTimelinePreview()
-    const initial = useTimelineStore.getState()
-    const context = Object.fromEntries(SCRUB_CONTEXT_KEYS.map(key => [key, initial[key]]))
-    const gesture = {
-      viewport, tool: scrubToolRef.current, context, writing: false, moved: false,
-      initialX: event.clientX, position: initial.playheadPosition,
-      revision: initial.playheadSeekRevision, intent: initial.playheadSeekIntent,
-      geometry: null, geometryDirty: true,
+    if (spacePanningKeyDownRef.current) {
+      startTimelinePanning(e)
+      return
     }
-    scrubGestureRef.current = gesture
-    const isCurrent = (state = useTimelineStore.getState()) => (
-      scrubGestureRef.current === gesture && viewport === timelineRef.current && viewport.isConnected
-      && scrubToolRef.current === gesture.tool && SCRUB_CONTEXT_KEYS.every(key => state[key] === context[key])
-      && (context.isPlaying
-        ? state.playheadSeekIntent == null
-        : state.playheadPosition === gesture.position && state.playheadSeekRevision === gesture.revision
-          && state.playheadSeekIntent === gesture.intent)
-    )
-    const readGeometry = () => {
-      const rect = viewport.getBoundingClientRect()
-      gesture.geometry = { left: rect.left, right: rect.right, scrollLeft: viewport.scrollLeft,
-        maxScrollLeft: Math.max(0, viewport.scrollWidth - viewport.clientWidth) }
-      gesture.geometryDirty = false
-      return gesture.geometry
-    }
-    const publish = (time, phase) => {
-      if (!isCurrent()) { cancelTimelineScrub(); return }
-      const state = useTimelineStore.getState()
-      const precise = phase === 'release' && !state.isPlaying
-      const revision = (Number(state.playheadSeekRevision) || 0) + 1
-      gesture.writing = true
-      try {
-        state.setPlayheadPosition(time, precise ? { snap: true, intent: 'frame-step' } : { snap: true })
-      } finally {
-        gesture.writing = false
+
+    e.preventDefault()
+    startTimelinePreview()
+    setIsScrubbing(true)
+    setPlayheadPosition(getTimeFromMouseEvent(e), { snap: true })
+  }
+
+  // Handle scrubbing mouse move and mouse up
+  useEffect(() => {
+    if (!isScrubbing) return
+
+    let latestClientX = null
+    let scrubAutoScrollRaf = null
+
+    const stopAutoScroll = () => {
+      if (scrubAutoScrollRaf !== null) {
+        cancelAnimationFrame(scrubAutoScrollRaf)
+        scrubAutoScrollRaf = null
       }
-      const result = useTimelineStore.getState()
-      // Adopt only our known write, never an arbitrary synchronous subscriber's
-      // navigation. A changed project/clock is discarded before another sample.
-      const ownIntent = precise
-        ? result.playheadSeekIntent?.type === 'frame-step' && result.playheadSeekIntent.targetTime === time
-          && result.playheadSeekIntent.revision === revision
-        : result.playheadSeekIntent === null
-      if (scrubGestureRef.current !== gesture || !SCRUB_CONTEXT_KEYS.every(key => result[key] === context[key])
-        || result.playheadPosition !== time || result.playheadSeekRevision !== revision || !ownIntent) {
-        cancelTimelineScrub()
+    }
+
+    const syncScrubPosition = (clientX) => {
+      if (!timelineRef.current) return false
+      const scrollEl = timelineRef.current
+      const previousScrollLeft = scrollEl.scrollLeft
+      const maxScrollLeft = Math.max(0, scrollEl.scrollWidth - scrollEl.clientWidth)
+      const scrollDelta = getPlayheadScrubAutoScrollDelta(clientX)
+      if (scrollDelta !== 0) {
+        scrollEl.scrollLeft = Math.max(0, Math.min(maxScrollLeft, previousScrollLeft + scrollDelta))
+      }
+        setPlayheadPosition(getTimeFromClientX(clientX), { snap: true })
+      return scrollEl.scrollLeft !== previousScrollLeft
+    }
+
+    const tickAutoScroll = () => {
+      if (latestClientX == null) {
+        scrubAutoScrollRaf = null
         return
       }
-      gesture.position = time
-      gesture.revision = revision
-      gesture.intent = result.playheadSeekIntent
+      const didScroll = syncScrubPosition(latestClientX)
+      if (didScroll && getPlayheadScrubAutoScrollDelta(latestClientX) !== 0) {
+        scrubAutoScrollRaf = requestAnimationFrame(tickAutoScroll)
+      } else {
+        scrubAutoScrollRaf = null
+      }
     }
-    gesture.scheduler = createTimelineScrubScheduler({
-      requestFrame: callback => requestAnimationFrame(callback), cancelFrame: frame => cancelAnimationFrame(frame),
-      getCurrentPosition: () => useTimelineStore.getState().playheadPosition,
-      forcePublish: (time, phase) => phase === 'release' && !useTimelineStore.getState().isPlaying
-        && !isFrameStepSeekIntentAtTime(useTimelineStore.getState().playheadSeekIntent, time),
-      readSample: (clientX, phase) => {
-        if (!isCurrent()) { cancelTimelineScrub(); return null }
-        const geometry = gesture.geometryDirty || phase === 'release' ? readGeometry() : gesture.geometry
-        // A handle press/release without movement must not jump by its hit-box
-        // offset. A moved/released coordinate still maps exactly under the hand.
-        if (!ruler && phase === 'release' && !gesture.moved && clientX === gesture.initialX) {
-          return { time: quantizeTimeToFrame(useTimelineStore.getState().playheadPosition, context.timelineFps), continue: false }
-        }
-        const options = { clientX, geometry, pixelsPerSecond: context.zoom / 5, duration: context.duration,
-          fps: getSafeTimelineFps(context.timelineFps, FRAME_RATE), edgePixels: PLAYHEAD_SCRUB_AUTO_SCROLL_EDGE_PX,
-          maxStepPixels: PLAYHEAD_SCRUB_AUTO_SCROLL_MAX_STEP_PX }
-        let sample = resolveTimelineScrubSample({ ...options, autoScroll: phase === 'update' })
-        if (!sample) return null
-        if (sample.scrollLeft !== geometry.scrollLeft) {
-          const before = geometry.scrollLeft
-          viewport.scrollLeft = sample.scrollLeft
-          // Only actual auto-scroll needs a post-write read. Central scrubbing
-          // uses cached metrics and never alternates per-event layout reads/writes.
-          geometry.scrollLeft = viewport.scrollLeft
-          sample = { ...resolveTimelineScrubSample({ ...options, autoScroll: false }), continue: geometry.scrollLeft !== before }
-        }
-        return sample
-      },
-      onPosition: publish,
-    })
-    const invalidateGeometry = () => {
-      gesture.geometryDirty = true
-      gesture.scheduler.invalidate()
+
+    const ensureAutoScroll = () => {
+      if (scrubAutoScrollRaf !== null) return
+      if (latestClientX == null) return
+      if (getPlayheadScrubAutoScrollDelta(latestClientX) === 0) return
+      scrubAutoScrollRaf = requestAnimationFrame(tickAutoScroll)
     }
-    const move = event => {
-      if (!isCurrent() || event.buttons === 0) { cancelTimelineScrub(); return }
-      gesture.moved = true
-      gesture.scheduler.move(event.clientX)
+
+    const handleMouseMove = (e) => {
+      latestClientX = e.clientX
+      syncScrubPosition(e.clientX)
+      ensureAutoScroll()
     }
-    const release = event => {
-      if (event.button !== 0) return
-      if (!isCurrent()) { cancelTimelineScrub(); return }
-      gesture.scheduler.finish(event.clientX)
-      if (!isCurrent()) { cancelTimelineScrub(); return }
-      cancelTimelineScrub()
+
+    const handleMouseUp = () => {
+      stopAutoScroll()
+      setIsScrubbing(false)
+      // Let the preview renderer commit the precise frame immediately
+      // instead of waiting out its scrub-settle timer.
       window.dispatchEvent(new CustomEvent('comfystudio:timeline-scrub-end'))
     }
-    const cancel = () => cancelTimelineScrub()
-    const escape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      cancel()
-    }
-    const unsubscribe = useTimelineStore.subscribe(state => { if (!gesture.writing && !isCurrent(state)) cancel() })
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(invalidateGeometry)
-    resizeObserver?.observe(viewport)
-    window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', release)
-    window.addEventListener('blur', cancel)
-    window.addEventListener('pointercancel', cancel)
-    window.addEventListener('keydown', escape, true)
-    window.addEventListener('scroll', invalidateGeometry, true)
-    window.addEventListener('resize', invalidateGeometry)
-    gesture.cleanup = () => {
-      unsubscribe()
-      resizeObserver?.disconnect()
-      window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', release)
-      window.removeEventListener('blur', cancel)
-      window.removeEventListener('pointercancel', cancel)
-      window.removeEventListener('keydown', escape, true)
-      window.removeEventListener('scroll', invalidateGeometry, true)
-      window.removeEventListener('resize', invalidateGeometry)
-    }
-    setIsScrubbing(true)
-    readGeometry()
-    gesture.scheduler.start(event.clientX, { deferInitial: !ruler, initialPosition: initial.playheadPosition })
-  }
 
-  const handleTimelineRulerMouseDown = event => {
-    if (event.button !== 0 || event.target.closest('[data-marker-handle]')) return
-    event.stopPropagation()
-    if (spacePanningKeyDownRef.current) { startTimelinePanning(event); return }
-    beginTimelineScrub(event, { ruler: true })
-  }
+    // Add listeners to window so dragging works even outside the timeline
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
 
-  useLayoutEffect(() => { cancelTimelineScrub() }, [activeTimelineTool, cancelTimelineScrub])
-  useEffect(() => () => cancelTimelineScrub({ updateUi: false }), [cancelTimelineScrub])
+    return () => {
+      stopAutoScroll()
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [isScrubbing, pixelsPerSecond, duration, timecodeFps, setPlayheadPosition])
 
   useEffect(() => {
     if (!pendingLanePointerState) return
@@ -3167,16 +2764,14 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
   useEffect(() => {
     let isMounted = true
-    let hotkeysChanged = false
 
     getEditorHotkeys().then((next) => {
-      if (isMounted && !hotkeysChanged) setEditorHotkeys(next)
+      if (isMounted) setEditorHotkeys(next)
     }).catch(() => {
-      if (isMounted && !hotkeysChanged) setEditorHotkeys(DEFAULT_EDITOR_HOTKEYS)
+      if (isMounted) setEditorHotkeys(DEFAULT_EDITOR_HOTKEYS)
     })
 
     const handleHotkeysChanged = (event) => {
-      hotkeysChanged = true
       if (event?.detail) {
         setEditorHotkeys(event.detail)
       } else {
@@ -3191,30 +2786,9 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
   }, [])
 
-  // The add-clip actions only know a few fields, so the right-hand piece is
-  // completed here with everything else authored on the uncut clip.
-  const finishSplitRightPiece = (clip, newClip, splitTime, remainder, rightLinkGroupId) => {
-    if (!newClip?.id) return newClip
-    const carryOver = buildSplitRightPieceCarryOver(clip, splitTime, { remainder, linkGroupId: rightLinkGroupId })
-    const leftUpdates = buildSplitLeftPieceUpdates(clip, splitTime, remainder)
-    let finished = newClip
-    useTimelineStore.setState((state) => ({
-      clips: state.clips.map((candidate) => {
-        if (candidate.id === newClip.id) {
-          const { linkGroupId: _unlinked, ...unlinkedCandidate } = candidate
-          finished = { ...unlinkedCandidate, ...carryOver }
-          return finished
-        }
-        if (leftUpdates && candidate.id === clip.id) return { ...candidate, ...leftUpdates }
-        return candidate
-      }),
-    }))
-    return finished
-  }
-
-  const splitClipAtTime = useCallback((clip, splitPosition, { saveHistory = false, rightLinkGroupId = null } = {}) => {
+  const splitClipAtTime = useCallback((clip, splitPosition, { saveHistory = false } = {}) => {
     const snappedSplitPosition = quantizeTimeToFrame(splitPosition, getSafeTimelineFps(timelineFps))
-    if (!clip || clip.type === 'compound' || isSyncLockedClip(clip) || snappedSplitPosition <= clip.startTime || snappedSplitPosition >= clip.startTime + clip.duration) return null
+    if (!clip || isSyncLockedClip(clip) || snappedSplitPosition <= clip.startTime || snappedSplitPosition >= clip.startTime + clip.duration) return null
 
     const splitTime = snappedSplitPosition - clip.startTime
     const remainder = clip.duration - splitTime
@@ -3253,11 +2827,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         effects: clip.effects,
         saveHistory: false,
       }
-      return finishSplitRightPiece(clip, addTextClip(clip.trackId, textOptions, snappedSplitPosition), splitTime, remainder, rightLinkGroupId)
+      return addTextClip(clip.trackId, textOptions, snappedSplitPosition)
     }
 
     if (clip.type === 'shape') {
-      return finishSplitRightPiece(clip, addShapeClip(clip.trackId, {
+      return addShapeClip(clip.trackId, {
         shapeProperties: clip.shapeProperties || {},
         duration: remainder,
         name: clip.name,
@@ -3265,11 +2839,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         enabled: isClipEnabled(clip),
         effects: clip.effects,
         saveHistory: false,
-      }, snappedSplitPosition), splitTime, remainder, rightLinkGroupId)
+      }, snappedSplitPosition)
     }
 
     if (clip.type === 'adjustment') {
-      return finishSplitRightPiece(clip, addAdjustmentClip(clip.trackId, snappedSplitPosition, {
+      return addAdjustmentClip(clip.trackId, snappedSplitPosition, {
         duration: remainder,
         name: clip.name,
         adjustments: clip.adjustments || {},
@@ -3277,16 +2851,14 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         enabled: isClipEnabled(clip),
         effects: clip.effects,
         saveHistory: false,
-      }), splitTime, remainder, rightLinkGroupId)
+      })
     }
 
     const timeScale = getTimeScale(clip)
     const sourceTimeAtCut = (clip.trimStart || 0) + splitTime * timeScale
     const sourceTrimEnd = sourceTimeAtCut + remainder * timeScale
 
-    // Retiming goes in with the add so the new piece is measured against
-    // its source at the right speed (a slowed clip would otherwise be cut short).
-    return finishSplitRightPiece(clip, addClip(clip.trackId, audioSplitState?.asset || asset, snappedSplitPosition, timelineFps, {
+    return addClip(clip.trackId, audioSplitState?.asset || asset, snappedSplitPosition, timelineFps, {
       duration: remainder,
       trimStart: sourceTimeAtCut,
       trimEnd: sourceTrimEnd,
@@ -3294,41 +2866,10 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       transform: clip.transform,
       effects: clip.effects,
       frameSampling: clip.type === 'video' ? clip.frameSampling : undefined,
-      sourceTimeScale: clip.sourceTimeScale,
-      sourceFps: clip.sourceFps,
-      timelineFps: clip.timelineFps,
-      speed: clip.speed,
-      reverse: clip.reverse === true,
       ...(audioSplitState?.rightClipOptions || {}),
       saveHistory: false,
-    }), splitTime, remainder, rightLinkGroupId)
+    })
   }, [assets, tracks, saveToHistory, resizeClip, addTextClip, addShapeClip, addAdjustmentClip, addClip, timelineFps, isClipEnabled])
-
-  // Cut several clips at one time. Right-hand pieces that came from the same
-  // link stay linked to each other, under a link of their own, so the left
-  // and right sides of the cut select and move separately.
-  const splitClipsTogether = useCallback((clipsToSplit, time) => {
-    const linkCounts = new Map()
-    for (const clip of clipsToSplit) {
-      const linkId = typeof clip.linkGroupId === 'string' ? clip.linkGroupId.trim() : ''
-      if (linkId) linkCounts.set(linkId, (linkCounts.get(linkId) || 0) + 1)
-    }
-    const seed = `${useTimelineStore.getState().clipCounter || 0}-${Date.now().toString(36)}`
-    const rightLinkIds = new Map()
-    for (const [linkId, count] of linkCounts) {
-      if (count > 1) rightLinkIds.set(linkId, `link-split-${seed}-${rightLinkIds.size}`)
-    }
-    const created = []
-    for (const clip of clipsToSplit) {
-      const linkId = typeof clip.linkGroupId === 'string' ? clip.linkGroupId.trim() : ''
-      const newClip = splitClipAtTime(clip, time, {
-        saveHistory: false,
-        rightLinkGroupId: rightLinkIds.get(linkId) || null,
-      })
-      if (newClip?.id) created.push(newClip)
-    }
-    return created
-  }, [splitClipAtTime])
 
   const splitAllTracksAtPlayhead = useCallback(() => {
     const playheadPosition = getLivePlayhead()
@@ -3336,51 +2877,33 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       c => playheadPosition > c.startTime && playheadPosition < c.startTime + c.duration
     )
 
-    if (clipsToSplit.length === 0 || clipsToSplit.some(clip => clip.type === 'compound')) return
+    if (clipsToSplit.length === 0) return
 
     saveToHistory()
 
-    const newClipIds = splitClipsTogether(clipsToSplit, playheadPosition).map((newClip) => newClip.id)
+    const newClipIds = []
+    clipsToSplit.forEach((clip) => {
+      const newClip = splitClipAtTime(clip, playheadPosition, { saveHistory: false })
+      if (newClip?.id) {
+        newClipIds.push(newClip.id)
+      }
+    })
 
     if (newClipIds.length > 0) {
       useTimelineStore.getState().selectClips(newClipIds)
       selectMarker(null)
     }
-  }, [clips, saveToHistory, splitClipsTogether, selectMarker])
-
-  // Cutting one side of a linked picture-and-sound pair cuts the other too,
-  // as one undo step. Returns the new piece of the clip that was asked for.
-  const splitClipWithLinked = useCallback((clip, splitPosition) => {
-    if (!clip) return null
-    const state = useTimelineStore.getState()
-    const time = quantizeTimeToFrame(splitPosition, getSafeTimelineFps(state.timelineFps))
-    const linkId = typeof clip.linkGroupId === 'string' ? clip.linkGroupId.trim() : ''
-    const mates = linkId ? state.clips.filter((candidate) => (
-      candidate.id !== clip.id
-      && typeof candidate.linkGroupId === 'string' && candidate.linkGroupId.trim() === linkId
-      && candidate.type !== 'compound' && !isSyncLockedClip(candidate)
-      && time > candidate.startTime && time < candidate.startTime + candidate.duration
-      && state.tracks.find((track) => track.id === candidate.trackId)?.locked !== true
-    )) : []
-    if (mates.length === 0) return splitClipAtTime(clip, time, { saveHistory: true })
-    if (clip.type === 'compound' || isSyncLockedClip(clip) || time <= clip.startTime || time >= clip.startTime + clip.duration) return null
-    saveToHistory()
-    const created = splitClipsTogether([clip, ...mates], time)
-    return created[0] || null
-  }, [saveToHistory, splitClipAtTime, splitClipsTogether])
+  }, [clips, saveToHistory, splitClipAtTime, selectMarker])
 
   const handleSplitClipAtPlayhead = useCallback((clip) => {
     if (!clip) return false
-    splitClipWithLinked(clip, getLivePlayhead())
+    splitClipAtTime(clip, getLivePlayhead(), { saveHistory: true })
     return true
-  }, [splitClipWithLinked])
+  }, [splitClipAtTime])
 
-  const handleSplitActiveTrackAtPlayhead = useCallback(() => {
-    const state = useTimelineStore.getState()
-    const clip = getActiveTrackSplitTarget(state)
-    if (!clip) return false
-    return Boolean(splitClipWithLinked(clip, state.playheadPosition))
-  }, [splitClipWithLinked])
+  const handleSplitActiveTrackAtPlayhead = useCallback(() => (
+    handleSplitClipAtPlayhead(activeTrackClipAtPlayhead)
+  ), [activeTrackClipAtPlayhead, handleSplitClipAtPlayhead])
 
   const ensureTimelineTimeVisible = useCallback((time) => {
     if (!timelineRef.current || !Number.isFinite(Number(time))) return
@@ -3452,37 +2975,10 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return true
   }, [ensureTimelineTimeVisible, markerNavigationTargets, selectMarker, setPlayheadPosition])
 
-  // Envelope point editing is local to one selection and tool context.
-  const audioEnvelopeTargetId = useMemo(() => (
-    getSingleAudioEnvelopeTarget(clips, tracks, selectedClipIds)?.id
-  ), [clips, tracks, selectedClipIds])
-  const audioEnvelopeSelectionKey = JSON.stringify(selectedClipIds)
-  useEffect(() => {
-    resetAudioVolumeEnvelopeEditor()
-    return resetAudioVolumeEnvelopeEditor
-  }, [audioEnvelopeSelectionKey, activeTimelineTool])
-
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Native text Copy owns the key even when selecting a reply left focus
-      // on the timeline. Check before custom bindings as well as clip Copy.
-      if (isNativeTextKeyboardEvent(e)) return
-      // A modal owns authoring keys as well as transport, including Undo
-      // before the ordinary non-dialog text/focus rules below.
-      if (hasVisibleKeyboardModal()) return
-      if (pasteAttributesOpenRef.current) return
-      if (e.target?.closest?.('[data-audio-envelope-editor]')
-        && !((e.ctrlKey || e.metaKey) && ['z', 'y'].includes(String(e.key).toLowerCase()) && !isTextEditingElement(e.target))) return
       const key = String(e.key || '').toLowerCase()
-      if (key === 'escape' && (useTimelineStore.getState().playAround || e.defaultPrevented)) {
-        useTimelineStore.getState().cancelPlayAround()
-        e.preventDefault()
-        return
-      }
-      // TransportControls owns this configurable command (and its modal/input
-      // guards). Do not also interpret a custom binding as a tool shortcut.
-      if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.PLAY_AROUND])) return
 
       // Keep timeline undo/redo responsive even if focus was left on a non-dialog control.
       // If one of the exact-edit dialogs is open, let the input field keep native text undo.
@@ -3504,15 +3000,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       // shortcuts like Space, V/T/B/Y, and zoom still feel global.
       const active = document.activeElement
       if (isTextEditingElement(active)) return
-
-      if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.ZOOM_TO_SELECTION])) {
-        if (e.repeat || isTextEditingElement(e.target)
-          || e.target?.closest?.('input, textarea, select, [contenteditable="true"]')
-          || active?.closest?.('input, textarea, select, [contenteditable="true"]')) return
-        e.preventDefault()
-        handleZoomToSelection()
-        return
-      }
 
       if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.FRAME_ALL])) {
         e.preventDefault()
@@ -3558,14 +3045,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           setActiveTimelineTool(TIMELINE_TOOLS.SLIP)
           return
         }
-        if (key === 'u' && !e.shiftKey && slideShortcutAvailable) {
-          if (e.repeat || isTextEditingElement(e.target) || moveOffsetDialogOpen || durationDeltaDialogOpen
-            || [...document.querySelectorAll('[aria-modal="true"], [role="dialog"], .fixed.inset-0')]
-              .some(element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden')) return
-          e.preventDefault()
-          setActiveTimelineTool(TIMELINE_TOOLS.SLIDE)
-          return
-        }
 
         const isZoomInKey = e.code === 'Equal' || e.code === 'NumpadAdd' || e.key === '+'
         const isZoomOutKey = e.code === 'Minus' || e.code === 'NumpadSubtract' || e.key === '-'
@@ -3581,22 +3060,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           applyZoomWithPlayheadPivot(zoom - 20)
           return
         }
-      }
-
-      // Keyboard edits at the playhead / on the selection. These read the
-      // live store, so they need nothing from this render's closure.
-      const playheadEdit = [
-        [EDITOR_HOTKEY_IDS.TRIM_START_TO_PLAYHEAD, () => trimToPlayhead(useTimelineStore, 'left')],
-        [EDITOR_HOTKEY_IDS.TRIM_END_TO_PLAYHEAD, () => trimToPlayhead(useTimelineStore, 'right')],
-        [EDITOR_HOTKEY_IDS.NUDGE_LEFT, () => nudgeSelectedClips(useTimelineStore, -1)],
-        [EDITOR_HOTKEY_IDS.NUDGE_RIGHT, () => nudgeSelectedClips(useTimelineStore, 1)],
-        [EDITOR_HOTKEY_IDS.NUDGE_LEFT_BIG, () => nudgeSelectedClips(useTimelineStore, -10)],
-        [EDITOR_HOTKEY_IDS.NUDGE_RIGHT_BIG, () => nudgeSelectedClips(useTimelineStore, 10)],
-      ].find(([hotkeyId]) => matchEditorHotkey(e, editorHotkeys[hotkeyId]))
-      if (playheadEdit) {
-        e.preventDefault()
-        if (!moveOffsetDialogOpen && !durationDeltaDialogOpen) playheadEdit[1]()
-        return
       }
 
       // Configurable editor actions
@@ -3632,7 +3095,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       }
 
       if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.LINK_SELECTION])) {
-        if (selectedClipIds.length > 1 && !clips.some(clip => selectedClipIds.includes(clip.id) && clip.type === 'compound')) {
+        if (selectedClipIds.length > 1) {
           e.preventDefault()
           linkSelectedClips()
         }
@@ -3640,7 +3103,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       }
 
       if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.UNLINK_SELECTION])) {
-        if (clips.some(clip => selectedClipIds.includes(clip.id) && clip.type === 'compound')) return
         const hasLinkedSelection = selectedClipIds.some((clipId) => {
           const clip = clips.find((candidate) => candidate.id === clipId)
           return Boolean(clip?.linkGroupId)
@@ -3776,9 +3238,10 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         return
       }
 
-      if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.SPLIT_ACTIVE])) {
-        if (handleSplitActiveTrackAtPlayhead()) {
+      if (matchEditorHotkey(e, editorHotkeys[EDITOR_HOTKEY_IDS.SPLIT_ACTIVE]) && activeTrackId) {
+        if (activeTrackClipAtPlayhead) {
           e.preventDefault()
+          handleSplitActiveTrackAtPlayhead()
         }
       }
     }
@@ -3787,7 +3250,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [toggleSnapping, toggleRippleEdit, addMarker, selectedClipIds, selectedGap, selectedTransitionId, selectedMarkerId, removeSelectedClips, rippleDeleteSelectedClips, rippleDeleteSelectedGap, removeTransition, removeMarker, clearSelection, selectMarker, clips, handleUndoAction, handleRedoAction, activeTrackId, saveToHistory, resizeClip, addClip, addTextClip, addShapeClip, addTextClipAtPlayhead, addShapeClipAtPlayhead, addAdjustmentClip, updateClipTrim, assets, timelineFps, copySelectedClips, pasteClipsAtPlayhead, copiedClips, selectClipsFromPlayheadToEnd, selectClipsFromTimelineStartToPlayhead, splitClipAtTime, splitAllTracksAtPlayhead, openMoveOffsetDialog, openDurationDeltaDialog, moveOffsetDialogOpen, durationDeltaDialogOpen, editorHotkeys, linkSelectedClips, unlinkSelectedClips, lockSyncClips, unlockSyncLockedClips, toggleClipSelectionEnabled, applyZoomWithPlayheadPivot, handleFrameAll, handleZoomToSelection, zoom, rippleEditMode, canDeleteCurrentSelection, handleCopySelection, handleDeleteCurrentSelection, handlePasteAtPlayhead, handleSplitActiveTrackAtPlayhead, jumpPlayheadToClipBoundary, jumpPlayheadToMarker, clipContextSyncEligibleClips, clipContextSyncLockByClipId, clipContextAllSyncLocked])
+  }, [toggleSnapping, toggleRippleEdit, addMarker, selectedClipIds, selectedGap, selectedTransitionId, selectedMarkerId, removeSelectedClips, rippleDeleteSelectedClips, rippleDeleteSelectedGap, removeTransition, removeMarker, clearSelection, selectMarker, clips, handleUndoAction, handleRedoAction, activeTrackId, saveToHistory, resizeClip, addClip, addTextClip, addShapeClip, addTextClipAtPlayhead, addShapeClipAtPlayhead, addAdjustmentClip, updateClipTrim, assets, timelineFps, copySelectedClips, pasteClipsAtPlayhead, copiedClips, selectClipsFromPlayheadToEnd, selectClipsFromTimelineStartToPlayhead, splitClipAtTime, splitAllTracksAtPlayhead, openMoveOffsetDialog, openDurationDeltaDialog, moveOffsetDialogOpen, durationDeltaDialogOpen, editorHotkeys, linkSelectedClips, unlinkSelectedClips, lockSyncClips, unlockSyncLockedClips, toggleClipSelectionEnabled, applyZoomWithPlayheadPivot, handleFrameAll, zoom, rippleEditMode, activeTrackClipAtPlayhead, canDeleteCurrentSelection, handleCopySelection, handleDeleteCurrentSelection, handlePasteAtPlayhead, handleSplitActiveTrackAtPlayhead, jumpPlayheadToClipBoundary, jumpPlayheadToMarker, clipContextSyncEligibleClips, clipContextSyncLockByClipId, clipContextAllSyncLocked])
 
   // Spacebar panning key state (dedicated listeners so keyup cannot get "stuck")
   useEffect(() => {
@@ -3799,10 +3262,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
 
     const handleSpaceKeyDown = (e) => {
-      if (isNativeTextKeyboardEvent(e)) return
-      if (hasVisibleKeyboardModal()) return
-      if (pasteAttributesOpenRef.current) return
-      if (e.target?.closest?.('[data-audio-envelope-editor]')) return
       if (e.code !== 'Space' || e.repeat) return
       const active = document.activeElement
       if (isTextEditingElement(active)) return
@@ -3921,8 +3380,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   // cannot perform their own vertical wheel scroll before we remap it.
   const handleWheel = useCallback((e) => {
     if (!timelineRef.current) return
-    const sequence = ++viewportNavigationSequenceRef.current
-    pendingSelectionViewRef.current = null
     
     // Ctrl/Cmd + Scroll = Zoom (centered on mouse position)
     if (e.ctrlKey || e.metaKey) {
@@ -3951,7 +3408,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       
       // Apply scroll adjustment after a tiny delay to let the zoom render
       requestAnimationFrame(() => {
-        if (timelineRef.current && sequence === viewportNavigationSequenceRef.current) {
+        if (timelineRef.current) {
           timelineRef.current.scrollLeft = Math.max(0, newScrollLeft)
         }
       })
@@ -4012,21 +3469,45 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       }
     }
 
+    // Resolve-style eased auto-follow: instead of snapping scrollLeft on every
+    // tick, a rAF loop eases toward the follow target so the timeline glides.
+    // Same cached-metric discipline as before: the hot path is arithmetic and
+    // layout is only read while a follow is actually in flight.
+    let followTargetX = null
+    let followRaf = null
+    const stepFollow = () => {
+      followRaf = null
+      if (!el || followTargetX == null) return
+      const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+      const clampedTarget = Math.max(0, Math.min(followTargetX, maxScrollLeft))
+      const current = el.scrollLeft
+      const delta = clampedTarget - current
+      if (Math.abs(delta) < 0.5) {
+        el.scrollLeft = clampedTarget
+        cachedScrollLeft = clampedTarget
+        return
+      }
+      // Exponential ease: close a quarter of the remaining distance per frame.
+      const next = current + delta * 0.25
+      el.scrollLeft = next
+      cachedScrollLeft = next
+      if (Math.abs(clampedTarget - next) > 0.5) {
+        followRaf = requestAnimationFrame(stepFollow)
+      }
+    }
     const followPlayhead = (time) => {
       if (!el || !Number.isFinite(Number(time))) return
       const targetX = Number(time) * pixelsPerSecond
       const padding = Math.max(80, cachedClientWidth * 0.18)
       if (targetX > cachedScrollLeft + cachedClientWidth - padding) {
-        const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-        const next = Math.min(Math.max(0, targetX - (cachedClientWidth * 0.35)), maxScrollLeft)
-        el.scrollLeft = next
-        cachedScrollLeft = next
+        followTargetX = Math.min(Math.max(0, targetX - (cachedClientWidth * 0.35)), el.scrollWidth - el.clientWidth)
       } else if (targetX < cachedScrollLeft + padding) {
-        const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-        const next = Math.max(0, Math.min(targetX - padding, maxScrollLeft))
-        el.scrollLeft = next
-        cachedScrollLeft = next
+        followTargetX = Math.max(0, Math.min(targetX - padding, el.scrollWidth - el.clientWidth))
+      } else {
+        followTargetX = null
+        return
       }
+      if (followRaf == null) followRaf = requestAnimationFrame(stepFollow)
     }
 
     const unsubscribe = useTimelineStore.subscribe((state, prevState) => {
@@ -4420,11 +3901,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     // Multi-select support
     const isShiftHeld = e.shiftKey
     const isCtrlHeld = e.ctrlKey || e.metaKey // metaKey for Mac Cmd
-
-    // Slide already resolves plain-click selection before its read-only
-    // preflight. Do not narrow a rejected group (or reselect after the edit).
-    if (isSlideToolActive && !isShiftHeld && !isCtrlHeld
-      && useTimelineStore.getState().selectedClipIds.includes(clip.id)) return
     
     selectClip(clip.id, {
       addToSelection: isShiftHeld,
@@ -4523,7 +3999,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   const handleContextMenuAction = (action) => {
     const clip = clips.find(c => c.id === clipContextMenu?.clipId)
     if (!clip) return
-    if (hasCompoundSelection && !['delete', 'move-by-offset', 'duration-by-amount', 'toggle-enabled'].includes(action)) return
 
     switch (action) {
       case 'add-mask':
@@ -4677,330 +4152,9 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   }
 
   // Handle trim start (mousedown on handle)
-  const endTrimGesture = useCallback(() => {
-    trimGestureRef.current = null
-    setTrimState(null)
-    setTrimPreview(null)
-    clearActiveSnap()
-  }, [clearActiveSnap])
-
-  const isTrimGestureCurrent = useCallback((gesture, state) => (
-    gesture && state.clips === gesture.expectedClips && state.tracks === gesture.expectedTracks
-    && state.history === gesture.expectedHistory && state.historyIndex === gesture.historyIndex
-    && state.timelineSessionId === gesture.timelineSessionId && state.timelineFps === gesture.fps
-    && state.selectedClipIds.length === gesture.selection.length
-    && state.selectedClipIds.every(id => gesture.selection.includes(id))
-  ), [])
-
-  const endRippleTrimGesture = useCallback(() => {
-    const gesture = rippleTrimGestureRef.current
-    rippleTrimGestureRef.current = null
-    setRippleTrimState(null)
-    setRippleTrimPreview(null)
-    if (gesture?.token) useTimelineStore.getState().endRippleTrim?.(gesture.token)
-    clearActiveSnap()
-  }, [clearActiveSnap])
-
-  const isRippleTrimGestureCurrent = useCallback((gesture, state) => (
-    gesture && RIPPLE_TRIM_STATE_KEYS.every(key => state[key] === gesture.expectedState[key])
-  ), [])
-
-  const showRippleTrimRefusal = useCallback((reason, anchor) => {
-    setRippleTrimRefusal({ reason: reason || 'These clips cannot be ripple trimmed safely. Review the target clips and following media.', anchor })
-  }, [])
-
-  useEffect(() => {
-    if (!rippleTrimRefusal) return undefined
-    const dismiss = () => setRippleTrimRefusal(null)
-    const onKeyDown = event => { if (event.key === 'Escape') dismiss() }
-    const sessionId = useTimelineStore.getState().timelineSessionId
-    const unsubscribe = useTimelineStore.subscribe(state => { if (state.timelineSessionId !== sessionId) dismiss() })
-    const timer = setTimeout(dismiss, 6000)
-    window.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', onKeyDown, true)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', onKeyDown, true)
-      window.removeEventListener('blur', dismiss)
-      unsubscribe()
-    }
-  }, [rippleTrimRefusal])
-
-  const endRollGesture = useCallback(() => {
-    const gesture = rollGestureRef.current
-    rollGestureRef.current = null
-    setRollEditState(null)
-    setRollPreview(null)
-    if (gesture?.token) useTimelineStore.getState().endRollEdit?.(gesture.token)
-  }, [])
-
-  const showRollRefusal = useCallback((reason, anchor) => {
-    setRollRefusal({ reason: reason || 'This cut cannot be rolled safely. Use the individual trim handles instead.', anchor })
-  }, [])
-
-  useEffect(() => {
-    if (!rollRefusal) return undefined
-    const dismiss = () => setRollRefusal(null)
-    const onKeyDown = event => { if (event.key === 'Escape') dismiss() }
-    const sessionId = useTimelineStore.getState().timelineSessionId
-    const unsubscribe = useTimelineStore.subscribe(state => { if (state.timelineSessionId !== sessionId) dismiss() })
-    const timer = setTimeout(dismiss, 6000)
-    window.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', onKeyDown, true)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', onKeyDown, true)
-      window.removeEventListener('blur', dismiss)
-      unsubscribe()
-    }
-  }, [rollRefusal])
-
-  const isRollGestureCurrent = useCallback((gesture, state) => (
-    gesture && ROLL_GESTURE_STATE_KEYS.every(key => state[key] === gesture.expectedState[key])
-  ), [])
-
-  const endSlipGesture = useCallback(() => {
-    const gesture = slipGestureRef.current
-    slipGestureRef.current = null
-    setSlipState(null)
-    setSlipPreview(null)
-    if (gesture?.token) useTimelineStore.getState().endSlipEdit?.(gesture.token)
-  }, [])
-
-  const showSlipRefusal = useCallback((reason, anchor) => {
-    setSlipRefusal({ reason: reason || 'This clip cannot be slipped safely. Choose a video or audio clip with available source handles.', anchor })
-  }, [])
-
-  useEffect(() => {
-    if (!slipRefusal) return undefined
-    const dismiss = () => setSlipRefusal(null)
-    const onKeyDown = event => { if (event.key === 'Escape') dismiss() }
-    const sessionId = useTimelineStore.getState().timelineSessionId
-    const unsubscribe = useTimelineStore.subscribe(state => { if (state.timelineSessionId !== sessionId) dismiss() })
-    const timer = setTimeout(dismiss, 6000)
-    window.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', onKeyDown, true)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', onKeyDown, true)
-      window.removeEventListener('blur', dismiss)
-      unsubscribe()
-    }
-  }, [slipRefusal])
-
-  // Slip and Roll use the same private-store authored-state guard contract.
-  const isSlipGestureCurrent = useCallback((gesture, state) => (
-    gesture && ROLL_GESTURE_STATE_KEYS.every(key => state[key] === gesture.expectedState[key])
-  ), [])
-
-  const endSlideGesture = useCallback(() => {
-    const gesture = slideGestureRef.current
-    slideGestureRef.current = null
-    setSlideState(null)
-    setSlidePreview(null)
-    if (gesture?.token) useTimelineStore.getState().endSlideEdit?.(gesture.token)
-    clearActiveSnap()
-  }, [clearActiveSnap])
-
-  const isSlideGestureCurrent = useCallback((gesture, state) => (
-    gesture && SLIDE_GESTURE_STATE_KEYS.every(key => state[key] === gesture.expectedState[key])
-  ), [])
-
-  const showSlideRefusal = useCallback((reason, anchor) => {
-    setSlideRefusal({ reason: reason || 'Choose one clip between two touching neighbors with available source handles.', anchor })
-  }, [])
-
-  useEffect(() => {
-    if (!slideRefusal) return undefined
-    const dismiss = () => setSlideRefusal(null)
-    const onKeyDown = event => { if (event.key === 'Escape') dismiss() }
-    const sessionId = useTimelineStore.getState().timelineSessionId
-    const unsubscribe = useTimelineStore.subscribe(state => { if (state.timelineSessionId !== sessionId) dismiss() })
-    const timer = setTimeout(dismiss, 6000)
-    window.addEventListener('pointerdown', dismiss, true)
-    window.addEventListener('keydown', onKeyDown, true)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('pointerdown', dismiss, true)
-      window.removeEventListener('keydown', onKeyDown, true)
-      window.removeEventListener('blur', dismiss)
-      unsubscribe()
-    }
-  }, [slideRefusal])
-
-  const handleSlideEditStart = (event, clip) => {
-    endSlideGesture()
-    const anchor = { x: event.clientX, y: event.clientY }
-    const current = useTimelineStore.getState()
-    if (current.clips.find(candidate => candidate.id === clip.id) !== clip) {
-      showSlideRefusal('The clip changed. Grab it again to start a new slide edit.', anchor)
-      return
-    }
-    // Clicking an unselected clip keeps normal selection behavior. Clicking
-    // inside an existing group lets the planner explain the single-target rule.
-    if (!current.selectedClipIds.includes(clip.id) && !event.shiftKey && !event.ctrlKey && !event.metaKey) current.selectClip(clip.id)
-    const selectedState = useTimelineStore.getState()
-    if (selectedState.clips.find(candidate => candidate.id === clip.id) !== clip) {
-      showSlideRefusal('The clip changed. Grab it again to start a new slide edit.', anchor)
-      return
-    }
-    const result = selectedState.beginSlideEdit?.({ clipId: clip.id })
-    if (!result?.ok) {
-      showSlideRefusal(result?.reason || 'Slide edit is unavailable. Try again.', anchor)
-      return
-    }
-    setSlideRefusal(null)
-    setSlipRefusal(null)
-    setRollRefusal(null)
-    setRippleTrimRefusal(null)
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (trimGestureRef.current) endTrimGesture()
-    if (rollGestureRef.current) endRollGesture()
-    if (slipGestureRef.current) endSlipGesture()
-    if (clipDragState) setClipDragState(null)
-    if (transitionDragState) setTransitionDragState(null)
-    if (fadeDragState) setFadeDragState(null)
-    clearActiveSnap()
-    slideGestureRef.current = {
-      token: result.token, expectedState: captureSlideGestureState(useTimelineStore.getState()), anchor, writing: false,
-    }
-    setSlideState({ ...result.session, startX: event.clientX })
-    setSlidePreview({ anchor, feedback: result.feedback })
-  }
-
-  const handleSlipEditStart = (event, clip) => {
-    if (slideGestureRef.current) endSlideGesture()
-    endSlipGesture()
-    const anchor = { x: event.clientX, y: event.clientY }
-    const current = useTimelineStore.getState()
-    if (current.clips.find(candidate => candidate.id === clip.id) !== clip) {
-      showSlipRefusal('The clip changed. Grab it again to start a new slip edit.', anchor)
-      return
-    }
-    // Retain ordinary clip selection behavior, before creating the token that
-    // binds that selection. This is UI state only, never an Undo checkpoint.
-    if (!current.selectedClipIds.includes(clip.id) && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
-      current.selectClip(clip.id)
-    }
-    const selectedState = useTimelineStore.getState()
-    if (selectedState.clips.find(candidate => candidate.id === clip.id) !== clip) {
-      showSlipRefusal('The clip changed. Grab it again to start a new slip edit.', anchor)
-      return
-    }
-    const result = selectedState.beginSlipEdit?.({ clipId: clip.id })
-    if (!result?.ok) {
-      showSlipRefusal(result?.reason || 'Slip edit is unavailable. Try again.', anchor)
-      return
-    }
-    setSlipRefusal(null)
-    setRollRefusal(null)
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (trimState) endTrimGesture()
-    if (rollEditState) endRollGesture()
-    if (clipDragState) setClipDragState(null)
-    if (transitionDragState) setTransitionDragState(null)
-    if (fadeDragState) setFadeDragState(null)
-    clearActiveSnap()
-    slipGestureRef.current = {
-      token: result.token, expectedState: captureRollGestureState(useTimelineStore.getState()),
-      anchor, writing: false,
-    }
-    setSlipState({ ...result.session, startX: event.clientX })
-    setSlipPreview({ anchor, feedback: result.feedback })
-  }
-
-  const handleRollEditStart = (event, clipA, clipB) => {
-    if (event.button !== 0) return
-    event.stopPropagation()
-    event.preventDefault()
-    if (slideGestureRef.current) endSlideGesture()
-    endRollGesture()
-    const anchor = { x: event.clientX, y: event.clientY }
-    const current = useTimelineStore.getState()
-    if (current.clips.find(clip => clip.id === clipA.id) !== clipA
-      || current.clips.find(clip => clip.id === clipB.id) !== clipB) {
-      showRollRefusal('The clips changed. Grab the cut again to start a new rolling edit.', anchor)
-      return
-    }
-    const result = current.beginRollEdit?.({ clipAId: clipA.id, clipBId: clipB.id })
-    if (!result?.ok) {
-      showRollRefusal(result?.reason || 'Rolling edit is unavailable. Try again.', anchor)
-      return
-    }
-
-    // Validation is read-only. The store owns one atomic checkpoint on the
-    // first effective movement, not on a click or rejected gesture.
-    setRollRefusal(null)
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (trimState) endTrimGesture()
-    if (clipDragState) setClipDragState(null)
-    if (transitionDragState) setTransitionDragState(null)
-    if (slipGestureRef.current) endSlipGesture()
-    if (fadeDragState) setFadeDragState(null)
-    clearActiveSnap()
-    rollGestureRef.current = {
-      token: result.token, expectedState: captureRollGestureState(useTimelineStore.getState()),
-      anchor, writing: false,
-    }
-    setRollEditState({ ...result.session, startX: event.clientX })
-    setRollPreview({ anchor, feedback: result.feedback })
-  }
-
-  const handleRippleTrimStart = (event, clipId, edge) => {
-    if (slideGestureRef.current) endSlideGesture()
-    endRippleTrimGesture()
-    if (trimGestureRef.current) endTrimGesture()
-    if (rollGestureRef.current) endRollGesture()
-    if (slipGestureRef.current) endSlipGesture()
-    if (clipDragState) setClipDragState(null)
-    if (transitionDragState) setTransitionDragState(null)
-    if (fadeDragState) setFadeDragState(null)
-    const anchor = { x: event.clientX, y: event.clientY }
-    const clickedClip = clips.find(clip => clip.id === clipId)
-    const current = useTimelineStore.getState()
-    if (!clickedClip || current.clips.find(clip => clip.id === clipId) !== clickedClip) {
-      showRippleTrimRefusal('The clip changed. Grab its edge again to start a new ripple trim.', anchor)
-      return
-    }
-    // The planner validates the full selection and expands linked companions.
-    // Unlike normal multi-trim, no locked or unsupported target is filtered out.
-    const targetClipIds = getMultiClipTrimTargetIds({ selectedClipIds: current.selectedClipIds, primaryClipId: clipId })
-    if (!current.selectedClipIds.includes(clipId)) current.selectClip(clipId)
-    const selectedState = useTimelineStore.getState()
-    if (selectedState.clips.find(clip => clip.id === clipId) !== clickedClip) {
-      showRippleTrimRefusal('The clip changed. Grab its edge again to start a new ripple trim.', anchor)
-      return
-    }
-    const result = selectedState.beginRippleTrim?.({ clipId, edge, targetClipIds })
-    if (!result?.ok) {
-      showRippleTrimRefusal(result?.reason || 'Ripple trim is unavailable. Try again.', anchor)
-      return
-    }
-    setRippleTrimRefusal(null)
-    setRollRefusal(null)
-    setSlipRefusal(null)
-    rippleTrimGestureRef.current = { token: result.token, anchor, writing: false,
-      expectedState: captureRippleTrimState(useTimelineStore.getState()) }
-    setRippleTrimState({ ...result.session, startX: event.clientX })
-    setRippleTrimPreview({ anchor, feedback: result.feedback })
-  }
-
   const handleTrimStart = (e, clipId, edge) => {
-    if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
-    if (slideGestureRef.current) endSlideGesture()
-    if (useTimelineStore.getState().rippleEditMode) {
-      if (e.button === 0) handleRippleTrimStart(e, clipId, edge)
-      return
-    }
     
     const clip = clips.find(c => c.id === clipId)
     if (!clip) return
@@ -5013,9 +4167,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     // multiple mousemove handlers fighting and moving neighboring clips.
     if (clipDragState) setClipDragState(null)
     if (transitionDragState) setTransitionDragState(null)
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (rollEditState) endRollGesture()
-    if (slipGestureRef.current) endSlipGesture()
+    if (rollEditState) setRollEditState(null)
+    if (slipState) setSlipState(null)
     if (fadeDragState) setFadeDragState(null)
     clearActiveSnap()
 
@@ -5040,27 +4193,13 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     // One history snapshot covers the full shared gesture, regardless of how
     // many mousemove updates occur or how many selected clips are affected.
     saveToHistory()
+    setTrimState({ ...trimSession, clipId, startX: e.clientX })
 
     // Grabbing an edge on an already-selected clip must preserve the group.
     // An unselected clip keeps the familiar single-clip trim behavior.
     if (!selectedClipIds.includes(clipId)) {
       selectClip(clipId)
     }
-    const state = useTimelineStore.getState()
-    const anchor = { x: e.clientX, y: e.clientY }
-    trimGestureRef.current = {
-      expectedClips: state.clips,
-      expectedTracks: state.tracks,
-      expectedHistory: state.history,
-      historyIndex: state.historyIndex,
-      selection: [...state.selectedClipIds],
-      timelineSessionId: state.timelineSessionId,
-      fps: state.timelineFps,
-      anchor,
-      writing: false,
-    }
-    setTrimState({ ...trimSession, clipId, startX: e.clientX })
-    setTrimPreview({ anchor, feedback: buildTrimPreviewFeedback({ session: trimSession, clips: state.clips, requestedDelta: 0, fps: state.timelineFps }) })
   }
 
   const handleFadeDragStart = (e, clip, edge) => {
@@ -5069,13 +4208,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
     if (!clip || clip.type !== 'audio') return
 
-    if (slideGestureRef.current) endSlideGesture()
     if (clipDragState) setClipDragState(null)
     if (transitionDragState) setTransitionDragState(null)
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (rollEditState) endRollGesture()
-    if (slipGestureRef.current) endSlipGesture()
-    if (trimState) endTrimGesture()
+    if (rollEditState) setRollEditState(null)
+    if (slipState) setSlipState(null)
+    if (trimState) setTrimState(null)
     clearActiveSnap()
     saveToHistory()
 
@@ -5121,78 +4258,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
   }, [fadeDragState, clips, pixelsPerSecond, updateAudioClipProperties])
 
-  // Ripple uses the original physical edge for pointer movement and snapping;
-  // the planner returns the actual retained source frame after collapsing time.
-  useEffect(() => {
-    if (!rippleTrimState) return
-    const handleMouseMove = event => {
-      const gesture = rippleTrimGestureRef.current
-      if (!isRippleTrimGestureCurrent(gesture, useTimelineStore.getState()) || event.buttons === 0) {
-        endRippleTrimGesture()
-        return
-      }
-      const rawDelta = (event.clientX - rippleTrimState.startX) / pixelsPerSecond
-      const proposedEdge = rippleTrimState.primaryEdgeTime + rawDelta
-      // All targets, followers and foreign linked mates are excluded. Every
-      // remaining clip is fixed for this token, so snap targets cannot chase us.
-      const snapResult = snapTrim(proposedEdge, rippleTrimState.snapExcludedClipIds)
-      const requestedDelta = snapResult.snapped ? snapResult.time - rippleTrimState.primaryEdgeTime : rawDelta
-      let result
-      gesture.writing = true
-      try {
-        result = useTimelineStore.getState().applyRippleTrim?.(gesture.token, requestedDelta)
-      } catch (error) {
-        console.warn('[Timeline] Ripple trim failed:', error)
-        result = { ok: false, reason: 'Ripple trim could not be completed. Release the edge and try again.' }
-      } finally {
-        gesture.expectedState = captureRippleTrimState(useTimelineStore.getState())
-        gesture.writing = false
-      }
-      if (!result?.ok) {
-        endRippleTrimGesture()
-        showRippleTrimRefusal(result?.reason, gesture.anchor)
-        return
-      }
-      if (snapResult.snapped && Math.abs(result.delta - requestedDelta) < 1e-7) setActiveSnapTime(snapResult.time)
-      else clearActiveSnap()
-      setRippleTrimPreview({ anchor: gesture.anchor, feedback: result.feedback })
-    }
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      endRippleTrimGesture()
-    }
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      const gesture = rippleTrimGestureRef.current
-      if (gesture && !gesture.writing && !isRippleTrimGestureCurrent(gesture, state)) endRippleTrimGesture()
-    })
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', endRippleTrimGesture)
-    window.addEventListener('blur', endRippleTrimGesture)
-    window.addEventListener('pointercancel', endRippleTrimGesture)
-    window.addEventListener('keydown', handleEscape, true)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', endRippleTrimGesture)
-      window.removeEventListener('blur', endRippleTrimGesture)
-      window.removeEventListener('pointercancel', endRippleTrimGesture)
-      window.removeEventListener('keydown', handleEscape, true)
-      unsubscribe()
-    }
-  }, [rippleTrimState, pixelsPerSecond, snapTrim, setActiveSnapTime, clearActiveSnap, endRippleTrimGesture,
-    isRippleTrimGestureCurrent, showRippleTrimRefusal])
-
   // Handle trim move (mousemove when trimming)
   useEffect(() => {
     if (!trimState) return
     
     const handleMouseMove = (e) => {
-      const gesture = trimGestureRef.current
-      if (!isTrimGestureCurrent(gesture, useTimelineStore.getState()) || e.buttons === 0) {
-        endTrimGesture()
-        return
-      }
       const deltaX = e.clientX - trimState.startX
       const rawDelta = deltaX / pixelsPerSecond
       const proposedPrimaryEdge = trimState.primaryEdgeTime + rawDelta
@@ -5208,98 +4278,27 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         clearActiveSnap()
       }
 
-      // The existing trim action remains the only project write. The inset
-      // reads its actual frame-quantized result; it never seeks the playhead.
-      gesture.writing = true
-      try {
-        updateClipsTrim(resolved.updates)
-      } finally {
-        gesture.expectedClips = useTimelineStore.getState().clips
-        gesture.writing = false
-      }
-      const latest = useTimelineStore.getState()
-      if (!isTrimGestureCurrent(gesture, latest)) {
-        endTrimGesture()
-        return
-      }
-      setTrimPreview({ anchor: gesture.anchor, feedback: buildTrimPreviewFeedback({ session: trimState, clips: latest.clips, requestedDelta, fps: latest.timelineFps }) })
+      updateClipsTrim(resolved.updates)
     }
     
-    const handleMouseUp = endTrimGesture
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      endTrimGesture()
+    const handleMouseUp = () => {
+      setTrimState(null)
+      clearActiveSnap()
     }
-    // A selection, lock, undo or project load must not leave an old edge drag
-    // running against new clips. Own trim writes are distinguished explicitly.
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      const gesture = trimGestureRef.current
-      if (gesture && !gesture.writing && !isTrimGestureCurrent(gesture, state)) endTrimGesture()
-    })
     
     window.addEventListener('mousemove', handleMouseMove)
     window.addEventListener('mouseup', handleMouseUp)
-    window.addEventListener('blur', handleMouseUp)
-    window.addEventListener('pointercancel', handleMouseUp)
-    window.addEventListener('keydown', handleEscape, true)
     
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('mouseup', handleMouseUp)
-      window.removeEventListener('blur', handleMouseUp)
-      window.removeEventListener('pointercancel', handleMouseUp)
-      window.removeEventListener('keydown', handleEscape, true)
-      unsubscribe()
     }
-  }, [trimState, pixelsPerSecond, snapTrim, setActiveSnapTime, clearActiveSnap, updateClipsTrim, endTrimGesture, isTrimGestureCurrent])
-
-  useEffect(() => () => {
-    const rippleGesture = rippleTrimGestureRef.current
-    rippleTrimGestureRef.current = null
-    if (rippleGesture?.token) useTimelineStore.getState().endRippleTrim?.(rippleGesture.token)
-    if (rippleGesture) clearActiveSnap()
-    const rollGesture = rollGestureRef.current
-    rollGestureRef.current = null
-    if (rollGesture?.token) useTimelineStore.getState().endRollEdit?.(rollGesture.token)
-    const slipGesture = slipGestureRef.current
-    slipGestureRef.current = null
-    if (slipGesture?.token) useTimelineStore.getState().endSlipEdit?.(slipGesture.token)
-    const slideGesture = slideGestureRef.current
-    slideGestureRef.current = null
-    if (slideGesture?.token) useTimelineStore.getState().endSlideEdit?.(slideGesture.token)
-    if (slideGesture) clearActiveSnap()
-    if (trimGestureRef.current) {
-      trimGestureRef.current = null
-      clearActiveSnap()
-    }
-  }, [clearActiveSnap])
-
-  useEffect(() => {
-    if (trimGestureRef.current) endTrimGesture()
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (rollGestureRef.current) endRollGesture()
-    if (slipGestureRef.current) endSlipGesture()
-    if (slideGestureRef.current) endSlideGesture()
-    setRollRefusal(null)
-    setSlipRefusal(null)
-    setRippleTrimRefusal(null)
-    setSlideRefusal(null)
-  }, [activeTimelineTool, endTrimGesture, endRollGesture, endSlipGesture, endSlideGesture, endRippleTrimGesture])
-
-  useEffect(() => {
-    if (rippleTrimGestureRef.current) endRippleTrimGesture()
-    if (trimGestureRef.current) endTrimGesture()
-    setRippleTrimRefusal(null)
-  }, [rippleEditMode, endRippleTrimGesture, endTrimGesture])
+  }, [trimState, pixelsPerSecond, snapTrim, setActiveSnapTime, clearActiveSnap, updateClipsTrim])
 
   // Handle clip drag start (mousedown on clip body, not trim handles)
   const handleClipDragStart = (e, clip) => {
-    // A context click must never begin a move, trim or Razor edit.
-    if (e.button !== 0) return
     // Don't start drag if clicking on trim handles or delete button
-    if (trimState || rippleTrimState || rollEditState || slipState || slideState || fadeDragState || e.target.closest('[data-trim-handle]') || e.target.closest('[data-fade-handle]') || e.target.closest('[data-audio-envelope-editor]') || e.target.closest('button')) {
+    if (trimState || slipState || fadeDragState || e.target.closest('[data-trim-handle]') || e.target.closest('[data-fade-handle]') || e.target.closest('button')) {
       return
     }
     
@@ -5312,7 +4311,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
     if (isRazorToolActive) {
       const splitTime = getTimeFromClientX(e.clientX)
-      const newClip = splitClipWithLinked(clip, splitTime)
+      const newClip = splitClipAtTime(clip, splitTime, { saveHistory: true })
       if (newClip) {
         selectClip(newClip.id)
         setPlayheadPosition(splitTime, { snap: true })
@@ -5326,16 +4325,47 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
       }
       return
     }
-    if (isSlipToolActive) {
-      if (e.button === 0) handleSlipEditStart(e, clip)
-      // Unsupported sources, locks and linked clips must never fall through
-      // to ordinary movement (or Alt-drag duplication) in the Slip tool.
-      return
-    }
-    if (isSlideToolActive) {
-      if (e.button === 0) handleSlideEditStart(e, clip)
-      // Slide exclusively uses its validated three-clip operation. A refusal
-      // must never become ordinary movement, overwrite or Alt duplication.
+
+    const sourceDuration = getSourceDuration(clip)
+    // Alt while dragging is the duplicate gesture, so slip only engages via the Slip tool.
+    const canSlip = !isSyncLockedClip(clip)
+      && isSlipToolActive
+      && (clip.type === 'video' || clip.type === 'audio')
+      && Number.isFinite(sourceDuration)
+    if (canSlip) {
+      if (clipDragState) setClipDragState(null)
+      if (transitionDragState) setTransitionDragState(null)
+      if (rollEditState) setRollEditState(null)
+      clearActiveSnap()
+      saveToHistory()
+
+      const timeScale = Math.max(0.0001, getTimeScale(clip))
+      const startTrimStart = Math.max(0, Number(clip.trimStart) || 0)
+      const computedTrimEnd = startTrimStart + clip.duration * timeScale
+      const explicitTrimEnd = Number(clip.trimEnd)
+      const baseTrimEnd = Number.isFinite(explicitTrimEnd) ? explicitTrimEnd : computedTrimEnd
+      const startTrimEnd = Math.max(
+        startTrimStart + 0.0001,
+        Math.min(sourceDuration, baseTrimEnd)
+      )
+      const minSourceDelta = -startTrimStart
+      const maxSourceDelta = Number.isFinite(sourceDuration)
+        ? (sourceDuration - startTrimEnd)
+        : Infinity
+
+      setSlipState({
+        clipId: clip.id,
+        startX: e.clientX,
+        startTrimStart,
+        startTrimEnd,
+        timeScale,
+        minSourceDelta,
+        maxSourceDelta: Math.max(minSourceDelta, maxSourceDelta),
+      })
+
+      if (!selectedClipIds.includes(clip.id) && !hasSelectionModifier) {
+        selectClip(clip.id)
+      }
       return
     }
     
@@ -5373,122 +4403,41 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
   }
 
-  // Slide moves the middle and trims both neighbors in one atomic operation.
+  // Handle slip edit (Slip tool drag on clip body)
   useEffect(() => {
-    if (!slideState) return
-    const handleMouseMove = event => {
-      const gesture = slideGestureRef.current
-      if (!isSlideGestureCurrent(gesture, useTimelineStore.getState()) || event.buttons === 0) {
-        endSlideGesture()
-        return
-      }
-      const pointerDelta = (event.clientX - slideState.startX) / pixelsPerSecond
-      const snap = snapClipPosition(slideState.snapExcludedClipIds,
-        slideState.originalStartTime + pointerDelta, slideState.originalDuration)
-      // Preserve the raw half-frame boundary when no magnet target won;
-      // adding/subtracting the timeline offset can round it just below half.
-      const requestedDelta = snap.snapped ? snap.startTime - slideState.originalStartTime : pointerDelta
-      let result
-      gesture.writing = true
-      try {
-        result = useTimelineStore.getState().applySlideEdit?.(gesture.token, requestedDelta)
-      } catch (error) {
-        console.warn('[Timeline] Slide edit failed:', error)
-        result = { ok: false, reason: 'Slide edit could not be completed. Release the clip and try again.' }
-      } finally {
-        gesture.expectedState = captureSlideGestureState(useTimelineStore.getState())
-        gesture.writing = false
-      }
-      if (!result?.ok) {
-        endSlideGesture()
-        showSlideRefusal(result?.reason, gesture.anchor)
-        return
-      }
-      if (snap.snapped && Math.abs(result.delta - requestedDelta) < 1e-8) setActiveSnapTime(snap.snapInfo.snapPoint.time)
-      else clearActiveSnap()
-      setSlidePreview({ anchor: gesture.anchor, feedback: result.feedback })
-    }
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      endSlideGesture()
-    }
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      const gesture = slideGestureRef.current
-      if (gesture && !gesture.writing && !isSlideGestureCurrent(gesture, state)) endSlideGesture()
-    })
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', endSlideGesture)
-    window.addEventListener('blur', endSlideGesture)
-    window.addEventListener('pointercancel', endSlideGesture)
-    window.addEventListener('keydown', handleEscape, true)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', endSlideGesture)
-      window.removeEventListener('blur', endSlideGesture)
-      window.removeEventListener('pointercancel', endSlideGesture)
-      window.removeEventListener('keydown', handleEscape, true)
-      unsubscribe()
-    }
-  }, [slideState, pixelsPerSecond, snapClipPosition, setActiveSnapTime, clearActiveSnap, endSlideGesture, isSlideGestureCurrent, showSlideRefusal])
+    if (!slipState || trimState) return
 
-  // Slip keeps placement fixed and uses one cumulative, atomic source edit.
-  useEffect(() => {
-    if (!slipState || trimState || rollEditState) return
+    const handleMouseMove = (e) => {
+      const deltaX = e.clientX - slipState.startX
+      const deltaTime = deltaX / pixelsPerSecond
+      const fps = timelineFps || 24
+      const quantizedDeltaTime = Math.round(deltaTime * fps) / fps
+      const proposedSourceDelta = quantizedDeltaTime * slipState.timeScale
+      const boundedSourceDelta = Math.max(
+        slipState.minSourceDelta,
+        Math.min(proposedSourceDelta, slipState.maxSourceDelta)
+      )
 
-    const handleMouseMove = event => {
-      const gesture = slipGestureRef.current
-      if (!isSlipGestureCurrent(gesture, useTimelineStore.getState()) || event.buttons === 0) {
-        endSlipGesture()
-        return
-      }
-      const requestedDelta = (event.clientX - slipState.startX) / pixelsPerSecond
-      let result
-      gesture.writing = true
-      try {
-        result = useTimelineStore.getState().applySlipEdit?.(gesture.token, requestedDelta)
-      } catch (error) {
-        console.warn('[Timeline] Slip edit failed:', error)
-        result = { ok: false, reason: 'Slip edit could not be completed. Release the clip and try again.' }
-      } finally {
-        gesture.expectedState = captureRollGestureState(useTimelineStore.getState())
-        gesture.writing = false
-      }
-      if (!result?.ok) {
-        endSlipGesture()
-        showSlipRefusal(result?.reason, gesture.anchor)
-        return
-      }
-      setSlipPreview({ anchor: gesture.anchor, feedback: result.feedback })
+      const newTrimStart = slipState.startTrimStart + boundedSourceDelta
+      const newTrimEnd = slipState.startTrimEnd + boundedSourceDelta
+      updateClipTrim(slipState.clipId, {
+        trimStart: Math.max(0, newTrimStart),
+        trimEnd: Math.max(newTrimStart + 0.0001, newTrimEnd),
+      })
     }
 
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      endSlipGesture()
+    const handleMouseUp = () => {
+      setSlipState(null)
     }
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      const gesture = slipGestureRef.current
-      if (gesture && !gesture.writing && !isSlipGestureCurrent(gesture, state)) endSlipGesture()
-    })
 
     window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', endSlipGesture)
-    window.addEventListener('blur', endSlipGesture)
-    window.addEventListener('pointercancel', endSlipGesture)
-    window.addEventListener('keydown', handleEscape, true)
+    window.addEventListener('mouseup', handleMouseUp)
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', endSlipGesture)
-      window.removeEventListener('blur', endSlipGesture)
-      window.removeEventListener('pointercancel', endSlipGesture)
-      window.removeEventListener('keydown', handleEscape, true)
-      unsubscribe()
+      window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [slipState, trimState, rollEditState, pixelsPerSecond, endSlipGesture, isSlipGestureCurrent, showSlipRefusal])
+  }, [slipState, trimState, pixelsPerSecond, timelineFps, updateClipTrim])
 
   // Handle clip dragging (mousemove when dragging a clip)
   // Supports moving multiple selected clips together
@@ -5504,7 +4453,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     // plain Alt+click never duplicates. The ref is written before state so a
     // mousemove landing between the two can't double-spawn.
     const syncAltDuplicate = (altHeld) => {
-      if (clips.some(clip => movingClipIdsForGesture.includes(clip.id) && clip.type === 'compound')) return
       if (altHeld) {
         if (dragDuplicatesRef.current || !clipDragHistorySavedRef.current) return
         const created = duplicateClipsForDrag(movingClipIdsForGesture, clipDragState.originalPositions)
@@ -5769,100 +4717,37 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
   }, [clipDragState, trimState, slipState, clips, tracks, pixelsPerSecond, moveClip, moveSelectedClips, setSelectedClipPositions, duplicateClipsForDrag, removeDragDuplicates, selectedClipIds, snapClipPosition, setActiveSnapTime, clearActiveSnap, saveToHistory, addTrack, getClipTrackFamily, getHoveredTrackIdForFamily, getResolvedGroupTrackDelta, getTracksForFamily, videoTracks])
 
-  // Target the cut geometrically on the lane; no permanent overlay can steal
-  // clip-edge trimming. Do not frame-round pointer time: the radius is pixels.
-  const getTransitionCutAtPointer = (e, trackId, allowExisting = false) => {
-    const viewport = timelineRef.current
-    if (!viewport) return null
-    const rect = viewport.getBoundingClientRect()
-    const time = (e.clientX - rect.left + viewport.scrollLeft) / pixelsPerSecond
-    return findTransitionCutTarget(useTimelineStore.getState(), {
-      trackId, time, pixelsPerSecond, radiusPx: allowExisting ? 12 : 8, allowExisting,
+  // Handle adding transition between adjacent clips - show type menu
+  const handleAddTransition = (e, clipA, clipB) => {
+    e.stopPropagation()
+    // Show transition type menu at click position
+    setTransitionMenu({
+      x: e.clientX,
+      y: e.clientY,
+      clipA,
+      clipB
     })
   }
-
-  const handleCutMouseDownCapture = (e, trackId) => {
-    // Contextmenu follows mousedown. Stop trim/roll/razor/body handlers before
-    // they can begin a right-button editing gesture or change the selection.
-    if (e.button === 2 && getTransitionCutAtPointer(e, trackId, true)) e.stopPropagation()
-  }
-
-  const handleCutContextMenuCapture = (e, trackId) => {
-    const target = getTransitionCutAtPointer(e, trackId, true)
-    if (!target) return
-    e.preventDefault()
-    e.stopPropagation()
-    setClipContextMenu(null)
-    setMaskSubmenuOpen(false)
-    setTransitionMenu({ x: e.clientX, y: e.clientY + 4, target })
-  }
-
-  const handleSelectTransition = () => {
-    const state = useTimelineStore.getState()
-    const target = transitionMenu?.target
-    if (isTransitionCutTargetCurrent(state, target)) {
-      const maxDuration = state.getMaxTransitionDuration(target.clipA.id, target.clipB.id)
-      if (maxDuration >= 1 / FRAME_RATE) {
-        state.addTransition(target.clipA.id, target.clipB.id, 'dissolve',
-          Math.min(defaultTransitionFrames / FRAME_RATE, maxDuration))
+  
+  // Select transition type and duration from menu
+  const handleSelectTransition = (type, durationSeconds) => {
+    if (transitionMenu) {
+      const result = addTransition(transitionMenu.clipA.id, transitionMenu.clipB.id, type, durationSeconds)
+      if (!result) {
+        // Show warning if transition couldn't be added (insufficient handles)
+        console.warn('Could not add transition - insufficient handles')
       }
+      setTransitionMenu(null)
     }
-    setTransitionMenu(null)
   }
-
-  const handlePlayAroundCut = () => {
-    const state = useTimelineStore.getState()
-    const target = transitionMenu?.target
-    if (!useAssetsStore.getState().mediaPreparation?.critical
-      && !document.querySelector('[data-play-around-blocked="true"]')
-      && isTransitionCutTargetCurrent(state, target, { allowExisting: true })) {
-      useAssetsStore.getState().setPreviewMode('timeline')
-      state.startPlayAround(target.editPoint)
-    }
-    setTransitionMenu(null)
-  }
-
-  const clearTransitionDropFeedback = () => {
-    setTransitionDropTarget(null)
-    cancelPendingAssetDragOver()
-    setDropTarget(null)
-    setAssetDropPreview(null)
-    clearActiveSnap()
-  }
-
-  const handleTransitionDragOverCapture = (e, trackId) => {
-    if (!isTransitionDrag(e.dataTransfer)) return
-    e.preventDefault()
-    e.stopPropagation()
-    cancelPendingAssetDragOver()
-    setDropTarget(null)
-    setAssetDropPreview(null)
-    clearActiveSnap()
-    const target = getTransitionCutAtPointer(e, trackId, true)
-    const state = useTimelineStore.getState()
-    const canDrop = target && state.getMaxTransitionDuration(target.clipA.id, target.clipB.id) >= 1 / FRAME_RATE
-    e.dataTransfer.dropEffect = canDrop ? 'copy' : 'none'
-    setTransitionDropTarget(canDrop ? `${target.clipA.id}-${target.clipB.id}` : null)
-  }
-
-  const handleTransitionDropCapture = (e, trackId) => {
-    if (!isTransitionDrag(e.dataTransfer)) return
-    e.preventDefault()
-    e.stopPropagation()
-    clearTransitionDropFeedback()
-    // Payload is readable only at drop, and the cut must still be valid now.
-    const payload = parseTransitionDrag(e.dataTransfer, TRANSITION_TYPE_IDS)
-    const target = getTransitionCutAtPointer(e, trackId, true)
-    if (!payload || !target) return
-    const state = useTimelineStore.getState()
-    const maxDuration = state.getMaxTransitionDuration(target.clipA.id, target.clipB.id)
-    if (maxDuration < 1 / FRAME_RATE) return
-    const duration = Math.min(payload.duration, maxDuration)
-    if (target.transition) {
-      state.updateTransition(target.transition.id, { type: payload.type, duration })
-      state.selectTransition(target.transition.id)
-    } else {
-      state.addTransition(target.clipA.id, target.clipB.id, payload.type, duration)
+  
+  const parseTransitionDrop = (e) => {
+    const raw = e.dataTransfer.getData('application/x-comfystudio-transition')
+    if (!raw) return null
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return null
     }
   }
 
@@ -5888,49 +4773,23 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     return () => window.removeEventListener('comfystudio-transition-default-duration-changed', handler)
   }, [])
   
-  // Cancel on outside pointer-down (including children that stop bubbling),
-  // Escape, focus loss, or a stale cut/project. Playhead ticks don't dismiss it.
+  // Close transition menu when clicking outside
   useEffect(() => {
     if (!transitionMenu) return
-    const handlePointerDown = (e) => {
-      if (!transitionMenuRef.current?.contains(e.target)) setTransitionMenu(null)
-    }
-    const close = () => setTransitionMenu(null)
+    
+    const handleClick = () => setTransitionMenu(null)
     const handleEscape = (e) => {
-      if (e.key === 'Escape') close()
+      if (e.key === 'Escape') setTransitionMenu(null)
     }
-    const unsubscribe = useTimelineStore.subscribe((state, previous) => {
-      if (state.clips === previous.clips && state.tracks === previous.tracks
-        && state.transitions === previous.transitions && state.timelineSessionId === previous.timelineSessionId
-        && state.timelineFps === previous.timelineFps && state.compoundEditContext === previous.compoundEditContext) return
-      if (!isTransitionCutTargetCurrent(state, transitionMenu.target, { allowExisting: true })) close()
-    })
-    transitionMenuRef.current?.querySelector('button')?.focus({ preventScroll: true })
-    window.addEventListener('pointerdown', handlePointerDown, true)
+    
+    window.addEventListener('click', handleClick)
     window.addEventListener('keydown', handleEscape)
-    window.addEventListener('blur', close)
+    
     return () => {
-      unsubscribe()
-      window.removeEventListener('pointerdown', handlePointerDown, true)
+      window.removeEventListener('click', handleClick)
       window.removeEventListener('keydown', handleEscape)
-      window.removeEventListener('blur', close)
     }
   }, [transitionMenu])
-
-  useEffect(() => {
-    const clear = () => setTransitionDropTarget(null)
-    const escape = (e) => { if (e.key === 'Escape') clear() }
-    window.addEventListener('dragend', clear, true)
-    window.addEventListener('drop', clear, true)
-    window.addEventListener('blur', clear)
-    window.addEventListener('keydown', escape)
-    return () => {
-      window.removeEventListener('dragend', clear, true)
-      window.removeEventListener('drop', clear, true)
-      window.removeEventListener('blur', clear)
-      window.removeEventListener('keydown', escape)
-    }
-  }, [])
 
   // Handle transition duration dragging
   useEffect(() => {
@@ -5967,64 +4826,71 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
     }
   }, [transitionDragState, trimState, slipState, pixelsPerSecond, updateTransition])
 
-  // Handle rolling edits through one validated, atomic store action.
+  // Handle roll edit (dragging between two adjacent clips)
   useEffect(() => {
     if (!rollEditState || trimState || slipState) return
+    
+    const handleMouseMove = (e) => {
+      const deltaX = e.clientX - rollEditState.startX
+      const proposedDelta = deltaX / pixelsPerSecond
+      const fps = timelineFps || 24
+      const minDuration = 1 / fps
+      const clipATimeScale = Math.max(0.0001, Number(rollEditState.clipATimeScale) || 1)
+      const clipBTimeScale = Math.max(0.0001, Number(rollEditState.clipBTimeScale) || 1)
 
-    const handleMouseMove = event => {
-      const gesture = rollGestureRef.current
-      if (!isRollGestureCurrent(gesture, useTimelineStore.getState()) || event.buttons === 0) {
-        endRollGesture()
-        return
+      // Duration constraints: both clips keep at least minDuration.
+      const minDeltaFromClipA = minDuration - rollEditState.clipAOriginalDuration
+      const maxDeltaFromClipB = rollEditState.clipBOriginalDuration - minDuration
+
+      // Media handle constraints:
+      // - Clip A can only roll right while it still has tail handle.
+      // - Clip B can only roll left while it still has head handle.
+      let maxDeltaFromClipAHandles = Infinity
+      if (Number.isFinite(Number(rollEditState.clipASourceDuration))) {
+        const maxClipADuration = (Number(rollEditState.clipASourceDuration) - rollEditState.clipAOriginalTrimStart) / clipATimeScale
+        maxDeltaFromClipAHandles = maxClipADuration - rollEditState.clipAOriginalDuration
       }
-      const requestedDelta = (event.clientX - rollEditState.startX) / pixelsPerSecond
-      let result
-      gesture.writing = true
-      try {
-        result = useTimelineStore.getState().applyRollEdit?.(gesture.token, requestedDelta)
-      } catch (error) {
-        console.warn('[Timeline] Rolling edit failed:', error)
-        result = { ok: false, reason: 'Rolling edit could not be completed. Release the handle and try again.' }
-      } finally {
-        // The first real movement changes history and clips together. Keep
-        // every bound reference current before re-enabling stale checks.
-        gesture.expectedState = captureRollGestureState(useTimelineStore.getState())
-        gesture.writing = false
+      const minDeltaFromClipBHandles = -(rollEditState.clipBOriginalTrimStart / clipBTimeScale)
+
+      let minDelta = Math.max(minDeltaFromClipA, minDeltaFromClipBHandles)
+      let maxDelta = Math.min(maxDeltaFromClipB, maxDeltaFromClipAHandles)
+      if (maxDelta < minDelta) {
+        const pinned = (minDelta + maxDelta) / 2
+        minDelta = pinned
+        maxDelta = pinned
       }
-      if (!result?.ok) {
-        endRollGesture()
-        showRollRefusal(result?.reason, gesture.anchor)
-        return
-      }
-      setRollPreview({ anchor: gesture.anchor, feedback: result.feedback })
+
+      const actualDelta = Math.max(minDelta, Math.min(proposedDelta, maxDelta))
+      const newClipADuration = rollEditState.clipAOriginalDuration + actualDelta
+      const newClipBStart = rollEditState.clipBOriginalStart + actualDelta
+      const newClipBTrimStart = Math.max(0, rollEditState.clipBOriginalTrimStart + actualDelta * clipBTimeScale)
+      
+      // Rolling edit semantics:
+      // - Clip A tail: adjust out-point (duration/trimEnd)
+      // - Clip B head: adjust in-point (startTime/trimStart), keeping trimEnd fixed
+      updateClipTrim(rollEditState.clipAId, {
+        duration: newClipADuration,
+        trimStart: rollEditState.clipAOriginalTrimStart,
+      })
+      updateClipTrim(rollEditState.clipBId, {
+        startTime: newClipBStart,
+        trimStart: newClipBTrimStart,
+        trimEnd: rollEditState.clipBOriginalTrimEnd,
+      })
     }
-
-    const handleEscape = event => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      endRollGesture()
+    
+    const handleMouseUp = () => {
+      setRollEditState(null)
     }
-    const unsubscribe = useTimelineStore.subscribe(state => {
-      const gesture = rollGestureRef.current
-      if (gesture && !gesture.writing && !isRollGestureCurrent(gesture, state)) endRollGesture()
-    })
-
+    
     window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', endRollGesture)
-    window.addEventListener('blur', endRollGesture)
-    window.addEventListener('pointercancel', endRollGesture)
-    window.addEventListener('keydown', handleEscape, true)
-
+    window.addEventListener('mouseup', handleMouseUp)
+    
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', endRollGesture)
-      window.removeEventListener('blur', endRollGesture)
-      window.removeEventListener('pointercancel', endRollGesture)
-      window.removeEventListener('keydown', handleEscape, true)
-      unsubscribe()
+      window.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [rollEditState, trimState, slipState, pixelsPerSecond, endRollGesture, isRollGestureCurrent, showRollRefusal])
+  }, [rollEditState, trimState, slipState, pixelsPerSecond, timelineFps, updateClipTrim])
 
   // Get transition between two clips (if exists)
   const getTransitionBetween = (clipAId, clipBId) => {
@@ -6228,34 +5094,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
 
   const formatTimelineTimecode = (seconds) => formatFrameTimecode(seconds, timecodeFps)
 
-  const renderRippleTrimHandles = (clip, track) => {
-    const stop = event => { event.preventDefault(); event.stopPropagation() }
-    const locked = track.locked || clip.locked || isSyncLockedClip(clip)
-    return ['left', 'right'].map(edge => <div key={edge} data-trim-handle="true" data-ripple-trim-handle={edge}
-      title={`Ripple trim ${edge === 'left' ? 'head' : 'tail'}${locked ? ' · locked' : ''}`}
-      className={`absolute top-0 bottom-0 z-50 w-3 ${edge === 'left' ? 'left-0' : 'right-0'} ${locked ? 'cursor-not-allowed' : 'cursor-ew-resize'} bg-accent/0 hover:bg-accent/25`}
-      style={{ pointerEvents: 'auto' }} onMouseDown={event => handleTrimStart(event, clip.id, edge)}
-      onClick={stop} onDoubleClick={stop} onContextMenu={stop} onDragOver={stop} onDrop={stop} />)
-  }
-
-  // Locked lanes normally ignore pointers. In Slip only, expose a guarded
-  // refusal surface without enabling their trim/fade/effect controls.
-  const renderLockedSlipTarget = clip => {
-    const stop = event => { event.preventDefault(); event.stopPropagation() }
-    return <div data-testid="slip-edit-locked-target" className="absolute inset-0 z-50 cursor-not-allowed"
-      style={{ pointerEvents: 'auto' }}
-      onMouseDown={event => { stop(event); if (event.button === 0) handleSlipEditStart(event, clip) }}
-      onClick={stop} onDoubleClick={stop} onContextMenu={stop} onDragOver={stop} onDrop={stop} />
-  }
-
-  const renderLockedSlideTarget = clip => {
-    const stop = event => { event.preventDefault(); event.stopPropagation() }
-    return <div data-testid="slide-edit-locked-target" data-slide-edit-target={clip.id}
-      className="absolute inset-0 z-50 cursor-not-allowed" style={{ pointerEvents: 'auto' }}
-      onMouseDown={event => { stop(event); if (event.button === 0) handleSlideEditStart(event, clip) }}
-      onClick={stop} onDoubleClick={stop} onContextMenu={stop} onDragOver={stop} onDrop={stop} />
-  }
-
   const getMajorRulerStep = (pixelsPerSec) => {
     // Keep labels readable while allowing finer granularity at high zoom.
     const candidates = [0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600]
@@ -6295,18 +5133,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
   }, [duration, pixelsPerSecond, timecodeFps])
 
   return (
-    <div className="h-full bg-sf-dark-900 border-t border-sf-dark-700 flex flex-col"
-      onPointerDownCapture={handleTimelinePointerFocus}>
-      {compoundEditContext && <div data-testid="compound-breadcrumb" className="flex flex-shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-violet-400/20 bg-violet-400/10 px-3 py-1.5 text-xs text-sf-text-primary">
-        <button type="button" data-testid="compound-back" onClick={backFromCompound} className="flex items-center gap-1 rounded px-1 py-0.5 text-violet-200 hover:bg-violet-400/15"><ArrowLeft className="h-3 w-3" />Back to Timeline</button>
-        <span className="min-w-0 break-words">Editing: {compoundEditContext.compoundName || 'Compound Clip'}</span>
-        <span className="text-[10px] text-sf-text-muted">Original clips · one level only</span>
-      </div>}
-      {compoundNavigationError && <p data-testid="compound-navigation-status" role="alert" className="flex-shrink-0 break-words border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">{compoundNavigationError}</p>}
-      {gapDeleteError && <div data-testid="gap-delete-status" role="alert" className="flex flex-shrink-0 items-start gap-2 border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200">
-        <p className="min-w-0 flex-1 break-words">{gapDeleteError}</p>
-        <button type="button" onClick={() => setGapDeleteError('')} aria-label="Dismiss gap message" className="rounded p-0.5 hover:bg-amber-500/15"><X className="h-3 w-3" /></button>
-      </div>}
+    <div className="h-full bg-sf-dark-900 border-t border-sf-dark-700 flex flex-col">
       {isMusicPopoverOpen && (
         <GenerateMusicPopover
           anchorRect={musicPopoverAnchor}
@@ -6410,16 +5237,20 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
               <Scissors className="w-3 h-3" />
               {showToolbarLabels && 'Cut All'}
             </button>
-            <ActiveTrackSplitButton
+            <button
               onClick={handleSplitActiveTrackAtPlayhead}
+              disabled={!activeTrackClipAtPlayhead}
               className={toolbarButtonClass}
-              showLabel={showToolbarLabels}
-              availableTitle={t('timelineEditor.tooltips.splitActive', { shortcut: splitActiveHotkeyLabel })}
-              unavailableTitle={t('timelineEditor.tooltips.splitActiveUnavailable', { shortcut: splitActiveHotkeyLabel })}
-            />
+              title={activeTrackClipAtPlayhead
+                ? t('timelineEditor.tooltips.splitActive', { shortcut: splitActiveHotkeyLabel })
+                : t('timelineEditor.tooltips.splitActiveUnavailable', { shortcut: splitActiveHotkeyLabel })}
+            >
+              <Scissors className="w-3 h-3" />
+              {showToolbarLabels && 'Split'}
+            </button>
             <button
               onClick={handleCopySelection}
-              disabled={selectedClipIds.length === 0 || hasCompoundSelection}
+              disabled={selectedClipIds.length === 0}
               className={toolbarButtonClass}
               title={t('timelineEditor.tooltips.copy', { shortcut: copyHotkeyLabel })}
             >
@@ -6428,7 +5259,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             </button>
             <button
               onClick={handlePasteAtPlayhead}
-              disabled={!activeTrackId || copiedClips.length === 0 || copiedClips.some(clip => clip.type === 'compound')}
+              disabled={!activeTrackId || copiedClips.length === 0}
               className={toolbarButtonClass}
               title={activeTrackId && copiedClips.length > 0
                 ? t('timelineEditor.tooltips.paste', { shortcut: pasteHotkeyLabel })
@@ -6467,7 +5298,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                 selectedClipIds.length > 0
                   ? t(rippleEditMode ? 'timelineEditor.tooltips.rippleDeleteSelected' : 'timelineEditor.tooltips.deleteSelected')
                   : selectedGap
-                    ? 'Close this empty gap across all tracks. Stops if any media occupies the same time or affected clips are locked.'
+                    ? t('timelineEditor.tooltips.deleteGap')
                     : selectedTransitionId
                       ? t('timelineEditor.tooltips.deleteTransition')
                       : selectedMarkerId
@@ -6488,11 +5319,9 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                 <button
                   key={tool.id}
                   type="button"
-                  data-testid={`timeline-tool-${tool.id}`}
                   onClick={() => setActiveTimelineTool(tool.id)}
                   className={toolbarToggleClass(active)}
-                  title={`${tool.title}${tool.shortcut ? ` (${tool.shortcut})` : ''}`}
-                  aria-label={tool.label}
+                  title={`${tool.title} (${tool.shortcut})`}
                   aria-pressed={active}
                 >
                   <Icon className="w-3 h-3" />
@@ -6514,8 +5343,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             {toolbarTier !== 'overflow' && (
               <button
                 onClick={toggleRippleEdit}
-                data-testid="ripple-edit-toggle"
-                aria-pressed={rippleEditMode}
                 className={toolbarToggleClass(rippleEditMode)}
                 title={t('timelineEditor.tooltips.ripple', { state: rippleEditMode ? 'ON' : 'OFF', shortcut: rippleHotkeyLabel })}
               >
@@ -6623,7 +5450,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                       setToolbarOverflowOpen(false)
                     }}
                     className={overflowMenuItemClass}
-                    title="Generate music"
+                    title="Generate music with ACE-Step"
                   >
                     <MusicIcon className="w-3 h-3" />
                     Generate Music
@@ -6749,7 +5576,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           {/* Scrollable track headers container */}
           <div 
             ref={trackHeadersRef}
-            data-testid="timeline-track-headers"
             className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-sf-dark-900 scrollbar-thumb-sf-dark-600"
             onScroll={(e) => {
               // Sync scroll with track content
@@ -6933,7 +5759,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                 }
               }}
               className="ml-auto p-0.5 hover:bg-sf-dark-700 rounded"
-              title="Generate music"
+              title="Generate music with ACE-Step"
             >
               <MusicIcon className="w-3 h-3 text-sf-accent" />
             </button>
@@ -7113,12 +5939,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         {/* Track Content Area */}
         <div 
           ref={timelineRef}
-          data-testid="timeline-viewport"
-          data-play-around-blocked={Boolean(trimState || rippleTrimState || rollEditState || slipState || slideState
-            || clipDragState || fadeDragState || transitionDragState || isScrubbing || isPanning)}
-          data-selection-view={selectionViewRef.current ? 'focused' : 'normal'}
-          data-compound-timeline-focus
-          tabIndex={-1}
           className={`flex-1 min-h-0 overflow-x-auto overflow-y-hidden relative bg-sf-dark-900 flex flex-col ${
             isPanning ? 'cursor-grabbing select-none' : 
             isSpaceHeld ? 'cursor-grab' : 
@@ -7132,7 +5952,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             <div
               className="h-5 flex-shrink-0 bg-gradient-to-b from-sf-dark-800 to-sf-dark-900 border-b border-sf-dark-700 relative select-none"
               onMouseDown={handleTimelineRulerMouseDown}
-              data-testid="timeline-scrub-ruler"
               onDoubleClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -7158,7 +5977,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           {/* Scrollable tracks container */}
           <div 
             ref={trackContentRef}
-            data-testid="timeline-track-content"
             className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden hide-scrollbar"
             style={{ scrollbarWidth: 'none' }}
             onScroll={(e) => {
@@ -7197,17 +6015,10 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                   dropTarget === track.id ? 'bg-sf-accent/10' : track.locked ? '' : 'bg-sf-dark-900'
                 }`}
                 style={{ minHeight: contentHeight, height: contentHeight }}
-                onMouseDownCapture={(e) => handleCutMouseDownCapture(e, track.id)}
-                onContextMenuCapture={(e) => handleCutContextMenuCapture(e, track.id)}
                 onMouseDown={(e) => handleTrackLaneMouseDown(e, track)}
                 onContextMenu={(e) => handleTrackLaneContextMenu(e, track)}
-                onDragOverCapture={(e) => handleTransitionDragOverCapture(e, track.id)}
-                onDropCapture={(e) => handleTransitionDropCapture(e, track.id)}
                 onDragOver={(e) => handleDragOver(e, track.id)}
-                onDragLeave={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) setTransitionDropTarget(null)
-                  handleDragLeave(e)
-                }}
+                onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, track.id)}
               >
                 {selectedGap?.trackId === track.id && selectedGap.endTime > selectedGap.startTime && (
@@ -7246,8 +6057,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                   <div
                     key={clip.id}
                     data-clip="true"
-                    data-clip-id={clip.id}
-                    data-slide-edit-target={isSlideToolActive && !track.locked ? clip.id : undefined}
                     onMouseDown={(e) => handleClipDragStart(e, clip)}
                     onClick={(e) => handleClipClick(e, clip)}
                     onDoubleClick={isTextClip
@@ -7255,7 +6064,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                       : (e) => handleClipDoubleClick(e, clip)}
                     onContextMenu={(e) => handleClipContextMenu(e, clip)}
                     onDragOver={(e) => {
-                      if (clip.type === 'compound') return
                       if (parseEffectDrop(e)) {
                         e.preventDefault()
                         e.stopPropagation()
@@ -7267,7 +6075,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                       if (!payload) return
                       e.preventDefault()
                       e.stopPropagation()
-                      if (clip.type === 'compound') return
                       const def = getEffectTypeDefinition(payload.effectType)
                       if (!def) return
                       const preset = payload.presetId
@@ -7281,27 +6088,24 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     className={`absolute top-0.5 bottom-0.5 rounded-sm group ${
                       isRazorToolActive
                         ? 'cursor-crosshair'
-                        : isSlipToolActive || isSlideToolActive
+                        : isSlipToolActive
                           ? 'cursor-ew-resize'
                           : isTrimToolActive
                             ? 'cursor-default'
                             : 'cursor-grab'
                     } ${
-                      slipState?.clipId === clip.id || slideState?.clipId === clip.id || clipDragState?.movingClipIds?.includes(clip.id) ? 'z-30' : ''
+                      slipState?.clipId === clip.id || clipDragState?.movingClipIds?.includes(clip.id) ? 'z-30' : ''
                     }`}
                     style={{ 
                       left: `${(clip.startTime * pixelsPerSecond) - interactiveClipOffset}px`, 
                       width: `${interactiveClipWidth}px`,
                     }}
                   >
-                    {rippleHandlesEnabled && renderRippleTrimHandles(clip, track)}
-                    {isSlipToolActive && track.locked && renderLockedSlipTarget(clip)}
-                    {isSlideToolActive && track.locked && renderLockedSlideTarget(clip)}
                     <div
-                      className={`absolute top-0 bottom-0 rounded-sm overflow-hidden ${
-                        selectedClipIds.includes(clip.id) ? 'ring-2 ring-white ring-offset-1 ring-offset-sf-dark-900' : ''
-                      } ${trimState?.targetClipIds?.includes(clip.id) || rippleTrimState?.targetClipIds?.includes(clip.id) ? 'ring-2 ring-sf-accent' : ''} ${
-                        slipState?.clipId === clip.id || slideState?.clipId === clip.id ? 'ring-2 ring-yellow-400 cursor-ew-resize z-30' : ''
+                      className={`absolute top-0 bottom-0 rounded overflow-hidden shadow-[inset_0_1px_0_rgba(255,255,255,0.07),inset_0_-1px_0_rgba(0,0,0,0.25),0_1px_3px_rgba(0,0,0,0.35)] ${
+                        selectedClipIds.includes(clip.id) ? 'ring-2 ring-orange-300 ring-offset-1 ring-offset-sf-dark-900' : ''
+                      } ${trimState?.targetClipIds?.includes(clip.id) ? 'ring-2 ring-sf-accent' : ''} ${
+                        slipState?.clipId === clip.id ? 'ring-2 ring-yellow-400 cursor-ew-resize z-30' : ''
                       } ${
                         clipDragState?.movingClipIds?.includes(clip.id)
                           ? (clipDragState?.isDuplicating
@@ -7353,12 +6157,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                       )
                     })()}
                     {/* Text Clip Rendering */}
-                    {clip.type === 'compound' ? (
-                      <div data-testid="compound-tile" data-compound-clip-id={clip.id} className="absolute inset-0 overflow-hidden border-t-[3px] border-violet-400/60 bg-violet-950/60 text-violet-100">
-                        <div className="absolute inset-x-1.5 top-1 flex min-w-0 items-center gap-1.5"><Layers className="h-3 w-3 flex-shrink-0" /><span className="truncate text-[10px] font-medium">{clip.name || 'Compound Clip'}</span></div>
-                        <div className="absolute inset-x-1.5 bottom-1 flex items-center justify-between gap-1 text-[8px] text-violet-200/80"><span className="truncate">{clip.compound?.document?.clips?.length || 0} clips · Compound</span><span className="flex-shrink-0">{Number(clip.duration).toFixed(1)}s</span></div>
-                      </div>
-                    ) : isTextClip ? (
+                    {isTextClip ? (
                       <>
                         {/* Text clip background with accent color bar */}
                         <div 
@@ -7676,7 +6475,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     {/* Hover overlay */}
                     <div className="absolute inset-0 bg-white/0 group-hover:bg-white/5 transition-colors pointer-events-none" />
                     
-                    {trimHandlesEnabled && !rippleEditMode && !isSyncLockedClip(clip) && (
+                    {trimHandlesEnabled && !isSyncLockedClip(clip) && (
                       <>
                         {/* Left trim handle - wider hit area for easier grabbing */}
                         <div
@@ -7707,11 +6506,10 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                 })}
                 {renderAssetDropPreviewClip(track)}
                 
-                {/* Applied transitions and Trim-tool roll handles. Idle cuts have no overlay. */}
+                {/* Roll edit zones and transition buttons/overlays between adjacent clips */}
                 {getAdjacentClips(track.id).map(({ clipA, clipB, transition, isOverlapping, gap, isTrueEditPoint }) => {
                   const clipAEnd = clipA.startTime + clipA.duration
-                  const canRollEdit = !rippleHandlesEnabled && isTrimToolActive && isTrueEditPoint
-                  const isDropTarget = transitionDropTarget === `${clipA.id}-${clipB.id}`
+                  const canRollEdit = isTrimToolActive && (isOverlapping || Math.abs(gap) <= ROLL_EDIT_MAX_GAP_SECONDS)
                   const transitionSplit = transition?.settings?.split || null
                   const transitionAlignment = transition?.settings?.alignment || 'center'
                   const normalizedSplit = (() => {
@@ -7756,9 +6554,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                         }}
                         title={`${transitionName} (${transitionFrames}f)`}
                       >
-                        {isDropTarget && (
-                          <div data-testid="transition-drop-highlight" className="absolute inset-0 border-2 border-purple-400 bg-purple-500/20 pointer-events-none z-10" />
-                        )}
                         {/* Resolve-style: dark grey-black overlay container with visible border */}
                         <div
                           className={`absolute top-0 bottom-0 overflow-hidden border border-[#4a4a4a]/90 bg-[#1a1a1a]/85 rounded-[2px] ${
@@ -7869,29 +6664,102 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     )
                   }
                   
-                  // The lane owns native transition DnD. Feedback is pointer-inert
-                  // and only mounted while dragging; trim edges stay unobstructed.
-                  if (!isTrueEditPoint || (!canRollEdit && !isDropTarget)) return null
+                  // Non-overlapping adjacent clips - show add transition button / drop target.
+                  // The transition affordance should only appear on a true butt cut,
+                  // not near misses or short gaps that are only useful for roll-edit hover zones.
+                  if (!isTrueEditPoint && !canRollEdit) return null
                   const editPointX = clipAEnd * pixelsPerSecond
+                  const dropKey = `${clipA.id}-${clipB.id}`
+                  const isDropTarget = transitionDropTarget === dropKey
                   
                   return (
                     <div
                       key={`edit-${clipA.id}-${clipB.id}`}
                       data-gap-ignore="true"
-                      className="absolute top-0 bottom-0 z-20 group/edit pointer-events-none"
+                      className={`absolute top-0 bottom-0 z-20 group/edit ${isDropTarget && isTrueEditPoint ? 'bg-purple-500/10' : ''}`}
                       style={{ left: `${editPointX - 4}px`, width: '8px' }}
+                      onDragOver={(e) => {
+                        if (!isTrueEditPoint) return
+                        const payload = parseTransitionDrop(e)
+                        if (!payload) return
+                        e.preventDefault()
+                        if (transitionDropTarget !== dropKey) {
+                          setTransitionDropTarget(dropKey)
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (!isTrueEditPoint) return
+                        if (transitionDropTarget === dropKey) {
+                          setTransitionDropTarget(null)
+                        }
+                      }}
+                      onDrop={(e) => {
+                        if (!isTrueEditPoint) return
+                        const payload = parseTransitionDrop(e)
+                        if (!payload) return
+                        e.preventDefault()
+                        setTransitionDropTarget(null)
+                        const { type, duration } = payload
+                        const existingTransition = getTransitionBetween(clipA.id, clipB.id)
+                        if (existingTransition) {
+                          updateTransition(existingTransition.id, { type, duration })
+                          selectTransition(existingTransition.id)
+                        } else {
+                          addTransition(clipA.id, clipB.id, type, duration)
+                        }
+                      }}
                     >
-                      {isDropTarget && (
-                        <div data-testid="transition-drop-highlight" className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-6 rounded-sm border-2 border-purple-400 bg-purple-500/25 pointer-events-none" />
-                      )}
-                      {canRollEdit && (
-                        <div
-                          data-testid="roll-edit-handle" data-clip-a-id={clipA.id} data-clip-b-id={clipB.id}
-                          className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1.5 flex items-center justify-center pointer-events-auto cursor-ew-resize"
-                          onMouseDown={(e) => handleRollEditStart(e, clipA, clipB)}
-                          title="Drag to roll edit (extend one clip, shorten the other)"
-                        >
-                          <div className="w-0.5 h-full transition-colors bg-white/0 group-hover/edit:bg-yellow-400/70" />
+                      {/* Roll edit handle */}
+                      <div
+                        className={`absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1.5 flex items-center justify-center ${
+                          canRollEdit ? 'cursor-ew-resize' : 'pointer-events-none cursor-default'
+                        }`}
+                        onMouseDown={(e) => {
+                          if (!canRollEdit) return
+                          e.stopPropagation()
+                          e.preventDefault()
+                          saveToHistory()
+                          const clipATimeScale = getTimeScale(clipA)
+                          const clipBTimeScale = getTimeScale(clipB)
+                          const clipAOriginalTrimStart = clipA.trimStart || 0
+                          const clipBOriginalTrimStart = clipB.trimStart || 0
+                          const clipBOriginalTrimEnd = clipB.trimEnd
+                            ?? clipB.sourceDuration
+                            ?? (clipBOriginalTrimStart + clipB.duration * clipBTimeScale)
+                          const clipASourceDuration = Number.isFinite(Number(clipA.sourceDuration))
+                            ? Number(clipA.sourceDuration)
+                            : null
+                          setRollEditState({
+                            clipAId: clipA.id,
+                            clipBId: clipB.id,
+                            startX: e.clientX,
+                            originalEditPoint: clipAEnd,
+                            clipAOriginalDuration: clipA.duration,
+                            clipBOriginalStart: clipB.startTime,
+                            clipBOriginalDuration: clipB.duration,
+                            clipAOriginalTrimStart,
+                            clipASourceDuration,
+                            clipATimeScale,
+                            clipBOriginalTrimStart,
+                            clipBOriginalTrimEnd,
+                            clipBTimeScale,
+                          })
+                        }}
+                        title={canRollEdit ? 'Drag to roll edit (extend one clip, shorten the other)' : 'Roll edit available when clips touch'}
+                      >
+                        <div className={`w-0.5 h-full transition-colors ${canRollEdit ? 'bg-white/0 group-hover/edit:bg-yellow-400/70' : 'bg-white/0'}`} />
+                      </div>
+                      
+                      {/* Add transition button */}
+                      {isTrueEditPoint && canAddTransitionBetweenClips(clipA, clipB) && (
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-auto">
+                          <button
+                            onClick={(e) => handleAddTransition(e, clipA, clipB)}
+                            className="w-3 h-3 rounded-full bg-sf-dark-700/90 border border-sf-dark-400/80 flex items-center justify-center hover:bg-purple-600 hover:border-purple-400 transition-colors opacity-0 group-hover/edit:opacity-100 shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
+                            title="Add transition"
+                          >
+                            <Plus className="w-2 h-2 text-white" />
+                          </button>
                         </div>
                       )}
                     </div>
@@ -7984,34 +6852,29 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                   <div
                     key={clip.id}
                     data-clip="true"
-                    data-clip-id={clip.id}
-                    data-slide-edit-target={isSlideToolActive && !track.locked ? clip.id : undefined}
                     onMouseDown={(e) => handleClipDragStart(e, clip)}
                     onClick={(e) => handleClipClick(e, clip)}
                     onContextMenu={(e) => handleClipContextMenu(e, clip)}
                     className={`absolute top-0.5 bottom-0.5 rounded-sm group ${
                       isRazorToolActive
                         ? 'cursor-crosshair'
-                        : isSlipToolActive || isSlideToolActive
+                        : isSlipToolActive
                           ? 'cursor-ew-resize'
                           : isTrimToolActive
                             ? 'cursor-default'
                             : 'cursor-grab'
                     } ${
-                      slipState?.clipId === clip.id || slideState?.clipId === clip.id || clipDragState?.movingClipIds?.includes(clip.id) ? 'z-30' : ''
+                      slipState?.clipId === clip.id || clipDragState?.movingClipIds?.includes(clip.id) ? 'z-30' : ''
                     }`}
                     style={{ 
                       left: `${(clip.startTime * pixelsPerSecond) - interactiveClipOffset}px`, 
                       width: `${interactiveClipWidth}px`,
                     }}
                   >
-                    {rippleHandlesEnabled && renderRippleTrimHandles(clip, track)}
-                    {isSlipToolActive && track.locked && renderLockedSlipTarget(clip)}
-                    {isSlideToolActive && track.locked && renderLockedSlideTarget(clip)}
                     <div
                       className={`absolute top-0 bottom-0 rounded-sm overflow-hidden ${
                         selectedClipIds.includes(clip.id) ? 'ring-2 ring-white ring-offset-1 ring-offset-sf-dark-900' : ''
-                      } ${slipState?.clipId === clip.id || slideState?.clipId === clip.id ? 'ring-2 ring-yellow-400 cursor-ew-resize z-30' : ''} ${clipDragState?.movingClipIds?.includes(clip.id)
+                      } ${slipState?.clipId === clip.id ? 'ring-2 ring-yellow-400 cursor-ew-resize z-30' : ''} ${clipDragState?.movingClipIds?.includes(clip.id)
                           ? (clipDragState?.isDuplicating
                             ? 'ring-2 ring-emerald-400 cursor-copy z-30'
                             : 'ring-2 ring-sf-accent cursor-grabbing z-30') : ''} ${clipEnabled ? '' : 'opacity-60 saturate-0'}`}
@@ -8038,10 +6901,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                       waveformInput={waveformInput}
                       stereo={isStereoContent}
                     />
-
-                    {audioEnvelopeTargetId === clip.id && (
-                      <AudioVolumeEnvelope clip={clip} track={track} width={renderedClipWidth} height={contentHeight - 4} fps={timelineFps} />
-                    )}
 
                     {fadeInWidth > 0 && (
                       <div
@@ -8131,7 +6990,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     <div className="absolute left-0 top-0 bottom-0 w-px bg-black/40 pointer-events-none" />
                     <div className="absolute right-0 top-0 bottom-0 w-px bg-black/40 pointer-events-none" />
                     
-                    {trimHandlesEnabled && !rippleEditMode && !isSyncLockedClip(clip) && (
+                    {trimHandlesEnabled && !isSyncLockedClip(clip) && (
                       <>
                         {/* Trim handles on hover - wider hit area for easier grabbing */}
                         <div
@@ -8204,8 +7063,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                 {renderAssetDropPreviewClip(track)}
                 
                 {/* Roll edit zones between adjacent audio clips */}
-                {getAdjacentClips(track.id).map(({ clipA, clipB, isTrueEditPoint }) => {
-                  const canRollEdit = !rippleHandlesEnabled && isTrimToolActive && isTrueEditPoint
+                {getAdjacentClips(track.id).map(({ clipA, clipB, isOverlapping, gap }) => {
+                  const canRollEdit = isTrimToolActive && (isOverlapping || Math.abs(gap) <= ROLL_EDIT_MAX_GAP_SECONDS)
                   if (!canRollEdit) return null
                   const editPointX = (clipA.startTime + clipA.duration) * pixelsPerSecond
                   
@@ -8218,9 +7077,37 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                     >
                       {/* Roll edit handle */}
                       <div
-                        data-testid="roll-edit-handle" data-clip-a-id={clipA.id} data-clip-b-id={clipB.id}
                         className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-1.5 cursor-ew-resize flex items-center justify-center"
-                        onMouseDown={(e) => handleRollEditStart(e, clipA, clipB)}
+                        onMouseDown={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          saveToHistory()
+                          const clipATimeScale = getTimeScale(clipA)
+                          const clipBTimeScale = getTimeScale(clipB)
+                          const clipAOriginalTrimStart = clipA.trimStart || 0
+                          const clipBOriginalTrimStart = clipB.trimStart || 0
+                          const clipBOriginalTrimEnd = clipB.trimEnd
+                            ?? clipB.sourceDuration
+                            ?? (clipBOriginalTrimStart + clipB.duration * clipBTimeScale)
+                          const clipASourceDuration = Number.isFinite(Number(clipA.sourceDuration))
+                            ? Number(clipA.sourceDuration)
+                            : null
+                          setRollEditState({
+                            clipAId: clipA.id,
+                            clipBId: clipB.id,
+                            startX: e.clientX,
+                            originalEditPoint: clipA.startTime + clipA.duration,
+                            clipAOriginalDuration: clipA.duration,
+                            clipBOriginalStart: clipB.startTime,
+                            clipBOriginalDuration: clipB.duration,
+                            clipAOriginalTrimStart,
+                            clipASourceDuration,
+                            clipATimeScale,
+                            clipBOriginalTrimStart,
+                            clipBOriginalTrimEnd,
+                            clipBTimeScale,
+                          })
+                        }}
                         title="Drag to roll edit"
                       >
                         <div className="w-0.5 h-full bg-white/0 group-hover/edit:bg-yellow-400/70 transition-colors" />
@@ -8382,12 +7269,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             </div>
           )}
           
-          {rippleTrimState && Number.isFinite(rippleTrimPreview?.feedback?.guideTime)
-            && rippleTrimPreview.feedback.guideTime >= 0 && <div
-              data-testid="ripple-trim-guide" data-guide-time={rippleTrimPreview.feedback.guideTime}
-              className="absolute top-0 bottom-0 z-40 border-l border-dashed border-accent pointer-events-none"
-              style={{ left: `${rippleTrimPreview.feedback.guideTime * pixelsPerSecond}px` }} />}
-
           {/* Playhead — positioned imperatively by the store subscription
               above; the render-time left only covers the first paint. */}
           <div
@@ -8395,17 +7276,20 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             className={`absolute top-0 bottom-0 z-10 ${isScrubbing ? 'pointer-events-none' : ''}`}
             style={{ left: `${getLivePlayhead() * pixelsPerSecond}px`, width: '2px' }}
           >
-            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-orange-400 shadow-[0_0_12px_rgba(251,146,60,0.45)]" />
+            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-orange-300 via-orange-400 to-orange-500 shadow-[0_0_8px_rgba(251,146,60,0.55)]" />
             {/* Playhead handle (draggable) */}
-            <div 
+            <div
               className="absolute -top-1 left-1/2 -translate-x-1/2 w-5 h-4 cursor-ew-resize flex items-start justify-center"
-              data-testid="timeline-playhead-handle"
-              onMouseDown={beginTimelineScrub}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setIsScrubbing(true)
+              }}
               title="Drag to scrub"
             >
               <div
-                className="w-3 h-3 bg-orange-400 border border-orange-200/70 hover:bg-orange-300 transition-colors shadow-[0_3px_8px_rgba(0,0,0,0.38)]"
-                style={{ clipPath: 'polygon(12% 0, 88% 0, 100% 55%, 50% 100%, 0 55%)' }}
+                className="w-3.5 h-3.5 bg-gradient-to-b from-orange-300 to-orange-500 hover:from-orange-200 hover:to-orange-400 transition-colors shadow-[0_2px_6px_rgba(0,0,0,0.5)]"
+                style={{ clipPath: 'polygon(15% 0, 85% 0, 100% 55%, 50% 100%, 0 55%)' }}
               />
             </div>
             {/* Notch at active track (Flame-style) — aligns with primary track */}
@@ -8438,8 +7322,11 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             {/* Playhead line extension for easier grabbing */}
             <div 
               className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-full cursor-ew-resize"
-              data-testid="timeline-playhead-line"
-              onMouseDown={beginTimelineScrub}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setIsScrubbing(true)
+              }}
             />
           </div>
         </div>
@@ -8456,31 +7343,30 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
         </div>
       </div>
       
-      {/* Cut menu — creation and a temporary Play Around audition. */}
+      {/* Transition menu: single "Add transition" — change type/duration in Inspector */}
       {transitionMenu && (() => {
-        const state = useTimelineStore.getState()
-        const target = transitionMenu.target
-        const current = isTransitionCutTargetCurrent(state, target, { allowExisting: true })
-        const maxDuration = current && !target.transition
-          ? state.getMaxTransitionDuration(target.clipA.id, target.clipB.id) : 0
+        const maxDuration = getMaxTransitionDuration(transitionMenu.clipA.id, transitionMenu.clipB.id)
+        const preferredSeconds = defaultTransitionFrames / FRAME_RATE
+        const defaultSeconds = Math.min(preferredSeconds, Math.max(1 / FRAME_RATE, maxDuration))
         const canAdd = maxDuration >= 1 / FRAME_RATE
 
         return (
           <div
-            ref={transitionMenuRef}
-            data-testid="transition-cut-menu"
-            className="fixed z-50 bg-sf-dark-800 border border-sf-dark-600 rounded-lg shadow-xl py-1 w-[220px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-16px)] overflow-auto"
-            style={{ left: `${transitionMenuPosition.x}px`, top: `${transitionMenuPosition.y}px` }}
+            className="fixed z-50 bg-sf-dark-800 border border-sf-dark-600 rounded-lg shadow-xl py-1 min-w-[180px]"
+            style={{ 
+              left: `${transitionMenu.x}px`, 
+              top: `${transitionMenu.y}px`,
+              transform: 'translate(-50%, 8px)'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-3 py-2 text-[10px] text-sf-text-muted uppercase tracking-wider border-b border-sf-dark-600">
-              At cut
+              Add transition
             </div>
-            {!target.transition && (canAdd ? (
+            {canAdd ? (
               <button
-                type="button"
-                onClick={handleSelectTransition}
-                className="w-full px-3 py-2.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 focus-visible:bg-sf-dark-700 focus-visible:outline-none flex items-center gap-2 transition-colors"
+                onClick={() => handleSelectTransition('dissolve', defaultSeconds)}
+                className="w-full px-3 py-2.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors"
               >
                 <span>Add transition</span>
               </button>
@@ -8488,18 +7374,14 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
               <div className="px-3 py-2 text-xs text-sf-text-muted">
                 <div className="flex items-center gap-2 mb-1">
                   <AlertTriangle className="w-4 h-4 text-sf-accent" />
-                  <span className="font-medium text-sf-text-primary">Clips too short</span>
+                  <span className="font-medium text-sf-text-primary">Insufficient Handles</span>
                 </div>
                 <p className="text-[10px] leading-tight">
-                  These clips are too short for a transition. Extend a clip and try again.
+                  Cannot add transition. The clips need more footage before/after their trim points.
+                  Extend the clips or use source media with more footage.
                 </p>
               </div>
-            ))}
-            <button type="button" data-testid="play-around-cut" disabled={!current || Boolean(mediaPreparation?.critical)}
-              onClick={handlePlayAroundCut}
-              className="w-full px-3 py-2.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 focus-visible:bg-sf-dark-700 disabled:opacity-40">
-              Play around cut
-            </button>
+            )}
           </div>
         )
       })()}
@@ -8520,46 +7402,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <button type="button" data-testid="zoom-to-selection"
-            title={t('timelineEditor.tooltips.zoomToSelectionHelp')}
-            onClick={() => {
-              handleZoomToSelection({ focusTimeline: true })
-              setClipContextMenu(null)
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700">
-            <Maximize2 className="h-3 w-3 shrink-0" />
-            <span className="min-w-0 flex-1">{t(`timelineEditor.tooltips.${selectionViewWillRestore ? 'restoreSelectionView' : 'zoomToSelection'}`)}</span>
-            {selectionViewHotkeyLabel !== 'Not set' && <span className="shrink-0 text-[10px] text-sf-text-muted">{selectionViewHotkeyLabel}</span>}
-          </button>
-          <div className="my-1 h-px bg-sf-dark-600" />
-          {contextCompoundClip ? <>
-            <button type="button" data-testid="compound-open" onClick={() => openCompoundContents(contextCompoundClip)} className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-violet-200 hover:bg-sf-dark-700"><Layers className="h-3 w-3" />Open Contents</button>
-            <button type="button" data-testid="compound-uncompound-open" disabled={selectedClipIds.length !== 1 || !!compoundEditContext} onClick={() => openUncompound(contextCompoundClip.id)}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 disabled:cursor-not-allowed disabled:opacity-50"><Layers className="h-3 w-3" />Uncompound…</button>
-            {selectedClipIds.length !== 1 && <p className="max-w-[260px] px-3 pb-1 text-[10px] text-sf-text-muted">Select just one compound to restore its child clips.</p>}
-            <p className="max-w-[260px] px-3 pb-2 text-[10px] leading-relaxed text-sf-text-muted">Move or trim this parent clip. Open its contents for other edits.</p>
-            <div className="my-1 h-px bg-sf-dark-600" />
-            <button type="button" onClick={() => handleContextMenuAction('move-by-offset')} className="w-full px-3 py-1.5 text-left text-xs hover:bg-sf-dark-700">Move by Offset…</button>
-            <button type="button" onClick={() => handleContextMenuAction('duration-by-amount')} className="w-full px-3 py-1.5 text-left text-xs hover:bg-sf-dark-700">Change Duration…</button>
-            <button type="button" onClick={() => handleContextMenuAction('toggle-enabled')} className="w-full px-3 py-1.5 text-left text-xs hover:bg-sf-dark-700">{clipContextShouldEnable ? 'Enable' : 'Disable'}</button>
-            <div className="my-1 h-px bg-sf-dark-600" />
-            <button type="button" onClick={() => handleContextMenuAction('delete')} className="w-full px-3 py-1.5 text-left text-xs text-sf-error hover:bg-sf-error/20">{rippleEditMode ? 'Ripple Delete' : 'Delete'}</button>
-          </> : <>
-          <button type="button" data-testid="compound-create-open" disabled={!!compoundEditContext || hasCompoundSelection || !selectedClipIds.length} onClick={openCompoundCreate}
-            title={compoundEditContext || hasCompoundSelection ? 'Compounds cannot contain another compound' : 'Group selected clips into one editable compound'}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 disabled:cursor-not-allowed disabled:opacity-50"><Layers className="h-3 w-3" />Create Compound Clip…</button>
-          {(compoundEditContext || hasCompoundSelection) && <p className="max-w-[260px] px-3 pb-1 text-[10px] text-sf-text-muted">Compounds cannot contain another compound.</p>}
-          {(() => {
-            const eligibility = getSmartReplaceEligibility({ clips, tracks, selectedClipIds }, clipContextMenu.clipId)
-            return <>
-              <button type="button" data-testid="smart-replace-open" onClick={() => openSmartReplace(clipContextMenu.clipId)} disabled={!eligibility.ok}
-                title={eligibility.reason || 'Swap media while keeping this clip’s edit'}
-                className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                <ArrowRightLeft className="h-3 w-3" /><span>Smart Replace…</span>
-              </button>
-              {!eligibility.ok && <p className="max-w-[260px] px-3 pb-1 text-[10px] leading-relaxed text-sf-text-muted">{eligibility.reason}</p>}
-            </>
-          })()}
           {(() => {
             const contextClip = clips.find(c => c.id === clipContextMenu.clipId)
             const contextAsset = contextClip?.assetId ? getAssetById(contextClip.assetId) : null
@@ -8734,7 +7576,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
               <>
                 <button
                   onClick={() => handleDetectBeatsForClip(contextClip.id)}
-                  disabled={Boolean(beatAnalysisClipId)}
+                  disabled={isAnalyzing}
                   className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-default"
                 >
                   {isAnalyzing
@@ -8743,7 +7585,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
                   <span>{isAnalyzing ? 'Detecting beats…' : 'Detect Beats → Markers'}</span>
                 </button>
                 {beatAnalysisError && (
-                  <div role="alert" data-testid="beat-analysis-error" className="px-3 pb-1 text-[10px] text-sf-error">{beatAnalysisError}</div>
+                  <div className="px-3 pb-1 text-[10px] text-sf-error">{beatAnalysisError}</div>
                 )}
                 <div className="h-px bg-sf-dark-600 my-1" />
               </>
@@ -8772,7 +7614,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           })()}
           <button
             onClick={() => handleContextMenuAction('split')}
-            disabled={hasCompoundSelection}
             className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors"
             title={`Split selected clip at playhead (or press ${splitActiveHotkeyLabel} to split on the active track)`}
           >
@@ -8782,7 +7623,6 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
           
           <button
             onClick={() => handleContextMenuAction('duplicate')}
-            disabled={hasCompoundSelection}
             className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors"
           >
             <span>Duplicate</span>
@@ -8897,8 +7737,7 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             </button>
           )}
           <button
-            onClick={() => { handleCopySelection(); setClipContextMenu(null) }}
-            disabled={hasCompoundSelection}
+            onClick={() => { copySelectedClips(); setClipContextMenu(null) }}
             className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors"
             title="Copy selected clips to paste at playhead"
           >
@@ -8906,22 +7745,13 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             <span className="ml-auto text-sf-text-muted text-[10px]">Ctrl+C</span>
           </button>
           <button
-            onClick={() => { handlePasteAtPlayhead(); setClipContextMenu(null) }}
-            disabled={!activeTrackId || copiedClips.length === 0 || copiedClips.some(clip => clip.type === 'compound')}
+            onClick={() => { pasteClipsAtPlayhead(activeTrackId, getLivePlayhead(), assets); setClipContextMenu(null) }}
+            disabled={!activeTrackId || copiedClips.length === 0}
             className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             title="Paste at playhead on active track"
           >
             <span>Paste at Playhead</span>
             <span className="ml-auto text-sf-text-muted text-[10px]">Ctrl+V</span>
-          </button>
-          <button
-            data-testid="paste-attributes-open"
-            onClick={openPasteAttributes}
-            disabled={hasCompoundSelection || !selectedClipIds.length || !attributeClipboard?.clips?.length}
-            className="w-full px-3 py-1.5 text-left text-xs text-sf-text-primary hover:bg-sf-dark-700 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={attributeClipboard?.clips?.length ? 'Choose copied settings to replace on selected clips' : 'Copy a source clip first'}
-          >
-            <span>Paste Attributes…</span>
           </button>
           
           <div className="h-px bg-sf-dark-600 my-1" />
@@ -8933,23 +7763,8 @@ function Timeline({ onActiveToolChange, onStatusChange }) {
             <span>{rippleEditMode ? (clipContextSelectionIds.length > 1 ? `Ripple Delete ${clipContextSelectionIds.length} clips` : 'Ripple Delete') : (clipContextSelectionIds.length > 1 ? `Delete ${clipContextSelectionIds.length} clips` : 'Delete')}</span>
             <span className="ml-auto text-sf-text-muted text-[10px]">Del</span>
           </button>
-          </>}
         </div>
       )}
-
-      {pasteAttributesSession && <PasteAttributesDialog session={pasteAttributesSession} onClose={closePasteAttributes} />}
-      {smartReplaceSession && <SmartReplaceDialog session={smartReplaceSession} onClose={closeSmartReplace} />}
-      {compoundClipSession && <CompoundClipDialog session={compoundClipSession} onClose={closeCompoundCreate} />}
-      {uncompoundSession && <UncompoundDialog session={uncompoundSession} onClose={closeUncompound} />}
-      {trimState && trimPreview?.feedback && <TrimEdgePreview feedback={trimPreview.feedback} anchor={trimPreview.anchor} fps={timecodeFps} />}
-      {rippleTrimState && rippleTrimPreview?.feedback && <TrimEdgePreview mode="ripple" feedback={rippleTrimPreview.feedback} anchor={rippleTrimPreview.anchor} fps={timecodeFps} />}
-      {rippleTrimRefusal && <TrimEdgePreview mode="ripple" reason={rippleTrimRefusal.reason} anchor={rippleTrimRefusal.anchor} fps={timecodeFps} />}
-      {rollEditState && rollPreview?.feedback && <RollEditPreview feedback={rollPreview.feedback} anchor={rollPreview.anchor} fps={timecodeFps} />}
-      {rollRefusal && <RollEditPreview reason={rollRefusal.reason} anchor={rollRefusal.anchor} fps={timecodeFps} />}
-      {slipState && slipPreview?.feedback && <SlipEditPreview feedback={slipPreview.feedback} anchor={slipPreview.anchor} fps={timecodeFps} />}
-      {slipRefusal && <SlipEditPreview reason={slipRefusal.reason} anchor={slipRefusal.anchor} fps={timecodeFps} />}
-      {slideState && slidePreview?.feedback && <SlideEditPreview feedback={slidePreview.feedback} anchor={slidePreview.anchor} fps={timecodeFps} />}
-      {slideRefusal && <SlideEditPreview reason={slideRefusal.reason} anchor={slideRefusal.anchor} fps={timecodeFps} />}
 
       {moveOffsetDialogOpen && (
         <div

@@ -1,6 +1,5 @@
-import { useRef, useCallback, useContext, useEffect } from 'react'
+import { useRef, useCallback } from 'react'
 import { getAdjustmentValue } from '../utils/adjustments'
-import { InspectorSelectionContext, InspectorInput, InspectorValue, useInspectorField } from './InspectorSelectionControls'
 
 // A control surface over the existing per-range color params — no color model
 // of its own. Disc angle writes the range's hue, radius its saturation, and
@@ -25,20 +24,9 @@ const formatSigned = (value) => (value > 0 ? `+${Math.round(value)}` : `${Math.r
 function Wheel({ wheel, values, onApply }) {
   const discRef = useRef(null)
   const dragValuesRef = useRef(null)
-  const selection = useContext(InspectorSelectionContext)
-  const hueField = useInspectorField(`color.${wheel.huePath}`)
-  const satField = useInspectorField(`color.${wheel.satPath}`)
-  const blockedReason = hueField?.blockedReason || satField?.blockedReason
-  const mixed = hueField?.mixed || satField?.mixed
 
-  useEffect(() => {
-    const cancel = () => { dragValuesRef.current = null; selection?.endGesture() }
-    window.addEventListener('blur', cancel)
-    return () => { window.removeEventListener('blur', cancel); cancel() }
-  }, [selection?.endGesture])
-
-  const hue = hueField?.values?.[0] ?? (Number(getAdjustmentValue(values, wheel.huePath)) || 0)
-  const sat = satField?.values?.[0] ?? (Number(getAdjustmentValue(values, wheel.satPath)) || 0)
+  const hue = Number(getAdjustmentValue(values, wheel.huePath)) || 0
+  const sat = Number(getAdjustmentValue(values, wheel.satPath)) || 0
   const level = Number(getAdjustmentValue(values, wheel.levelPath)) || 0
 
   const radius = DISC_SIZE / 2
@@ -62,7 +50,6 @@ function Wheel({ wheel, values, onApply }) {
   }, [wheel])
 
   const handlePointerDown = (event) => {
-    if (blockedReason || event.button !== 0) return
     event.preventDefault()
     const updates = valuesFromPointer(event)
     dragValuesRef.current = updates
@@ -71,7 +58,7 @@ function Wheel({ wheel, values, onApply }) {
   }
 
   const handlePointerMove = (event) => {
-    if (!dragValuesRef.current || blockedReason) return
+    if (!dragValuesRef.current) return
     const updates = valuesFromPointer(event)
     dragValuesRef.current = updates
     onApply(updates)
@@ -79,14 +66,11 @@ function Wheel({ wheel, values, onApply }) {
 
   const handlePointerUp = () => {
     if (!dragValuesRef.current) return
-    const updates = dragValuesRef.current
+    onApply(dragValuesRef.current, true)
     dragValuesRef.current = null
-    if (!blockedReason) onApply(updates, true)
-    selection?.endGesture()
   }
 
   const handleDiscReset = () => {
-    if (blockedReason) return
     onApply({ [wheel.huePath]: 0, [wheel.satPath]: 0 }, true)
   }
 
@@ -95,37 +79,30 @@ function Wheel({ wheel, values, onApply }) {
       <div className="flex justify-center">
         <div
           ref={discRef}
-          role="group"
-          aria-label={`${wheel.label} color wheel`}
-          aria-disabled={Boolean(blockedReason)}
-          data-color-wheel={wheel.key}
-          data-mixed={mixed || undefined}
           className="relative rounded-full border border-sf-dark-600 cursor-crosshair"
-          style={{ width: DISC_SIZE, height: DISC_SIZE, background: DISC_BACKGROUND, touchAction: 'none', ...(blockedReason ? { opacity: 0.45, cursor: 'not-allowed' } : {}) }}
+          style={{ width: DISC_SIZE, height: DISC_SIZE, background: DISC_BACKGROUND, touchAction: 'none' }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
-          onLostPointerCapture={handlePointerUp}
           onDoubleClick={handleDiscReset}
-          title={blockedReason || (mixed ? 'Mixed hues or saturation. Drag to set both on selected clips. Double-click to reset.' : 'Drag to push the range toward a hue. Double-click to reset.')}
+          title="Drag to push the range toward a hue. Double-click to reset."
         >
-          {!mixed && <div
+          <div
             className="absolute w-[11px] h-[11px] rounded-full border-[1.5px] border-white bg-black/40 pointer-events-none shadow-[0_0_3px_rgba(0,0,0,0.8)]"
             style={{ left: puckX, top: puckY, transform: 'translate(-50%, -50%)' }}
-          />}
+          />
         </div>
       </div>
       <div className="text-center mt-1">
         <div className="text-[10px] text-sf-text-secondary font-medium leading-tight">{wheel.label}</div>
         <div className="text-[9px] text-sf-text-muted leading-tight">{wheel.sub}</div>
         <div className="text-[9px] text-sf-text-muted tabular-nums leading-tight">
-          {mixed ? 'Mixed' : `H ${formatSigned(hue)}° · S ${Math.round(sat)}%`}
+          {`H ${formatSigned(hue)}° · S ${Math.round(sat)}%`}
         </div>
       </div>
       <div className="mt-1">
-        <InspectorInput
-          inspectorProperty={`color.${wheel.levelPath}`}
+        <input
           type="range"
           min={-100}
           max={100}
@@ -139,7 +116,7 @@ function Wheel({ wheel, values, onApply }) {
         />
         <div className="flex justify-between text-[9px] text-sf-text-muted">
           <span>{wheel.levelLabel}</span>
-          <span className="tabular-nums"><InspectorValue property={`color.${wheel.levelPath}`}>{formatSigned(level)}</InspectorValue></span>
+          <span className="tabular-nums">{formatSigned(level)}</span>
         </div>
       </div>
     </div>

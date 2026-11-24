@@ -1,6 +1,3 @@
-import { normalizeAudioVolumeEnvelope, shiftAudioVolumeEnvelope } from './audioVolumeEnvelope.mjs'
-import { normalizeAudioEq } from './audioEq.mjs'
-
 const isVideoBackedAudioClip = (clip, track) => (
   clip?.type === 'video' && track?.type === 'audio'
 )
@@ -55,8 +52,6 @@ export function buildAudioClipSplitState(clip, track, asset, pieceDurations = {}
       gainDb: clip?.gainDb,
       fadeIn: clampFadeToPiece(clip?.fadeIn, pieceDurations.left),
       fadeOut: 0,
-      ...(clip?.volumeEnvelope != null ? { volumeEnvelope: normalizeAudioVolumeEnvelope(clip.volumeEnvelope) } : {}),
-      ...(clip?.audioEq != null ? { audioEq: normalizeAudioEq(clip.audioEq) } : {}),
       ...(hasReverseSplitRange ? { trimStart: reverseBoundary, trimEnd: upperTrim } : {}),
     },
     rightClipOptions: {
@@ -66,8 +61,6 @@ export function buildAudioClipSplitState(clip, track, asset, pieceDurations = {}
       sourceTimeScale: normalizedSourceScale,
       speed: normalizedSpeed,
       reverse: clip?.reverse === true,
-      ...(clip?.volumeEnvelope != null ? { volumeEnvelope: shiftAudioVolumeEnvelope(clip, leftDuration) } : {}),
-      ...(clip?.audioEq != null ? { audioEq: normalizeAudioEq(clip.audioEq) } : {}),
       ...(hasReverseSplitRange ? { trimStart: lowerTrim, trimEnd: reverseBoundary } : {}),
       ...(Number.isFinite(sourceFps) && sourceFps > 0 ? { sourceFps } : {}),
       ...(Number.isFinite(timelineFps) && timelineFps > 0 ? { timelineFps } : {}),

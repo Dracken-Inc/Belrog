@@ -1,49 +1,5 @@
 # Changelog
 
-## v0.5.0 (Belrog 0.5.0) — 2026-11-24
-
-### A track in, test one-shots out
-- **Script from audio.** Generate → Music Video now has a **Script from audio** button. Pick an m4a, mp3, wav or flac and Belrog reads the track's length plus the lyric tags the file carries, cuts the song into shots that cover it with no gaps, and writes the director script into the script box. No prompt writing before the first cut.
-- **Same file, same script.** Tiling is deterministic: preferred shot length 5s, hard floor 3.5s, shot boundaries land on lyric onsets where the file has them, and the last shot ends exactly at the track duration.
-- **No lyric, no invented beat.** Instrumental sections are typed as b-roll and the prompts say there is no lyric cue, instead of pasting a placeholder phrase into the keyframe text.
-- **Test one-shots from the console.** `npm run oneshot:audio -- --audio song.m4a` prints the shot table and queues nothing. Add `--limit 3 --run` to queue only the first three H3 clips, or `--max-seconds 60` for a minute. Whole-track rendering is opt-in with `--full`; the default cannot run away with the GPU. Runs land in `~/h3-oneshot-runs/audio_<timestamp>/` with `script.txt`, `plan.json` and a log.
-- **A cut excerpt keeps the clock.** Limiting a run cuts a matching audio excerpt with ffmpeg first, then tiles that excerpt, so the script and the audio always describe the same length.
-
-### Repairs carried over from the 0.4.87 merge
-- **Director Script tab is back.** The LTX planner tab (perchance.org/belrog) was deleted when upstream's `App.jsx` replaced ours. The tab, its iframe, the validated script intake and the brief handshake are restored.
-- **The received script now lands somewhere.** Generate → Music Video listens for `director-script-received` again, so a script sent from the planner fills the script box instead of disappearing.
-- **Two-person identity mapping and the Qwen keyframe prefix are back**, with the negative prompt actually passed to the image-edit workflow. The v0.4.87 note said these survived the merge; they did not. This corrects it.
-- **A new guard for in-file features.** `tests/featureWiring.test.cjs` now reads the container files directly for the director tab, the SSH tunnel handlers and the remote-server settings, because code inside `App.jsx` leaves no import-graph trace when that file is replaced.
-
-### Notes
-- The version moves to 0.5.0 because audio intake is now a product workflow rather than a library.
-- Known limit: the in-app button writes the script; rendering test clips runs on the desktop rig. The H3 chain engine is not part of the app's job queue yet — that is the next step.
-
-## v0.4.87 (Belrog 0.4.87) — 2026-11-23
-
-### The upstream base is back: Belrog 0.4.1 merged in, with the Belrog work re-applied on top
-- **Merged upstream 0.4.1 — 336 commits of editor work this fork never had — and replayed six months of Belrog work on top of it.** 376 commits in this release. Wherever code conflicted the upstream version became the base, and Belrog's edits inside those shared files were replayed one work package at a time. Each replay was checked by reading the result, because a blanket `git apply` rollback had already produced two false-greens during the merge. Full audit trail: `MERGE_PLAN.md`.
-- **What Belrog kept.** The one-shot H3 engine (headless chain runner, script→clips compiler, disk-truth watcher, smoke-all), Suno intake (m4a to tiled director script, deterministic and gapless by construction), the final-artifact integrity gate that will not mark a render `verified` unless the audio stream and duration match the song, the Cast/asset-library/director-legend layer including two-person identity mapping, the lyrics-timed shot grid, the AutoChainAudio slot contract with live `object_info` validation, the Whisper caption engine, and the MCP action set (134 actions, a superset of the 128 Belrog had).
-- **What upstream brings.** Six months of editor work we did not have: captions, audio mix, export paths, and the GPU compositor.
-- **Still local-mode.** No account service, no spending gates, no cloud router — the desktop app talks to your local ComfyUI and nothing else. Upstream's commercial files are in the tree, inert; no Belrog feature depends on them.
-
-### Fixed while completing the merge
-- **Nearest-chorus-repeat beat sync.** `findTimedLyricLineByText` had lost its `nearSeconds` parameter to the merge, so lyric matching in the shot grid stopped preferring the line nearest the beat. Parameter and call site restored to the upstream contract.
-- **Provider status banner.** The owner-metered candidate banner and the `Provider status unavailable` fallback existed as a contract upstream with no UI attached. Both now render.
-- **Settings tab and preload aliases.** The workflow-setup settings tab, plus the preload `invoke` and flat-alias bridges several panels call through.
-- **Compound audio, export cancel, and connected-agent editing** clusters that the merge had eaten.
-
-### Release pipeline
-- **Unsigned Windows builds no longer hang for six hours.** `package.json` carries upstream's `azureSignOptions`. With no Azure signing secrets configured on this repository, electron-builder tried to install the `TrustedSigning` PowerShell module itself and the job sat there until the six-hour runner timeout killed it. The workflow now removes `azureSignOptions` whenever signing is off, which is what pre-merge Belrog did.
-- **The finished-deb check no longer hard-codes upstream's file names.** It asserted `velorn.png` and `velorn.desktop`, so every Belrog deb — which installs `belrog.png` and `belrog.desktop` — failed with "missing the desktop launcher". It now checks the things that actually matter: exactly one launcher, one icon name, every file world-readable, and the icon inventory matching what was prepared, whatever the package is called.
-- **macOS is skipped when Apple signing secrets are absent**, because an unsigned `.app` will not launch. Same behaviour as v0.4.86.
-
-### Known in this release
-- **Nine test failures are red on upstream's own tree** and were deliberately not chased: `comfyRouterPackaged` ×5, `exportPresetLibrary` ×3 (stale electron stubs), `localAgentDesktopChatHarness` ×3 (harness and prompt shipped out of sync upstream). Classification in `MERGE_PLAN.md` §9.
-- **Artifacts are unsigned.** No Azure Trusted Signing secrets exist on this repository, so Windows builds carry no Authenticode signature and SmartScreen will warn on first run.
-- **The runtime packaging gate has no linux-arm64 FFmpeg pin.** Upstream publishes native-media pins for linux-x64 and darwin only. This affects packaging on a Spark build; the host FFmpeg and the runtime path are unaffected.
-- **Linux packages do not embed the optional `velo-codex-runtime`.** Upstream stages it at `../runtime`, which does not exist in this repository, so electron-builder warns and skips it. The engine resolves its fallback path at runtime.
-
 ## v0.4.86 (Belrog 0.4.86 — hotfix 0.4.8.6) — 2026-10-03
 
 ### Two-person keyframes: face mapping and floating text — proven by split testing

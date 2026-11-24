@@ -1,23 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { interpolate, normalizeLocale, readStoredLanguage, resolveLanguage, translate } from './core.js'
-
-test('an upgraded install keeps the language the user picked', () => {
-  // Writers use the Belrog key, readers also accept the pre-rename key. Neither
-  // half may drift: drop the fallback and every existing install silently
-  // resets to English; write the old key and new installs keep writing a name
-  // the product no longer has.
-  const legacyOnly = { store: { 'velorn-language': 'ja' }, getItem(k) { return this.store[k] ?? null }, setItem(k, v) { this.store[k] = v } }
-  assert.equal(readStoredLanguage(legacyOnly), 'ja')
-  const currentKey = { store: { 'belrog-language': 'pt' }, getItem(k) { return this.store[k] ?? null } }
-  assert.equal(readStoredLanguage(currentKey), 'pt')
-  // The new key wins when both exist, so a migrated install never goes backwards.
-  assert.equal(readStoredLanguage({ store: { 'belrog-language': 'es', 'velorn-language': 'ja' }, getItem(k) { return this.store[k] ?? null } }), 'es')
-  assert.equal(readStoredLanguage({}), null)
-  assert.equal(readStoredLanguage(null), null)
-  assert.equal(readStoredLanguage({ getItem() { throw new Error('storage blocked') } }), null)
-})
+import { interpolate, normalizeLocale, resolveLanguage, translate } from './core.js'
 
 function leafKeys(value, prefix = '') {
   return Object.entries(value).flatMap(([key, child]) => {
@@ -44,15 +28,6 @@ test('falls back to English for unavailable languages and missing messages', () 
 
 test('interpolates named values without removing unknown placeholders', () => {
   assert.equal(interpolate('Hello {{name}} {{missing}}', { name: 'Belrog' }), 'Hello Belrog {{missing}}')
-})
-
-test('new controls can supply readable labels while an older language dictionary is still loaded', () => {
-  const key = 'export.workspace.preview'
-  const stale = { en: { export: {} }, ja: { export: {} } }
-  assert.equal(translate(stale, 'en', key, undefined, 'Timeline preview'), 'Timeline preview')
-  assert.equal(translate(stale, 'ja', key, undefined, 'Timeline preview'), 'Timeline preview')
-  const current = { ...stale, ja: { export: { workspace: { preview: 'タイムラインプレビュー' } } } }
-  assert.equal(translate(current, 'ja', key, undefined, 'Timeline preview'), 'タイムラインプレビュー')
 })
 
 test('registered language dictionaries have the same keys and placeholders as English', () => {

@@ -86,8 +86,6 @@ function getBuildTimingContract(clip, timelineState, timelineFps, sourceFps) {
 }
 
 export async function buildOpticalFlowCache(clipId, options = {}) {
-  const throwIfCanceled = () => { if (options.signal?.aborted) throw new Error('Optical Flow cancelled') }
-  throwIfCanceled()
   if (activeBuilds.has(clipId)) {
     throw new Error('Optical-flow analysis is already running for this clip.')
   }
@@ -97,7 +95,6 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
 
   const timelineState = useTimelineStore.getState()
   const projectState = useProjectStore.getState()
-  const sourceTimelineId = projectState.currentTimelineId
   const clip = timelineState.clips.find((item) => item.id === clipId)
   if (!clip || clip.type !== 'video') throw new Error('Select a video clip to build Optical Flow.')
   if (clip.reverse) throw new Error('Optical Flow does not support reversed clips yet.')
@@ -114,25 +111,12 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   if (asset?.settings?.hasAlpha === true) {
     throw new Error('Optical Flow does not support transparent video yet. Use Frame sampling for this clip.')
   }
-  const assertSetupCurrent = () => {
-    throwIfCanceled()
-    const currentProject = useProjectStore.getState()
-    const currentTimeline = useTimelineStore.getState()
-    if (currentProject.currentProjectHandle !== projectPath || currentProject.currentTimelineId !== sourceTimelineId
-      || currentTimeline.timelineSessionId !== timelineState.timelineSessionId
-      || currentTimeline.clips.find(item => item.id === clipId) !== clip
-      || useAssetsStore.getState().getAssetById(clip.assetId) !== asset) {
-      throw new Error('The source clip changed while preparing Optical Flow. Start it again from the intended timeline.')
-    }
-  }
 
   const sourcePath = await resolveAssetSourcePath(projectPath, asset)
-  assertSetupCurrent()
   if (!sourcePath) throw new Error('Optical Flow requires a local source file.')
   if (window.electronAPI?.exists && !(await window.electronAPI.exists(sourcePath))) {
     throw new Error('The source video is offline. Relink it before building Optical Flow.')
   }
-  assertSetupCurrent()
 
   const timelineFps = Number(projectState.getCurrentTimelineSettings?.()?.fps)
     || Number(timelineState.timelineFps)
@@ -157,9 +141,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   }
 
   const cacheDirectory = await window.electronAPI.pathJoin(projectPath, CACHE_DIR)
-  assertSetupCurrent()
   const createResult = await window.electronAPI.createDirectory(cacheDirectory)
-  assertSetupCurrent()
   if (createResult?.success === false) {
     throw new Error(createResult.error || 'Could not create the project cache folder.')
   }
@@ -168,9 +150,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   const filename = `optical_flow_${safeFilename(clip.id)}_${suffix}.mp4`
   const relativePath = `${CACHE_DIR}/${filename}`
   const outputPath = await window.electronAPI.pathJoin(projectPath, relativePath)
-  assertSetupCurrent()
   const sourceSignature = await buildSourceSignature(sourcePath)
-  assertSetupCurrent()
   if (!sourceSignature) {
     throw new Error('Belrog could not verify the source file before building Optical Flow. Relink it and try again.')
   }
@@ -178,7 +158,7 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   const controller = new AbortController()
   const buildContext = {
     projectPath,
-    timelineId: sourceTimelineId,
+    timelineId: projectState.currentTimelineId,
     timelineSessionId: timelineState.timelineSessionId,
     clipId,
     assetId: clip.assetId,
@@ -221,9 +201,6 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
     window.electronAPI.cancelOpticalFlowCache?.(jobId).catch(() => {})
   }
   controller.signal.addEventListener('abort', abortNative, { once: true })
-  const abortFromCaller = () => controller.abort()
-  options.signal?.addEventListener('abort', abortFromCaller, { once: true })
-  if (options.signal?.aborted) controller.abort()
   const unsubscribeTimeline = useTimelineStore.subscribe((state) => {
     if (state.timelineSessionId !== buildContext.timelineSessionId) {
       controller.abort()
@@ -249,7 +226,6 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
   let completedOutputShouldBeRemoved = false
 
   try {
-    if (controller.signal.aborted) throw new Error('Optical Flow cancelled')
     const result = await window.electronAPI.generateOpticalFlowCache({
       jobId,
       projectPath,
@@ -286,11 +262,6 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
     const actualSourceEnd = Number(result.sourceEnd)
     const actualTargetFps = Number(result.targetFps) || targetFps
     const url = await getProjectFileUrl(projectPath, relativePath)
-    if (controller.signal.aborted) throw new Error('Optical Flow cancelled')
-    const currentBuildClip = getCurrentBuildClip(buildContext)
-    if (!currentBuildClip || getBuildTimingContract(currentBuildClip, useTimelineStore.getState(), timelineFps, sourceFps) !== buildContext.timingContract) {
-      throw new Error('The source clip changed before Optical Flow finished. The result was discarded.')
-    }
     if (!url) throw new Error('Belrog could not open the completed Optical Flow cache.')
     const completedCache = {
       version: OPTICAL_FLOW_CACHE_VERSION,
@@ -393,7 +364,6 @@ export async function buildOpticalFlowCache(clipId, options = {}) {
     }
     throw error
   } finally {
-    options.signal?.removeEventListener('abort', abortFromCaller)
     controller.signal.removeEventListener('abort', abortNative)
     if (typeof removeProgressListener === 'function') removeProgressListener()
     unsubscribeTimeline()
@@ -414,50 +384,30 @@ export async function hydrateOpticalFlowCaches(projectPath) {
   const timelineState = useTimelineStore.getState()
   const timelineSessionId = timelineState.timelineSessionId
   const assetsState = useAssetsStore.getState()
-  const candidates = timelineState.clips.flatMap(clip => clip?.type === 'compound'
-    ? (Array.isArray(clip.compound?.document?.clips) ? clip.compound.document.clips : []).map(child => ({ clip: child, parentId: clip.id }))
-    : [{ clip, parentId: null }])
-    .filter(({ clip }) => clip?.type === 'video' && clip?.opticalFlowCache?.path && clip.opticalFlowCache.status === 'hydrating')
+  const candidates = timelineState.clips.filter((clip) => clip?.type === 'video' && clip?.opticalFlowCache?.path)
 
-  for (const { clip, parentId } of candidates) {
+  for (const clip of candidates) {
     const cache = clip.opticalFlowCache
-    const sourceIdentity = getAssetSourceIdentity(assetsState.getAssetById(clip.assetId))
-    const findCurrentClip = state => {
-      const clips = parentId
-        ? state.clips.find(parent => parent.id === parentId && parent.type === 'compound')?.compound?.document?.clips || []
-        : state.clips
-      return clips.find(item => item.id === clip.id && item.assetId === clip.assetId)
-    }
-    const stillCurrentSession = () => {
-      const currentTimeline = useTimelineStore.getState()
-      const currentProjectPath = useProjectStore.getState().currentProjectHandle
-      const currentClip = findCurrentClip(currentTimeline)
-      return currentTimeline.timelineSessionId === timelineSessionId
-        && (!currentProjectPath || currentProjectPath === projectPath)
-        && currentClip?.opticalFlowCache?.path === cache.path
-        && currentClip.opticalFlowCache?.status === 'hydrating'
-        && !currentClip.opticalFlowCache?.jobId
-        && getAssetSourceIdentity(useAssetsStore.getState().getAssetById(clip.assetId)) === sourceIdentity
-    }
-    const updateCache = patch => {
-      if (!stillCurrentSession()) return
-      if (!parentId) { useTimelineStore.getState().updateOpticalFlowCache(clip.id, patch); return }
-      useTimelineStore.setState(state => ({ clips: state.clips.map(parent => parent.id !== parentId ? parent : {
-        ...parent, compound: { ...parent.compound, document: { ...parent.compound.document,
-          clips: parent.compound.document.clips.map(child => child.id !== clip.id ? child : {
-            ...child, opticalFlowCache: { ...child.opticalFlowCache, ...patch },
-          }),
-        } },
-      }) }))
-    }
     try {
-      if (!stillCurrentSession()) continue
+      const stillCurrentSession = () => {
+        const currentTimeline = useTimelineStore.getState()
+        const currentProjectPath = useProjectStore.getState().currentProjectHandle
+        const currentClip = currentTimeline.clips.find(
+          (item) => item.id === clip.id && item.assetId === clip.assetId
+        )
+        return currentTimeline.timelineSessionId === timelineSessionId
+          && (!currentProjectPath || currentProjectPath === projectPath)
+          && currentClip?.opticalFlowCache?.path === cache.path
+          && currentClip.opticalFlowCache?.status === 'hydrating'
+          && !currentClip.opticalFlowCache?.jobId
+      }
+      if (!stillCurrentSession()) return
       if (
         cache.version !== OPTICAL_FLOW_CACHE_VERSION
         || cache.engine !== OPTICAL_FLOW_CACHE_ENGINE
         || cache.modelName !== OPTICAL_FLOW_CACHE_MODEL
       ) {
-        updateCache({
+        useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
           status: 'stale',
           progress: 0,
           url: undefined,
@@ -466,7 +416,7 @@ export async function hydrateOpticalFlowCaches(projectPath) {
         continue
       }
       if (!isSafeOpticalFlowCachePath(cache.path)) {
-        updateCache({
+        useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
           status: 'failed',
           progress: 0,
           url: undefined,
@@ -475,10 +425,10 @@ export async function hydrateOpticalFlowCaches(projectPath) {
         continue
       }
       const absoluteCachePath = await window.electronAPI.pathJoin(projectPath, cache.path)
-      if (!stillCurrentSession()) continue
+      if (!stillCurrentSession()) return
       if (!(await window.electronAPI.exists(absoluteCachePath))) {
-        if (!stillCurrentSession()) continue
-        updateCache({
+        if (!stillCurrentSession()) return
+        useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
           status: 'failed',
           progress: 0,
           url: undefined,
@@ -490,9 +440,9 @@ export async function hydrateOpticalFlowCaches(projectPath) {
       const asset = assetsState.getAssetById(clip.assetId)
       const sourcePath = await resolveAssetSourcePath(projectPath, asset)
       const currentSignature = sourcePath ? await buildSourceSignature(sourcePath) : null
-      if (!stillCurrentSession()) continue
+      if (!stillCurrentSession()) return
       if (!cache.sourceSignature || cache.sourceSignature !== currentSignature) {
-        updateCache({
+        useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
           status: 'stale',
           progress: 0,
           url: undefined,
@@ -502,16 +452,27 @@ export async function hydrateOpticalFlowCaches(projectPath) {
       }
 
       const url = await getProjectFileUrl(projectPath, cache.path)
-      if (!stillCurrentSession()) continue
-      updateCache({
+      if (!stillCurrentSession()) return
+      useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
         status: url ? 'ready' : 'failed',
         progress: url ? 100 : 0,
         url: url || undefined,
         error: url ? null : 'The Optical Flow cache could not be opened.',
       })
     } catch (error) {
-      if (!stillCurrentSession()) continue
-      updateCache({
+      const currentTimeline = useTimelineStore.getState()
+      const currentProjectPath = useProjectStore.getState().currentProjectHandle
+      const currentClip = currentTimeline.clips.find(
+        (item) => item.id === clip.id && item.assetId === clip.assetId
+      )
+      if (
+        currentTimeline.timelineSessionId !== timelineSessionId
+        || (currentProjectPath && currentProjectPath !== projectPath)
+        || currentClip?.opticalFlowCache?.path !== cache.path
+        || currentClip.opticalFlowCache?.status !== 'hydrating'
+        || currentClip.opticalFlowCache?.jobId
+      ) return
+      useTimelineStore.getState().updateOpticalFlowCache(clip.id, {
         status: 'failed',
         progress: 0,
         url: undefined,

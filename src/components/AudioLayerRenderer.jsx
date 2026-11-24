@@ -1,16 +1,8 @@
 import { useEffect, useRef, useMemo } from 'react'
 import useTimelineStore from '../stores/timelineStore'
-import { getCompoundRenderState } from '../utils/compoundPlayback.mjs'
 import useAssetsStore from '../stores/assetsStore'
 import { getAudioClipFadeGain } from '../utils/audioClipFades'
 import { getAudioClipLinearGain } from '../utils/audioClipGain'
-import { getAudioVolumeEnvelopeGain } from '../utils/audioVolumeEnvelope.mjs'
-import { updatePreviewVolumeEnvelope } from '../utils/audioVolumeAutomation.mjs'
-import { useAudioDuckingPreview } from '../services/audioDuckingPreview'
-import { holdAudioPreviewEntry } from '../utils/audioPlaybackHold.mjs'
-import { getCurrentPlaybackJump } from '../utils/playbackJump.mjs'
-import { createAudioEqChain } from '../services/audioEqChain'
-import useAudioEqPreview from '../services/audioEqPreview'
 import {
   hasAudioSolo,
   isAudioTrackAudible,
@@ -66,8 +58,6 @@ function disposeAudioEntry(entry) {
   try {
     entry.sourceNode?.disconnect()
     entry.gainNode?.disconnect()
-    entry.envelopeGainNode?.disconnect()
-    entry.eqChain?.dispose()
   } catch (_) {}
 }
 
@@ -113,15 +103,10 @@ function requestAudioEntrySeek(entry, targetTime, nowMs = getNowMs()) {
 }
 
 function requestAudioEntryPlay(entry) {
-  if (!entry || entry.disposed) return
-  const transport = useTimelineStore.getState()
-  if (!transport.isPlaying || getCurrentPlaybackJump(transport)) {
-    entry.desiredPlaying = false
-    pauseAudioEntry(entry)
-    return
-  }
   if (
-    !entry.desiredPlaying
+    !entry
+    || entry.disposed
+    || !entry.desiredPlaying
     || entry.seekInFlight
     || entry.element.seeking
     || entry.element.readyState < 2
@@ -136,9 +121,7 @@ function requestAudioEntryPlay(entry) {
   entry.playPromise = playPromise
   playPromise.then(() => {
     if (entry.generation !== generation) return
-    const latestTransport = useTimelineStore.getState()
-    if (entry.disposed || !entry.desiredPlaying
-      || !latestTransport.isPlaying || getCurrentPlaybackJump(latestTransport)) {
+    if (entry.disposed || !entry.desiredPlaying) {
       pauseAudioEntry(entry)
     }
   }).catch((err) => {
@@ -168,7 +151,7 @@ function requestAudioEntryPlay(entry) {
  * meters from this graph via audioMixerGraph; audioInsertChain.js is the
  * shared DSP that export mixdowns run too):
  *
- *   clip source → clip EQ → clip gain (clip gain × fades) → volume envelope
+ *   clip source → clip gain (clip gain × fades)
  *     → track bus input → track inserts → track fader → track pan → track analyser
  *       → master bus input → master inserts
  *         → program gain (master fader, part of the program: export applies it too)
@@ -182,6 +165,7 @@ function requestAudioEntryPlay(entry) {
 function AudioLayerRenderer() {
   const audioElementsRef = useRef(new Map()) // clipId -> { element, currentSrc, sourceNode, gainNode, trackId }
   const trackBusesRef = useRef(new Map()) // trackId -> { input, chain, chainSignature, fader, analyser }
+  const latestPlaybackRef = useRef(null)
   const previousTimelineSampleRef = useRef(null)
   const entryEventHandlerRef = useRef(null)
   const audioContextRef = useRef(null)
@@ -191,7 +175,6 @@ function AudioLayerRenderer() {
   const programGainRef = useRef(null)
   const monitorGainRef = useRef(null)
 
-  const timelineState = useTimelineStore()
   const {
     clips,
     tracks,
@@ -200,17 +183,11 @@ function AudioLayerRenderer() {
     playbackRate,
     masterAudioVolume,
     masterAudioInserts,
-    timelineSessionId,
-  } = getCompoundRenderState(timelineState)
-  const playbackJumpToken = getCurrentPlaybackJump(timelineState)?.token || null
-  const audioIsPlaying = isPlaying && !playbackJumpToken
+  } = useTimelineStore()
 
   const assets = useAssetsStore(state => state.assets)
   const getAssetUrl = useAssetsStore(state => state.getAssetUrl)
   const volume = useAssetsStore(state => state.volume) // Monitor volume from assets store
-  const eqPreviewClip = useAudioEqPreview(state => state.clip)
-  const eqPreviewValue = useAudioEqPreview(state => state.eq)
-  const duckingPreview = useAudioDuckingPreview()
 
   useEffect(() => {
     let audioContext = null
@@ -268,14 +245,14 @@ function AudioLayerRenderer() {
       if (!entry || entry.disposed || audioElementsRef.current.get(entry.clipId) !== entry) return
 
       const nowMs = getNowMs()
-      const latest = useTimelineStore.getState()
+      const latest = latestPlaybackRef.current
       const clip = entry.clip
       if (!latest || !clip) return
       const clipStart = Number(clip.startTime) || 0
       const clipEnd = clipStart + Math.max(0, Number(clip.duration) || 0)
       const active = latest.playheadPosition >= clipStart && latest.playheadPosition < clipEnd
       entry.active = active
-      entry.desiredPlaying = Boolean(latest.isPlaying && !getCurrentPlaybackJump(latest) && active && !clip.reverse)
+      entry.desiredPlaying = Boolean(latest.isPlaying && active && !clip.reverse)
 
       if (eventType === 'error') {
         const failedUrl = entry.currentSrc
@@ -351,39 +328,12 @@ function AudioLayerRenderer() {
     }
   }, [])
 
-  // React/media readiness callbacks can run after a newer click has already
-  // changed the store. Stop sound and its audio-clock ramps synchronously so
-  // stale canplay/seeked/play promises cannot run ahead during decoder hold.
-  useEffect(() => useTimelineStore.subscribe((state, previous) => {
-    const jump = getCurrentPlaybackJump(state)
-    const previousJump = getCurrentPlaybackJump(previous)
-    const contextChanged = state.timelineSessionId !== previous.timelineSessionId
-      || state.compoundEditContext !== previous.compoundEditContext
-    if (contextChanged) {
-      for (const entry of audioElementsRef.current.values()) disposeAudioEntry(entry)
-      audioElementsRef.current.clear()
-      previousTimelineSampleRef.current = null
-      return
-    }
-    const newJump = jump && jump.token !== previousJump?.token
-    if (!newJump && !(previous.isPlaying && !state.isPlaying)) return
-    for (const entry of audioElementsRef.current.values()) {
-      holdAudioPreviewEntry(entry, {
-        timelineTime: state.playheadPosition,
-        contextTime: audioContextRef.current?.currentTime || 0,
-        contextState: audioContextRef.current?.state,
-        playbackRate: state.playbackRate,
-        resetPosition: Boolean(newJump),
-      })
-    }
-  }), [])
-
   useEffect(() => {
     const audioContext = audioContextRef.current
-    if (audioContext && audioContext.state === 'suspended' && audioIsPlaying) {
+    if (audioContext && audioContext.state === 'suspended' && isPlaying) {
       audioContext.resume().catch(() => {})
     }
-  }, [audioIsPlaying])
+  }, [isPlaying])
 
   // (Re)build the master insert chain when masterAudioInserts change
   const syncMasterChain = () => {
@@ -529,7 +479,7 @@ function AudioLayerRenderer() {
     const nextTimelineSample = {
       playheadPosition,
       playbackRate,
-      isPlaying: audioIsPlaying,
+      isPlaying,
       sampledAtMs: nowMs,
     }
     const timelineDiscontinuity = isAudioTimelineDiscontinuity(
@@ -538,6 +488,7 @@ function AudioLayerRenderer() {
       nowMs
     )
     previousTimelineSampleRef.current = nextTimelineSample
+    latestPlaybackRef.current = nextTimelineSample
 
     // Evict only clips outside the warm/retention window. This set is stable
     // during ordinary playback and avoids cold-starting a decoder at each cut.
@@ -602,8 +553,6 @@ function AudioLayerRenderer() {
           errorReported: false,
           sourceNode: null,
           gainNode: null,
-          envelopeGainNode: null,
-          eqChain: null,
           trackId: null,
           clipId: clip.id,
           clip: null,
@@ -631,16 +580,10 @@ function AudioLayerRenderer() {
             syncTrackChain(bus, track)
             const sourceNode = audioContext.createMediaElementSource(audioEl)
             const gainNode = audioContext.createGain()
-            const envelopeGainNode = audioContext.createGain()
-            const eqChain = createAudioEqChain(audioContext, clip.audioEq)
-            sourceNode.connect(eqChain.input)
-            eqChain.output.connect(gainNode)
-            gainNode.connect(envelopeGainNode)
-            envelopeGainNode.connect(bus.input)
+            sourceNode.connect(gainNode)
+            gainNode.connect(bus.input)
             entry.sourceNode = sourceNode
             entry.gainNode = gainNode
-            entry.envelopeGainNode = envelopeGainNode
-            entry.eqChain = eqChain
             entry.trackId = track.id
           } catch (err) {
             console.warn('Failed to connect preview audio through Web Audio:', err)
@@ -654,9 +597,8 @@ function AudioLayerRenderer() {
         if (bus) {
           try {
             syncTrackChain(bus, track)
-            const outputNode = entry.envelopeGainNode || entry.gainNode
-            outputNode.disconnect()
-            outputNode.connect(bus.input)
+            entry.gainNode.disconnect()
+            entry.gainNode.connect(bus.input)
             entry.trackId = track.id
           } catch (err) {
             console.warn('Failed to reroute clip audio to new track bus:', err)
@@ -665,16 +607,13 @@ function AudioLayerRenderer() {
       }
 
       const audioEl = entry.element
-      const envelopeClip = duckingPreview.clip === clip && duckingPreview.token === useTimelineStore.getState().playAround?.token
-        ? { ...clip, volumeEnvelope: duckingPreview.envelope } : clip
-      entry.eqChain?.update(eqPreviewClip === clip ? eqPreviewValue : clip.audioEq)
       entry.clip = clip
       entry.track = track
       entry.sourceUrl = sourceUrl
       entry.preferredUrl = preferredUrl
       entry.cacheUrl = asset?.playbackCacheUrl || null
       entry.active = active
-      entry.desiredPlaying = Boolean(audioIsPlaying && active && !clip.reverse)
+      entry.desiredPlaying = Boolean(isPlaying && active && !clip.reverse)
       if (!active) entry.startAlignmentAttempts = 0
       entry.disposed = false
 
@@ -720,21 +659,13 @@ function AudioLayerRenderer() {
 
       if (entry.gainNode) {
         entry.gainNode.gain.value = Math.max(0, clipGain)
-        updatePreviewVolumeEnvelope(entry, envelopeClip, {
-          localTime: clipTime,
-          contextTime: audioContextRef.current?.currentTime || 0,
-          contextState: audioContextRef.current?.state,
-          playbackRate,
-          playing: Boolean(audioIsPlaying && active && !reverse && playbackRate > 0),
-          discontinuity: timelineDiscontinuity || srcChanged,
-        })
         audioEl.volume = 1
       } else {
         // No Web Audio: approximate the whole chain on the element itself
-        // (EQ/inserts can't run here — gain staging only)
+        // (inserts can't run here — gain staging only)
         const trackGain = trackVolumeToLinearGain(track.volume ?? 100)
         const masterGain = trackVolumeToLinearGain(masterAudioVolume ?? 100)
-        const fallbackVolume = Math.max(0, Math.min(1, volume * clipGain * getAudioVolumeEnvelopeGain(envelopeClip, clipTime) * trackGain * masterGain))
+        const fallbackVolume = Math.max(0, Math.min(1, volume * clipGain * trackGain * masterGain))
         audioEl.volume = fallbackVolume
       }
 
@@ -761,7 +692,7 @@ function AudioLayerRenderer() {
         requestAudioEntrySeek(entry, clampedTime, nowMs)
       } else if (shouldCorrectAudioDrift({
         active,
-        isPlaying: audioIsPlaying,
+        isPlaying,
         isSeeking: entry.seekInFlight || audioEl.seeking,
         currentTime: audioEl.currentTime,
         expectedTime: clampedTime,
@@ -773,7 +704,7 @@ function AudioLayerRenderer() {
         requestAudioEntrySeek(entry, clampedTime, nowMs)
       } else if (
         active
-        && audioIsPlaying
+        && isPlaying
         && nowMs - entry.lastDriftCheckAtMs >= AUDIO_PREVIEW_DRIFT_CHECK_INTERVAL_MS
       ) {
         entry.lastDriftCheckAtMs = nowMs
@@ -785,7 +716,7 @@ function AudioLayerRenderer() {
         pauseAudioEntry(entry)
       }
     })
-  }, [audioPreviewCandidates, playheadPosition, isPlaying, audioIsPlaying, playbackJumpToken, timelineSessionId, playbackRate, getAssetUrl, assets, tracks, volume, masterAudioVolume, masterAudioInserts, eqPreviewClip, eqPreviewValue, duckingPreview])
+  }, [audioPreviewCandidates, playheadPosition, isPlaying, playbackRate, getAssetUrl, assets, tracks, volume, masterAudioVolume, masterAudioInserts])
 
   // Cleanup on unmount
   useEffect(() => {
