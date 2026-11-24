@@ -176,6 +176,19 @@ test('the builder greps for the same banner the patch compiles in', () => {
   assert.equal(expected[1], fromPatch)
 })
 
+test('the runtime trusts the patch that is actually in the tree', () => {
+  // A packaged runtime is only accepted when its PROVENANCE.json reports this
+  // exact hash, and build.py fills that field with the hash of the patch file it
+  // just applied. Editing the patch without re-pinning therefore makes the
+  // packaging gate refuse a perfectly good build, which is how v0.5.1 died: the
+  // brand sweep changed one line inside the patch and the pin kept pointing at
+  // the old bytes. The pin has to be derived from the file, never remembered.
+  const runtime = fs.readFileSync(path.join(repoRoot, 'electron', 'rifeRuntime.js'), 'utf8')
+  const pinned = runtime.match(/const RIFE_SOURCE_PATCH_SHA256 = '([0-9a-f]{64})'/)
+  assert.ok(pinned, 'electron/rifeRuntime.js must pin the source-patch hash')
+  assert.equal(pinned[1], hashFile(patchPath), 're-pin RIFE_SOURCE_PATCH_SHA256 to the edited patch')
+})
+
 test('Windows contract statically links the CRT and rejects helper DLL dependencies', () => {
   const result = runBuilder(['plan', '--platform', 'win32', '--arch', 'x64'])
   assert.equal(result.status, 0, result.stderr)
