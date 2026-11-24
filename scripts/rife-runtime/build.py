@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and stage Velorn's pinned, PNG-only RIFE runtime.
+"""Build and stage Belrog's pinned, PNG-only RIFE runtime.
 
 The builder deliberately avoids recursive submodules: the wrapper's obsolete
 libwebp revision is never fetched. Every source checkout and model/header input

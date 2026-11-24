@@ -39,12 +39,12 @@ jobs:
               body = body[:1800].rstrip() + "\n\nRelease notes continue on GitHub."
 
           title = name if not tag or tag in name else f"{name} ({tag})"
-          description = body or "The latest Velorn release is now available."
+          description = body or "The latest Belrog release is now available."
 
           payload = {
-              "username": "Velorn Releases",
+              "username": "Belrog Releases",
               "content": (
-                  f"New Velorn release is live: **{title}**\n\n"
+                  f"New Belrog release is live: **{title}**\n\n"
                   f"GitHub release:\n{url}\n\n"
                   f"Website download page:\n{website_url}"
               ),
