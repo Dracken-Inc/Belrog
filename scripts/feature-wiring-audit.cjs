@@ -27,7 +27,7 @@ const CRITICAL_FEATURES = [
   {
     name: 'Qwen image-edit prompt prefix',
     file: 'src/components/GenerateWorkspace.jsx',
-    mount: /\bQWEN_EDIT_PREFIX\b/,
+    mount: /\bQWEN_(?:KEYFRAME_)?EDIT_PREFIX\b/,
     why: 'without the prefix the model treats a keyframe edit as a fresh generation and ignores the reference face',
   },
   {
