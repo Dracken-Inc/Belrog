@@ -417,5 +417,28 @@ test('installed native FFmpeg and FFprobe match this host and minterpolate is av
   const result = verifyNativeMedia({ projectRoot: path.resolve(__dirname, '..') })
   assert.match(path.basename(result.ffmpegPath), /^ffmpeg(?:\.exe)?$/)
   assert.match(path.basename(result.ffprobePath), /^ffprobe(?:\.exe)?$/)
-  assert.equal(NATIVE_MEDIA_RELEASE_FILES['linux-x64'].ffmpeg.sha256, 'e7e7fb30477f717e6f55f9180a70386c62677ef8a4d4d1a5d948f4098aa3eb99')
+  // Hash what is actually installed and compare it to this machine's own pin.
+  // Naming another architecture's hash here would pass on every host while the
+  // binaries on the real one went unchecked.
+  const hostTarget = `${process.platform}-${process.arch}`
+  const pins = NATIVE_MEDIA_RELEASE_FILES[hostTarget]
+  assert.ok(pins, `no native media pins for ${hostTarget}`)
+  assert.equal(sha256File(result.ffmpegPath), pins.ffmpeg.sha256)
+  assert.equal(sha256File(result.ffprobePath), pins.ffprobe.sha256)
+})
+
+test('every machine we install on has FFmpeg and FFprobe pins', () => {
+  // npm hands every one of these a real FFmpeg at install time, so a missing pin
+  // does not fail the install, it fails the first export or slow-motion run on
+  // that machine, or the packaging gate that ships it. This list is what we
+  // support, not a reflection of the pins below, so deleting a pin fails here.
+  const supported = ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64', 'win32-x64']
+  assert.deepEqual(Object.keys(NATIVE_MEDIA_RELEASE_FILES).sort(), supported)
+  for (const target of supported) {
+    const pins = NATIVE_MEDIA_RELEASE_FILES[target]
+    for (const key of ['ffmpeg', 'ffprobe', 'readme', 'license']) {
+      assert.match(pins[key].sha256, /^[0-9a-f]{64}$/, `${target}.${key} must pin a sha256`)
+      assert.ok(Number.isInteger(pins[key].size) && pins[key].size > 0, `${target}.${key} must pin a size`)
+    }
+  }
 })

@@ -23,6 +23,19 @@ const NATIVE_MEDIA_RELEASE_FILES = Object.freeze({
     readme: Object.freeze({ size: 2235, sha256: '72f4b1b06d419d22ace6e7cc75f06826f90737345aa0b1736158929f4aacc537' }),
     license: Object.freeze({ size: 35147, sha256: '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903' }),
   }),
+  'linux-arm64': Object.freeze({
+    // ffmpeg-static and @derhuerst/ffprobe-static hand back the aarch64 build of
+    // the same John Van Sickle static release on an arm64 install, so a Spark
+    // install already contains the right binaries; only this pin was missing and
+    // the gate refused to call them trusted. Verified on spark-4afb: FFmpeg
+    // 7.0.2-static, ELF aarch64, and the app's exact
+    // minterpolate=fps=..:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:me=epzs:vsbmc=1:scd=fdiff
+    // command produced 60 fps frames from a 30 fps source.
+    ffmpeg: Object.freeze({ size: 51134160, sha256: '6bb182d0d75d23028db82e9e4f723ca69b853d055698486e6984ddb2c06fb8ce' }),
+    ffprobe: Object.freeze({ size: 50994160, sha256: 'd17ae9b4c297d48e2521ba14e417bb0537c6ff77c584cdbcd6bb0d8d0307a2e8' }),
+    readme: Object.freeze({ size: 2217, sha256: 'd6777d2fd276b23f0ac6666fa619e88ffe4826521881c7ff83836e30cb4acec2' }),
+    license: Object.freeze({ size: 35147, sha256: '8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903' }),
+  }),
   'win32-x64': Object.freeze({
     ffmpeg: Object.freeze({ size: 82797568, sha256: '04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00' }),
     ffprobe: Object.freeze({ size: 82668032, sha256: '3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4' }),
