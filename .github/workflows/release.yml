@@ -74,6 +74,13 @@ jobs:
       - name: Build application
         run: npm run build
 
+      # The unit tests that sit next to the code they cover (src/, electron/) are named
+      # by no other script, so before this gate they ran for nobody - not local npm
+      # test, not a release. This is the layer that would have caught the Cast panel
+      # shipping dead in 0.5.0.
+      - name: Verify tests that live beside their source
+        run: npm run test:co-located
+
       - name: Verify export scheduling
         run: npm run test:export-scheduler
 
