@@ -50,6 +50,15 @@ test('GenerateWorkspace actually passes the builder down', () => {
   assert.match(body, /absolutePath/, 'the asset must be resolved to its on-disk file')
 })
 
+test('a script name without an image yet still shows in the cast summary', () => {
+  // yoloMusicResolvedCast only holds entries that already have an image. The
+  // brief must show the rest as "to be cast" instead of dropping them, or a
+  // name the script plainly names looks like it was never in the video.
+  assert.match(easyMode, /const castSummary = useMemo\(/, 'the roster-aware cast summary is gone')
+  assert.match(easyMode, /\(to be cast\)/)
+  assert.match(easyMode, /Cast:<\/span> \{castSummary \|\| 'No cast yet'\}/, 'the brief must use the roster summary')
+})
+
 test('the audio intake service is the only place that decides lyrics', () => {
   const intake = read('src/services/musicVideoTrackIntake.mjs')
   assert.match(intake, /export function resolveTrackLyrics/, 'lyric ranking lives in one function')

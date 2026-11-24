@@ -1017,6 +1017,19 @@ export default function MusicVideoEasyMode({
   }), [includeDetailBroll, includeEnvironmentalBroll, includeStoryBroll, performancePassCount])
   const coverageSummary = getCoverageSummary(coveragePlan)
   const canBuildPlan = Boolean(String(yoloMusicScript || '').trim())
+  // The roster is the truth about who the video is about; yoloMusicResolvedCast
+  // only contains the ones that already have an image. Listing just the resolved
+  // set made a name the script clearly named look like it was never in the cast.
+  const castSummary = useMemo(() => {
+    const withImages = new Set((yoloMusicResolvedCast || []).map((entry) => entry?.id))
+    const rows = (yoloMusicCast || [])
+      .filter(Boolean)
+      .map((entry) => {
+        const name = String(entry?.slug || entry?.label || '').trim() || 'unnamed'
+        return withImages.has(entry?.id) ? name : `${name} (to be cast)`
+      })
+    return Array.from(new Set(rows)).join(', ')
+  }, [yoloMusicCast, yoloMusicResolvedCast])
   // 0.5.0: the track is the brief. Read the file's clock and lyric tags, then
   // write the shot list from that — no prompt writing before the first cut.
   const [audioIntakeBusy, setAudioIntakeBusy] = useState(false)
@@ -3221,7 +3234,7 @@ export default function MusicVideoEasyMode({
           </div>
           <div className="mt-4 rounded-lg border border-sf-dark-700 bg-sf-dark-950/70 p-3 text-xs leading-5 text-sf-text-secondary">
             <div><span className="text-sf-text-muted">Audio:</span> {getMusicVideoAudioKindOption(yoloMusicAudioKind)?.label || 'Not selected'}</div>
-            <div><span className="text-sf-text-muted">Cast:</span> {yoloMusicResolvedCast.length > 0 ? yoloMusicResolvedCast.map((entry) => entry.slug || entry.label).join(', ') : 'No resolved cast yet'}</div>
+            <div><span className="text-sf-text-muted">Cast:</span> {castSummary || 'No cast yet'}</div>
           </div>
           {briefStatus && <div className="mt-3 text-xs text-emerald-200">{briefStatus}</div>}
         </div>
