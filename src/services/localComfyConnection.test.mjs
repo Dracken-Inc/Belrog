@@ -153,3 +153,34 @@ test('saveLocalComfyConnectionPort keeps local behavior byte-identical (loopback
   assert.equal(rejected.success, false)
   assert.match(rejected.error, /localhost\/127\.0\.0\.1 only/)
 })
+
+test('the offline probe targets the tunnel port, not the saved one', async () => {
+  // v0.5.2 on Henry's laptop: the status bar read http://127.0.0.1:8192 right
+  // next to "ComfyUI is not running". Every display path resolves the effective
+  // port, so the bar was right; checkLocalComfyConnection probed `cachedPort`
+  // instead, and that probe is the only thing that sets isConnected. The tunnel
+  // had moved off 8188 onto 8192, so Belrog knocked on a dead port and called
+  // a live ComfyUI offline.
+  const probed = []
+  installWindow({
+    remoteSettings: { enabled: true, tunnelLocalPort: 8188 },
+    tunnelStatus: {
+      active: true,
+      settings: { tunnelLocalPort: 8192, tunnelRequestedPort: 8188 },
+      localPort: 8192,
+      requestedPort: 8188,
+    },
+  })
+  globalThis.window.electronAPI.checkLocalComfyConnection = async ({ port }) => {
+    probed.push(port)
+    return { ok: true, status: 200, httpBase: `http://127.0.0.1:${port}`, port }
+  }
+  const conn = await import('./localComfyConnection.js')
+  await conn.hydrateLocalComfyConnection()
+  assert.equal(conn.getLocalComfyHttpBaseSync(), 'http://127.0.0.1:8192')
+
+  const result = await conn.checkLocalComfyConnection()
+  assert.deepEqual(probed, [8192], 'the health probe must target the port the tunnel bound')
+  assert.equal(result.ok, true)
+  assert.equal(result.port, 8192)
+})

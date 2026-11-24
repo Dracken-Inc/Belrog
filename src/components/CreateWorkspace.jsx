@@ -75,7 +75,12 @@ const release = picture => { if (picture?.owned && picture.url) URL.revokeObject
 // One screen, two tabs: Create makes pictures and clips, Sound makes voice,
 // music and effects. They share the key, the prices and the whole request flow.
 // The Create and Sound tabs: the same box, Sound with its own kinds and models.
-export default function CreateWorkspace() {
+// mode is 'create' or 'sound' - App.jsx passes it, and the whole Sound tab is this one
+// prop. Taking the GPU-sharing button out had emptied this parameter list along with the
+// onShare prop, which left `mode` undeclared and made every render of this component throw
+// "ReferenceError: mode is not defined" into the workspace error boundary. Nothing else
+// noticed: .jsx is not scanned by the identifier gate and no test rendered these tabs.
+export default function CreateWorkspace({ mode = 'create' }) {
   const sound = mode === 'sound'
   const api = typeof window !== 'undefined' ? window.electronAPI?.comfyRouter : null
   const [models, setModels] = useState([])

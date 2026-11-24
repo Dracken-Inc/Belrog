@@ -280,7 +280,14 @@ async function persistLocalComfyConnectionPort(input, isCurrent) {
 
 export async function checkLocalComfyConnection(options = {}) {
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 4500
-  const maybePort = options.port ?? cachedPort
+  // The effective port, not cachedPort. Every display path (status bar, chip,
+  // generation) resolves through resolveEffectivePort, so a tunnel that had to
+  // bind 8192 shows 8192; this probe is the one thing that decided whether
+  // Belrog said "ComfyUI offline", and it was reading the saved setting. On
+  // Henry's machine the tunnel came up on 8192 while 8188 was still held by
+  // dead listeners, so the bar read http://127.0.0.1:8192 next to
+  // "ComfyUI is not running" - it was probing a port nothing was behind.
+  const maybePort = options.port ?? resolveEffectivePort()
   const normalizedPort = normalizePort(maybePort)
   if (!normalizedPort) {
     return { ok: false, error: 'Invalid local ComfyUI port.' }

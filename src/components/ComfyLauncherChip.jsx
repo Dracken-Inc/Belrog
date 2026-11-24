@@ -564,7 +564,7 @@ function ComfyLauncherChip() {
               </div>
               <div className="text-[11px] text-sf-text-muted truncate">
                 {remoteStatus?.active
-                  ? `Connected — ${remoteSettings.sshHost}:${remoteSettings.tunnelRemotePort} → local :${remoteSettings.tunnelLocalPort}`
+                  ? `Connected — ${remoteSettings.sshHost}:${remoteSettings.tunnelRemotePort} → local :${remoteStatus.localPort || remoteSettings.tunnelLocalPort}${remoteStatus.localPort && remoteStatus.localPort !== remoteSettings.tunnelLocalPort ? ` (moved from ${remoteStatus.requestedPort || remoteSettings.tunnelLocalPort})` : ''}`
                   : remoteSettings.sshHost
                     ? `Not connected — ${remoteSettings.sshUsername || 'user'}@${remoteSettings.sshHost}`
                     : 'No remote server configured (Settings → Remote Server)'}
