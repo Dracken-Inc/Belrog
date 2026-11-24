@@ -91,3 +91,18 @@ and then queue.
 - Flow gate on the built bundle: step 2 contains the planner iframe, and removing
   it from the step fails the gate — same fixture pattern as the existing browser
   checks.
+
+## What shipped in 0.6.1
+
+| Change | Proof |
+| --- | --- |
+| Step-1 asset is the file that gets probed (no second picker) | `musicVideoTrackIntake.test.mjs` "the step-1 asset is the file that gets probed"; `tests/musicVideoWiringContract.test.mjs` W1–W6, W4 mutation (button opens a picker again) goes red |
+| Lyric source ranked: step-1 timed SRT/LRC → file tags → pasted → none, and named in the script header | `musicVideoTrackIntake.test.mjs` (ranking + CONTROL: remove the lyrics argument ⇒ two reds) |
+| Local generator writes a skeleton instead of invented prose (`Artist:`, exact `Start at:` chain, `[placeholder]` keyframes, `CHARACTER:` legend incl. uncast names) | `musicVideoTrackIntake.test.mjs` (chain, legend, parse-through-the-real-parser) + `sunoIntake.test.mjs`; M3–M7 mutations all caught |
+| mp4/mov/m4v accepted; container duration falls back to stream duration | `tests/audioTrackProbe.test.mjs` (fixtures + real ffmpeg/mp4 probes); M8–M10 mutations caught |
+| Clipboard copy through the main process, failures reported | `src/services/clipboard.test.mjs`, `tests/ipcChannelContract.test.mjs` |
+| Script names without a reference image stay visible as "to be cast" | wiring contract test, W7/W8 mutations caught |
+
+Still open: a default placeholder image behind ungenerated cast/location stubs, the
+planner moved inline into step 2 (the iframe must stay mounted), a script →
+Director push button, and the step-1 wizard copy.
