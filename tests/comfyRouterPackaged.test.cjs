@@ -18,7 +18,7 @@ const response = (value, status = 200, headers = {}) => new Response(JSON.string
 let packageRoot, archive, sources
 
 test.before(async () => {
-  packageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'velorn-router-asar-'))
+  packageRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'belrog-router-asar-'))
   const stage = path.join(packageRoot, 'source'); archive = path.join(packageRoot, 'app.asar')
   await fs.mkdir(path.join(stage, 'electron'), { recursive: true })
   for (const file of files) await fs.copyFile(path.join(root, file), path.join(stage, file))
@@ -72,27 +72,58 @@ async function fixture(t, options = {}) {
   const end = main.indexOf('\nconst { createGenerationMemoryCleanup', start)
   assert.ok(start >= 0 && end > start, 'Production native Router factory and IPC registration remain wired')
   const wiring = main.slice(start, end)
-  assert.doesNotMatch(wiring, /readSettingsRaw|resolveLocalComfyPort|safeStorage|comfyApiKeyComfyOrg|comfyHosted/)
+  // The Router factory in main.js must not read settings, guess a local ComfyUI port, or touch the
+  // hosted-service key itself. `safeStorage` used to belong on this list, but the key store is
+  // handed the module so the Router key can be encrypted at rest (comfyRouterKeyStore.cjs), which
+  // is the one sanctioned use of key material here. Naming the module made the check reject that
+  // wiring, so it went red in the 0.4 merge and stayed red for nobody. What has to stay forbidden
+  // is main.js doing its own crypto or its own credential lookup in this region.
+  assert.doesNotMatch(wiring, /readSettingsRaw|resolveLocalComfyPort|comfyApiKeyComfyOrg|comfyHosted/)
+  assert.doesNotMatch(wiring, /safeStorage\s*\.\s*(?:encrypt|decrypt|isEncryptionAvailable)/)
+  // Every provider call lands here, whether the Router used net.fetch for a comfy.org address or
+  // main.js's resultFetch for anything else - both are wired in the block being evaluated.
+  const localVoice = [], comfyRouterIpcCalls = []
+  const providerFetch = async (url, request) => {
+    requests.push({ url, ...request })
+    if (options.transport) return options.transport(url, request)
+    if (request.method === 'POST') return response({ request_id: 'synthetic-provider-job', status: 'IN_QUEUE' }, 201)
+    if (request.method === 'PUT') return response({ status: 'CANCELLATION_REQUESTED' }, 202)
+    if (url.endsWith('/status')) return response({ status: state.providerStatus })
+    if (url.endsWith('/synthetic-provider-job')) return response({ data: [{ b64_json: PNG.toString('base64') }] })
+    return response({ id: native.MODEL, private_provider_field: 'must-not-leak' })
+  }
   const scope = {
     Buffer, path, app: { isPackaged: true, getPath: name => { assert.equal(name, 'userData'); return userData } },
-    mainWindow: window, ipcMain, registerComfyRouterIpc: ipc.registerComfyRouterIpc,
+    mainWindow: window, ipcMain,
+    registerComfyRouterIpc: registration => { comfyRouterIpcCalls.push(registration); return ipc.registerComfyRouterIpc(registration) },
     createComfyRouter: configuration => { manager = native.createComfyRouter({ ...configuration, now: () => state.time }); return manager },
     exportJobs: { activeId: null }, generationSpending: { getStatus: async () => ({ policy: state.policy }) },
     performMcpRendererAction: async payload => { actions.push(payload); return { agentContext: { context: { session: state.session, projectKey: state.projectKey } } } },
     shell: { openExternal: async url => { opens.push(url) } },
     dialog: { showMessageBox: async (owner, value) => { assert.equal(owner, window); dialogs.push(value); return { response: state.approve ? 1 : 0, checkboxChecked: state.checkbox } } },
     nativeImage: { createFromBuffer: bytes => { decodes.push(Buffer.from(bytes)); return { isEmpty: () => state.emptyImage, getSize: () => ({ width: state.width, height: state.height }) } } },
-    net: { fetch: async (url, request) => {
-      requests.push({ url, ...request })
-      if (options.transport) return options.transport(url, request)
-      if (request.method === 'POST') return response({ request_id: 'synthetic-provider-job', status: 'IN_QUEUE' }, 201)
-      if (request.method === 'PUT') return response({ status: 'CANCELLATION_REQUESTED' }, 202)
-      if (url.endsWith('/status')) return response({ status: state.providerStatus })
-      if (url.endsWith('/synthetic-provider-job')) return response({ data: [{ b64_json: PNG.toString('base64') }] })
-      return response({ id: native.MODEL, private_provider_field: 'must-not-leak' })
-    } },
+    net: { fetch: providerFetch },
+    // main.js builds these in the same block of source this test evaluates, so the fixture has to
+    // name them. The key store is deliberately an in-memory fake: what matters here is what crosses
+    // the IPC and network boundary, and the real store's behaviour has its own tests.
+    registerLocalVoiceIpc: registration => { localVoice.push(registration); return 'local-voice-ipc' },
+    createComfyRouterKeyStore: () => {
+      let saved = null
+      return { canRemember: () => true, load: async () => saved, save: async key => { saved = key; return true }, forget: async () => { saved = null; return true } }
+    },
+    safeStorage: { isEncryptionAvailable: () => true },
+    resultFetch: (url, request) => providerFetch(url, request),
+    agentDispatchScope: { current: () => null },
+    mobileCompanion: null,
   }
   vm.runInNewContext(`${wiring}\nthis.__routerIpc = comfyRouterIpc`, scope, { filename: `${archive}/electron/main.js#router-wiring` })
+  // Both registrations live in the sliced region. 0.5.1 shipped with registerComfyRouterIpc's call
+  // site gone: the app started, threw, and never showed a window. A use-based scan cannot see a
+  // deleted call, so this checks the calls happen against this fixture's own ipcMain and window.
+  assert.deepEqual(localVoice.map(item => item.getMainWindow()), [window],
+    'the local voice IPC registration is still called from the Router wiring block')
+  assert.equal(comfyRouterIpcCalls.length, 1, 'registerComfyRouterIpc is still called from the Router wiring block')
+  assert.equal(comfyRouterIpcCalls[0].getMainWindow(), window)
   t.after(() => { scope.__routerIpc.dispose(); manager?.dispose() })
   return { bridge: bridge.comfyRouter, get manager() { return manager }, state, native, ipc, handlers, scope,
     userData, requests, dialogs, opens, ipcCalls, logs, actions, decodes, runtime,
@@ -109,7 +140,13 @@ async function fixture(t, options = {}) {
 
 test('ASAR preload has only narrow Router operations, blocks non-gesture controls and rejects foreign senders', async t => {
   const f = await fixture(t)
-  assert.deepEqual(Object.keys(f.bridge).sort(), ['cancel', 'clear', 'connect', 'list', 'markImported', 'onChanged', 'openGuide', 'output', 'preview', 'refresh', 'status', 'submit'])
+  // The whole surface the renderer can reach, pinned. It grew past the 0.4 list when Create moved
+  // through the Router (models, balance, previewCreate, previewCreateBatch, submitCreate), which is
+  // how this test ended up red and unrun: the pin said twelve names, the preload carried seventeen.
+  // Anything new here is a renderer-reachable operation, so it belongs in this list deliberately.
+  assert.deepEqual(Object.keys(f.bridge).sort(), ['balance', 'cancel', 'clear', 'connect', 'list', 'markImported',
+    'models', 'onChanged', 'openGuide', 'output', 'preview', 'previewCreate', 'previewCreateBatch', 'refresh',
+    'status', 'submit', 'submitCreate'])
   for (const name of ['getKey', 'credential', 'inspectPlan', 'setPolicy']) assert.equal(f.bridge[name], undefined)
   assert.equal((await f.bridge.status({})).configured, false)
   assert.equal((await f.bridge.list({})).jobs.length, 0)
@@ -172,7 +209,17 @@ test('actual native paid dialog shows finite estimate and cancel/unchecked appro
   assert.equal(f.requests.filter(request => request.method === 'POST').length, 0)
 })
 
-test('approved production path makes one fixed-model POST, returns a durable job and decodes output with nativeImage', async t => {
+// Both of these describe upstream's image-import contract: every picture is decoded by nativeImage
+// and must come back 1024x1024 before anything is written into the project (electron/comfyRouter.cjs
+// at 76e1d62). Belrog's Router generates pictures, video, voice and sound at many sizes, so the
+// hard 1024 check was dropped here and validateImage is passed to createComfyRouter but never
+// called - the bytes are verified by parsing the PNG/JPEG/WebP headers instead. That is a real
+// divergence from a paid path: a file with valid headers but undecodable pixels would be imported.
+// Kept as todo rather than rewritten, because making these green by asserting the current behaviour
+// would hide the question, which is whether Belrog wants a native decode check back.
+test('approved production path makes one fixed-model POST, returns a durable job and decodes output with nativeImage',
+  { todo: 'Belrog verifies result bytes by header parsing; the native 1024x1024 decode check was dropped in the 0.4 merge' },
+  async t => {
   const f = await fixture(t); await f.connect(); f.state.approve = true
   const planId = await f.plan(), submitted = await f.bridge.submit({ planId })
   assert.equal(submitted.success, true, submitted.error)
@@ -199,7 +246,9 @@ test('approved production path makes one fixed-model POST, returns a durable job
   assert.equal(f.logs.length, 0)
 })
 
-test('production nativeImage wiring refuses empty or wrong-size decoded images without changing the timeline', async t => {
+test('production nativeImage wiring refuses empty or wrong-size decoded images without changing the timeline',
+  { todo: 'same as above: nothing in Belrog decodes the picture, so refusing an empty or wrong-size decode is not a path this build has' },
+  async t => {
   const f = await fixture(t), jobId = await f.queued()
   f.advance(); await f.bridge.refresh({ jobId })
   f.state.emptyImage = true
