@@ -172,6 +172,15 @@ function AppWorkspace({ accountAgentRequested = false }) {
   // ComfyUI was briefly down during our own restart) leaves it stuck on a
   // black canvas with no in-app way to recover.
   const [comfyIframeNonce, setComfyIframeNonce] = useState(0)
+  // Director Script tab — embedded Perchance planner (perchance.org/belrog).
+  // Inbound: iframe postMessage -> validated -> window event
+  // 'director-script-received' -> GenerateWorkspace fills yoloMusicScript.
+  // Outbound: toolbar Send Brief -> 'director-script-request-brief' ->
+  // GenerateWorkspace builds the brief -> 'director-script-brief-ready' ->
+  // posted into the iframe as { type: 'belrog-director-brief', brief }.
+  const [directorIframeNonce, setDirectorIframeNonce] = useState(0)
+  const [directorScriptStatus, setDirectorScriptStatus] = useState('')
+  const directorIframeRef = useRef(null)
   const reloadComfyIframe = useCallback(() => {
     setComfyIframeNonce((n) => n + 1)
   }, [])
@@ -530,7 +539,50 @@ function AppWorkspace({ accountAgentRequested = false }) {
   const [hasOpenedGpuSharing, setHasOpenedGpuSharing] = useState(false)
   const [gpuShareAsk, setGpuShareAsk] = useState(0) // counts requests to show the owner's side of the GPU sharing tab
   useEffect(() => { if (mainTab === 'gpu-sharing') setHasOpenedGpuSharing(true) }, [mainTab])
-  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'gpu-sharing' || mainTab === 'comfyui'
+  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script'
+  useEffect(() => {
+    const onMessage = (event) => {
+      if (!event || !event.data || typeof event.data !== 'object') return
+      if (event.data.type !== 'belrog-director-script') return
+      const frame = directorIframeRef.current
+      if (!frame || event.source !== frame.contentWindow) return
+      const script = String(event.data.script || '')
+      if (!script.startsWith('BELROG DIRECTOR SCRIPT') || !/^Shot \d+:/m.test(script)) {
+        setDirectorScriptStatus('Rejected: not a Belrog director script.')
+        return
+      }
+      const shotCount = (script.match(/^Shot \d+:/gm) || []).length
+      setDirectorScriptStatus(`Received ${shotCount} shots — open Generate > Music Video to parse.`)
+      window.dispatchEvent(new CustomEvent('director-script-received', { detail: { text: script } }))
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+  useEffect(() => {
+    const onBriefReady = (event) => {
+      const brief = String(event.detail?.brief || '')
+      if (!brief) return
+      try {
+        directorIframeRef.current?.contentWindow?.postMessage(
+          { type: 'belrog-director-brief', brief }, '*'
+        )
+        setDirectorScriptStatus('Brief sent into the planner.')
+      } catch (_) { /* ignore */ }
+    }
+    window.addEventListener('director-script-brief-ready', onBriefReady)
+    return () => window.removeEventListener('director-script-brief-ready', onBriefReady)
+  }, [])
+  const handleSendBriefToDirector = useCallback(() => {
+    setMainTab('director-script')
+    window.dispatchEvent(new CustomEvent('director-script-request-brief'))
+  }, [])
+  const handleReloadDirector = useCallback(() => {
+    setDirectorIframeNonce((n) => n + 1)
+    setDirectorScriptStatus('Reloading the planner…')
+  }, [])
+  const handleOpenDirectorExternal = useCallback(() => {
+    window.open('https://perchance.org/belrog', '_blank', 'noopener,noreferrer')
+  }, []) || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'gpu-sharing' || mainTab === 'comfyui'
   // Editor layout insets used by the editor content shell.
   const editorLeftInset = leftPanelExpanded ? ICON_BAR_WIDTH + leftPanelWidth : ICON_BAR_WIDTH
   const editorRightInset = inspectorExpanded ? ICON_BAR_WIDTH + inspectorWidth : ICON_BAR_WIDTH
@@ -961,6 +1013,53 @@ function AppWorkspace({ accountAgentRequested = false }) {
             title="ComfyUI"
             className="flex-1 w-full min-h-0 border-0"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+          />
+        </div>
+        {/* Director Script tab – embedded Perchance planner (perchance.org/belrog).
+            Kept mounted (display:none) so a half-edited script survives tab switches,
+            same as the ComfyUI tab. */}
+        <div
+          className="flex-1 flex flex-col min-h-0 min-w-0 bg-sf-dark-950"
+          style={{ display: mainTab === 'director-script' ? 'flex' : 'none' }}
+        >
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-sf-dark-700 bg-sf-dark-900 text-xs">
+            <span className="font-mono truncate">https://perchance.org/belrog</span>
+            {directorScriptStatus && (
+              <span className="max-w-[520px] truncate">{directorScriptStatus}</span>
+            )}
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={handleSendBriefToDirector}
+              className="px-2 py-1 rounded bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25 transition-colors"
+              title="Send the Music Video LLM brief into the embedded planner (it auto-parses there)"
+            >
+              Send Brief
+            </button>
+            <button
+              type="button"
+              onClick={handleReloadDirector}
+              className="px-2 py-1 rounded hover:bg-sf-dark-700 transition-colors"
+              title="Reload the embedded planner (recovery from blank/stuck pages or Perchance engine errors)"
+            >
+              Reload
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenDirectorExternal}
+              className="px-2 py-1 rounded hover:bg-sf-dark-700 transition-colors"
+              title="Open the planner in your default browser"
+            >
+              Open in browser
+            </button>
+          </div>
+          <iframe
+            key={`director-iframe-${directorIframeNonce}`}
+            ref={directorIframeRef}
+            src="https://perchance.org/belrog"
+            title="DirectorScript"
+            className="flex-1 w-full min-h-0 border-0"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals"
           />
         </div>
         {/* Generate stays mounted after first use so its existing jobs survive

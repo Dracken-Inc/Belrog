@@ -38,6 +38,7 @@ import useAssetsStore from '../stores/assetsStore'
 import useProjectStore from '../stores/projectStore'
 import useTimelineStore from '../stores/timelineStore'
 import useGenerationMonitorStore from '../stores/generationMonitorStore'
+import { useAssetLibraryStore, allLibraryEntries } from '../stores/assetLibraryStore'
 import { generationQueueOwner } from '../services/generationQueueStatus.mjs'
 import { APPROVAL_WAIT_LABEL, useAwaitingSpendApproval } from '../services/spendApprovalWait.mjs'
 import { useFrameForAIStore } from '../stores/frameForAIStore'
@@ -165,6 +166,9 @@ import {
   resolveCastMembersFromNameList,
   resolveMusicVideoShotTypeFromText,
   splitCastNameList,
+  applyTwoPersonIdentityMapping,
+  QWEN_KEYFRAME_EDIT_PREFIX,
+  QWEN_KEYFRAME_NEGATIVE,
 } from '../config/musicVideoShotConfig'
 import { TOPAZ_VIDEO_UPSCALE_WORKFLOW_ID } from '../config/topazVideoUpscaleConfig'
 import {
@@ -1439,6 +1443,31 @@ function buildMusicVideoNegativePrompt(baseNegativePrompt = '', shotType = '') {
 }
 
 /**
+ * Expands asset slug tokens in storyboard/keyframe prompts.
+ * The director script names locations and props as `LOCATIONS: (forge)` so it
+ * stays readable; the model needs the library's full description instead. A
+ * slug the library does not know is left untouched so it is visible in the
+ * prompt rather than silently dropped.
+ */
+function expandAssetSlugTokensInPrompt(text = '') {
+  const value = String(text || '')
+  if (!value || !/\b(?:LOCATIONS?|PROPS?)\s*:\s*\(/i.test(value)) return value
+  const descriptions = new Map()
+  for (const entry of allLibraryEntries(useAssetLibraryStore.getState().library)) {
+    if ((entry?._kind === 'location' || entry?._kind === 'prop') && entry.slug
+      && String(entry.description || '').trim()) {
+      descriptions.set(String(entry.slug).toLowerCase(), String(entry.description).trim())
+    }
+  }
+  if (descriptions.size === 0) return value
+  return value.replace(/\b(LOCATIONS?|PROPS?)\s*:\s*\(\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)/gi,
+    (whole, label, slug) => {
+      const description = descriptions.get(slug.toLowerCase())
+      return description ? `${label}: ${description}` : whole
+    })
+}
+
+/**
  * Compose the reference-image prompt used by the storyboard pass to generate
  * the per-shot keyframe still. Built from the script's Keyframe prompt plus
  * shot-type-specific framing cues (close / wide / b-roll).
@@ -1751,6 +1780,35 @@ function buildMusicVideoPlanFromScript(options = {}) {
             raw: name,
             message: `Shot ${flatShotIndex}${scriptShot.label ? ` (${scriptShot.label})` : ''}: "Artist: ${name}" did not match any cast member.`,
           })
+        }
+      }
+      // Two-person safety net (0.4.8.4): when the keyframe prose names a
+      // cast member the Artist line missed (e.g. "g1 and h1 both in frame"
+      // but "Artist: g1"), add the missing member so BOTH reference slots
+      // fill. Without this the image-edit gets ONE face and a "two people"
+      // prompt — it clones the single face instead of rendering both.
+      if (!isEnvironmentOrDetailCoverage && resolvedMembers.length >= 1 && resolvedMembers.length < 2) {
+        const keyText = String(scriptShot.keyframePromptRaw || scriptShot.imageBeat || '').toLowerCase()
+        for (const entry of safeCast) {
+          if (resolvedMembers.some((m) => m?.id === entry?.id)) continue
+          const entrySlug = String(entry?.slug || '').toLowerCase()
+          const entryLabel = String(entry?.label || '').toLowerCase()
+          if (!entrySlug && !entryLabel) continue
+          const namedInProse = (entrySlug && new RegExp(`\\b${entrySlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(keyText))
+            || (entryLabel && keyText.includes(entryLabel))
+          if (namedInProse) {
+            resolvedMembers = [...resolvedMembers, entry]
+            resolvedSource = `${resolvedSource}+keyframe-prose`
+            warnings.push({
+              shotIndex: flatShotIndex,
+              shotLabel: scriptShot.label || `Shot ${flatShotIndex}`,
+              kind: 'artist-added-from-keyframe',
+              raw: entrySlug || entryLabel,
+              message: `Shot ${flatShotIndex}: keyframe names "${entrySlug || entryLabel}" but Artist line missed them — added so both reference faces are supplied.`,
+              severity: 'info',
+            })
+            if (resolvedMembers.length >= 2) break
+          }
         }
       }
       if (resolvedMembers.length === 0 && !isEnvironmentOrDetailCoverage && lineIdx >= 0) {
@@ -10785,9 +10843,42 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
             return acc
           }, {})
         : {}
-      const storyboardPrompt = usesPromptOnlyFallback
+      // Two things the merge dropped here, restored:
+      //  - LOCATIONS:/PROPS: slug tokens must resolve to their library
+      //    description before the model sees the prompt.
+      //  - Qwen image-edit needs the explicit preserve-face instruction, or it
+      //    treats the keyframe as a fresh generation and ignores the reference.
+      const usesQwenKeyframeEdit = !usesPromptOnlyFallback
+        && (variantUsesReferenceMusicWorkflow || jobWorkflowId === 'image-edit')
+      const rawStoryboardPrompt = usesPromptOnlyFallback
         ? buildPromptOnlyBrollFallbackPrompt(variant)
-        : (variant.storyboardPrompt || variant.prompt)
+        : expandAssetSlugTokensInPrompt(variant.storyboardPrompt || variant.prompt)
+      const storyboardPromptBase = usesQwenKeyframeEdit
+        ? QWEN_KEYFRAME_EDIT_PREFIX + rawStoryboardPrompt
+        : rawStoryboardPrompt
+      // Two-person identity mapping: when BOTH reference slots hold DIFFERENT
+      // cast members, say which image index is which person. Labels come from
+      // the cast entries that actually produced these image ids, so sentence
+      // order always matches the image1/image2 send order. Head position —
+      // tail position caused text storms in split tests.
+      const castLabelForAsset = (assetId) => {
+        if (!assetId) return ''
+        // Cast members ONLY: a location or prop image in a reference slot must
+        // not be announced as a person ("the second image shows the hallway").
+        const entry = (yoloMusicResolvedCast || []).find((e) => e?.assetId && String(e.assetId) === String(assetId))
+        return entry?.label ? String(entry.label) : ''
+      }
+      const storyboardPrompt = (() => {
+        if (!usesQwenKeyframeEdit) return storyboardPromptBase
+        const primaryId = storyboardInputAsset?.id
+        const secondaryId = isYoloMusicMode ? storyboardReferenceAssetId1 : null
+        if (!primaryId || !secondaryId) return storyboardPromptBase
+        return applyTwoPersonIdentityMapping(
+          storyboardPromptBase,
+          castLabelForAsset(primaryId),
+          castLabelForAsset(secondaryId),
+        )
+      })()
       return createQueuedJob({
         category: 'image',
         workflowId: jobWorkflowId,
@@ -16986,6 +17077,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         case 'image-edit-model-product':
           modifiedWorkflow = modifyQwenImageEdit2509Workflow(workflowJson, {
             prompt: job.prompt,
+            negativePrompt: QWEN_KEYFRAME_NEGATIVE,
             inputImage: uploadedFilename,
             seed: job.seed,
             width: job.resolution?.width,

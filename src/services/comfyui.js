@@ -2055,6 +2055,7 @@ export function modifyCustomVideoWorkflow(workflow, options = {}) {
 export function modifyQwenImageEdit2509Workflow(workflow, options = {}) {
   const {
     prompt = 'edit the image',
+    negativePrompt = '',
     inputImage = '',
     seed = Math.floor(Math.random() * 1000000000000),
     width = null,

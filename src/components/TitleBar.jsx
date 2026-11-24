@@ -24,6 +24,7 @@ const TOP_TABS = [
   { id: 'stock', label: 'Stock' },
   { id: 'gpu-sharing', label: 'GPU sharing' },
   { id: 'comfyui', label: 'ComfyUI' },
+  { id: 'director-script', label: 'Director Script' },
   { id: 'export', label: 'Export' },
   { id: 'discover', label: 'Tutorials' },
 ]
