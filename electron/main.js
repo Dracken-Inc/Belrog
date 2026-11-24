@@ -260,6 +260,31 @@ function getComfyRouter() {
   return comfyRouter
 }
 
+// The Sound tab's built-in local voice model: its files live in Belrog's own data folder.
+registerLocalVoiceIpc({ ipcMain, getMainWindow: () => mainWindow, dir: path.join(app.getPath('userData'), 'local-voice', 'kokoro-82m-v1.0') })
+const comfyRouterIpc = registerComfyRouterIpc({ ipcMain, getMainWindow: () => mainWindow, getManager: getComfyRouter,
+  isBusy: () => Boolean(exportJobs.activeId), openExternal: url => shell.openExternal(url) })
+const { createGenerationMemoryCleanup, SETTING_KEY: GENERATION_MEMORY_SETTING_KEY } = require('./generationMemoryCleanup.cjs')
+const generationMemoryCleanup = createGenerationMemoryCleanup({
+  getEnabled: async () => (await readSettingsRaw())?.[GENERATION_MEMORY_SETTING_KEY] === true,
+  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
+  isBusy: async () => Boolean(exportJobs.activeId) || (await generationSpending.getStatus()).busy,
+  onError: message => console.warn('[generation-memory]', message),
+})
+// Resolves saved-workflow assets (uploading pictures the person picked) and the library of
+// workflows worth re-running. These four blocks were deleted by mistake when GPU sharing came
+// out: they sat in the same region of the file, and main.js still calls them from
+// getGenerationRuns, the picture paths and the will-quit shutdown. Nothing else imports them,
+// so the build stayed green and only an actual run on a Windows machine caught it.
+const workflowAssetInputs = require('./workflowAssetInputs.cjs').createWorkflowAssetInputs({
+  getSnapshot: async () => {
+    await performMcpRendererAction({ action: 'get_transport_state' })
+    return mcpServer?.lastSnapshot
+  },
+})
+const savedWorkflowLibrary = createSavedWorkflowLibrary({ getUserData: () => app.getPath('userData'), resolveAsset: workflowAssetInputs.resolveAsset })
+registerSavedWorkflowLibraryIpc({ ipcMain, getMainWindow: () => mainWindow, getLibrary: () => savedWorkflowLibrary })
+
 function getGenerationRuns() {
   if (!generationRuns) {
     generationRuns = createGenerationRuns({

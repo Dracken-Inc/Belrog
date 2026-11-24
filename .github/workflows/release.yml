@@ -71,6 +71,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # 0.5.1 shipped to Windows as an app that started, threw "ReferenceError:
+      # workflowAssetInputs is not defined" inside getGenerationRuns, never caught the
+      # rejection and never showed its window. Removing GPU sharing had deleted four
+      # declarations that the rest of main.js still calls. Nothing was a syntax error, the
+      # build was green, and only running it on a real machine could see it - so this catches
+      # the static half before anything is packaged.
+      - name: Verify main-process files declare what they call
+        run: npm run test:undefined-identifiers
+
       - name: Build application
         run: npm run build
 
@@ -284,6 +293,20 @@ jobs:
           if ($signed) { $gateArgs += '--signed-package' }
           $gateArgs += @('--host-executable',(Join-Path $PWD 'release\win-unpacked\Belrog.exe'))
           node $gateArgs
+
+      # Every check above reads files. None of them started the app, which is how 0.5.1 shipped
+      # a Windows build whose process ran, threw ReferenceError in app.whenReady() and never
+      # showed a window. This launches the packaged exe against a throwaway %APPDATA% and fails
+      # unless a captioned, visible, uncloaked window at least 500x350 appears - the splash is
+      # frameless and the export worker window is 400x200, so neither can pass for the app.
+      - name: Verify the packaged app opens a window
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'release\win-unpacked\Belrog.exe'
+          if (-not (Test-Path $exe)) { throw "packaged executable not found: $exe" }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/check-windows-startup.ps1 `
+            -Executable $exe -TimeoutSeconds 120 -LogDirectory 'start-probe'
+          if ($LASTEXITCODE -ne 0) { throw "packaged Belrog did not open a window (exit $LASTEXITCODE)" }
 
       - name: Upload Windows release assets
         shell: pwsh

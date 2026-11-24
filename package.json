@@ -1,6 +1,6 @@
 {
   "name": "belrog",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "AI-native video editing built around real creative timelines, generative workflows, and local agent control.",
   "main": "electron/main.js",
   "scripts": {
@@ -14,6 +14,7 @@
     "test:ssh-tunnel": "node --test tests/sshTunnelPortFallback.test.cjs tests/sshTunnelEndToEnd.test.cjs",
     "test:cast-gap-detection": "node --test tests/castGapDetection.test.cjs src/services/scriptGapDetection.test.mjs",
     "test:co-located": "node scripts/run-co-located-tests.cjs",
+    "test:undefined-identifiers": "node --test tests/undefinedIdentifiers.test.cjs && node scripts/check-undefined-identifiers.cjs electron src",
     "check:audio-analysis": "node ./scripts/check-audio-analysis.cjs",
     "test:timeline-hotfixes": "node --test ./src/utils/closeTimelineGap.test.mjs ./src/utils/closeTimelineGapStore.test.mjs ./src/utils/timelineSplitTarget.test.mjs ./src/utils/audioClipSplit.test.js ./src/utils/clipSplit.test.mjs ./src/utils/clipSplitStore.test.mjs ./src/utils/playheadEditsStore.test.mjs ./src/utils/timecodeInput.test.mjs ./src/utils/framePlayhead.test.mjs",
     "check:timeline-hotfixes": "node ./scripts/check-timeline-hotfixes.cjs",
