@@ -159,6 +159,23 @@ test('source patch removes WebP linkage and exposes PNG-only stb paths', () => {
   assert.match(patch, /case 'h':\n\+\s+print_usage\(\);\n\+\s+return 0;/)
 })
 
+test('the builder greps for the same banner the patch compiles in', () => {
+  // Release builds compile this patch, then refuse an executable that does not
+  // carry the PNG-only banner. When that banner was renamed to Belrog the copy
+  // inside build.py stayed on the old name, so the Linux and Mac builds died
+  // while this file's own literal assertions stayed green. Neither side may
+  // drift from the other again.
+  const builder = fs.readFileSync(scriptPath, 'utf8')
+  const expected = builder.match(/secure_banner = b"([^"]+)"/)
+  assert.ok(expected, 'build.py must define the banner it greps for')
+  const compiled = fs
+    .readFileSync(patchPath, 'utf8')
+    .match(/fprintf\(stderr,\s*"([^"]*secure build[^"]*)"/)
+  assert.ok(compiled, 'the patch must compile a security banner into the help text')
+  const fromPatch = compiled[1].split('\\n')[0].trim().replace(/\s+/g, ' ').toLowerCase()
+  assert.equal(expected[1], fromPatch)
+})
+
 test('Windows contract statically links the CRT and rejects helper DLL dependencies', () => {
   const result = runBuilder(['plan', '--platform', 'win32', '--arch', 'x64'])
   assert.equal(result.status, 0, result.stderr)
