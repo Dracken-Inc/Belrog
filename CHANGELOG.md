@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.4.87 (Belrog 0.4.87) — 2026-11-23
+
+### The upstream base is back: Velorn 0.4.1 merged in, with the Belrog work re-applied on top
+- **Merged upstream 0.4.1 — 336 commits of editor work this fork never had — and replayed six months of Belrog work on top of it.** 376 commits in this release. Wherever code conflicted the upstream version became the base, and Belrog's edits inside those shared files were replayed one work package at a time. Each replay was checked by reading the result, because a blanket `git apply` rollback had already produced two false-greens during the merge. Full audit trail: `MERGE_PLAN.md`.
+- **What Belrog kept.** The one-shot H3 engine (headless chain runner, script→clips compiler, disk-truth watcher, smoke-all), Suno intake (m4a to tiled director script, deterministic and gapless by construction), the final-artifact integrity gate that will not mark a render `verified` unless the audio stream and duration match the song, the Cast/asset-library/director-legend layer including two-person identity mapping, the lyrics-timed shot grid, the AutoChainAudio slot contract with live `object_info` validation, the Whisper caption engine, and the MCP action set (134 actions, a superset of the 128 Belrog had).
+- **What upstream brings.** Six months of editor work we did not have: captions, audio mix, export paths, and the GPU compositor.
+- **Still local-mode.** No account service, no spending gates, no cloud router — the desktop app talks to your local ComfyUI and nothing else. Upstream's commercial files are in the tree, inert; no Belrog feature depends on them.
+
+### Fixed while completing the merge
+- **Nearest-chorus-repeat beat sync.** `findTimedLyricLineByText` had lost its `nearSeconds` parameter to the merge, so lyric matching in the shot grid stopped preferring the line nearest the beat. Parameter and call site restored to the upstream contract.
+- **Provider status banner.** The owner-metered candidate banner and the `Provider status unavailable` fallback existed as a contract upstream with no UI attached. Both now render.
+- **Settings tab and preload aliases.** The workflow-setup settings tab, plus the preload `invoke` and flat-alias bridges several panels call through.
+- **Compound audio, export cancel, and connected-agent editing** clusters that the merge had eaten.
+
+### Release pipeline
+- **Unsigned Windows builds no longer hang for six hours.** `package.json` carries upstream's `azureSignOptions`. With no Azure signing secrets configured on this repository, electron-builder tried to install the `TrustedSigning` PowerShell module itself and the job sat there until the six-hour runner timeout killed it. The workflow now removes `azureSignOptions` whenever signing is off, which is what pre-merge Belrog did.
+- **The finished-deb check no longer hard-codes upstream's file names.** It asserted `velorn.png` and `velorn.desktop`, so every Belrog deb — which installs `belrog.png` and `belrog.desktop` — failed with "missing the desktop launcher". It now checks the things that actually matter: exactly one launcher, one icon name, every file world-readable, and the icon inventory matching what was prepared, whatever the package is called.
+- **macOS is skipped when Apple signing secrets are absent**, because an unsigned `.app` will not launch. Same behaviour as v0.4.86.
+
+### Known in this release
+- **Nine test failures are red on upstream's own tree** and were deliberately not chased: `comfyRouterPackaged` ×5, `exportPresetLibrary` ×3 (stale electron stubs), `localAgentDesktopChatHarness` ×3 (harness and prompt shipped out of sync upstream). Classification in `MERGE_PLAN.md` §9.
+- **Artifacts are unsigned.** No Azure Trusted Signing secrets exist on this repository, so Windows builds carry no Authenticode signature and SmartScreen will warn on first run.
+- **The runtime packaging gate has no linux-arm64 FFmpeg pin.** Upstream publishes native-media pins for linux-x64 and darwin only. This affects packaging on a Spark build; the host FFmpeg and the runtime path are unaffected.
+- **Linux packages do not embed the optional `velo-codex-runtime`.** Upstream stages it at `../runtime`, which does not exist in this repository, so electron-builder warns and skips it. The engine resolves its fallback path at runtime.
+
 ## v0.4.86 (Belrog 0.4.86 — hotfix 0.4.8.6) — 2026-10-03
 
 ### Two-person keyframes: face mapping and floating text — proven by split testing
