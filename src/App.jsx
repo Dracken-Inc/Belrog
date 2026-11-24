@@ -5,7 +5,6 @@ import TitleBar from './components/TitleBar'
 import { DesktopAccountProvider } from './components/DesktopAccount'
 import AgentComfyCloudSetup from './components/AgentComfyCloudSetup'
 import PhoneCreateSaver from './components/PhoneCreateSaver'
-import BelrogNetworkSaver from './components/BelrogNetworkSaver'
 import ExportPanel from './components/ExportPanel'
 import ExportProgressOverlay from './components/ExportProgressOverlay'
 import useExportActivityStore, { isExportBusy } from './stores/exportActivityStore'
@@ -66,7 +65,6 @@ const MOGWorkspace = lazy(() => import('./components/MOGWorkspace'))
 const CreateWorkspace = lazy(() => import('./components/CreateWorkspace'))
 const StockPanel = lazy(() => import('./components/StockPanel'))
 const DiscoverWorkspace = lazy(() => import('./components/DiscoverWorkspace'))
-const GpuSharingWorkspace = lazy(() => import('./components/GpuSharingWorkspace'))
 const ProductionWorkspace = lazy(() => import('./components/ProductionWorkspace'))
 const ConnectedAgentPanel = lazy(() => import('./components/ConnectedAgentPanel'))
 const WorkflowLibraryDrawer = lazy(() => import('./components/WorkflowLibraryDrawer'))
@@ -238,9 +236,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
       if (choice !== 'replace' && choice !== 'both') {
         const same = await findCustomLibraryWorkflowsByTitle(comfySaveState.name || captured?.workflowName)
         if (same.length) {
-          const { isSharedInGpuSharing } = await import('./services/workflowLibrary')
-          const shared = await isSharedInGpuSharing(`my-workflow:${same[0].id}`)
-          setComfySaveState((prev) => ({ ...prev, phase: 'exists', existing: { id: same[0].id, title: same[0].title, count: same.length, shared }, error: '', message: '' }))
+          setComfySaveState((prev) => ({ ...prev, phase: 'exists', existing: { id: same[0].id, title: same[0].title, count: same.length }, error: '', message: '' }))
           return
         }
       }
@@ -249,7 +245,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
       setComfySaveState({
         phase: 'idle',
         name: '',
-        message: `${result.updated ? 'Replaced' : 'Saved'} "${result.entry.title}" — find it in My Workflows.${result.updated && existing?.shared ? ' It is no longer shared in GPU sharing: add it there again.' : ''}`,
+        message: `${result.updated ? 'Replaced' : 'Saved'} "${result.entry.title}" — find it in My Workflows`,
         error: '',
       })
     } catch (error) {
@@ -542,10 +538,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
   useEffect(() => { if (mainTab === 'create') setHasOpenedCreate(true) }, [mainTab])
   const [hasOpenedSound, setHasOpenedSound] = useState(false)
   useEffect(() => { if (mainTab === 'sound') setHasOpenedSound(true) }, [mainTab])
-  const [hasOpenedGpuSharing, setHasOpenedGpuSharing] = useState(false)
-  const [gpuShareAsk, setGpuShareAsk] = useState(0) // counts requests to show the owner's side of the GPU sharing tab
-  useEffect(() => { if (mainTab === 'gpu-sharing') setHasOpenedGpuSharing(true) }, [mainTab])
-  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script' || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'gpu-sharing' || mainTab === 'comfyui'
+  const isFullScreenTab = mainTab === 'storyboard' || mainTab === 'export' || mainTab === 'generate' || mainTab === 'create' || mainTab === 'director-script' || mainTab === 'sound' || mainTab === 'agent' || mainTab === 'flow-ai' || mainTab === 'mog' || mainTab === 'llm-assistant' || mainTab === 'stock' || mainTab === 'comfyui'
   // Waiting for the planner to prove it loaded, but not forever: if it never
   // answers, say what happened and hand over a button that works.
   useEffect(() => {
@@ -820,8 +813,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
 
   // Other parts of the window (the account drop-down) can ask for a Settings page by name.
   useEffect(() => {
-    // GPU sharing has its own tab now; a request for its old Settings page goes there.
-    const open = event => { if (isExportBusy()) return; if (event.detail === 'network') { setSettingsModalOpen(false); setMainTab('gpu-sharing'); setGpuShareAsk(count => count + 1) } else openSettingsModal(typeof event.detail === 'string' ? event.detail : null) }
+    const open = event => { if (isExportBusy()) return; openSettingsModal(typeof event.detail === 'string' ? event.detail : null) }
     window.addEventListener('velorn:open-settings', open)
     return () => window.removeEventListener('velorn:open-settings', open)
   }, [openSettingsModal])
@@ -961,7 +953,7 @@ function AppWorkspace({ accountAgentRequested = false }) {
             <div className="flex-1" />
             {comfySaveState.phase === 'exists' ? (
               <span className="inline-flex max-w-full flex-wrap items-center gap-1.5 text-sf-text-secondary" role="group" aria-label="A workflow with this name exists">
-                <span className="min-w-0">You already have “{comfySaveState.existing?.title}”{comfySaveState.existing?.count > 1 ? ` (${comfySaveState.existing.count} of them)` : ''}.{comfySaveState.existing?.shared ? ' It is shared in GPU sharing; replacing it stops that until you add it again.' : ''}</span>
+                <span className="min-w-0">You already have “{comfySaveState.existing?.title}”{comfySaveState.existing?.count > 1 ? ` (${comfySaveState.existing.count} of them)` : ''}.</span>
                 <button type="button" onClick={() => { void handleConfirmSaveComfyGraph('replace') }} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-sf-accent/15 text-sf-accent hover:bg-sf-accent/25 transition-colors">{comfySaveState.existing?.count > 1 ? 'Replace the newest' : 'Replace it'}</button>
                 <button type="button" onClick={() => { void handleConfirmSaveComfyGraph('both') }} className="px-2 py-1 rounded hover:bg-sf-dark-700 hover:text-sf-text-primary transition-colors">Keep both</button>
                 <button type="button" onClick={handleCancelSaveComfyGraph} className="px-2 py-1 rounded hover:bg-sf-dark-700 hover:text-sf-text-primary transition-colors">Cancel</button>
@@ -1218,16 +1210,6 @@ function AppWorkspace({ accountAgentRequested = false }) {
               <StockPanel />
             </Suspense>
           </WorkspaceErrorBoundary>
-        )}
-        {/* GPU sharing tab - kept mounted once opened, like Create, so a job being made survives tab switches */}
-        {(mainTab === 'gpu-sharing' || hasOpenedGpuSharing) && (
-          <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-sf-dark-950" style={{ display: mainTab === 'gpu-sharing' ? 'flex' : 'none' }}>
-            <WorkspaceErrorBoundary>
-              <Suspense fallback={WORKSPACE_LOADING_FALLBACK}>
-                <GpuSharingWorkspace openShare={gpuShareAsk} />
-              </Suspense>
-            </WorkspaceErrorBoundary>
-          </div>
         )}
         {mainTab === 'discover' && showDiscoverTab && (
           <WorkspaceErrorBoundary>
@@ -1576,6 +1558,5 @@ export default function App() {
     <AppWorkspace accountAgentRequested={accountAgentRequested} />
     <AgentComfyCloudSetup />
     <PhoneCreateSaver />
-    <BelrogNetworkSaver />
   </DesktopAccountProvider>
 }

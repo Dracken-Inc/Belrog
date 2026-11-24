@@ -213,22 +213,3 @@
 .vc-rise{animation:vc-rise .35s ease-out both}
 .vc-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 @media (prefers-reduced-motion:reduce){.vc-wave::after{animation:none;width:100%;opacity:.5}.vc-rise{animation:none}}
-
-/* The GPU sharing tab's "Use" view: the same box, with shared workflows as cards above it. */
-.vcreate[data-mode="shared"]{justify-content:flex-start;padding-top:32px}
-.vcreate[data-mode="shared"] .vc-inner{gap:18px}
-.vc-shared-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;width:100%;max-width:880px;margin:0 auto 6px}
-.vc-shared-title{margin:0 0 4px;font-size:26px;font-weight:600;color:#F4F4F5;letter-spacing:-.01em}
-.vc-shared-empty{max-width:560px;margin:28px auto;text-align:center;font-size:15px;line-height:1.6}
-.vc-shared-group{width:100%;max-width:880px;margin:14px auto 0}
-.vc-shared-label{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;font-size:12.5px;font-weight:400;color:#8B8B93}
-.vc-shared-maker{font-size:16px;font-weight:600;color:#F4F4F5}
-.vc-shared-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
-.vc-shared-card{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-height:112px;padding:12px 14px;border:1px solid #2A2A2D;border-radius:12px;background:#17171A;color:#E4E4E7;text-align:left;transition:border-color .15s,background .15s}
-.vc-shared-card:hover:not(:disabled){border-color:#4A4A52;background:#1C1C20}
-.vc-shared-card[aria-pressed=true]{border-color:var(--acc);background:#1F1C16}
-.vc-shared-card:disabled{opacity:.6}
-.vc-shared-name{font-size:15px;font-weight:600;color:#F4F4F5}
-.vc-shared-what{font-size:12.5px;color:#A1A1AA}
-.vc-shared-note{font-size:12.5px;line-height:1.45;color:#8B8B93;flex:1}
-.vc-shared-state{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12.5px;color:#C4C4CC}

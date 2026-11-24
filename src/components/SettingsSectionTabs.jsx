@@ -1,6 +1,6 @@
 import {
   Palette, Languages, Volume2, Film, Keyboard, HardDrive, Trash2, FolderOpen,
-  Play, Monitor, Plug, Cloud, Image, Wrench, Bot, Cpu,
+  Play, Monitor, Plug, Cloud, Image, Wrench, Bot,
 } from 'lucide-react'
 import './SettingsSectionTabs.css'
 
@@ -8,7 +8,7 @@ const SECTION_ICONS = {
   appearance: Palette, language: Languages, notifications: Volume2,
   editor: Film, hotkeys: Keyboard, storage: HardDrive, assets: Trash2,
   paths: FolderOpen, cache: Play, ffmpeg: Monitor, comfy: Plug,
-  cloud: Cloud, stock: Image, 'workflow-setup': Wrench, agents: Bot, network: Cpu,
+  cloud: Cloud, stock: Image, 'workflow-setup': Wrench, agents: Bot,
 }
 
 export default function SettingsSectionTabs({ pages, activeId, onSelect, label, hint }) {

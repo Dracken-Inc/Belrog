@@ -297,15 +297,15 @@ function publicFailure(error, signal) {
   if (signal?.aborted) return { success: false, cancelled: true, code: 'CANCELLED', error: signal.reason === 'timeout' ? 'The provider timed out. Please retry.' : 'Conversation cancelled.' }
   if (typeof error?.code === 'string' && /^LOCAL_GPU_[A-Z_]+$/.test(error.code)) {
     const messages = {
-      LOCAL_GPU_WAIT_TIMEOUT: 'Local GPU sharing waited too long. Check the generation queue before retrying.',
+      LOCAL_GPU_WAIT_TIMEOUT: 'Local GPU handoff waited too long. Check the generation queue before retrying.',
       LOCAL_GPU_GENERATION_UNCERTAIN: 'Generation status is uncertain. Check the ComfyUI queue before retrying the local Agent.',
-      LOCAL_GPU_COMFY_UNAVAILABLE: 'ComfyUI could not be checked for GPU sharing. Check its connection before retrying.',
-      LOCAL_GPU_MODEL_RELEASE_FAILED: 'The local model could not be released for GPU sharing. Check LM Studio before retrying.',
+      LOCAL_GPU_COMFY_UNAVAILABLE: 'ComfyUI could not be checked for the local GPU handoff. Check its connection before retrying.',
+      LOCAL_GPU_MODEL_RELEASE_FAILED: 'The local model could not be released for the local GPU handoff. Check LM Studio before retrying.',
       LOCAL_GPU_MEMORY_NOT_RELEASED: 'GPU memory could not be released safely. Check the running local workloads before retrying.',
-      LOCAL_GPU_DISPOSED: 'Local GPU sharing is no longer available. Please retry after restarting Belrog.',
+      LOCAL_GPU_DISPOSED: 'Local GPU handoff is no longer available. Please retry after restarting Belrog.',
       LOCAL_GPU_RUNTIME_UNAVAILABLE: 'The local GPU runtime is unavailable. Check LM Studio and ComfyUI before retrying.',
     }
-    return { success: false, code: error.code, error: messages[error.code] || 'Local GPU sharing could not safely continue. Check the local workloads before retrying.' }
+    return { success: false, code: error.code, error: messages[error.code] || 'Local GPU handoff could not safely continue. Check the local workloads before retrying.' }
   }
   // The private Velo engine's two setup failures carry fixed text, never the
   // underlying error's own message, which can hold paths or service details.

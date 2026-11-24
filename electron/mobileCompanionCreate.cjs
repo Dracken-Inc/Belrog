@@ -37,9 +37,7 @@ const invalid = () => refuse('CREATE_INVALID', 'That Create request could not be
 const failed = result => refuse(typeof result?.code === 'string' ? result.code.slice(0, 64) : 'CREATE_FAILED',
   typeof result?.error === 'string' && result.error ? result.error.slice(0, 600) : 'Belrog could not finish that. Check Create on the computer before trying again.')
 
-// `shared` (mobileCompanionSharedGpu.cjs) adds free jobs on other creators' GPUs through the same routes: its actions
-// start with `shared-`, it borrows the photo upload, and its results are served by the same opaque media ids.
-function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, now = Date.now, shared = null } = {}) {
+function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, now = Date.now } = {}) {
   if (typeof getManager !== 'function' || !path.isAbsolute(cacheDir || '')) throw new TypeError('The phone Create bridge needs the Router manager and a private cache folder.')
   const photos = new Map(), plans = new Map()
   // Opaque media IDs, never job IDs or file names, are what the phone asks for.
@@ -71,7 +69,9 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
     const status = await manager.status({})
     return { success: true, connected: status?.success === true && status.configured === true,
       policy: status?.success === true && ['local-only', 'ask-cloud'].includes(status.policy) ? status.policy : 'unavailable',
-      sharedGpu: Boolean(shared), buttonApprovalUsd: listed.buttonApprovalUsd, phoneConfirmMaxUsd: PHONE_CONFIRM_MAX_USD, resultAsInput: true, pricesAsOf: listed.pricesAsOf,
+      // GPU sharing is gone from Belrog; the key stays, false, so an older paired
+      // phone hides that option instead of finding it missing.
+      sharedGpu: false, buttonApprovalUsd: listed.buttonApprovalUsd, phoneConfirmMaxUsd: PHONE_CONFIRM_MAX_USD, resultAsInput: true, pricesAsOf: listed.pricesAsOf,
       models: listed.models.filter(model => KINDS.includes(model.kind)) }
   }
 
@@ -146,14 +146,11 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
       : { ...failed(result), ...(shown ? { job: shown } : {}) }
   }
 
-  // A photo the phone finished uploading, for a shared GPU job that starts from a picture.
-  const takePhoto = photoId => { const photo = photoIdentifier(photoId) ? photos.get(photoId) : null; return photo?.data && now() - photo.createdAt <= LIMITS.photoMs ? { mimeType: photo.mimeType, data: photo.data } : null }
   const ACTIONS = { catalog: input => exact(input, ['action']) ? catalog() : invalid(), quote, generate, jobs, cancel }
   async function handle(input) {
-    if (object(input) && shared?.handles(input.action)) {
-      if (isBusy() && input.action === 'shared-send') return refuse('CREATE_EXPORT_BUSY', 'Belrog is exporting on the computer. Try again when the export has finished.')
-      return shared.handle(input, { takePhoto })
-    }
+    // A phone still asking for a shared-GPU action (`shared-*`, from the GPU
+    // sharing feature Belrog no longer has) falls through to invalid(): one
+    // honest refusal, no half-run job.
     if (!object(input) || !Object.hasOwn(ACTIONS, input.action)) return invalid()
     if (isBusy() && ['quote', 'generate'].includes(input.action)) return refuse('CREATE_EXPORT_BUSY', 'Belrog is exporting on the computer. Try again when the export has finished.')
     try { return await ACTIONS[input.action](input) }
@@ -223,7 +220,7 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
 
   async function open(mediaId) {
     const jobId = typeof mediaId === 'string' ? jobByMedia.get(mediaId) : null
-    if (!jobId) return shared ? shared.open(mediaId) : null
+    if (!jobId) return null
     let entry
     try { entry = await ensureFile(jobId) } catch { return null }
     if (!entry) return null
@@ -238,7 +235,6 @@ function createMobileCreateBridge({ getManager, isBusy = () => false, cacheDir, 
 
   async function clear() {
     photos.clear(); plans.clear(); mediaByJob.clear(); jobByMedia.clear()
-    await shared?.clear()
     const old = [...files.values()]; files.clear()
     await Promise.all(old.map(entry => fs.unlink(entry.file).catch(() => {})))
   }

@@ -98,14 +98,6 @@ export async function openSavedWorkflow(entry, { confirmed = false } = {}) {
   }
 }
 
-// Is this saved workflow one the person shares in GPU sharing? Deleting or replacing it stops that until it is added again.
-export async function isSharedInGpuSharing(workflowId) {
-  try {
-    const listed = await globalThis.window?.electronAPI?.gpuShare?.own?.candidates?.()
-    return Boolean(listed?.success && listed.workflows?.some(item => item.workflowId === workflowId && item.added))
-  } catch { return false }
-}
-
 // Removes one ComfyUI capture from My Workflows for good.
 export async function deleteSavedWorkflow(entry) {
   if (entry?.source !== 'my-workflows' || !entry.id?.startsWith('my-workflow:')) {

@@ -8,7 +8,6 @@ const { constants } = require('node:fs');
 const { randomBytes, createHash } = require('node:crypto');
 const { requestJson } = require('./remoteCompanionAccounts.cjs');
 const { requestFundedLuna } = require('./fundedLunaTransport.cjs');
-const { requestGpuNetwork } = require('./gpuNetworkTransport.cjs');
 const { createRemoteCompanionServer, validateConfig } = require('./remoteCompanionDesktop.cjs');
 const { createDeviceStore } = require('./mobileCompanionDevice.cjs');
 const { createPairingSecret } = require('./remoteCompanionCrypto.cjs');
@@ -80,7 +79,7 @@ function validState(value, origin, allowLocalTest) {
 function createGuidedCompanion(options, { configPath, statePath, devicesRoot, origin: configuredOrigin,
   allowLocalTest = false, openBrowser, request = requestJson, adapterFactory = createRemoteCompanionServer,
   handoff = () => require('./remoteCompanionHandoff.cjs'), pollMs = 2500, now = Date.now,
-  lunaRequest = requestFundedLuna, gpuRequest = requestGpuNetwork } = {}) {
+  lunaRequest = requestFundedLuna } = {}) {
   const origin = serviceOrigin(configuredOrigin, allowLocalTest);
   let state = null, loading = null, saveTail = Promise.resolve(), generation = 0, running = false;
   let scope = null, snapshot = null, timer = null, busy = false, abort = null, context = null;
@@ -513,26 +512,7 @@ function createGuidedCompanion(options, { configPath, statePath, devicesRoot, or
       status: ({ signal: childSignal } = {}) => request('status', {}, childSignal),
       respond: (payload, { signal: childSignal } = {}) => request('respond', payload, childSignal) });
   }
-  // Belrog network (GPU sharing): one call to the queue as this registered
-  // computer. The route is one of a fixed list and the credential never leaves
-  // this module.
-  async function gpuNetworkRequest(route, payload = {}, { signal } = {}) {
-    await load();
-    const computer = state.computer, authority = fundedAuthority;
-    const check = () => {
-      if (!computer || state.computer !== computer || state.unregisterPending || phase === 'account-unavailable' || authority.signal.aborted || signal?.aborted) {
-        throw Object.assign(new Error('Sign in to your Belrog account on this computer first.'), { code: 'GPU_NETWORK_SIGNED_OUT', publicMessage: 'Sign in to your Belrog account on this computer first.' });
-      }
-    };
-    check();
-    const result = await gpuRequest({ url: new URL(`/account/desktop/gpu/${route}`, origin), token: computer.token,
-      body: { ...payload, computerId: computer.id }, signal: signal ? AbortSignal.any([authority.signal, signal]) : authority.signal, allowLocalTest });
-    check();
-    return result;
-  }
   return {
-    // Only called by native Belrog network code. No preload/IPC method exposes the credential.
-    gpuNetwork: Object.freeze({ request: gpuNetworkRequest, registered: () => Boolean(state?.computer && !state.unregisterPending), computerName: () => state?.computer?.name || state?.computerName || 'My computer' }),
     // Only called by the native connected-agent broker. No preload/IPC method
     // exposes these operations or the saved credential to browser code.
     fundedLuna: Object.freeze({

@@ -300,7 +300,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
   async function acquireGenerationResources(task) {
     if (generationResources == null) return
     if (typeof generationResources.beforeGeneration !== 'function' || typeof generationResources.afterGeneration !== 'function') {
-      throw fault('LOCAL_GPU', 'Local GPU sharing is not ready. Check the local agent and generation connection before trying a new request.')
+      throw fault('LOCAL_GPU', 'Local GPU handoff is not ready. Check the local agent and generation connection before trying a new request.')
     }
     await recheck(task)
     task.resourcesStarted = true
@@ -334,7 +334,7 @@ function registerGenerationSpendingIpc({ ipcMain, getMainWindow, readPolicy, wri
       // Keep the actual POST outcome. A resource-bookkeeping error must not make
       // a confirmed submission look failed, nor make an uncertain one retryable.
       result.resourceWarning = { code: 'GENERATION_SPENDING_LOCAL_GPU',
-        message: 'Local GPU handoff could not be confirmed. Inspect GPU sharing status before starting more local work.' }
+        message: 'Local GPU handoff could not be confirmed. Check the local GPU handoff status before starting more local work.' }
     } finally { clearTimeout(timer) }
   }
   const handlers = {

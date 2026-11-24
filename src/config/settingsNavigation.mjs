@@ -4,7 +4,7 @@ export const SETTINGS_GROUPS = [
   { id: 'editing', title: 'Editing', description: 'Customize the editor and your keyboard shortcuts.', pages: ['editor', 'hotkeys'] },
   { id: 'media', title: 'Media & Storage', description: 'Manage project storage, imported media and safe removal defaults.', pages: ['storage', 'assets', 'paths'] },
   { id: 'playback', title: 'Playback & Export', description: 'Maintain smooth playback and configure advanced export tools.', pages: ['cache', 'ffmpeg'] },
-  { id: 'connections', title: 'Connections', description: 'Connect optional generation tools, media services and agents.', pages: ['setup', 'comfy', 'cloud', 'stock', 'workflow-setup', 'agents', 'network'] },
+  { id: 'connections', title: 'Connections', description: 'Connect optional generation tools, media services and agents.', pages: ['setup', 'comfy', 'cloud', 'stock', 'workflow-setup', 'agents'], },
   { id: 'project', title: 'New Project Defaults', description: 'Defaults for future projects; your open project is not changed.', pages: ['project'] },
 ]
 
@@ -25,7 +25,6 @@ export const SETTINGS_PAGES = [
   { id: 'stock', title: 'Stock media (Pexels)', keywords: 'pexels api key stock photos videos account' },
   { id: 'workflow-setup', title: 'Generation tools', keywords: 'workflow setup install models nodes dependencies comfy folder library music video image' },
   { id: 'agents', title: 'Agents (MCP)', keywords: 'agent mcp claude codex cursor tools integration endpoint server' },
-  { id: 'network', title: 'Share your GPU', keywords: 'velorn network gpu sharing share invite host jobs report shared computer' },
   { id: 'project', title: 'New Project Defaults', keywords: 'resolution width height fps frame rate dimensions new project defaults' },
 ]
 

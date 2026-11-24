@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, FolderPlus, Library, Loader2, MessageSquare, Pencil, RefreshCw, Search, Star, Trash2, X } from 'lucide-react'
 import { trapDialogFocus } from '../utils/dialogFocus.mjs'
-import { deleteSavedWorkflow, isSharedInGpuSharing, listSavedWorkflows, openSavedWorkflow, searchSavedWorkflows, updateSavedWorkflowMetadata, WORKFLOW_LIBRARY_EVENTS } from '../services/workflowLibrary'
+import { deleteSavedWorkflow, listSavedWorkflows, openSavedWorkflow, searchSavedWorkflows, updateSavedWorkflowMetadata, WORKFLOW_LIBRARY_EVENTS } from '../services/workflowLibrary'
 import { createWorkflowFolder, loadWorkflowOrganization, removeWorkflowFolder, renameWorkflowFolder, sortWorkflowLibrary, updateWorkflowEntry, updateWorkflowOrganization } from '../services/workflowLibraryOrganization.mjs'
 import './WorkflowLibraryDrawer.css'
 
@@ -26,7 +26,7 @@ export default function WorkflowLibraryDrawer({ open = false, onClose, onUseWith
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [confirming, setConfirming] = useState(null)
-  const [deleting, setDeleting] = useState(null) // { id, shared }: the workflow whose "delete?" question is showing
+  const [deleting, setDeleting] = useState(null) // { id }: the workflow whose "delete?" question is showing
   const dialogRef = useRef(null)
   const searchRef = useRef(null)
   const folderFilterRef = useRef(null)
@@ -220,11 +220,11 @@ export default function WorkflowLibraryDrawer({ open = false, onClose, onUseWith
                     <div className="wl-card-actions"><button type="submit" className="wl-primary" disabled={actionsDisabled || !title.trim()}>Save details</button><button type="button" onClick={() => setEditing(null)} disabled={Boolean(busy)}>Cancel</button></div>
                   </form> : entry.source === 'my-workflows' && <div className="wl-card-actions">
                     <button type="button" className="wl-edit-button" aria-label={'Edit details for ' + entry.title} disabled={actionsDisabled} onClick={() => { setEditing(entry.id); setTitle(entry.title); setDescription(entry.description); setConfirming(null); setDeleting(null) }}><Pencil size={13} />Edit name and description</button>
-                    <button type="button" className="wl-edit-button" aria-label={'Delete ' + entry.title} disabled={actionsDisabled} onClick={async () => { setConfirming(null); setEditing(null); setDeleting({ id: entry.id, shared: await isSharedInGpuSharing(entry.id) }) }}><Trash2 size={13} />Delete</button>
+                    <button type="button" className="wl-edit-button" aria-label={'Delete ' + entry.title} disabled={actionsDisabled} onClick={() => { setConfirming(null); setEditing(null); setDeleting({ id: entry.id }) }}><Trash2 size={13} />Delete</button>
                   </div>}
                 </div></details>
                 {deleting?.id === entry.id && <div className="wl-confirm" role="group" aria-label={'Confirm deleting ' + entry.title}>
-                  <p>Delete “{entry.title}” from My Workflows? This cannot be undone.{deleting.shared ? ' It is one of the workflows you share in GPU sharing: it will stop being shared.' : ''}</p>
+                  <p>Delete “{entry.title}” from My Workflows? This cannot be undone.</p>
                   <div className="wl-card-actions"><button type="button" disabled={actionsDisabled} onClick={() => void runAction('delete:' + entry.id, () => deleteSavedWorkflow(entry), async () => { setDeleting(null); setNotice(`Deleted “${entry.title}”.`); await refresh() })}>Delete it</button><button type="button" disabled={Boolean(busy)} onClick={() => setDeleting(null)}>Cancel</button></div>
                 </div>}
                 {confirming === entry.id && <div className="wl-confirm" role="group" aria-label={'Confirm opening ' + entry.title}>

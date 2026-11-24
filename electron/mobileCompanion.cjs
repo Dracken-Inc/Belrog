@@ -727,7 +727,7 @@ function registerMobileCompanionIpc({ ipcMain, app, getMainWindow, dialog, clien
     record.sharingClaimed = true
     return { assertCurrent() { if (!same()) throw sharingFailure() } }
   }
-  return { claimFullAccess, claimMessageConsent, fundedLuna: server.fundedLuna, gpuNetwork: server.gpuNetwork,
+  return { claimFullAccess, claimMessageConsent, fundedLuna: server.fundedLuna,
     confirm: options => reviews.confirm(options), async dispose() {
     if (disposed) return stopping
     disposed = true

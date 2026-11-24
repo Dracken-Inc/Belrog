@@ -259,83 +259,7 @@ function getComfyRouter() {
   })
   return comfyRouter
 }
-// Belrog network: this computer's own sharing choices, what it could run for
-// someone else, and the connection to the queue. Sharing is off by default.
-// The owner's own added workflows (created further down, once the saved workflow library exists).
-let gpuShareOwn = null
-const gpuShareRunner = require('./gpuShareHostRunner.cjs').createGpuShareHostRunner({
-  resolveOwn: id => (gpuShareOwn ? gpuShareOwn.resolve(id) : null),
-  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
-  readWorkflow: async file => JSON.parse(await fs.readFile(path.join(await resolveBundledWorkflowDir(), file), 'utf8')),
-})
-const gpuShareHost = require('./gpuShareHost.cjs').createGpuShareHost({
-  settingsPath: path.join(app.getPath('userData'), 'gpu-share.json'), runner: gpuShareRunner,
-  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`, isExportBusy: () => Boolean(exportJobs.activeId),
-  getOwn: () => gpuShareOwn,
-})
-// The picture and clip of the last few jobs other people ran here, for the owner to look at.
-const gpuShareJobLog = require('./gpuShareJobLog.cjs').createGpuShareJobLog({ dir: path.join(app.getPath('userData'), 'gpu-share-jobs') })
-const gpuShareClient = require('./gpuShareClient.cjs').createGpuShareClient({ host: gpuShareHost, runner: gpuShareRunner, jobLog: gpuShareJobLog,
-  getNetwork: () => mobileCompanion?.gpuNetwork || null, getOwn: () => gpuShareOwn,
-  getComputerName: () => mobileCompanion?.gpuNetwork?.computerName?.() || 'A Belrog computer',
-  onChange: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gpu-share:changed') },
-  // Shown on this computer before someone else's job runs here, when the person asked to be asked.
-  confirmJob: async ({ from, workflowName, prompt, seconds, size, shape }) => {
-    if (!mainWindow || mainWindow.isDestroyed()) return false
-    const result = await dialog.showMessageBox(mainWindow, { type: 'question', buttons: ['Run it', 'Decline'], defaultId: 1, cancelId: 1, noLink: true,
-      title: 'Belrog network', message: `${from} wants to use this computer's GPU`,
-      detail: `${workflowName}\n${[seconds ? `${seconds} seconds` : '', size, shape].filter(Boolean).join(', ') || 'One picture'}\n\nDescription:\n${String(prompt).slice(0, 600)}\n\nNothing is charged. You can stop sharing at any time.` })
-    return result.response === 0
-  },
-})
-let stopGpuShareBeat = null
-app.whenReady().then(() => { stopGpuShareBeat = gpuShareClient.start(5000) })
-const gpuShareIpc = require('./gpuShareHost.cjs').registerGpuShareIpc({ ipcMain, getMainWindow: () => mainWindow, host: gpuShareHost,
-  getNetworkState: () => gpuShareClient.hostState(), onUpdated: () => gpuShareClient.beat(), report: jobId => gpuShareClient.report(jobId),
-  openJob: async jobId => { const folder = await gpuShareJobLog.folder(jobId); if (!folder) return false; return (await shell.openPath(folder)) === '' } })
-// The one job this account has on the network: sent and followed by the main window, and by the paired phone.
-const gpuNetworkJobs = require('./gpuNetworkIpc.cjs').createGpuNetworkJobs({ client: gpuShareClient, jobPath: path.join(app.getPath('userData'), 'gpu-network-job.json') })
-const gpuNetworkIpc = require('./gpuNetworkIpc.cjs').registerGpuNetworkIpc({ ipcMain, getMainWindow: () => mainWindow, client: gpuShareClient,
-  jobPath: path.join(app.getPath('userData'), 'gpu-network-job.json'), jobs: gpuNetworkJobs })
-// GPU sharing for the paired phone: free jobs on other creators' GPUs, and "Yours", the workflows the owner added
-// on this computer, which run right here. A finished local result is handed to the window to save into the project.
-let phoneLocalIpc = null
-const phoneSharedGpu = require('./mobileCompanionSharedGpu.cjs').createPhoneSharedGpu({ jobs: gpuNetworkJobs, cacheDir: path.join(app.getPath('userData'), 'phone-shared-cache'),
-  onLocalResult: () => phoneLocalIpc?.changed(),
-  local: {
-    // Only what was tested here and still runs.
-    list: async () => gpuShareOwn ? (await gpuShareOwn.list()).workflows.filter(item => item.testedAt && !item.trouble) : [],
-    run: async ({ jobId, id, prompt, image, signal, onStatus }) => gpuShareRunner.run({ jobId, workflowId: id, own: await gpuShareOwn.resolve(id), choices: { prompt }, image, signal, onStatus }),
-  } })
-phoneLocalIpc = require('./mobileCompanionSharedGpu.cjs').registerPhoneLocalIpc({ ipcMain, getMainWindow: () => mainWindow, getShared: () => phoneSharedGpu })
-// The Sound tab's built-in local voice model: its files live in Belrog's own data folder.
-registerLocalVoiceIpc({ ipcMain, getMainWindow: () => mainWindow, dir: path.join(app.getPath('userData'), 'local-voice', 'kokoro-82m-v1.0') })
-const comfyRouterIpc = registerComfyRouterIpc({ ipcMain, getMainWindow: () => mainWindow, getManager: getComfyRouter,
-  isBusy: () => Boolean(exportJobs.activeId), openExternal: url => shell.openExternal(url) })
-const { createGenerationMemoryCleanup, SETTING_KEY: GENERATION_MEMORY_SETTING_KEY } = require('./generationMemoryCleanup.cjs')
-const generationMemoryCleanup = createGenerationMemoryCleanup({
-  getEnabled: async () => (await readSettingsRaw())?.[GENERATION_MEMORY_SETTING_KEY] === true,
-  getEndpoint: async () => `http://127.0.0.1:${await resolveLocalComfyPort()}`,
-  isBusy: async () => Boolean(exportJobs.activeId) || (await generationSpending.getStatus()).busy,
-  onError: message => console.warn('[generation-memory]', message),
-})
-const workflowAssetInputs = require('./workflowAssetInputs.cjs').createWorkflowAssetInputs({
-  getSnapshot: async () => {
-    await performMcpRendererAction({ action: 'get_transport_state' })
-    return mcpServer?.lastSnapshot
-  },
-})
-const savedWorkflowLibrary = createSavedWorkflowLibrary({ getUserData: () => app.getPath('userData'), resolveAsset: workflowAssetInputs.resolveAsset })
-registerSavedWorkflowLibraryIpc({ ipcMain, getMainWindow: () => mainWindow, getLibrary: () => savedWorkflowLibrary })
-{
-  const { createGpuShareOwnWorkflows, registerGpuShareOwnIpc } = require('./gpuShareOwnWorkflows.cjs')
-  gpuShareOwn = createGpuShareOwnWorkflows({ dir: path.join(app.getPath('userData'), 'gpu-share-own'), library: savedWorkflowLibrary, runner: gpuShareRunner,
-    // A small picture of the example for the reviewer: at most 512 pixels wide, as a JPEG.
-    makeThumbnail: async bytes => { const image = nativeImage.createFromBuffer(bytes); if (image.isEmpty()) return null
-      const { width } = image.getSize(); return (width > 512 ? image.resize({ width: 512, quality: 'good' }) : image).toJPEG(78) } })
-  registerGpuShareOwnIpc({ ipcMain, getMainWindow: () => mainWindow, own: gpuShareOwn, onChanged: () => { void gpuShareClient.refresh() },
-    network: gpuShareClient, getMaker: async () => (await gpuShareHost.getSettings()).displayName })
-}
+
 function getGenerationRuns() {
   if (!generationRuns) {
     generationRuns = createGenerationRuns({
@@ -488,8 +412,7 @@ mobileCompanion = registerMobileCompanionIpc({ ipcMain, app, dialog, getMainWind
   // Router manager as the Create tab. See mobileCompanionCreate.cjs for its fences.
   createBridge: require('./mobileCompanionCreate.cjs').createMobileCreateBridge({ getManager: getComfyRouter,
     isBusy: () => Boolean(exportJobs.activeId), cacheDir: path.join(app.getPath('userData'), 'phone-create-cache'),
-    // Free jobs on other creators' GPUs, from the phone: the same job the GPU sharing tab would send.
-    shared: phoneSharedGpu }),
+  }),
 })
 async function getReviewAssets(projectPath) {
   await performMcpRendererAction({action:'get_transport_state'})
@@ -3405,8 +3328,7 @@ async function loadBundledMcpWorkflowCatalog({ refresh = false } = {}) {
   const entries = []
   try {
     const files = await fs.readdir(workflowsDir)
-    // network_*.json are the Belrog network's own slim files (gpuShareWorkflows.cjs), not workflows to browse or hand to an agent.
-    for (const file of files.filter((entry) => entry.toLowerCase().endsWith('.json') && !entry.toLowerCase().startsWith('network_')).sort()) {
+    for (const file of files.filter((entry) => entry.toLowerCase().endsWith('.json')).sort()) {
       const registryEntry = byFile.get(file.toLowerCase()) || null
       const id = registryEntry?.id || deriveWorkflowIdFromFile(file)
       const entry = {
@@ -8997,9 +8919,6 @@ app.on('will-quit', () => {
   generationRuns?.dispose()
   comfyRouter?.dispose()
   comfyRouterIpc.dispose()
-  gpuShareIpc.dispose()
-  gpuNetworkIpc.dispose()
-  stopGpuShareBeat?.()
   abortAllOpticalFlowJobs()
   if (mcpServer) {
     mcpServer.stop().catch((error) => {

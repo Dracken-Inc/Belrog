@@ -24,7 +24,6 @@ export const TUTORIAL_GROUPS = Object.freeze([
       v('nsDaRPjGob0', 'Create overview', 'Create makes one picture, or one video, from a description.'),
       v('QeELnxcSajM', 'Sound overview', 'Sound makes three things: a voice, music, and sound effects.'),
       v('5yPAGVMiH5I', 'Stock overview', 'Stock is free footage, ready to use. The photos and videos come from Pexels.'),
-      v('QaXvl__eQow', 'GPU sharing', 'Borrow a graphics card from another creator, or lend one. It is free.'),
       v('2FkIBs6fQH8', 'Export overview', 'Export turns the timeline into one video file.'),
       v('Rsw_-HPlDRE', 'The ComfyUI tab', 'The ComfyUI tab is ComfyUI itself, running inside Belrog.'),
     ]),

@@ -5,7 +5,6 @@ import { createDesktopAccountState, desktopAccountIdentity, desktopAccountEmail,
 import { trapDialogFocus } from '../utils/dialogFocus.mjs'
 import './DesktopAccount.css'
 import { useDesktopAccountController } from './DesktopAccountController'
-import { getGpuShare, gpuShareActivity, subscribeGpuShare } from '../services/gpuShareState'
 import { VeloAllowance, useVeloAllowance, veloAllowanceNotice } from './VeloAllowance'
 
 const AccountContext = createContext(null)
@@ -76,8 +75,6 @@ export function DesktopAccountButton({ disabled = false }) {
   const [veeRefresh, setVeeRefresh] = useState(0)
   const registered = guided?.registered === true
   // Only a computer that shares its GPU ever sees this: a job running here, or one waiting for an answer.
-  const shareState = useSyncExternalStore(subscribeGpuShare, getGpuShare).state
-  const shareActivity = gpuShareActivity(shareState)
   // connection.enabled can mean only that the background service is running.
   // Sharing is governed by the guided preference or an actual legacy listener.
   const privateSharingOnly = connection?.legacyEnabled === true && guided?.enabled !== true
@@ -147,7 +144,6 @@ export function DesktopAccountButton({ disabled = false }) {
     <button ref={button} type="button" className="desktop-account-button no-drag" aria-label="Belrog account" title={displayName ? `Belrog account · ${displayName}` : 'Belrog account'}
       aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={() => open ? close() : show()}>
       {initials ? <span aria-hidden="true">{initials}</span> : <UserRound size={17} aria-hidden="true" />}
-      {shareActivity && <span className={`desktop-account-dot${shareActivity === 'asking' ? ' is-asking' : ''}`} title={shareActivity === 'asking' ? 'A shared GPU job is waiting for your answer' : 'This computer is running a shared GPU job'} />}
     </button>
     {open && createPortal(<div className="desktop-account-backdrop no-drag" onPointerDown={event => {
       if (event.target === event.currentTarget) { event.preventDefault(); close() }
@@ -161,8 +157,6 @@ export function DesktopAccountButton({ disabled = false }) {
           </>}</div>
           <button type="button" className="desktop-account-close" data-account-close aria-label="Close account" onClick={close}><X size={19} /></button></header>
         {!registered && <p id={descriptionId} className="desktop-account-muted">A Belrog account is optional. Use it for Velo access and phone sharing. Editing, your own Codex and local LM Studio work without one.</p>}
-        {shareActivity && <div className="desktop-account-computer"><Monitor size={17} aria-hidden="true" /><div className="desktop-account-computer-label"><small>Shared GPU</small><span>{shareActivity === 'asking' ? 'A job is waiting for your answer' : `Running a job for ${shareState.network.job.from}`}</span></div>
-          <button type="button" onClick={() => { window.dispatchEvent(new CustomEvent('velorn:open-settings', { detail: 'network' })); close() }}>Open</button></div>}
         {registered && !email && <p className="desktop-account-muted">{displayName ? 'Email is not available for this connection.' : 'Account details are not available for this connection yet.'} Your connection is unchanged.</p>}
         <div className="desktop-account-vee" aria-label="Velo access"><div><strong>Velo</strong><span role="status">{veeText}</span></div>
           {registered && live && guided.phase !== 'account-unavailable' && <button type="button" aria-label="Refresh Velo availability" disabled={veeText === 'Checking availability…'} onClick={() => setVeeRefresh(value => value + 1)}>Refresh</button>}

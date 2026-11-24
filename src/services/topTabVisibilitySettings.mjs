@@ -7,7 +7,6 @@ export const HIDEABLE_TOP_TABS = [
   { id: 'create', label: 'Visuals' },
   { id: 'sound', label: 'Sound' },
   { id: 'stock', label: 'Stock' },
-  { id: 'gpu-sharing', label: 'GPU sharing' },
   { id: 'comfyui', label: 'ComfyUI' },
 ]
 const ALLOWED = new Set(HIDEABLE_TOP_TABS.map((tab) => tab.id))

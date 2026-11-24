@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { AlertTriangle, Check, ChevronDown, Cloud, Monitor, ExternalLink, FolderOpen, Image as ImageIcon, Library, Mic, Music, Play, Plus, SlidersHorizontal, Square, Video, Volume2, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, ChevronDown, Cloud, ExternalLink, FolderOpen, Image as ImageIcon, Library, Mic, Music, Play, Plus, SlidersHorizontal, Square, Video, Volume2, X } from 'lucide-react'
 import useAssetsStore from '../stores/assetsStore'
 import useTimelineStore from '../stores/timelineStore'
 import useProjectStore from '../stores/projectStore'
@@ -8,8 +8,6 @@ import {
   COMFY_CLOUD, TEMPOS, cloudVoiceWorkflow, tempoBpm, withTempo, IDEAS, KIND_ORDER, LOCAL_MUSIC, LOCAL_SOUND, LOCAL_VOICE, stableAudioWorkflow, LOCAL_PRICE, MOODS, placeOf, soniloWorkflow, NOUN, PLACEHOLDERS, SOUND_KINDS, lengthLabel, localMusicProblem, localMusicRequest, SHAPES, SIZE_LABELS, RESOLUTION_LABELS, PICTURE_TYPES, PICTURE_MAX_BYTES, capital, isAudioKind, rateText, chargedText, creditsText, defaultModel, fitNote, fitOptions, footnote,
   goLabel, needText, pictureTypeFor, priceText, problemFor, problemForJob, recordedPrice, sameDeal, unfinishedCreateJobs, usablePictures,
 } from '../services/createFlow.mjs'
-import { NETWORK_KNOWN_KEY, NETWORK_PICTURE, NETWORK_PRICE, NETWORK_STATE, NETWORK_VIDEO_TEXT, NETWORK_WORKFLOW, jobKind, networkCandidates, networkLabel, networkModels, offeredWorkflows, tryNextComputer } from '../services/velornNetworkJob.mjs'
-import { velornNetwork } from '../services/velornNetwork'
 import SoundRings from './SoundRings'
 import SoundPlayer from './SoundPlayer'
 import LocalVoiceSetup from './LocalVoiceSetup'
@@ -43,11 +41,6 @@ const EACH_KIND = value => Object.fromEntries(KIND_ORDER.map(id => [id, value()]
 const DOCKED = ['generating', 'result', 'trouble', 'rules']
 // Whether this computer has already shown the Belrog network's rules.
 // v2 (2026-11-16): the IP address is kept. v3 (2026-11-17): a reported job's result goes to reviewers. Each change shows the rules once more.
-const NETWORK_RULES_KEY = 'velorn.network.rules.v3'
-const networkRulesSeen = () => { try { return Boolean(window.localStorage.getItem(NETWORK_RULES_KEY)) } catch { return false } }
-// The shared workflows this computer has ever been offered. One that nobody offers right now is then shown as not available, not hidden.
-const networkKnown = () => { try { const list = JSON.parse(window.localStorage.getItem(NETWORK_KNOWN_KEY) || '[]'); return Array.isArray(list) ? list.filter(id => typeof id === 'string').slice(0, 20) : [] } catch { return [] } }
-const NETWORK_DOT = { ready: '#4ADE80', busy: '#FBBF24', unavailable: '#71717A' }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 function encode(bytes) {
@@ -81,11 +74,9 @@ const release = picture => { if (picture?.owned && picture.url) URL.revokeObject
 
 // One screen, two tabs: Create makes pictures and clips, Sound makes voice,
 // music and effects. They share the key, the prices and the whole request flow.
-// mode 'create' and 'sound' are the two tabs of that name. mode 'shared' is the same box inside the GPU sharing tab:
-// it offers only what shared GPUs offer, picked from cards instead of the model list, and Create no longer lists those.
-export default function CreateWorkspace({ mode = 'create', onShare = null }) {
+// The Create and Sound tabs: the same box, Sound with its own kinds and models.
+export default function CreateWorkspace() {
   const sound = mode === 'sound'
-  const sharedOnly = mode === 'shared'
   const api = typeof window !== 'undefined' ? window.electronAPI?.comfyRouter : null
   const [models, setModels] = useState([])
   const [rate, setRate] = useState(null) // Comfy credits per dollar
@@ -121,20 +112,6 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const stepNow = useRef(step); stepNow.current = step
   const projectPath = useProjectStore(state => (typeof state.currentProjectHandle === 'string' ? state.currentProjectHandle : state.currentProject?.name || ''))
   const fileInput = useRef(null)
-  // Workflows that computers share with this account show as video and picture models; which computer runs a job is Belrog's choice.
-  const net = sharedOnly && typeof window !== 'undefined' ? window.electronAPI?.gpuNetwork : null
-  const [netHosts, setNetHosts] = useState([])
-  const [netProblem, setNetProblem] = useState('') // why the list of shared GPUs could not be read, in the person's words
-  const [netLoaded, setNetLoaded] = useState(false)
-  const [netKnown, setNetKnown] = useState(networkKnown)
-  useEffect(() => {
-    const seen = offeredWorkflows(netHosts)
-    if (!seen.some(id => !netKnown.includes(id))) return
-    const next = [...new Set([...netKnown, ...seen])].sort()
-    setNetKnown(next)
-    try { window.localStorage.setItem(NETWORK_KNOWN_KEY, JSON.stringify(next)) } catch { /* Remembered for this run. */ }
-  }, [netHosts, netKnown])
-  const netState = useSyncExternalStore(velornNetwork.subscribe, velornNetwork.state)
   // A small menu (models, options, add a picture) closes when the person clicks anywhere else or presses Escape.
   useEffect(() => {
     if (!['models', 'opts', 'add'].includes(pop)) return undefined
@@ -143,25 +120,6 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     document.addEventListener('pointerdown', away); document.addEventListener('keydown', key)
     return () => { document.removeEventListener('pointerdown', away); document.removeEventListener('keydown', key) }
   }, [pop])
-  const netStarted = useRef('') // the network job started from this box, as opposed to one picked up
-  const [reporting, setReporting] = useState(false)
-  const [reported, setReported] = useState('') // the job whose workflow was reported
-  const reportWorkflow = async result => {
-    setReporting(false)
-    try { const sent = await net.reportWorkflow(result.reportable); if (sent?.success) setReported(result.jobId); else setNotice(sent?.error || 'That could not be reported.') }
-    catch { setNotice('That could not be reported.') }
-  }
-  const loadNetHosts = useCallback(async () => {
-    if (!net?.hosts) return
-    try {
-      const listed = await net.hosts()
-      setNetHosts(listed?.success && Array.isArray(listed.hosts) ? listed.hosts : [])
-      setNetProblem(listed?.success ? (listed.banned ? 'This account can no longer send jobs on the Belrog network.' : '') : listed?.error || 'The Belrog network could not be reached.')
-    } catch { setNetHosts([]); setNetProblem('The Belrog network could not be reached.') }
-    setNetLoaded(true)
-  }, [net])
-  // What is free changes by the minute, so the cards are checked again now and then while they are on screen.
-  useEffect(() => { void loadNetHosts(); if (!net) return undefined; const timer = setInterval(() => { if (!document.hidden) void loadNetHosts() }, 15000); return () => clearInterval(timer) }, [loadNetHosts, net])
 
   const refreshStatus = useCallback(async () => {
     if (!api?.status) return
@@ -193,24 +151,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const kinds = (sound ? SOUND_KINDS : CREATE_KINDS).filter(id => models.some(m => m.kind === id) || (sound && models.length === 0))
   const loop = kind === 'sound' && place === 'cloud' && wanted.sound.loop === true
   const withLyrics = kind === 'music' && wanted.music.vocals === true
-  const shared = useMemo(() => (sharedOnly ? networkModels(netHosts, { known: netKnown }) : []), [sharedOnly, netHosts, netKnown])
-  const ofKind = useMemo(() => (sharedOnly ? shared : models).filter(m => m.kind === kind && (!sound || placeOf(m) === place)), [models, shared, sharedOnly, kind, sound, place])
-  // The cards are grouped by who shares them. Two creators may pick the same name, so a group is one computer, not one name.
-  const sharedGroups = useMemo(() => {
-    const groups = new Map()
-    for (const m of shared) {
-      const id = m.hosts?.[0]?.hostId || m.id
-      if (!groups.has(id)) groups.set(id, { id, name: m.maker || 'A Belrog creator', list: [] })
-      groups.get(id).list.push(m)
-    }
-    return [...groups.values()]
-  }, [shared])
-  // In the GPU sharing tab a card is the choice of model and of what to make at once. Until one is picked, the first that can run is.
-  useEffect(() => {
-    if (!sharedOnly || !shared.length || shared.some(m => m.kind === kind && m.id === chosen[kind])) return
-    const first = shared.find(m => m.state === 'ready') || shared[0]
-    setKind(first.kind); setChosen(all => ({ ...all, [first.kind]: first.id }))
-  }, [sharedOnly, shared, kind, chosen])
+  const ofKind = useMemo(() => models.filter(m => m.kind === kind && (!sound || placeOf(m) === place)), [models, kind, sound, place])
   const model = ofKind.find(m => m.id === chosen[kind]) || defaultModel(ofKind, kind)
   const picture = audio ? null : pictures[kind]
   const editing = kind === 'image' && Boolean(picture)
@@ -218,8 +159,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const voices = kind === 'voice' && model?.voices ? model.voices : elevenVoices
   const options = fitOptions(model, wanted[kind], { voices })
   const bpm = kind === 'music' ? tempoBpm(wanted.music.tempo) : null
-  // A shared GPU makes one picture per job.
-  const count = kind === 'image' && !model?.network && [2, 4].includes(wanted.image.count) ? wanted.image.count : 1
+  const count = kind === 'image' && [2, 4].includes(wanted.image.count) ? wanted.image.count : 1
   const prompt = prompts[kind]
   const connected = Boolean(status?.configured)
   const signature = JSON.stringify([model?.id, options, count, loop, prompt.trim(), withLyrics ? lyrics.trim() : '', bpm, picture ? [picture.name, picture.base64.length, video ? pictureUse : ''] : null])
@@ -229,11 +169,10 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const recorded = each && { usd: each.usd * count, firm: each.firm }
   const shown = live?.signature === signature ? live.estimate && { usd: live.estimate.usd, firm: live.estimate.firm } : recorded
   // Speech has no price until there is something to say, so the rate is shown instead.
-  const shownText = !model ? '' : model.network ? NETWORK_PRICE : model.local ? LOCAL_PRICE : !shown && kind === 'voice' && model ? rateText(model, rate) : priceText(shown, { editing, rate })
+  const shownText = !model ? '' : model.local ? LOCAL_PRICE : !shown && kind === 'voice' && model ? rateText(model, rate) : priceText(shown, { editing, rate })
   const busy = step === 'sending' || step === 'generating'
   const docked = DOCKED.includes(step)
   const runVideo = jobs.some(item => item.kind === 'video')
-  const runNetwork = jobs.some(item => item.network)
 
   const setOption = (name, value) => setWanted(all => ({ ...all, [kind]: { ...all[kind], [name]: value } }))
   const apply = useCallback(problem => {
@@ -383,67 +322,6 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     }
   }
 
-  // A clip or a picture made on a shared GPU. The follower outside this tab sends
-  // it, watches it and saves the result; the effect below shows where it stands.
-  const generateNetwork = async ({ agreed = false } = {}) => {
-    const pictureJob = model.kind === 'image', musicJob = model.kind === 'music'
-    // A creator's own workflow says what it starts from; Belrog's own are known.
-    if (model.own && model.needsImage && !picture) { setNotice(`Add a picture first. ${model.name} starts from it.`); return }
-    if (model.own && !model.needsImage && picture) { setNotice(`${model.name} starts from the description only. Remove the picture, or choose another model.`); return }
-    if (!model.own && !pictureJob && !picture && !model.makes) { setNotice('Add a picture first. The clip starts from it.'); return }
-    if (!model.own && !pictureJob && picture && !model.edits) { setNotice('No shared computer makes a clip from a picture right now. Remove the picture to make one from the description, or choose another workflow.'); return }
-    if (model.state === 'unavailable') { setNotice(model.note); void loadNetHosts(); return }
-    if (!model.own && pictureJob && picture && !model.edits) { setNotice('No shared computer edits pictures right now. Remove the picture to make one from the description, or choose another model.'); return }
-    if (!model.own && pictureJob && !picture && !model.makes) { setNotice('No shared computer makes pictures from a description right now. Add a picture to edit, or choose another model.'); return }
-    const workflowId = model.own ? model.ownId : !pictureJob ? (picture ? NETWORK_WORKFLOW : NETWORK_VIDEO_TEXT) : picture ? NETWORK_PICTURE.edit : NETWORK_PICTURE.make
-    const computers = networkCandidates(model, workflowId)
-    if (!computers.length) { setNotice('No shared computer can take this right now. Try again later.'); void loadNetHosts(); return }
-    if (!projectPath) { setNotice(`Open or save a project first, so the ${pictureJob ? 'picture' : musicJob ? 'song' : 'clip'} has somewhere to go.`); return }
-    // Someone else's computer: the rules are shown once on this computer before the first job goes.
-    if (computers.some(computer => !computer.ownComputer) && !agreed && !networkRulesSeen()) { setNotice(''); setStep('rules'); return }
-    if (agreed) { try { window.localStorage.setItem(NETWORK_RULES_KEY, String(Date.now())) } catch { /* Shown again next time. */ } }
-    run.current++
-    setStep('sending')
-    // An edit keeps its picture's own shape, so only a new picture is given one.
-    // A music workflow may be given words to sing; without them it makes music with no singing.
-    const choices = model.own ? { prompt: prompt.trim(), ...(musicJob && lyrics.trim() ? { lyrics: lyrics.trim() } : {}), ...(musicJob && Number.isInteger(options.seconds) ? { seconds: options.seconds } : {}) } : !pictureJob ? { prompt: prompt.trim(), shape: options.shape, size: options.resolution, seconds: options.seconds }
-      : picture ? { prompt: prompt.trim() } : { prompt: prompt.trim(), shape: options.shape }
-    const image = picture ? { mimeType: picture.mimeType, bytes: Uint8Array.from(atob(picture.base64), char => char.charCodeAt(0)) } : null
-    // The best computer first; the next one only when a computer turns the job away.
-    let sent = null
-    for (const computer of computers) {
-      sent = await velornNetwork.send({ hostId: computer.hostId, hostName: computer.hostName, workflowId, choices, image,
-        ...(model.own ? { label: `${model.name} · by ${model.maker}`, kind: model.kind } : {}) })
-      if (sent.success || !tryNextComputer(sent.code)) break
-    }
-    if (sent.success) { netStarted.current = sent.job.jobId; return }
-    setNotice(sent.error); setStep('compose'); void loadNetHosts()
-  }
-  useEffect(() => {
-    if (!sharedOnly) return
-    const showing = jobs.length > 0 && jobs.every(item => item.network) && (step === 'generating' || step === 'sending')
-    const free = step === 'compose' || step === 'sending' || showing
-    if (!free || !netState.job) return
-    const label = netState.job.label || networkLabel(netState.job.workflowId)
-    const made = jobKind(netState.job)
-    if (netState.phase === 'running' || netState.phase === 'saving') {
-      if (showing && jobs[0].jobId === netState.job.jobId && step === 'generating') return
-      run.current++
-      setJobs([{ jobId: netState.job.jobId, kind: made, network: true, modelLabel: label, status: 'IN_PROGRESS' }])
-      setResults([]); setPlaced({}); setPop(null); setNotice(''); setResumed(netStarted.current !== netState.job.jobId); setStep('generating')
-    } else if (netState.phase === 'done') {
-      const asset = useAssetsStore.getState().assets.find(item => item.id === netState.assetId)
-      velornNetwork.clear(); void loadNetHosts()
-      if (asset) { setResults([{ jobId: netState.job.jobId, assetId: asset.id, url: asset.url, type: made === 'music' || asset.type === 'audio' ? 'audio' : made, kind: asset.type === 'audio' ? 'music' : made, made, modelLabel: label, network: true, madeOn: netState.job.hostName,
-        // A creator's own workflow can be reported by the person who just used it.
-        ...(/^own-[a-f0-9]{16}$/.test(netState.job.workflowId || '') && netState.job.hostId ? { reportable: { hostId: netState.job.hostId, workflowId: netState.job.workflowId } } : {}) }]); setNotice(''); setStep('result') }
-      else { setNotice(`Your ${made === 'image' ? 'picture' : made === 'music' ? 'song' : 'clip'} is in the project’s assets.`); setStep('compose') }
-    } else if (netState.phase === 'failed') {
-      velornNetwork.clear(); void loadNetHosts()
-      if (netState.cancelled) { setNotice('Stopped. Nothing was saved.'); setStep('compose') }
-      else { setTrouble({ kind: 'network', title: `The ${made === 'image' ? 'picture' : made === 'music' ? 'song' : 'video'} wasn't made`, body: netState.error, note: 'Nothing was charged: the Belrog network is free.', primary: 'Back' }); setStep('trouble') }
-    }
-  }, [sharedOnly, netState, step, jobs, loadNetHosts])
 
   const generate = async () => {
     if (busy || !api || !model) return
@@ -451,7 +329,6 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
     if (!prompt.trim()) { setNotice(editing ? 'Describe what should change first.' : kind === 'voice' ? 'Write what the voice should say first.' : 'Write a description first.'); return }
     if (kind === 'voice' && !options.voice) { setNotice('No voice is available yet.'); return }
     if (withLyrics && model.lyrics && !lyrics.trim()) { setNotice('Write the lyrics, or choose Instrumental.'); return }
-    if (model.network) return generateNetwork()
     if (model.local || model.via === 'comfyui') return generateLocal()
     if (!connected) { setKeyError(''); setStep('connect'); return }
     const token = ++run.current
@@ -491,7 +368,6 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
 
   const stop = async () => {
     if (!jobs.length) return
-    if (runNetwork) { setNotice('Stop requested.'); return velornNetwork.cancel() }
     setNotice('Stop requested. Comfy may still finish and charge for it.')
     for (const item of jobs) { try { await api.cancel({ jobId: item.jobId }) } catch { /* the status check reports what happened */ } }
   }
@@ -537,7 +413,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   const removePicture = () => setPictures(all => { release(all[kind]); return { ...all, [kind]: null } })
 
   if (!api?.models) return <div className="vcreate" data-layout="open"><p className="vc-muted">Create is available in the Belrog desktop app.</p></div>
-  const roleLabel = video ? (pictureUse === 'reference' && !model?.network ? 'Use as reference' : 'Start from this picture') : 'Edit this picture'
+  const roleLabel = video ? (pictureUse === 'reference' ? 'Use as reference' : 'Start from this picture') : 'Edit this picture'
   const summary = kind === 'voice' ? voices.find(v => v.id === options.voice)?.name || 'Voice' : audio ? `${options.seconds} seconds` : `${SHAPES.find(s => s.id === options.shape)?.label} · ${video ? `${options.seconds} seconds${options.resolution !== '720p' ? ` · ${options.resolution}` : ''}` : `${count} ${count === 1 ? 'image' : 'images'}${options.size !== '1K' ? ` · ${options.size}` : ''}`}`
   const note = fitNote(model, wanted[kind])
   const audioOptions = kind === 'voice'
@@ -604,32 +480,16 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
   }
 
   return (
-    <div className="vcreate" data-mode={mode} data-place={sound ? place : undefined} data-layout={docked ? 'docked' : 'open'}>
+    <div className="vcreate" data-mode={sound ? 'sound' : 'create'} data-place={sound ? place : undefined} data-layout={docked ? 'docked' : 'open'}>
     <div className="vc-inner">
-      {sharedOnly ? <header className="vc-shared-head">
-        <div><h1 className="vc-shared-title">GPU sharing</h1><p className="vc-muted">Free. Made on other creators’ computers when they are not using them.</p></div>
-        {onShare && <button type="button" className="vc-line" onClick={onShare}><Monitor aria-hidden="true" size={16} />Share my GPU</button>}
-      </header> : <h1 className="vc-title">What do you want to <span className="vc-title-glow">{sound ? 'hear' : 'see'}</span>?</h1>}
-      {sharedOnly && !docked && (shared.length === 0
-        ? <p className="vc-muted vc-shared-empty" role="status">{!netLoaded ? 'Looking for shared GPUs…' : netProblem || 'Nothing is shared with this account yet. When a creator invites you, or opens a workflow to everyone, it shows here.'}</p>
-        : sharedGroups.map(group => <section key={group.id} className="vc-shared-group" aria-label={`Workflows shared by ${group.name}`}>
-            {/* One header per creator: the name they chose, and how many of their workflows are here. */}
-            <h2 className="vc-shared-label"><span className="vc-shared-maker">{group.name}</span><span>{group.list.length} {group.list.length === 1 ? 'workflow' : 'workflows'}</span></h2>
-            <div className="vc-shared-grid">{group.list.map(m => <button key={m.id} type="button" className="vc-shared-card" aria-pressed={m.id === model?.id} disabled={busy}
-              onClick={() => { setKind(m.kind); setChosen(all => ({ ...all, [m.kind]: m.id })); setPop(null); setNotice('') }}>
-              <span className="vc-shared-name">{m.name}</span>
-              <span className="vc-shared-what">{m.kind === 'image' ? 'pictures' : 'video'}</span>
-              <span className="vc-shared-note">{m.state === 'unavailable' ? m.note : m.note.replace(`By ${m.maker}. `, '').replace(' Free, on their shared GPU.', '')}</span>
-              <span className="vc-shared-state"><span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, background: NETWORK_DOT[m.state] }} />{NETWORK_STATE[m.state]}</span>
-            </button>)}</div>
-          </section>))}
+      <h1 className="vc-title">What do you want to <span className="vc-title-glow">{sound ? 'hear' : 'see'}</span>?</h1>
       {/* Create and Sound only use Comfy Router. Said plainly, so nobody takes this for something running on their own computer. */}
-      {!sharedOnly && !docked && <p className="vc-router-note" data-router-note><Cloud aria-hidden="true" size={15} /><span><strong>Runs on Comfy Router and uses your Comfy credits.</strong> You see each model’s cost when you pick it. Nothing here runs on this computer: for local models, use the ComfyUI tab.</span></p>}
+      {!docked && <p className="vc-router-note" data-router-note><Cloud aria-hidden="true" size={15} /><span><strong>Runs on Comfy Router and uses your Comfy credits.</strong> You see each model’s cost when you pick it. Nothing here runs on this computer: for local models, use the ComfyUI tab.</span></p>}
       {!docked && sound && <>
         <div className="vc-swave" aria-hidden="true"><span className="vc-swave-glow" /><span className="vc-swave-bars" data-kind={kind} /></div>
         {soundStrips}
       </>}
-      {!docked && !sound && !sharedOnly && (ownResults.length === 5
+      {!docked && !sound && (ownResults.length === 5
         ? <div className="vc-fan" role="group" aria-label="Your recent pictures">{ownResults.map(asset => <button key={asset.id} type="button" className="vc-card" disabled={busy}
             title="Use this picture" aria-label={`Use your picture ${asset.name || ''}`} onClick={() => addFromProject(asset)}><img src={asset.url} alt="" loading="lazy" /></button>)}</div>
         : <div className="vc-fan" role="group" aria-label="Ideas to start from">{STARTERS.map(card => <button key={card.name} type="button" className="vc-card" disabled={busy}
@@ -647,22 +507,12 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
         <h2>{resumed ? 'Picking up where you left off' : jobs.length > 1 ? `Creating your ${jobs.length} images` : `Creating your ${noun}`}</h2>
         <p className="vc-muted">{resumed ? `${jobs.length > 1 ? `${jobs.length} requests were` : `Your ${NOUN(jobs[0]?.kind)} was`} still being made when you left. Nothing is sent or charged again. ` : 'You can keep working. '}
           {jobs.length > 1 ? 'They are' : 'It is'} saved to your project when {jobs.length > 1 ? 'they finish' : 'it finishes'}.</p>
-        {(runVideo || runNetwork || jobs.some(item => item.slow) || (jobs.length > 1 && results.length > 0)) && <span className="vc-small" style={{ fontSize: 13.5 }}>{jobs.length > 1 && results.length > 0 ? `${results.length} of ${jobs.length} ready.` : runNetwork ? `${netState.text || 'Working on it.'}${netState.hostOnline === false ? ' The other computer is not answering right now.' : ''}` : runVideo ? 'Videos can take a few minutes.' : jobs.some(item => item.local) ? 'Music is made on this computer and can take several minutes.' : 'A song can take a minute or two.'}</span>}
+        {(runVideo || jobs.some(item => item.slow) || (jobs.length > 1 && results.length > 0)) && <span className="vc-small" style={{ fontSize: 13.5 }}>{jobs.length > 1 && results.length > 0 ? `${results.length} of ${jobs.length} ready.` : runVideo ? 'Videos can take a few minutes.' : jobs.some(item => item.local) ? 'Music is made on this computer and can take several minutes.' : 'A song can take a minute or two.'}</span>}
         {/* Speech and sounds are sent in one go and finish in seconds; there is nothing to stop. */}
         {!jobs.every(item => isAudioKind(item.kind)) && <><button type="button" className="vc-line" onClick={stop}>Stop</button>
-        {!runNetwork && <span className="vc-small">Stopping may not prevent a charge.</span>}</>}
+        <span className="vc-small">Stopping may not prevent a charge.</span>}</>}
       </section>}
 
-      {step === 'rules' && <section className="vc-stage vc-rise" aria-label="Before you use a shared GPU">
-        <h2>Before you use a shared GPU</h2>
-        <p>This clip is made on someone else’s computer. Its owner can see your description and your picture.</p>
-        <p>Every job is tied to your Belrog account. Belrog keeps your description, your IP address and a fingerprint of the picture and the clip for 30 days, to stop abuse. The owner can report a job; Belrog’s reviewers then see the result, and it is deleted once they decide.</p>
-        <p><strong>No nudity and no sexual acts.</strong> Sending them gets your account and your internet connection banned from the Belrog network.</p>
-        <div className="vc-row" style={{ justifyContent: 'center' }}>
-          <button type="button" className="vc-go" onClick={() => void generateNetwork({ agreed: true })}>I understand, send it</button>
-          <button type="button" className="vc-line" style={{ minHeight: 48 }} onClick={backToCompose}>Cancel</button>
-        </div>
-      </section>}
 
       {step === 'trouble' && trouble && <section className="vc-stage vc-rise" role="alert">
         <AlertTriangle aria-hidden="true" size={30} color="#FF9B8A" strokeWidth={1.8} />
@@ -688,20 +538,13 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
         </figure>)}</div>
         <div className="vc-row vc-between" style={{ padding: '0 4px' }}>
           <span className="vc-row vc-muted" style={{ gap: 8, fontSize: 14.5 }}><Check aria-hidden="true" size={15} />Saved to your project's assets</span>
-          <span className="vc-small">{results[0].modelLabel}{results[0].network ? ` · free, made on ${results[0].madeOn || 'a shared computer'}` : results[0].local ? ' · made on this computer, free' : results[0].viaComfy ? ' · charged through ComfyUI' : chargedText(results) ? ` · ${chargedText(results)}` : ''}</span>
+          <span className="vc-small">{results[0].modelLabel}{results[0].local ? ' · made on this computer, free' : results[0].viaComfy ? ' · charged through ComfyUI' : chargedText(results) ? ` · ${chargedText(results)}` : ''}</span>
         </div>
-        {results[0].reportable && <div className="vc-row" style={{ padding: '0 4px', gap: 10, justifyContent: 'flex-end' }}>
-          {reported === results[0].jobId ? <span className="vc-small">Reported. Thank you.</span>
-            : reporting ? <><span className="vc-small">Report it as not doing what it says?</span>
-                <button type="button" className="vc-quiet" onClick={() => void reportWorkflow(results[0])}>Yes, report</button>
-                <button type="button" className="vc-quiet" onClick={() => setReporting(false)}>Cancel</button></>
-            : <button type="button" className="vc-quiet" onClick={() => setReporting(true)}>Report this workflow</button>}
-        </div>}
       </section>}
 
       {sound && step === 'result' && soundStrips}
 
-      <div className="vc-box-wrap" style={sharedOnly && shared.length === 0 && step === 'compose' ? { display: 'none' } : undefined}>
+      <div className="vc-box-wrap">
         <section className="vc-box" aria-label={sound ? 'Sound' : 'Create'}>
           {!audio && <div className="vc-row">
             <input ref={fileInput} type="file" accept={PICTURE_TYPES.join(',')} className="vc-hidden" tabIndex={-1} aria-hidden="true" onChange={addPicture} />
@@ -715,7 +558,7 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
             {!picture && <span className="vc-muted" style={{ fontSize: 14 }}>{video ? 'Add a picture to start from or use as a reference' : 'Add a picture to edit or use as a reference'}</span>}
             {picture && <div className="vc-media vc-rise">
               <img src={picture.url} alt={picture.name} />
-              {video && !model?.network
+              {video
                 ? <button type="button" className="vc-chip" style={{ minHeight: 38, background: '#3A3A3F' }} aria-label={`How to use it: ${roleLabel}. Press to change.`}
                     onClick={() => setPictureUse(use => (use === 'start' ? 'reference' : 'start'))}>{roleLabel}<ChevronDown aria-hidden="true" size={14} /></button>
                 : <span className="vc-chip" style={{ minHeight: 38, background: '#3A3A3F' }}>{roleLabel}</span>}
@@ -737,16 +580,10 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
               placeholder={editing ? 'Describe what should change…' : PLACEHOLDERS[kind]}
               onChange={event => setPrompts(all => ({ ...all, [kind]: event.target.value }))} />
           </label>
-          {(sound ? withLyrics : sharedOnly && model?.kind === 'music') && <label style={{ display: 'block' }}>
+          {withLyrics && <label style={{ display: 'block' }}>
             <span className="vc-hidden">Lyrics</span>
-            <textarea className="vc-prompt vc-lyrics" rows={sharedOnly ? 5 : 3} maxLength={3000} value={lyrics} disabled={busy} placeholder={sharedOnly ? 'Lyrics to sing, if you want singing. Leave this empty for music without words.' : 'Write the lyrics…'} onChange={event => setLyrics(event.target.value)} />
+            <textarea className="vc-prompt vc-lyrics" rows={3} maxLength={3000} value={lyrics} disabled={busy} placeholder='Write the lyrics…' onChange={event => setLyrics(event.target.value)} />
           </label>}
-          {/* A shared song's length: a short list, half a minute to four minutes. "Up to", because the model may end a song a little early
-              and the owner's computer may be set to a shorter limit. */}
-          {sharedOnly && model?.kind === 'music' && <div className="vc-inline"><label className="vc-inline-group"><span>Length</span>
-            <select className="vc-select" value={options.seconds} disabled={busy} onChange={event => setOption('seconds', Number(event.target.value))} aria-label="Song length">
-              {(model.seconds?.offered || []).map(n => <option key={n} value={n}>Up to {lengthLabel(n)}</option>)}
-            </select></label></div>}
           {sound && kind !== 'voice' && step !== 'connect' && step !== 'nocredits' && <div className="vc-inline">
             {kind === 'music' && <div className="vc-inline-group" role="group" aria-label="Vocals"><span>Vocals</span>
               <button type="button" className="vc-opt" aria-pressed={!withLyrics} disabled={busy} onClick={() => setOption('vocals', false)}>Instrumental</button>
@@ -793,32 +630,27 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
 
           {step !== 'connect' && step !== 'nocredits' && <div className="vc-row vc-between">
             <div className="vc-row" style={{ gap: 8 }}>
-              {/* In the GPU sharing tab the card above is the choice. Once a result is showing the cards are out of view, so this is the way back to them. */}
-              {sharedOnly ? (docked && <button type="button" className="vc-chip" disabled={busy} onClick={() => { setPop(null); setNotice(''); setTrouble(null); setStep('compose') }}><ChevronDown aria-hidden="true" size={14} style={{ transform: 'rotate(90deg)' }} />All workflows</button>) : <><div className="vc-seg" role="group" aria-label="What to make">
+              <div className="vc-seg" role="group" aria-label="What to make">
                 {kinds.map(id => { const { label, Icon } = KIND_LOOK[id]; return <button key={id} type="button" aria-pressed={kind === id} disabled={busy} onClick={() => { setKind(id); setPop(null); setNotice('') }}><Icon aria-hidden="true" size={16} />{label}</button> })}
               </div>
               <div style={{ position: 'relative' }}>
-                <button type="button" className="vc-chip" aria-expanded={pop === 'models'} disabled={busy} onClick={() => { if (pop !== 'models') void loadNetHosts(); setPop(pop === 'models' ? null : 'models') }}>{model?.name || 'Model'}<ChevronDown aria-hidden="true" size={14} /></button>
+                <button type="button" className="vc-chip" aria-expanded={pop === 'models'} disabled={busy} onClick={() => { setPop(pop === 'models' ? null : 'models') }}>{model?.name || 'Model'}<ChevronDown aria-hidden="true" size={14} /></button>
                 {pop === 'models' && <div className="vc-pop vc-pop-models" role="group" aria-label="Model">
                   {ofKind.map((m, index) => <Fragment key={m.id}>
-                  {/* Workflows other creators made and share come last, under their own heading. */}
-                  {m.own && !ofKind[index - 1]?.own && <div className="vc-pop-heading" role="presentation">From creators</div>}
                   <button type="button" className="vc-item" aria-pressed={m.id === model?.id}
                     onClick={() => { setChosen(all => ({ ...all, [kind]: m.id })); setPop(null) }}>
                     <span>{m.name}<small>{m.note}</small></span>
                     {(() => { const price = recordedPrice(m, wanted[kind], { hasPicture: Boolean(picture), characters: prompt.trim().length })
                       const perK = !price && m.kind === 'voice'
                       const credits = perK ? creditsText(m.usdPer1kCharacters, rate) : price ? creditsText(price.usd, rate) : ''
-                      if (m.network) return <span className="vc-cost">Free<small style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                        <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 4, background: NETWORK_DOT[m.state] }} />{NETWORK_STATE[m.state]}</small></span>
                       if (m.local) return <span className="vc-cost">Free<small>on this computer</small></span>
                       return <span className="vc-cost">{perK ? `$${m.usdPer1kCharacters.toFixed(2)} per 1,000 characters` : priceText(price, { editing })}{credits && <small>{credits}</small>}</span> })()}
                   </button></Fragment>)}
                 </div>}
-              </div></>}
+              </div>}
               {sound && kind === 'voice' && model && voices.length > 0 && <button type="button" className="vc-chip" disabled={busy} aria-label={`Voice: ${summary}. Show all voices.`}
                 onClick={() => { setAllVoices(true); if (step !== 'result') { setTrouble(null); setStep('compose') } }}><Mic aria-hidden="true" size={15} />{summary}</button>}
-              {!sound && !model?.own && <div style={{ position: 'relative' }}>
+              {!sound && <div style={{ position: 'relative' }}>
                 <button type="button" className="vc-chip" aria-expanded={pop === 'opts'} disabled={busy} onClick={() => setPop(pop === 'opts' ? null : 'opts')}><SlidersHorizontal aria-hidden="true" size={16} />{summary}</button>
                 {pop === 'opts' && <div className="vc-pop vc-pop-opts">
                   {audio ? audioOptions : <><div className="vc-group" role="group" aria-label="Shape"><span>Shape</span>
@@ -833,10 +665,10 @@ export default function CreateWorkspace({ mode = 'create', onShare = null }) {
                       <div className="vc-opts">{(model?.resolutions || []).map(r => <button key={r} type="button" className="vc-opt" aria-pressed={options.resolution === r} onClick={() => setOption('resolution', r)}>{RESOLUTION_LABELS[r]}</button>)}</div>
                     </div>
                   </> : <>
-                    {!model?.network && <div className="vc-group" role="group" aria-label="How many"><span>How many</span>
+                    <div className="vc-group" role="group" aria-label="How many"><span>How many</span>
                       <div className="vc-opts">{[1, 2, 4].map(n => <button key={n} type="button" className="vc-opt" aria-pressed={count === n} onClick={() => setOption('count', n)}>{n}</button>)}</div>
                       {count > 1 && <span className="vc-small">Each picture is its own request and is charged separately.</span>}
-                    </div>}
+                    </div>
                     <div className="vc-group" role="group" aria-label="Size"><span>Size</span>
                     <div className="vc-opts">{(model?.sizes || []).map(size => <button key={size} type="button" className="vc-opt" aria-pressed={options.size === size} onClick={() => setOption('size', size)}>{SIZE_LABELS[size]}</button>)}</div>
                     </div>

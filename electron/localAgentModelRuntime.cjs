@@ -10,10 +10,10 @@ function failure(message) {
 }
 function endpointOrigin(endpoint) {
   let url
-  try { url = new URL(endpoint) } catch { throw failure('Choose the local LM Studio server before using GPU sharing.') }
+  try { url = new URL(endpoint) } catch { throw failure('Choose the local LM Studio server before using the local GPU handoff.') }
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
     || url.port !== '1234' || !['/v1', '/v1/'].includes(url.pathname) || url.username || url.password || url.search || url.hash) {
-    throw failure('GPU sharing supports only the configured local LM Studio server on port 1234.')
+    throw failure('The local GPU handoff supports only the configured local LM Studio server on port 1234.')
   }
   return `http://${url.hostname === 'localhost' ? '127.0.0.1' : url.hostname}:1234`
 }
@@ -72,7 +72,7 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
     } catch (error) {
       abortCheck(signal)
       if (error?.code === 'LOCAL_GPU_RUNTIME_UNAVAILABLE') throw error
-      throw failure('Could not confirm local model memory management. Check LM Studio on port 1234; GPU sharing will not guess that memory is free.')
+      throw failure('Could not confirm local model memory management. Check LM Studio on port 1234; the local GPU handoff will not guess that memory is free.')
     } finally {
       clearTimeout(timer)
       signal?.removeEventListener('abort', cancel)
@@ -82,7 +82,7 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
   }
   async function models(origin, signal) {
     const body = await request(origin, '', { signal })
-    if (!Array.isArray(body.models) || body.models.length > 2048) throw failure('LM Studio did not provide a valid model catalog for GPU sharing.')
+    if (!Array.isArray(body.models) || body.models.length > 2048) throw failure('LM Studio did not provide a valid model catalog for the local GPU handoff.')
     const rows = body.models.filter(row => object(row) && row.type === 'llm')
     if (rows.some(row => !validId(row.key) || !Array.isArray(row.loaded_instances)
       || row.loaded_instances.some(instance => !object(instance) || !validId(instance.id))
@@ -93,7 +93,7 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
   }
   function resolve(rows, model, previous) {
     const matches = rows.filter(row => previous ? row.key === previous.key : row.key === model || row.loaded_instances.some(instance => instance?.id === model))
-    if (matches.length !== 1) throw failure('The selected local model could not be identified uniquely. Refresh models in Belrog before using GPU sharing.')
+    if (matches.length !== 1) throw failure('The selected local model could not be identified uniquely. Refresh models in Belrog before using the local GPU handoff.')
     const row = matches[0]
     const instances = row.loaded_instances.filter(instance => object(instance) && validId(instance.id))
     if (instances.length !== row.loaded_instances.length) throw failure('LM Studio returned an invalid loaded-model identity.')
@@ -103,11 +103,11 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
     // In either case restore our saved configuration instead of adopting it.
     if (previous) return { row, instance: instances.find(instance => instance.id === previous.instanceId) || null }
     const exact = instances.find(instance => instance.id === model)
-    if (!exact && instances.length > 1) throw failure('Multiple instances of the selected local model are loaded. Select one instance before using GPU sharing.')
+    if (!exact && instances.length > 1) throw failure('Multiple instances of the selected local model are loaded. Select one instance before using the local GPU handoff.')
     return { row, instance: exact || instances[0] || null }
   }
   async function prepareModel({ model, endpoint, signal }) {
-    if (!validId(model)) throw failure('Choose a local model before using GPU sharing.')
+    if (!validId(model)) throw failure('Choose a local model before using the local GPU handoff.')
     const origin = endpointOrigin(endpoint), key = `${origin}\n${model}`
     if (!suspended.has(key) && suspended.size >= 32) throw failure('Too many local model handoffs are pending. Restart Belrog before loading more models.')
     const previous = suspended.get(key)
@@ -116,7 +116,7 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
     const defaultConfig = Number.isSafeInteger(profile?.contextLength) && profile.contextLength > 0
       && profile.contextLength <= 1048576 ? { context_length: profile.contextLength } : {}
     if (previous?.uncertainLoad && (!previous.instanceId || instance?.id !== previous.instanceId)) {
-      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Belrog before continuing GPU sharing.')
+      throw failure('A local model load has an uncertain outcome. Check and unload it in LM Studio, then restart Belrog before continuing the local GPU handoff.')
     }
     if (!instance) {
       const config = { ...defaultConfig, ...(previous?.config || {}) }
@@ -137,7 +137,7 @@ function createLocalAgentModelRuntime({ fetchImpl = globalThis.fetch, requestTim
     return { model: instance.id, ...(['none', 'low'].includes(profile?.reasoningEffort) ? { reasoningEffort: profile.reasoningEffort } : {}) }
   }
   async function releaseModel({ model, endpoint, signal }) {
-    if (!validId(model)) throw failure('Choose a local model before using GPU sharing.')
+    if (!validId(model)) throw failure('Choose a local model before using the local GPU handoff.')
     const origin = endpointOrigin(endpoint), key = `${origin}\n${model}`
     const previous = suspended.get(key)
     const rows = await models(origin, signal)

@@ -1,7 +1,7 @@
 // Where things made in Belrog are filed in the Assets panel, so they do not pile up loose
 // at the top: one folder per place they were made in, created the first time it is needed.
 // A folder the person renamed or deleted is simply made again under its usual name.
-export const GENERATED_FOLDERS = Object.freeze({ visuals: 'Visuals', sound: 'Sound', shared: 'GPU sharing' })
+export const GENERATED_FOLDERS = Object.freeze({ visuals: 'Visuals', sound: 'Sound' })
 
 // The id of the top-level folder with this name, making it if it is not there. null when it cannot be made
 // (the result is then filed at the top, as before).
