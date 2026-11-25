@@ -11634,6 +11634,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       modelAssetIdOverride = undefined,
       storyboardWorkflowIdOverride = '',
       storyboardReferenceAssetIdsOverride = [],
+      strict = false,
     } = options || {}
     const effectiveStoryboardWorkflowId = String(storyboardWorkflowIdOverride || yoloStoryboardWorkflowId || '').trim()
     const effectiveStoryboardSupportsReferenceAnchors = STORYBOARD_REFERENCE_WORKFLOW_IDS.has(effectiveStoryboardWorkflowId)
@@ -11648,25 +11649,27 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
         .map((target) => `${target?.sceneId || ''}|${target?.shotId || ''}`)
         .filter((key) => key !== '|')
     )
-    if (targetKeys.size === 0) {
-      setFormError('Select at least one shot before re-rendering keyframes.')
+    const rejectWith = (message) => {
+      setFormError(message)
+      if (strict) throw new Error(message)
       return 0
     }
-    if (!isConnected) return 0
+    if (targetKeys.size === 0) {
+      return rejectWith('Select at least one shot before re-rendering keyframes.')
+    }
+    if (!isConnected) return rejectWith('ComfyUI is not connected.')
     if (yoloActivePlanIsStale) {
-      setFormError(isYoloMusicMode
-        ? 'Director plan is out of date. Click Parse Script again before re-rendering keyframes.'
-        : 'Director plan is out of date. Click Build Plan again before re-rendering keyframes.')
       setDirectorSubTab('plan-script')
-      return 0
+      return rejectWith(isYoloMusicMode
+        ? 'Director plan is out of date. Call set_music_video_director_script with parse:true (or click Parse Script) before queueing keyframes.'
+        : 'Director plan is out of date. Rebuild the plan before queueing keyframes.')
     }
     if (
       !isYoloMusicMode &&
       yoloAdHasReferenceAnchors &&
       !effectiveStoryboardSupportsReferenceAnchors
     ) {
-      setFormError(`Product/model references are not supported by ${getWorkflowDisplayLabel(effectiveStoryboardWorkflowId)} keyframes.`)
-      return 0
+      return rejectWith(`Product/model references are not supported by ${getWorkflowDisplayLabel(effectiveStoryboardWorkflowId)} keyframes.`)
     }
     if (
       !isYoloMusicMode &&
@@ -11674,33 +11677,30 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
       !effectiveModelAsset &&
       !effectiveProductAsset
     ) {
-      setFormError('Selected keyframe workflow needs at least a model or product reference image.')
-      return 0
+      return rejectWith('Selected keyframe workflow needs at least a model or product reference image.')
     }
     const usesCustomMusicKeyframes = isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_MUSIC_KEYFRAME_WORKFLOW_ID
     const usesCustomAdKeyframes = !isYoloMusicMode && effectiveStoryboardWorkflowId === CUSTOM_AD_KEYFRAME_WORKFLOW_ID
     const usesCustomKeyframes = usesCustomMusicKeyframes || usesCustomAdKeyframes
     const customKeyframeValidation = usesCustomAdKeyframes ? yoloAdCustomKeyframeValidation : yoloMusicCustomKeyframeValidation
     if (usesCustomKeyframes && !customKeyframeValidation.ok) {
-      setFormError(customKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
-      return 0
+      return rejectWith(customKeyframeValidation.message || 'Load and validate a custom keyframe workflow before queueing.')
     }
     if (!usesCustomKeyframes) {
       const depsOk = await validateDependenciesForQueue(
         [effectiveStoryboardWorkflowId],
         `keyframe re-render for ${targetKeys.size} selected shots`
       )
-      if (!depsOk) return 0
+      if (!depsOk) return rejectWith('Workflow dependencies are not ready for keyframe queueing.')
     }
 
     const planToUse = yoloActivePlan.length > 0 ? yoloActivePlan : buildActiveYoloPlan()
-    if (!planToUse) return 0
+    if (!planToUse) return rejectWith('No active director plan found.')
 
     const variants = flattenYoloPlanVariants(planToUse)
       .filter((variant) => targetKeys.has(`${variant.sceneId || ''}|${variant.shotId || ''}`))
     if (variants.length === 0) {
-      setFormError('No keyframe variants found for the selected shots.')
-      return 0
+      return rejectWith('No keyframe variants found for the selected shots.')
     }
 
     return await queueYoloStoryboardVariants(variants, {
@@ -13745,6 +13745,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
           if (stage === 'keyframe') {
             queuedCount = await handleQueueYoloShotStoryboards(targets, {
               storyboardWorkflowIdOverride: plan.workflowIds[0],
+              strict: true,
             })
           } else if (scope === 'missing') {
             queuedCount = Number(await handleQueueYoloVideos({
@@ -13758,7 +13759,12 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
               })) || 0
             }
           }
-          if (queuedCount <= 0) throw new Error(`Belrog did not queue any Music Video ${stage} jobs.`)
+          if (queuedCount <= 0) {
+            const diag = stage === 'keyframe' && targets[0]
+              ? (buildMcpMusicVideoKeyframeReport(targets[0].sceneId, targets[0].shotId)?.blockedReasons || [])
+              : []
+            throw new Error(`Belrog did not queue any Music Video ${stage} jobs.${diag.length ? ` Blockers: ${[...new Set(diag)].join(' ')}` : ''}`)
+          }
           respond({
             success: true,
             previewOnly: false,

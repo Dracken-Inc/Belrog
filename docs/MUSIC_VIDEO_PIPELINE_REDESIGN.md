@@ -106,3 +106,19 @@ and then queue.
 Still open: a default placeholder image behind ungenerated cast/location stubs, the
 planner moved inline into step 2 (the iframe must stay mounted), a script →
 Director push button, and the step-1 wizard copy.
+
+## What shipped in 0.6.2
+
+Hardening pass after the first unattended `m4a -> keyframes` run (Forsaken Falling,
+204 shots, 12-shot sample rendered end-to-end on Spark ComfyUI beside vLLM).
+
+| Change | Why |
+| --- | --- |
+| MCP keyframe queueing is strict: a queue that lands zero jobs now fails with the shot inspector's blocker list instead of returning `queued: 0` | A cast entry with an unbound portrait silently queued nothing for 20 minutes; the tool result looked like success |
+| Queue-rejection messages name the exact recovery action (re-parse via `set_music_video_director_script` with `parse:true`, bind cast `assetId`, connect ComfyUI) | The old text ("Click Parse Script again") was UI-only advice an MCP operator cannot follow |
+| `handleQueueYoloShotStoryboards` gained a `strict` option; UI behavior unchanged | Surface failures to automation without changing button flows |
+| SSH tunnel auto-reconnect with exponential backoff (2s to 60s, retry until re-established); intentional close cancels retries | Remote ComfyUI over SSH died on idle/Wi-Fi blips and stayed dead; the render loop then failed with `Failed to fetch` until a manual restart |
+
+Still open: auto-binding cast entries to same-slug portrait assets at parse time,
+and memory-aware model selection for `image-edit` (the bf16-vs-fp8 OOM is currently
+fixed by a deployment symlink, not in-app).

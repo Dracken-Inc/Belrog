@@ -26,6 +26,13 @@ let sshClient = null
 let tunnelServer = null
 let isConnecting = false
 let currentSettings = null
+// Auto-reconnect state: once a tunnel has connected successfully, a dropped
+// socket (server reboot, WiFi blip, idle drop) must heal itself instead of
+// leaving Belrog silently disconnected from remote ComfyUI.
+let desiredOpts = null
+let reconnectTimer = null
+let readyOnce = false
+let reconnectAttempt = 0
 
 function log(...args) {
   console.log('[sshTunnelManager]', new Date().toISOString(), ...args)
@@ -89,9 +96,24 @@ function getPrivateKey(keyPath) {
  * @param {number} opts.tunnelRemotePort - Remote port to forward to (default 8188)
  * @returns {Promise<{success: boolean, error?: string}>}
  */
+function scheduleReconnect() {
+  if (!desiredOpts || reconnectTimer) return
+  const delay = Math.min(60000, 2000 * 2 ** Math.min(reconnectAttempt++, 5))
+  log(`Tunnel dropped; retrying in ${Math.round(delay / 1000)}s (attempt ${reconnectAttempt})`)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    establishTunnel(desiredOpts).then((res) => {
+      if (!res?.success && desiredOpts) scheduleReconnect()
+    })
+  }, delay)
+  if (typeof reconnectTimer.unref === 'function') reconnectTimer.unref()
+}
+
 function establishTunnel(opts) {
   return new Promise((resolve) => {
     log('=== establishTunnel called ===')
+    desiredOpts = opts
+    readyOnce = false
     log('Options received:', JSON.stringify({
       sshHost: opts.sshHost,
       sshPort: opts.sshPort,
@@ -130,6 +152,8 @@ function establishTunnel(opts) {
     sshClient = new Client()
 
     sshClient.on('ready', () => {
+      readyOnce = true
+      reconnectAttempt = 0
       log('SSH connection ready, establishing port forward')
       
       // Create port forwarding server on localhost
@@ -203,7 +227,9 @@ function establishTunnel(opts) {
 
     sshClient.on('close', () => {
       log('SSH connection closed')
+      const wasReady = readyOnce
       cleanup()
+      if (wasReady && desiredOpts) scheduleReconnect()
     })
 
     // Connection timeout
@@ -254,6 +280,12 @@ function cleanup() {
  */
 function closeTunnel() {
   log('Closing tunnel')
+  desiredOpts = null
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  reconnectAttempt = 0
   cleanup()
   return { success: true }
 }
