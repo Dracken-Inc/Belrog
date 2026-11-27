@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Belrog shot plan",
+  "description": "The single contract between the input layer (Suno m4a -> plan.json) and the output layer (plan.json -> LTX-2.3 clips -> stitched video). This file is the ONE definition of a shot plan: the app, the validator, the LLM response_format, and the grammar builder all use THIS file and never a paraphrase of it. GBNF subset by law (V11): objects, strings, numbers, integers, booleans, enums, arrays, required, additionalProperties:false. No $ref, oneOf, anyOf, allOf, patternProperties, if/then, format or pattern - a grammar builder cannot express them and constrained decoding fails silently when asked. Every enum id comes from src/config/musicVideoShotConfig.js; ids marked pending are added to that config by W-A step 4 and are enforced by tests/shotPlanSchema.test.mjs. Optional field means 'not applicable' - never send null to mean absent, because a nullable union is not in the GBNF subset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "track", "look", "cast", "shots", "clips", "llm"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [1],
+      "description": "Schema version. 1 = this document."
+    },
+
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "durationSec", "sections", "profileSource"],
+      "properties": {
+        "path": { "type": "string", "description": "Absolute path to the source audio file." },
+        "durationSec": { "type": "number", "description": "Measured duration in seconds, never estimated." },
+        "hash": { "type": "string", "description": "Content hash, used to bind cached analysis to this exact file." },
+        "bpm": { "type": "number", "description": "Estimated tempo. 0 when not estimated." },
+        "beats": {
+          "type": "array",
+          "description": "Beat or onset times in ascending seconds. Cuts snap to these.",
+          "items": { "type": "number" }
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Song sections detected from the audio envelope, ascending by startSec, contiguous.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "startSec", "endSec"],
+            "properties": {
+              "id": { "type": "string", "description": "Stable slug, referenced by shots.sectionId." },
+              "kind": {
+                "type": "string",
+                "enum": ["intro", "verse", "pre_chorus", "chorus", "bridge", "breakdown", "outro", "other"]
+              },
+              "startSec": { "type": "number" },
+              "endSec": { "type": "number" },
+              "energy": { "type": "number", "description": "Normalized 0..1 measured loudness for this section." }
+            }
+          }
+        },
+        "profileSource": {
+          "type": "string",
+          "enum": ["envelope", "timed_lyrics", "manual"],
+          "description": "Where timing came from. 'envelope' is the default path; even line spread is not an option (V6)."
+        }
+      }
+    },
+
+    "look": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preset", "film", "lighting", "location"],
+      "properties": {
+        "preset": {
+          "type": "string",
+          "enum": ["mtv-1990s", "neon-noir", "tour-diary", "warm-35mm", "dream-pop"],
+          "description": "Style card id from MUSIC_VIDEO_STYLE_CARD_OPTIONS. 'mtv-1990s' is pending that config's extension."
+        },
+        "film": { "type": "string", "description": "Film stock and grain. Verbatim in every shot that does not override it." },
+        "letterbox": { "type": "string", "description": "Aspect treatment, e.g. a 2.35:1 anamorphic matte." },
+        "lighting": { "type": "string", "description": "The look's lighting grammar, stated once and reused verbatim." },
+        "palette": { "type": "string" },
+        "location": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["slug", "lock"],
+          "properties": {
+            "slug": { "type": "string", "description": "Referenced by shots.locationOverride and by the validator." },
+            "lock": {
+              "type": "string",
+              "description": "The canonical location description. Emitted verbatim wherever this location appears so it can never be re-described differently between shots (V5)."
+            },
+            "props": {
+              "type": "array",
+              "description": "Props declared once at track level, referenced by slug from shots.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["slug", "lock"],
+                "properties": {
+                  "slug": { "type": "string" },
+                  "lock": { "type": "string", "description": "Canonical prop description, verbatim on every appearance." }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "cast": {
+      "type": "array",
+      "description": "People only. Production and mixing directions are NEVER cast (V4).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slug", "lock"],
+        "properties": {
+          "slug": { "type": "string", "description": "Matched by shots.cast and by the DSL 'Artist:' line." },
+          "name": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["lead", "co_lead", "backing", "instrumentalist", "never_sings", "other"]
+          },
+          "lock": {
+            "type": "string",
+            "description": "Canonical identity: face, build, hair, wardrobe baseline. Verbatim everywhere this person appears."
+          },
+          "wardrobe": { "type": "string", "description": "Costume name active unless wardrobeAt says otherwise." },
+          "wardrobeAt": {
+            "type": "array",
+            "description": "Section ids where this costume applies.",
+            "items": { "type": "string" }
+          },
+          "refImage": { "type": "string", "description": "Optional reference image path. Omit entirely when identity is prompt-only (D5)." }
+        }
+      }
+    },
+
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "description": "The rendered shot list, ascending by startSec. Every field the generator needs is a typed field here; nothing is re-parsed from prose.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sectionId", "startSec", "endSec", "shotType", "size", "cameraMove", "energy", "action"],
+        "properties": {
+          "id": { "type": "string", "description": "Stable shot id, referenced by clips.shotIds." },
+          "sectionId": { "type": "string", "description": "Must match a track.sections id (V8)." },
+          "startSec": { "type": "number" },
+          "endSec": { "type": "number" },
+          "shotType": { "type": "string", "enum": ["performance", "performance_wide", "b_roll"] },
+          "size": { "type": "string", "enum": ["wide", "medium", "close-up", "detail"] },
+          "cameraMove": {
+            "type": "string",
+            "enum": ["locked", "push-in", "pull-out", "pan-left", "tilt-up", "orbit", "handheld", "dutch-tilt", "dolly-zoom", "whip-pan", "steadicam", "crane", "snap-zoom"],
+            "description": "MUSIC_VIDEO_CAMERA_MOVE_OPTIONS plus the 1990s grammar pending in W-A step 4."
+          },
+          "energy": { "type": "string", "enum": ["calm", "building", "intense"] },
+          "performanceMode": { "type": "string", "enum": ["lip-sync", "wide-performance", "b-roll", "narrative"] },
+          "cast": {
+            "type": "array",
+            "description": "Cast slugs on screen. Empty for b-roll with nobody in it.",
+            "items": { "type": "string" }
+          },
+          "props": {
+            "type": "array",
+            "description": "Prop slugs, each declared under look.location.props (V4).",
+            "items": { "type": "string" }
+          },
+          "lyric": {
+            "type": "string",
+            "description": "The lyric line this shot carries, verbatim. Required on lip-sync shots (V7). Omit for shots with no vocal."
+          },
+          "lipSync": { "type": "boolean" },
+          "action": {
+            "type": "string",
+            "description": "What happens on screen, in prose. This is the field the imagination LLM writes and the only prose a shot owns."
+          },
+          "locationOverride": { "type": "string", "description": "Slug of an alternative declared location. Omit to inherit look.location (V5)." },
+          "film": { "type": "string", "description": "Per-shot override of look.film. Omit to inherit." },
+          "lighting": { "type": "string", "description": "Per-shot override of look.lighting. Omit to inherit." }
+        }
+      }
+    },
+
+    "clips": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Generation units actually queued, derived from shots by the timeline builder and never hand-written. This is what stops shot count and clip count disagreeing.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "startSec", "lengthSec", "shotIds"],
+        "properties": {
+          "index": { "type": "integer", "description": "0-based queue order." },
+          "startSec": { "type": "number" },
+          "lengthSec": { "type": "number", "description": "Frame-grid aligned length. Residual is carried to the next clip, never rounded away (V1)." },
+          "shotIds": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Shots contained in this clip, in time order. Their prompt is what the generator receives.",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "llm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "modelId"],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "enum": ["local", "lmstudio", "openrouter"],
+          "description": "Which imagination backend wrote the prose (D3). local = bundled llama-server sidecar, lmstudio = external local server, openrouter = cloud fallback."
+        },
+        "modelId": { "type": "string", "description": "Model id or GGUF filename that produced the prose. Recorded so a render can say which model wrote it." },
+        "endpoint": { "type": "string", "description": "Base URL used, including the sidecar's ephemeral port." },
+        "pid": { "type": "integer", "description": "Sidecar process id, for lifecycle and post-mortem." },
+        "logPath": { "type": "string", "description": "Sidecar log file." },
+        "grammarEnforced": { "type": "boolean", "description": "True when the schema constrained token generation rather than being checked afterward." },
+        "repairRetries": { "type": "integer", "description": "Parse-failure repairs used, 0 or 1 (one is the ceiling)." }
+      }
+    }
+  }
+}
