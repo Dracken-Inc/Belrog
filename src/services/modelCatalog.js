@@ -1,90 +1,73 @@
 /**
- * Model Catalog — GGUF Presets, VRAM Fit, Download
+ * Model Catalog — GGUF Presets, VRAM Fit, First-Run Decision
  *
- * Provides curated model presets with VRAM estimates, download via
- * remoteModelInstall.js recipe, and sidecar management for llama-server.
+ * Curated presets with exact metadata for local llama-server sidecar.
+ * VRAM envelope: 4-6 GB working set. Default pick: Mistral-7B Q4_K_M.
+ * Download delegates to electron/remoteModelInstall.js (resume, checksum, progress).
  */
-import { downloadRemoteModel, verifyRemoteFile } from '../electron/remoteModelInstall.js'
+
+import { downloadLocalModel, computeLocalSha256 } from '../../electron/remoteModelInstall.js'
+import { join } from 'node:path'
+import { mkdir, stat, readdir } from 'node:fs/promises'
 
 // ═══════════════════════════════════════════
-// Curated Presets (4-6 GB VRAM working set, light reasoning, creative prose)
+// Curated Presets (exact metadata per spec)
 // ═══════════════════════════════════════════
 
 export const MODEL_PRESETS = [
   {
-    id: 'mistral-7b-instruct-v0.2.Q4_K_M',
-    name: 'Mistral 7B Instruct v0.2 Q4_K_M',
-    description: 'Fast, strong creative writing, 4.8 GB VRAM — recommended default',
-    repo: 'TheBloke/Mistral-7B-Instruct-v0.2-GGUF',
-    filename: 'mistral-7b-instruct-v0.2.Q4_K_M.gguf',
-    sizeBytes: 4_830_000_000,
-    vramGB: 4.8,
-    sha256: 'a7b3c9d2e1f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b',
+    id: 'mistral-7b-instruct-v0.3.Q4_K_M',
+    name: 'Mistral 7B Instruct v0.3 Q4_K_M',
+    description: 'Default pick — strong creative prose, ~5.4 GB VRAM working set',
+    repo: 'lmstudio-community/Mistral-7B-Instruct-v0.3-GGUF',
+    filename: 'Mistral-7B-Instruct-v0.3-Q4_K_M.gguf',
+    sizeBytes: 4372812000,
+    vramGB: 5.4,
+    sha256: '1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6',
     hfCommit: 'main',
     contextLength: 32768,
-    tags: ['creative', 'fast', 'default'],
+    tags: ['creative', 'default', 'fast'],
   },
   {
-    id: 'zephyr-7b-beta.Q4_K_M',
-    name: 'Zephyr 7B Beta Q4_K_M',
-    description: 'Chat-optimized, good instruction following, 4.8 GB VRAM',
-    repo: 'TheBloke/zephyr-7b-beta-GGUF',
-    filename: 'zephyr-7b-beta.Q4_K_M.gguf',
-    sizeBytes: 4_830_000_000,
-    vramGB: 4.8,
-    sha256: 'b8c4d0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c',
-    hfCommit: 'main',
-    contextLength: 32768,
-    tags: ['chat', 'instruction'],
-  },
-  {
-    id: 'neural-chat-7b-v3-1.Q4_K_M',
-    name: 'Neural Chat 7B v3.1 Q4_K_M',
-    description: 'Intel-optimized chat model, 4.8 GB VRAM',
-    repo: 'TheBloke/neural-chat-7b-v3-1-GGUF',
-    filename: 'neural-chat-7b-v3-1.Q4_K_M.gguf',
-    sizeBytes: 4_830_000_000,
-    vramGB: 4.8,
-    sha256: 'c9d0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d',
-    hfCommit: 'main',
-    contextLength: 32768,
-    tags: ['chat', 'intel'],
-  },
-  {
-    id: 'qwen2.5-7b-instruct.Q4_K_M',
-    name: 'Qwen 2.5 7B Instruct Q4_K_M',
-    description: 'Strong multilingual + reasoning, 4.8 GB VRAM',
-    repo: 'Qwen/Qwen2.5-7B-Instruct-GGUF',
-    filename: 'qwen2.5-7b-instruct.Q4_K_M.gguf',
-    sizeBytes: 4_830_000_000,
-    vramGB: 4.8,
-    sha256: 'd0e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e',
-    hfCommit: 'main',
-    contextLength: 32768,
-    tags: ['multilingual', 'reasoning'],
-  },
-  {
-    id: 'nemotron-3-ultra.Q4_K_M',
-    name: 'Nemotron 3 Ultra Q4_K_M',
-    description: 'NVIDIA flagship, 8B params, 6.2 GB VRAM — best quality',
-    repo: 'nvidia/Nemotron-3-Ultra-GGUF',
-    filename: 'nemotron-3-ultra.Q4_K_M.gguf',
-    sizeBytes: 6_200_000_000,
-    vramGB: 6.2,
-    sha256: 'e2f4a6b8c0d2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f',
+    id: 'meta-llama-3.1-8b-instruct.Q4_K_M',
+    name: 'Meta Llama 3.1 8B Instruct Q4_K_M',
+    description: 'Solid reasoning + creative, ~6.0 GB VRAM working set',
+    repo: 'lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF',
+    filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
+    sizeBytes: 4920739168,
+    vramGB: 6.0,
+    sha256: 'f2be3e1a239c12c9f3f01a962b11fb2807f8032fdb63b0a5502ea42ddef55e44',
     hfCommit: 'main',
     contextLength: 131072,
-    tags: ['quality', 'large-context'],
+    tags: ['reasoning', 'large-context'],
+  },
+  {
+    id: 'mistral-nemo-instruct-2407.Q2_K',
+    name: 'Mistral Nemo Instruct 2407 Q2_K',
+    description: 'Smaller quant, ~6.0 GB VRAM — sha256 is SINGLE-SOURCED (not independently confirmed)',
+    repo: 'unsloth/Mistral-Nemo-Instruct-2407-GGUF',
+    filename: 'Mistral-Nemo-Instruct-2407-Q2_K.gguf',
+    sizeBytes: 4791047712,
+    vramGB: 6.0,
+    sha256: 'e2631c7397d90d3a5338f25d204e704f4acb65211fa225a0e48257e4c24cfc6e',
+    sha256SingleSourced: true,
+    hfCommit: 'main',
+    contextLength: 131072,
+    tags: ['compact', 'single-sourced-hash'],
   },
 ]
 
 // ═══════════════════════════════════════════
-// VRAM Detection & Fit
+// VRAM Detection
 // ═══════════════════════════════════════════
 
 let cachedVramGB = null
 
-export async function detectVRAM() {
+/**
+ * Detect available VRAM in GB.
+ * Returns null when detection fails so UI can say "unknown" instead of guessing.
+ */
+export async function detectVramGb() {
   if (cachedVramGB !== null) return cachedVramGB
 
   try {
@@ -110,7 +93,7 @@ export async function detectVRAM() {
   } catch {}
 
   try {
-    // Fallback: check for Apple Silicon unified memory
+    // Fallback: Apple Silicon unified memory
     const { spawn } = await import('node:child_process')
     const proc = spawn('system_profiler', ['SPDisplaysDataType', '-json'])
     let stdout = ''
@@ -122,366 +105,191 @@ export async function detectVRAM() {
     const data = JSON.parse(stdout)
     for (const display of data.SPDisplaysDataType || []) {
       if (display.sppci_model?.includes('Apple') && display.spcores) {
-        // Rough estimate: M-series unified memory, assume 8GB+ for GPU
+        // Conservative estimate for M-series
         cachedVramGB = 8
         return cachedVramGB
       }
     }
   } catch {}
 
-  // Conservative default
-  cachedVramGB = 4
-  return cachedVramGB
-}
-
-export function getPresetsForVRAM(vramGB) {
-  const safeLimit = vramGB * 0.85 // leave headroom for OS + ComfyUI + vLLM
-  return MODEL_PRESETS.filter(p => p.vramGB <= safeLimit).sort((a, b) => b.vramGB - a.vramGB)
-}
-
-export function getDefaultPreset(vramGB) {
-  const fitting = getPresetsForVRAM(vramGB)
-  return fitting[0] || MODEL_PRESETS[0] // fallback to Mistral
-}
-
-// ═══════════════════════════════════════════
-// Download & Sidecar Management
-// ═══════════════════════════════════════════
-
-const MODELS_DIR = resolve('models', 'llm')
-
-export async function ensureModelDir() {
-  const { mkdir } = await import('node:fs/promises')
-  await mkdir(MODELS_DIR, { recursive: true })
-  return MODELS_DIR
-}
-
-export async function downloadModel(presetId, { onProgress } = {}) {
-  const preset = MODEL_PRESETS.find(p => p.id === presetId)
-  if (!preset) throw new Error(`Unknown preset: ${presetId}`)
-
-  await ensureModelDir()
-  const targetPath = join(MODELS_DIR, preset.filename)
-
-  // Check if already exists and verified
-  const { stat } = await import('node:fs/promises')
-  try {
-    const st = await stat(targetPath)
-    if (st.size === preset.sizeBytes) {
-      const verified = await verifyLocalChecksum(targetPath, preset.sha256)
-      if (verified) return { path: targetPath, preset, cached: true }
-    }
-  } catch {}
-
-  // Download via remoteModelInstall recipe (adapted for local)
-  const result = await downloadLocalModel({
-    url: `https://huggingface.co/${preset.repo}/resolve/main/${preset.filename}`,
-    targetPath,
-    expectedSha256: preset.sha256,
-    expectedSize: preset.sizeBytes,
-    onProgress,
-  })
-
-  if (!result.ok) throw new Error(result.error)
-
-  return { path: targetPath, preset, cached: false }
-}
-
-async function downloadLocalModel({ url, targetPath, expectedSha256, expectedSize, onProgress }) {
-  // Use the same resilient downloader as remoteModelInstall but for local
-  const { spawn } = await import('node:child_process')
-  const { createWriteStream } = await import('node:fs')
-  const { pipeline } = await import('node:stream/promises')
-
-  // Try aria2c first (resumable, multi-connection)
-  if (await hasCommand('aria2c')) {
-    return downloadWithAria2c({ url, targetPath, expectedSha256, expectedSize, onProgress })
-  }
-  // Fallback to wget
-  if (await hasCommand('wget')) {
-    return downloadWithWget({ url, targetPath, expectedSha256, expectedSize, onProgress })
-  }
-  // Fallback to curl
-  if (await hasCommand('curl')) {
-    return downloadWithCurl({ url, targetPath, expectedSha256, expectedSize, onProgress })
-  }
-  // Last resort: Node fetch (no resume)
-  return downloadWithNodeFetch({ url, targetPath, expectedSha256, expectedSize, onProgress })
-}
-
-function hasCommand(cmd) {
-  return new Promise(resolve => {
-    const { spawn } = require('node:child_process')
-    const proc = spawn('which', [cmd])
-    proc.on('close', code => resolve(code === 0))
-    proc.on('error', () => resolve(false))
-  })
-}
-
-function downloadWithAria2c({ url, targetPath, expectedSha256, expectedSize, onProgress }) {
-  return new Promise(async (resolve) => {
-    const { spawn } = await import('node:child_process')
-    const args = [
-      '--quiet',
-      '--continue=true',
-      '--max-connection-per-server=8',
-      '--split=8',
-      '--min-split-size=1M',
-      '--dir', require('node:path').dirname(targetPath),
-      '--out', require('node:path').basename(targetPath),
-      url,
-    ]
-    const proc = spawn('aria2c', args)
-    let stderr = ''
-
-    proc.stderr.on('data', d => {
-      stderr += d
-      // Parse progress from aria2c output
-      const match = stderr.match(/\((\d+)%\)/)
-      if (match && onProgress) onProgress(parseInt(match[1], 10) / 100)
-    })
-
-    proc.on('close', async code => {
-      if (code !== 0) return resolve({ ok: false, error: `aria2c failed: ${stderr}` })
-      const verified = await verifyLocalChecksum(targetPath, expectedSha256)
-      if (!verified) return resolve({ ok: false, error: 'Checksum mismatch after download' })
-      if (onProgress) onProgress(1.0)
-      resolve({ ok: true })
-    })
-
-    proc.on('error', err => resolve({ ok: false, error: err.message }))
-  })
-}
-
-function downloadWithWget({ url, targetPath, expectedSha256, expectedSize, onProgress }) {
-  return new Promise(async (resolve) => {
-    const { spawn } = await import('node:child_process')
-    const args = [
-      '-q',
-      '--continue',
-      '--show-progress',
-      '-O', targetPath,
-      url,
-    ]
-    const proc = spawn('wget', args)
-    let stderr = ''
-
-    proc.stderr.on('data', d => {
-      stderr += d
-      const match = stderr.match(/(\d+)%/)
-      if (match && onProgress) onProgress(parseInt(match[1], 10) / 100)
-    })
-
-    proc.on('close', async code => {
-      if (code !== 0) return resolve({ ok: false, error: `wget failed: ${stderr}` })
-      const verified = await verifyLocalChecksum(targetPath, expectedSha256)
-      if (!verified) return resolve({ ok: false, error: 'Checksum mismatch after download' })
-      if (onProgress) onProgress(1.0)
-      resolve({ ok: true })
-    })
-
-    proc.on('error', err => resolve({ ok: false, error: err.message }))
-  })
-}
-
-function downloadWithCurl({ url, targetPath, expectedSha256, expectedSize, onProgress }) {
-  return new Promise(async (resolve) => {
-    const { spawn } = await import('node:child_process')
-    const args = [
-      '-sSL',
-      '-C', '-',
-      '-o', targetPath,
-      url,
-    ]
-    const proc = spawn('curl', args)
-
-    proc.on('close', async code => {
-      if (code !== 0) return resolve({ ok: false, error: 'curl failed' })
-      const verified = await verifyLocalChecksum(targetPath, expectedSha256)
-      if (!verified) return resolve({ ok: false, error: 'Checksum mismatch after download' })
-      if (onProgress) onProgress(1.0)
-      resolve({ ok: true })
-    })
-
-    proc.on('error', err => resolve({ ok: false, error: err.message }))
-  })
-}
-
-async function downloadWithNodeFetch({ url, targetPath, expectedSha256, expectedSize, onProgress }) {
-  const { createWriteStream } = await import('node:fs')
-  const { pipeline } = await import('node:stream/promises')
-
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-
-  const total = Number(response.headers.get('content-length') || expectedSize)
-  let downloaded = 0
-
-  const writer = createWriteStream(targetPath)
-  const reader = response.body.getReader()
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    downloaded += value.length
-    await writer.write(value)
-    if (onProgress && total > 0) onProgress(downloaded / total)
-  }
-  await writer.end()
-
-  const verified = await verifyLocalChecksum(targetPath, expectedSha256)
-  if (!verified) throw new Error('Checksum mismatch after download')
-
-  return { ok: true }
-}
-
-async function verifyLocalChecksum(filePath, expectedSha256) {
-  const { createReadStream } = await import('node:fs')
-  const { createHash } = await import('node:crypto')
-
-  return new Promise((resolve) => {
-    const hash = createHash('sha256')
-    const stream = createReadStream(filePath)
-    stream.on('data', d => hash.update(d))
-    stream.on('end', () => {
-      const actual = hash.digest('hex')
-      resolve(actual.toLowerCase() === expectedSha256.toLowerCase())
-    })
-    stream.on('error', () => resolve(false))
-  })
-}
-
-// ═══════════════════════════════════════════
-// llama-server Sidecar Management
-// ═══════════════════════════════════════════
-
-let sidecarProcess = null
-let sidecarPort = null
-let sidecarPid = null
-let sidecarLogPath = null
-
-export function getSidecar() {
-  return {
-    port: sidecarPort,
-    baseUrl: sidecarPort ? `http://localhost:${sidecarPort}` : null,
-    pid: sidecarPid,
-    logPath: sidecarLogPath,
-  }
-}
-
-export async function startSidecar(modelPath, { port = 0, contextLength = 32768, gpuLayers = -1 } = {}) {
-  if (sidecarProcess) return getSidecar()
-
-  const { spawn } = await import('node:child_process')
-  const { resolve: resolvePath } = await import('node:path')
-  const { tmpdir } = await import('node:os')
-  const { writeFileSync } = await import('node:fs')
-
-  // Find llama-server binary (bundled in extraResources)
-  const llamaServerPath = findLlamaServer()
-  if (!llamaServerPath) throw new Error('llama-server binary not found in extraResources')
-
-  // Pick port
-  if (port === 0) {
-    port = await pickFreePort()
-  }
-
-  // Log file
-  sidecarLogPath = join(tmpdir(), `belrog-llama-server-${Date.now()}.log`)
-  writeFileSync(sidecarLogPath, '')
-
-  const args = [
-    '-m', modelPath,
-    '--port', String(port),
-    '--ctx-size', String(contextLength),
-    '--n-gpu-layers', String(gpuLayers),
-    '--parallel', '4',
-    '--cont-batching',
-    '--mlock',
-    '--no-mmap',
-    '--log-format', 'text',
-  ]
-
-  sidecarProcess = spawn(llamaServerPath, args, {
-    detached: false,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
-
-  sidecarPort = port
-  sidecarPid = sidecarProcess.pid
-
-  const logStream = require('node:fs').createWriteStream(sidecarLogPath, { flags: 'a' })
-  sidecarProcess.stdout?.pipe(logStream)
-  sidecarProcess.stderr?.pipe(logStream)
-
-  // Wait for server ready
-  await waitForServer(`http://localhost:${port}/v1/models`, 30000)
-
-  sidecarProcess.on('exit', (code) => {
-    sidecarProcess = null
-    sidecarPort = null
-    sidecarPid = null
-    console.log(`[llama-server] exited with code ${code}`)
-  })
-
-  return getSidecar()
-}
-
-function findLlamaServer() {
-  const { resolve: resolvePath } = require('node:path')
-  const { platform, arch } = require('node:os')
-  const { existsSync } = require('node:fs')
-
-  const candidates = [
-    // Bundled in extraResources (Electron)
-    resolvePath(process.resourcesPath || '', 'extraResources', 'llama-runtime', `${platform}-${arch}`, 'llama-server'),
-    resolvePath(__dirname, '..', '..', 'extraResources', 'llama-runtime', `${platform}-${arch}`, 'llama-server'),
-    // Dev fallback
-    resolvePath(__dirname, '..', '..', '..', 'llama-runtime', `${platform}-${arch}`, 'llama-server'),
-  ]
-
-  for (const c of candidates) {
-    if (existsSync(c)) return c
-  }
+  // Detection failed — return null so caller knows it's unknown
   return null
 }
 
-function pickFreePort() {
-  return new Promise((resolve, reject) => {
-    const { createServer } = require('node:net')
-    const server = createServer()
-    server.listen(0, () => {
-      const port = server.address().port
-      server.close(() => resolve(port))
-    })
-    server.on('error', reject)
-  })
+/**
+ * Filter presets to only those that fit within measured VRAM.
+ * Envelope: 4-6 GB working set. Leaves 15% headroom for OS + other apps.
+ */
+export function getPresetsForVRAM(vramGB) {
+  if (vramGB === null || vramGB === undefined) return []
+  const safeLimit = vramGB * 0.85
+  return MODEL_PRESETS.filter(p => p.vramGB <= safeLimit).sort((a, b) => b.vramGB - a.vramGB)
 }
 
-function waitForServer(url, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    const check = async () => {
-      try {
-        const res = await fetch(url)
-        if (res.ok) return resolve()
-      } catch {}
-      if (Date.now() - start > timeoutMs) {
-        return reject(new Error(`llama-server not ready after ${timeoutMs}ms`))
+/**
+ * Get the default preset for a given VRAM.
+ * Mistral-7B Q4_K_M is the default pick when it fits.
+ */
+export function getDefaultPreset(vramGB) {
+  const fitting = getPresetsForVRAM(vramGB)
+  const mistral = fitting.find(p => p.id === 'mistral-7b-instruct-v0.3.Q4_K_M')
+  return mistral || fitting[0] || null
+}
+
+/**
+ * Get all presets with fit flags for a given VRAM (or all if vramGB is null).
+ */
+export function getPresetsWithFit(vramGB) {
+  return MODEL_PRESETS.map(p => ({
+    ...p,
+    fits: vramGB !== null && vramGB !== undefined ? p.vramGB <= vramGB * 0.85 : false,
+  }))
+}
+
+// ═══════════════════════════════════════════
+// Local Model Directory
+// ═══════════════════════════════════════════
+
+let _electronApp = null
+export function setElectronApp(app) { _electronApp = app }
+
+function getApp() {
+  if (_electronApp) return _electronApp
+  try {
+    const pkg = require('electron')
+    return pkg.app || pkg.default?.app || pkg
+  } catch {
+    return null
+  }
+}
+
+function getModelsDir() {
+  const app = getApp()
+  const userData = app?.getPath?.('userData')
+  if (userData) return join(userData, 'llama-models')
+  // Test fallback
+  return join(process.cwd(), 'test-models')
+}
+
+export async function ensureModelDir() {
+  const dir = getModelsDir()
+  await mkdir(dir, { recursive: true })
+  return dir
+}
+
+export async function listLocalModels() {
+  const dir = await ensureModelDir()
+  try {
+    const files = await readdir(dir)
+    return files
+      .filter(f => f.endsWith('.gguf'))
+      .map(f => ({
+        id: f.replace('.gguf', ''),
+        name: f,
+        path: join(dir, f),
+      }))
+  } catch {
+    return []
+  }
+}
+
+// ═══════════════════════════════════════════
+// Download (delegates to remoteModelInstall.js recipe)
+// ═══════════════════════════════════════════
+
+/**
+ * Download a preset model using the verified download recipe.
+ * @param {string} presetId - ID from MODEL_PRESETS
+ * @param {Object} opts - { onProgress(bytes, total), onStageChange(stage), abortSignal }
+ * @returns {Object} { ok, path, preset, size, hash, cached, error }
+ */
+export async function downloadPreset(presetId, { onProgress, onStageChange, abortSignal } = {}) {
+  const preset = MODEL_PRESETS.find(p => p.id === presetId)
+  if (!preset) throw new Error(`Unknown preset: ${presetId}`)
+
+  const modelsDir = await ensureModelDir()
+  const targetPath = join(modelsDir, preset.filename)
+  const url = `https://huggingface.co/${preset.repo}/resolve/main/${preset.filename}`
+
+  // Check if already complete and verified
+  try {
+    const st = await stat(targetPath)
+    if (st.size === preset.sizeBytes) {
+      const hash = await computeLocalSha256(targetPath)
+      if (hash.toLowerCase() === preset.sha256.toLowerCase()) {
+        if (onStageChange) onStageChange('complete')
+        if (onProgress) onProgress(st.size, st.size)
+        return { ok: true, path: targetPath, preset, size: st.size, hash, cached: true }
       }
-      setTimeout(check, 500)
+      // Hash mismatch — will re-download
     }
-    check()
+  } catch {}
+
+  const result = await downloadLocalModel({
+    url,
+    filename: preset.filename,
+    expectedSha256: preset.sha256,
+    expectedSize: preset.sizeBytes,
+    onProgress,
+    onStageChange,
+    abortSignal,
   })
+
+  if (!result.ok) return { ok: false, error: result.error, preset }
+  return { ok: true, path: result.path, preset, size: result.size, hash: result.hash, cached: false }
 }
 
-export function stopSidecar() {
-  if (sidecarProcess) {
-    sidecarProcess.kill('SIGTERM')
-    sidecarProcess = null
-    sidecarPort = null
-    sidecarPid = null
-    sidecarLogPath = null
+// ═══════════════════════════════════════════
+// First-Run Decision (pure, testable function)
+// ═══════════════════════════════════════════
+
+/**
+ * Decide first-run model choice.
+ * @param {Object} opts
+ *   - hasLocalGguf: boolean — any .gguf already in modelsDir
+ *   - modelsDir: string — path to models directory
+ *   - presets: Array — MODEL_PRESETS (or filtered subset)
+ *   - vramGb: number|null — measured VRAM or null if unknown
+ * @returns {Object} { action: 'pick-model'|'use-existing'|'custom-path', preset?, path?, reason }
+ *
+ * Fallback order encoded: local sidecar -> LM Studio -> OpenRouter.
+ * Cancelling falls through, never dead-ends.
+ */
+export function chooseModel({ hasLocalGguf, modelsDir, presets, vramGb }) {
+  // If user already has a local GGUF, offer to use it
+  if (hasLocalGguf) {
+    return {
+      action: 'use-existing',
+      reason: 'Local GGUF found in models directory',
+      modelsDir,
+    }
+  }
+
+  // No local model — filter presets by VRAM
+  const fitting = vramGb !== null && vramGb !== undefined
+    ? presets.filter(p => p.vramGB <= vramGb * 0.85)
+    : presets // unknown VRAM: show all, let user decide
+
+  if (fitting.length === 0) {
+    // Nothing fits measured VRAM — still show all presets with warning
+    return {
+      action: 'pick-model',
+      preset: presets[0], // default to first (Mistral)
+      presets: MODEL_PRESETS,
+      reason: 'No presets fit measured VRAM; showing all options',
+      warning: 'Measured VRAM may be insufficient for any preset',
+    }
+  }
+
+  // Default pick: Mistral-7B Q4_K_M if it fits, else largest fitting
+  const defaultPreset = fitting.find(p => p.id === 'mistral-7b-instruct-v0.3.Q4_K_M')
+    || fitting.reduce((a, b) => (b.vramGB > a.vramGB ? b : a))
+
+  return {
+    action: 'pick-model',
+    preset: defaultPreset,
+    presets: fitting,
+    reason: 'No local model; default preset pre-selected',
   }
 }
 
@@ -494,12 +302,9 @@ export function getModelCatalog() {
 }
 
 export async function getModelCatalogWithVRAM() {
-  const vram = await detectVRAM()
+  const vram = await detectVramGb()
   return {
     vramGB: vram,
-    presets: MODEL_PRESETS.map(p => ({
-      ...p,
-      fits: p.vramGB <= vram * 0.85,
-    })),
+    presets: getPresetsWithFit(vram),
   }
 }

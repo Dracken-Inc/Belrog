@@ -12,7 +12,6 @@
  *  - Disk space preflight
  */
 
-const { app } = require('electron')
 const path = require('path')
 const fs = require('fs/promises')
 const { spawn } = require('child_process')
@@ -37,7 +36,10 @@ function pickDownloader() {
   return {
     aria2c: (url, targetPath, filename) => [
       'aria2c', '--quiet', '--continue=true', '--max-connection-per-server=8',
-      '--dir', path.dirname(targetPath), '--out', filename, url,
+      // Write to targetPath (the .part file) like wget/curl, so the verify+rename
+      // flow always stats the same path. Using `filename` here wrote to the final
+      // name and left tempPath missing -> false ENOENT failure on every aria2c run.
+      '--dir', path.dirname(targetPath), '--out', path.basename(targetPath), url,
     ],
     wget: (url, targetPath, filename) => [
       'wget', '-q', '--continue', '-O', targetPath, url,
@@ -207,9 +209,34 @@ async function downloadLocalModel({
 
       proc.stderr.on('data', d => { stderr += d.toString() })
 
-      // Poll file size for progress
+      // Track process exit so the poll loop can stop. NOTE: child.kill(0)
+      // returns false (does NOT throw) for an already-exited child, so the
+      // old `try { proc.kill(0) } catch { break }` check never fired and the
+      // poll loop spun forever after a successful download — hang bug. We
+      // therefore gate the loop on an explicit procDone flag instead.
+      let procDone = false
+      let closeResolve, closeReject
+      const closePromise = new Promise((resolve, reject) => {
+        closeResolve = resolve
+        closeReject = reject
+      })
+      proc.on('close', code => {
+        procDone = true
+        if (code === 0) closeResolve()
+        else closeReject(new Error(`${downloader.name} failed: ${stderr}`))
+      })
+      proc.on('error', err => {
+        procDone = true
+        closeReject(err)
+      })
+
+      // Abort cancels the running downloader.
+      const onAbort = () => { try { proc.kill('SIGTERM') } catch {} }
+      abortSignal?.addEventListener?.('abort', onAbort)
+
+      // Poll file size for progress until the process exits.
       const pollProgress = async () => {
-        while (!abortSignal?.aborted) {
+        while (!procDone && !abortSignal?.aborted) {
           try {
             const stat = await fs.stat(tempPath).catch(() => null)
             if (stat) {
@@ -218,20 +245,20 @@ async function downloadLocalModel({
             }
           } catch {}
           await new Promise(r => setTimeout(r, DEFAULT_DOWNLOAD_POLL_MS))
-          // Check if process exited
-          try { proc.kill(0) } catch { break } // process ended
         }
+        // Final size read so the last chunk is reported.
+        try {
+          const stat = await fs.stat(tempPath).catch(() => null)
+          if (stat) { downloaded = stat.size; onProgress?.(downloaded, expectedSize) }
+        } catch {}
       }
       const pollPromise = pollProgress()
 
-      await new Promise((resolve, reject) => {
-        proc.on('close', code => {
-          if (code === 0) resolve()
-          else reject(new Error(`${downloader.name} failed: ${stderr}`))
-        })
-        proc.on('error', reject)
-      })
-
+      try {
+        await closePromise
+      } finally {
+        abortSignal?.removeEventListener?.('abort', onAbort)
+      }
       await pollPromise
     }
 
