@@ -274,6 +274,28 @@ jobs:
             "release/belrog-$version-windows-portable-x64.exe#Windows Portable" `
             --clobber
 
+      - name: Cosign keyless sign Windows artifacts
+        if: ${{ !cancelled() }}
+        uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: 'v2.2.3'
+      - name: Sign Windows binaries with cosign
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.app_version.outputs.app_version }}"
+          $files = @(
+            "release/belrog-$version-windows-installer-x64.exe",
+            "release/belrog-$version-windows-portable-x64.exe"
+          )
+          foreach ($file in $files) {
+            if (Test-Path $file) {
+              cosign sign-blob --yes -output-signature "$file.sig" -output-certificate "$file.crt" $file
+              echo "Signed $file"
+            }
+          }
+
       - name: Keep Windows artifacts as job artifacts (fallback)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -389,6 +411,28 @@ jobs:
             "release/belrog-${VERSION}-linux-x86_64.AppImage#Linux AppImage" \
             "release/belrog-${VERSION}-linux-amd64.deb#Linux deb" \
             --clobber
+
+      - name: Cosign keyless sign Linux artifacts
+        if: ${{ !cancelled() }}
+        uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: 'v2.2.3'
+      - name: Sign Linux binaries with cosign
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.app_version.outputs.app_version }}"
+          FILES=(
+            "release/belrog-${VERSION}-linux-x86_64.AppImage"
+            "release/belrog-${VERSION}-linux-amd64.deb"
+          )
+          for file in "${FILES[@]}"; do
+            if [ -f "$file" ]; then
+              cosign sign-blob --yes -output-signature "$file.sig" -output-certificate "$file.crt" "$file"
+              echo "Signed $file"
+            fi
+          done
 
       - name: Keep Linux artifacts as job artifacts (fallback)
         if: ${{ !cancelled() }}
@@ -534,3 +578,20 @@ jobs:
           gh release upload "$RELEASE_TAG" \
                       "release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg#${{ matrix.asset_label }}" \
             --clobber
+
+      - name: Cosign keyless sign macOS artifacts
+        if: ${{ !cancelled() }}
+        uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: 'v2.2.3'
+      - name: Sign macOS binaries with cosign
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.app_version.outputs.app_version }}"
+          FILE="release/belrog-${VERSION}-mac-${{ matrix.arch }}.dmg"
+          if [ -f "$FILE" ]; then
+            cosign sign-blob --yes -output-signature "$FILE.sig" -output-certificate "$FILE.crt" "$FILE"
+            echo "Signed $FILE"
+          fi
