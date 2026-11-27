@@ -47,3 +47,13 @@ test('the clipboard channel is wired on both sides', () => {
   assert.match(main, /ipcMain\.handle\('belrog:writeClipboardText'/)
   assert.match(main, /clipboard\.writeText\(text\)/)
 })
+
+test('director:run-pipeline is handled in main process', () => {
+  const main = mainSources.join('\n')
+  assert.match(main, /ipcMain\.handle\('director:run-pipeline'/)
+})
+
+test('director:run-pipeline is exposed via preload', () => {
+  const preload = preloadSources.join('\n')
+  assert.match(preload, /runMusicVideoPipeline:\s*\(options\)\s*=>\s*ipcRenderer\.invoke\('director:run-pipeline'/)
+})

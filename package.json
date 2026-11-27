@@ -55,7 +55,8 @@
     "test:alpha-media": "node --test ./tests/mediaAlpha.test.js ./tests/imageSequenceTranscode.test.js ./src/utils/alphaMedia.test.mjs",
     "test:mcp-h3": "node --test ./tests/mcpH3ReferenceVideo.test.js",
     "test:mcp-my-workflows": "node --test ./tests/myWorkflowCatalog.test.mjs",
-    "test:shot-plan-schema": "node --test ./tests/shotPlanSchema.test.mjs"
+    "test:shot-plan-schema": "node --test ./tests/shotPlanSchema.test.mjs",
+    "test:music-video-wa": "node --test ./tests/audioEnvelope.test.mjs ./tests/ipcChannelContract.test.mjs ./tests/shotPlanSchema.test.mjs"
   },
   "keywords": [
     "animatic",
@@ -106,7 +107,8 @@
     "postcss": "^8.4.32",
     "tailwindcss": "^3.3.6",
     "vite": "^5.0.8",
-    "wait-on": "^7.2.0"
+    "wait-on": "^7.2.0",
+    "web-audio-api": "^1.6.0"
   },
   "build": {
     "appId": "com.comfystudio.app",

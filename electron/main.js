@@ -4406,6 +4406,41 @@ ipcMain.handle('belrog:probeAudioTrack', async (_event, filePath) => {
   })
 })
 
+// Belrog music-video pipeline: runs the full m4a → plan.json pipeline
+// from the main process and forwards progress via mv:* events to the window.
+ipcMain.handle('director:run-pipeline', async (event, options = {}) => {
+  const { filePath, outputDir, style, creativePreset, backend, modelId, targetSec } = options
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: 'filePath is required.' }
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, error: 'No Belrog window available for progress events.' }
+  }
+
+  try {
+    // Dynamic import of ES module pipeline
+    const { runMusicVideoPipeline } = await import('../src/services/musicVideoPipeline.js')
+    const result = await runMusicVideoPipeline({
+      filePath,
+      win: mainWindow,
+      options: {
+        style,
+        creativePreset,
+        backend,
+        modelId,
+        targetSec,
+        outputDir,
+      },
+    })
+    return { ok: true, planPath: result.planPath, plan: result.plan }
+  } catch (err) {
+    const message = String(err?.message || err)
+    // Ensure error event is emitted to renderer
+    mainWindow.webContents.send('mv:error', { stage: 'pipeline', error: message, recoverable: false })
+    return { ok: false, error: message }
+  }
+})
+
 // Clipboard writes go through the main process on purpose. The renderer's
 // navigator.clipboard throws NotAllowedError ("Document is not focused")
 // whenever focus is inside the Director Script iframe, which made Copy Brief

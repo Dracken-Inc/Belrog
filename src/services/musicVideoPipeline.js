@@ -15,7 +15,7 @@
  *   mv:complete   { planPath, plan }
  */
 import { parseLyricBlocks, tileShots, auditTiling, harvestCastSlugs, generateSunoScript } from './sunoIntake.js'
-import { analyzeAudioSource } from './audioAnalysis.js'
+import { analyzeEnvelopeFFmpeg } from './audioAnalysis.js'
 import { compilePlot, compileShots } from './actionProse.mjs'
 import { validatePlan, repairPlan } from './shotPlanValidator.js'
 import { getModelCatalog, downloadModel } from './modelCatalog.js'
@@ -103,66 +103,6 @@ async function extractSunoMetadata(filePath) {
 }
 
 /**
- * Detect song sections from audio envelope (loudness curve + silence + onsets).
- * Returns array of { id, kind, startSec, endSec, energy }.
- */
-function detectSectionsFromEnvelope(analysis, durationSec) {
-  const { loudnessCurve = [], beats = [], onsets = [], silences = [], bpm } = analysis
-  if (!loudnessCurve.length) return []
-
-  // Find energy peaks and valleys to segment
-  const sections = []
-  const minSectionSec = 8 // minimum section length
-  let lastBoundary = 0
-
-  // Use silence spans as hard boundaries
-  const boundaries = [0]
-  for (const s of silences) {
-    if (s.duration >= 1.0 && s.start > lastBoundary + minSectionSec) {
-      boundaries.push(s.start)
-      lastBoundary = s.start
-    }
-  }
-  boundaries.push(durationSec)
-
-  // Classify each segment by energy profile and position
-  const kindOrder = ['intro', 'verse', 'pre_chorus', 'chorus', 'bridge', 'breakdown', 'outro']
-  let kindIndex = 0
-
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    const startSec = boundaries[i]
-    const endSec = boundaries[i + 1]
-    if (endSec - startSec < 2) continue
-
-    // Sample energy in this segment
-    const segmentCurve = loudnessCurve.filter(p => p.time >= startSec && p.time < endSec)
-    const avgEnergy = segmentCurve.length
-      ? segmentCurve.reduce((s, p) => s + Math.pow(10, p.db / 10), 0) / segmentCurve.length
-      : 0
-    const normEnergy = Math.min(1, Math.max(0, (avgEnergy + 60) / 60)) // rough -60..0 dB → 0..1
-
-    // Position-based kind assignment with energy override
-    let kind = kindOrder[Math.min(kindIndex, kindOrder.length - 1)]
-    if (i === 0) kind = 'intro'
-    else if (i === boundaries.length - 2) kind = 'outro'
-    else if (normEnergy > 0.7 && kindIndex < 3) kind = 'chorus'
-    else if (normEnergy > 0.5 && kind === 'verse') kind = 'pre_chorus'
-    else if (normEnergy < 0.3 && kind !== 'intro' && kind !== 'outro') kind = 'breakdown'
-
-    sections.push({
-      id: `${kind}-${i + 1}`,
-      kind,
-      startSec: Math.round(startSec * 10) / 10,
-      endSec: Math.round(endSec * 10) / 10,
-      energy: Math.round(normEnergy * 100) / 100,
-    })
-    kindIndex++
-  }
-
-  return sections
-}
-
-/**
  * Main pipeline entry point.
  * @param {Object} opts - { filePath, win (BrowserWindow), options }
  * @returns {Promise<{ planPath, plan }>}
@@ -200,15 +140,10 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
     // STAGE 2: Audio Analysis (envelope → beats + sections)
     // ═══════════════════════════════════
     emitProgress(win, 'audio', 0.1, 'Analyzing audio envelope…')
-    const analysis = await analyzeAudioSource({ absolutePath: filePath }, {
-      includeLoudnessCurve: true,
-      maxCurvePoints: 400,
-      silenceThresholdDb: -45,
-      minSilenceSeconds: 0.35,
-    })
-    emitProgress(win, 'audio', 0.6, `BPM: ${analysis.bpm?.toFixed(1) ?? 'unknown'}, ${analysis.beats?.length ?? 0} beats`)
+    const analysis = await analyzeEnvelopeFFmpeg({ absolutePath: filePath })
+    emitProgress(win, 'audio', 0.6, `Envelope: ${analysis.durationSec.toFixed(1)}s, ${analysis.onsets?.length ?? 0} onsets, ${analysis.sections?.length ?? 0} sections`)
 
-    const sections = detectSectionsFromEnvelope(analysis, durationSec)
+    const sections = analysis.sections
     emitProgress(win, 'audio', 1.0, `Audio done: ${sections.length} sections detected`)
 
     // ═══════════════════════════════════
@@ -221,7 +156,7 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
       durationSec,
       lyricsRaw,
       sections,
-      beats: analysis.beats,
+      beats: [], // envelope analysis does not produce beat grid
       style,
       creativePreset,
       castSlugs,
@@ -237,7 +172,7 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
       title,
       durationSec,
       sections,
-      beats: analysis.beats,
+      beats: [], // envelope analysis does not produce beat grid
       shots: shots.map(s => ({ startSec: s.startSec, endSec: s.endSec, lyric: s.lyric })),
       style,
       creativePreset,

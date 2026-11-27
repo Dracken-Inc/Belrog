@@ -445,6 +445,203 @@ export function analyzeAudioBuffer(audioBuffer, options = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Main-process FFmpeg envelope analysis (no Web Audio)
+// ─────────────────────────────────────────────────────────────────────
+
+const ENVELOPE_CACHE = new Map() // key -> { result, mtime }
+const ENVELOPE_CACHE_MAX = 12
+
+/**
+ * Resolve the ffmpeg binary path the same way the rest of the repo does.
+ * Reuses ffmpeg-static + the packaged-path resolution logic from electron/main.js.
+ */
+async function resolveFfmpegPath() {
+  try {
+    const ffmpegStatic = await import('ffmpeg-static')
+    // ffmpeg-static exports the path as default export (string)
+    const candidate = ffmpegStatic.default
+    if (!candidate) return null
+    // In packaged app, the binary lives under resources/bin/
+    if (typeof process !== 'undefined' && process.resourcesPath) {
+      const { join, basename } = await import('path')
+      const { existsSync } = await import('fs')
+      const packaged = join(process.resourcesPath, 'bin', basename(candidate))
+      if (existsSync(packaged)) return packaged
+    }
+    return candidate
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Decode audio to mono PCM s16le at 8000 Hz via ffmpeg and compute:
+ * - loudnessCurve: RMS in 50 ms windows (downsampled to ~400 points)
+ * - onsets: largest positive RMS deltas (smoothed), min 5 s apart
+ * - sections: boundaries at those onsets (for pipeline section detection)
+ *
+ * Returns the subset of analyzeAudioSource's shape that the music-video path needs:
+ * { durationSec, sampleRate, loudnessCurve, onsets, sections }
+ */
+export async function analyzeEnvelopeFFmpeg({ absolutePath }) {
+  if (!absolutePath) throw new Error('analyzeEnvelopeFFmpeg requires absolutePath')
+
+  const { statSync, existsSync } = await import('fs')
+  const stats = statSync(absolutePath)
+  const mtimeMs = stats.mtimeMs
+  const cacheKey = `${absolutePath}|${mtimeMs}`
+
+  if (ENVELOPE_CACHE.has(cacheKey)) return ENVELOPE_CACHE.get(cacheKey).result
+
+  const ffmpegPath = await resolveFfmpegPath()
+  if (!ffmpegPath || !existsSync(ffmpegPath)) {
+    throw new Error('FFmpeg binary not available for envelope analysis.')
+  }
+
+  const sampleRate = 8000
+  const hopMs = 50
+  const hopSamples = Math.round((hopMs / 1000) * sampleRate)
+
+  // Spawn ffmpeg: decode to mono s16le at 8kHz, pipe to stdout
+  const { spawn } = await import('child_process')
+  const proc = spawn(ffmpegPath, [
+    '-hide_banner', '-loglevel', 'error',
+    '-i', absolutePath,
+    '-map', '0:a:0',
+    '-ac', '1',
+    '-ar', String(sampleRate),
+    '-f', 's16le',
+    '-acodec', 'pcm_s16le',
+    '-'
+  ], { windowsHide: true })
+
+  const chunks = []
+  let totalBytes = 0
+  proc.stdout.on('data', (chunk) => {
+    chunks.push(chunk)
+    totalBytes += chunk.length
+  })
+
+  await new Promise((resolve, reject) => {
+    proc.on('error', reject)
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        let stderr = ''
+        proc.stderr.on('data', (d) => { stderr += d.toString() })
+        return reject(new Error(`FFmpeg envelope decode failed (code ${code}): ${stderr}`))
+      }
+      resolve()
+    })
+  })
+
+  // Concatenate all PCM data
+  const pcmBuffer = Buffer.concat(chunks, totalBytes)
+  const sampleCount = pcmBuffer.length / 2 // s16le = 2 bytes/sample
+  const durationSec = sampleCount / sampleRate
+
+  // Convert to Float32Array [-1, 1]
+  const mono = new Float32Array(sampleCount)
+  for (let i = 0; i < sampleCount; i += 1) {
+    const s16 = pcmBuffer.readInt16LE(i * 2)
+    mono[i] = s16 / 32768
+  }
+
+  // Compute RMS in 50 ms windows
+  const rmsValues = []
+  for (let start = 0; start < sampleCount; start += hopSamples) {
+    const end = Math.min(sampleCount, start + hopSamples)
+    let sumSq = 0
+    for (let i = start; i < end; i += 1) sumSq += mono[i] * mono[i]
+    const rms = Math.sqrt(sumSq / Math.max(1, end - start))
+    rmsValues.push(rms)
+  }
+
+  // Downsample loudnessCurve to ~400 points (same as analyzeAudioSource default)
+  const maxCurvePoints = 400
+  const loudnessCurve = []
+  const bucketCount = Math.min(maxCurvePoints, rmsValues.length)
+  if (bucketCount > 0) {
+    const bucketSize = rmsValues.length / bucketCount
+    for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+      const start = Math.floor(bucket * bucketSize)
+      const end = Math.max(start + 1, Math.floor((bucket + 1) * bucketSize))
+      let sumSq = 0
+      for (let i = start; i < end; i += 1) sumSq += rmsValues[i] * rmsValues[i]
+      const rms = Math.sqrt(sumSq / (end - start))
+      const time = ((start + end) / 2) * hopMs / 1000
+      loudnessCurve.push({
+        time: Math.round(time * 1000) / 1000,
+        db: Math.round((rms > 1e-8 ? 20 * Math.log10(rms) : -160) * 10) / 10
+      })
+    }
+  }
+
+  // Smooth RMS for onset detection (3-tap moving average)
+  const smoothed = new Float32Array(rmsValues.length)
+  for (let i = 0; i < rmsValues.length; i += 1) {
+    const prev = i > 0 ? rmsValues[i - 1] : rmsValues[i]
+    const next = i < rmsValues.length - 1 ? rmsValues[i + 1] : rmsValues[i]
+    smoothed[i] = (prev + rmsValues[i] + next) / 3
+  }
+
+  // Find large deltas (onset candidates) - both positive (rises) and negative (falls)
+  const deltas = []
+  for (let i = 1; i < smoothed.length; i += 1) {
+    const delta = smoothed[i] - smoothed[i - 1]
+    const absDelta = Math.abs(delta)
+    if (absDelta > 1e-4) deltas.push({ index: i, delta: absDelta, time: i * hopMs / 1000 })
+  }
+
+  // Sort by delta descending, pick largest with min 5s spacing
+  deltas.sort((a, b) => b.delta - a.delta)
+  const minGapSec = 5
+  const onsets = []
+  for (const d of deltas) {
+    if (onsets.every(o => Math.abs(o - d.time) >= minGapSec)) {
+      onsets.push(Math.round(d.time * 10) / 10)
+    }
+    if (onsets.length >= 16) break // cap similar to analyzeAudioSource
+  }
+  onsets.sort((a, b) => a - b)
+
+  // Sections: boundaries at onsets + start/end
+  const boundaries = [0, ...onsets, Math.round(durationSec * 10) / 10]
+  const sections = []
+  const kindOrder = ['intro', 'verse', 'pre_chorus', 'chorus', 'bridge', 'breakdown', 'outro']
+  for (let i = 0; i < boundaries.length - 1; i += 1) {
+    const startSec = boundaries[i]
+    const endSec = boundaries[i + 1]
+    if (endSec - startSec < 2) continue
+    let kind = kindOrder[Math.min(i, kindOrder.length - 1)]
+    if (i === 0) kind = 'intro'
+    else if (i === boundaries.length - 2) kind = 'outro'
+    sections.push({
+      id: `${kind}-${i + 1}`,
+      kind,
+      startSec,
+      endSec,
+      energy: 0.5 // placeholder; pipeline re-computes from loudnessCurve
+    })
+  }
+
+  const result = {
+    durationSec: Math.round(durationSec * 1000) / 1000,
+    sampleRate,
+    loudnessCurve,
+    onsets,
+    sections
+  }
+
+  ENVELOPE_CACHE.set(cacheKey, { result, mtime: mtimeMs })
+  if (ENVELOPE_CACHE.size > ENVELOPE_CACHE_MAX) {
+    const first = ENVELOPE_CACHE.keys().next().value
+    if (first) ENVELOPE_CACHE.delete(first)
+  }
+
+  return result
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Source decoding + cached entry point
 // ─────────────────────────────────────────────────────────────────────
 

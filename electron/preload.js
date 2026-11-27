@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // duration/chapters so the renderer can derive the director script.
   pickAudioTrack: () => ipcRenderer.invoke('belrog:pickAudioTrack'),
   probeAudioTrack: (filePath) => ipcRenderer.invoke('belrog:probeAudioTrack', filePath),
+  runMusicVideoPipeline: (options) => ipcRenderer.invoke('director:run-pipeline', options),
 
   // Clipboard writes through the main process, because navigator.clipboard
   // fails while the Director Script iframe holds focus.
