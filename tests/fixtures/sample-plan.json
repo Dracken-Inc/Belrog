@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "track": {
+    "path": "fixtures/audio/sample-song.m4a",
+    "durationSec": 20,
+    "bpm": 120,
+    "beats": [0, 0.5, 1, 1.5, 2],
+    "sections": [
+      { "id": "s1", "startSec": 0, "endSec": 10, "kind": "verse" },
+      { "id": "s2", "startSec": 10, "endSec": 20, "kind": "chorus" }
+    ],
+    "profileSource": "envelope"
+  },
+  "look": {
+    "preset": "mtv-1990s",
+    "film": "35mm push-processed",
+    "lighting": "hard backlight, cyan and amber gels, haze",
+    "palette": "cyan, amber, deep black",
+    "letterbox": "2.39:1 anamorphic",
+    "location": { "slug": "warehouse", "lock": "same warehouse, same black curtains, same haze in every shot" }
+  },
+  "cast": [
+    { "slug": "singer", "role": "lead", "lock": "same face, same outfit, same guitar in every shot" }
+  ],
+  "shots": [
+    {
+      "id": "shot_001",
+      "sectionId": "s1",
+      "startSec": 0,
+      "endSec": 10,
+      "shotType": "performance",
+      "size": "medium",
+      "cameraMove": "push-in",
+      "energy": "building",
+      "performanceMode": "lip-sync",
+      "cast": ["singer"],
+      "lyric": "first line of the verse",
+      "lipSync": true,
+      "action": "the singer leans into the mic and the room light drops behind him"
+    },
+    {
+      "id": "shot_002",
+      "sectionId": "s2",
+      "startSec": 10,
+      "endSec": 20,
+      "shotType": "performance_wide",
+      "size": "wide",
+      "cameraMove": "dutch-tilt",
+      "energy": "intense",
+      "performanceMode": "wide-performance",
+      "cast": ["singer"],
+      "lyric": "the chorus lands",
+      "lipSync": false,
+      "action": "smoke rolls across the floor as the band hits the chorus wide"
+    }
+  ],
+  "clips": [
+    { "index": 0, "startSec": 0, "lengthSec": 10, "shotIds": ["shot_001"] },
+    { "index": 1, "startSec": 10, "lengthSec": 10, "shotIds": ["shot_002"] }
+  ],
+  "llm": { "backend": "local", "modelId": "fixture-model" }
+}
