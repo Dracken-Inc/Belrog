@@ -210,16 +210,16 @@ describe('F2: Prepare pipeline (stops at keyframes boundary)', () => {
     assert.ok(content.includes('music-video:prepare'), 'music-video:prepare not invoked in preload')
   })
 
-  it('MusicVideoEasyMode.jsx has Generate Full Music Video button on song step', async () => {
+  it('MusicVideoEasyMode.jsx has Prepare button on song step', async () => {
     const fs = await import('fs')
     const content = fs.readFileSync('./src/components/generate/MusicVideoEasyMode.jsx', 'utf-8')
-    assert.ok(content.includes('Generate Full Music Video'), 'Button text not found')
+    assert.ok(content.includes('Prepare (stop at keyframes)'), 'Prepare button text not found')
     assert.ok(content.includes('handlePrepareMusicVideo'), 'Handler not referenced')
     assert.ok(content.includes('musicVideoPrepare'), 'IPC call not found in component')
     // Button should be in renderSongStep (step 1)
     const songStepEnd = content.indexOf('const renderPeopleWizardModal')
     const songStepContent = content.slice(0, songStepEnd)
-    assert.ok(songStepContent.includes('Generate Full Music Video'), 'Button not in song step')
+    assert.ok(songStepContent.includes('Prepare (stop at keyframes)'), 'Prepare button not in song step')
   })
 
   it('prepare pipeline returns stoppedAt: keyframes', async () => {

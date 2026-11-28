@@ -1900,6 +1900,40 @@ export default function MusicVideoEasyMode({
   // GPU spent; stage 2 resumes the same project so keyframes, shot videos and the
   // final video actually render. Before this the press stopped at the director
   // script and left the user to find a second button to get a video.
+  // The options every music-video IPC call carries. Built once so the start
+  // call and the wizard press cannot drift apart — a call that omitted
+  // timelineFps would fall back to whatever fps the plan happens to carry.
+  const buildPipelineOptions = () => {
+    // Resolve timeline fps from the project store (renderer process): main has
+    // its own empty store instance and cannot read this itself.
+    let timelineFps = null
+    try {
+      const projectState = useProjectStore.getState?.()
+      const tl = projectState?.getCurrentTimelineSettings?.()
+      if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
+    } catch {
+      // Store not available, ignore
+    }
+    return {
+      aspectRatio,
+      resolutionPreset,
+      videoFps,
+      timelineFps,
+      coveragePreset,
+      performancePassCount,
+      includeStoryBroll,
+      includeEnvironmentalBroll,
+      includeDetailBroll,
+      videoWorkflowId: yoloMusicVideoWorkflowId,
+      keyframeWorkflowId: yoloMusicKeyframeWorkflowId,
+      styleNotes: yoloMusicStyleNotes,
+      lyrics: yoloMusicLyrics,
+      script: yoloMusicScript,
+      cast: yoloMusicCast,
+      resolvedCast: yoloMusicResolvedCast,
+    }
+  }
+
   const handlePrepareMusicVideo = async () => {
     if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoPrepare) return
     if (isRenderingPipeline) return
@@ -1909,36 +1943,7 @@ export default function MusicVideoEasyMode({
     setPipelineError('')
     setPipelineVideoPath('')
     try {
-      // Resolve timeline fps from the project store (renderer process): main has
-      // its own empty store instance and cannot read this itself.
-      let timelineFps = null
-      try {
-        const projectState = useProjectStore.getState?.()
-        const tl = projectState?.getCurrentTimelineSettings?.()
-        if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
-      } catch {
-        // Store not available, ignore
-      }
-
-      const options = {
-        aspectRatio,
-        resolutionPreset,
-        videoFps,
-        timelineFps,
-        coveragePreset,
-        performancePassCount,
-        includeStoryBroll,
-        includeEnvironmentalBroll,
-        includeDetailBroll,
-        videoWorkflowId: yoloMusicVideoWorkflowId,
-        keyframeWorkflowId: yoloMusicKeyframeWorkflowId,
-        styleNotes: yoloMusicStyleNotes,
-        lyrics: yoloMusicLyrics,
-        script: yoloMusicScript,
-        cast: yoloMusicCast,
-        resolvedCast: yoloMusicResolvedCast,
-      }
-      // Stage 1: no GPU. The script lands on disk and is readable at Step 4.
+      const options = buildPipelineOptions()
       const result = await window.electronAPI.musicVideoPrepare(yoloMusicAudioAssetPath, options)
       if (!result?.ok) {
         setPipelineError(result?.error || 'Failed to prepare music video')
@@ -1961,6 +1966,33 @@ export default function MusicVideoEasyMode({
       setPipelineProgress(100)
     } catch (error) {
       setPipelineError(error?.message || 'Failed to prepare music video')
+      setPipelineStage('Error')
+    } finally {
+      setIsRenderingPipeline(false)
+    }
+  }
+
+  const handleStartFullPipeline = async () => {
+    if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoStart) return
+    if (isRenderingPipeline) return
+    setIsRenderingPipeline(true)
+    setPipelineProgress(0)
+    setPipelineStage('Starting full music video pipeline...')
+    setPipelineError('')
+    setPipelineVideoPath('')
+    try {
+      const options = buildPipelineOptions()
+      const result = await window.electronAPI.musicVideoStart(yoloMusicAudioAssetPath, options)
+      if (!result?.ok) {
+        setPipelineError(result?.error || 'Failed to start music video pipeline')
+        setPipelineStage('Error')
+        return
+      }
+      setPipelineVideoPath(result.videoPath)
+      setPipelineStage('Video ready')
+      setPipelineProgress(100)
+    } catch (error) {
+      setPipelineError(error?.message || 'Failed to start music video pipeline')
       setPipelineStage('Error')
     } finally {
       setIsRenderingPipeline(false)
@@ -2416,15 +2448,26 @@ export default function MusicVideoEasyMode({
               shot videos and the finished video. No second button to hunt for.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handlePrepareMusicVideo}
-            disabled={isRenderingPipeline || !yoloMusicAudioAssetPath}
-            className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isRenderingPipeline ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
-            Generate Full Music Video
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleStartFullPipeline}
+              disabled={isRenderingPipeline || !yoloMusicAudioAssetPath}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isRenderingPipeline ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+              Generate Full Music Video
+            </button>
+            <button
+              type="button"
+              onClick={handlePrepareMusicVideo}
+              disabled={isRenderingPipeline || !yoloMusicAudioAssetPath}
+              className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg border border-sf-dark-600 bg-sf-dark-900/70 px-4 py-2.5 text-xs font-semibold text-sf-text-secondary transition-colors hover:border-sf-dark-500 hover:text-sf-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FileText className="h-4 w-4" />
+              Prepare (stop at keyframes)
+            </button>
+          </div>
         </div>
         {isRenderingPipeline && (
           <div className="mt-3 space-y-2">
