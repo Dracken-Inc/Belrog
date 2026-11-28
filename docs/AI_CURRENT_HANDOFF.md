@@ -1,92 +1,103 @@
-# Current AI Handoff
+# AI Current Handoff — Belrog
 
-Last updated: 2026-08-12
+**Last updated: 2026-11-28.** If this date is older than the current minor
+version, treat this file as stale and say so instead of acting on it.
 
-This is the live state for moving Belrog development from the old Windows checkout to a clean repository state that can be cloned on Ubuntu.
+## State right now
 
-## Merged Migration
+- **Branch:** `feat/shot-plan-schema-freeze` (working branch for the 0.6 line)
+- **Latest published tag:** `v0.6.51` (`8cfe14f`, 2026-11-28)
+- **Release line:** 0.6.x — version numbers bump per milestone (`0.6.51`, `0.6.52`, …)
+- **Local `main`:** 2 ahead of `origin/main` (origin/main still sits at the
+  v0.6.2 tag); published work is carried by tags, not by `main`. Do not assume
+  `main` is the tip.
+- **Remotes:** `origin` = `Dracken-Inc/Belrog` (public, not a GitHub fork),
+  `upstream` = `VelornLabs/velorn` (project was renamed Belrog → Velorn
+  upstream; upstream `0.4.x` is a *different* version line — never compare our
+  0.6.x against their 0.4.x as if they share a baseline).
+- **The only checkout on this machine:** `~/belrog-src`. `/tmp/opencode/belrog/*`
+  are git worktrees and disappear when `/tmp` is wiped (run `git worktree prune`
+  if a `git worktree add` refuses a name that no longer exists).
 
-- Worktree: `C:\Users\papa\Documents\coding_projects\general\belrog-migration-cleanup`
-- PR: `#99` - merged into `main` on 2026-08-12
-- Merge commit: `c4be213`
-- Latest release remains `v0.3.25`; the recovered changes are on `main` but have not been released yet.
-- This worktree remains intentionally separate from the old dirty `main` checkout.
+## Open regression work (active)
 
-Recovered, tested, and merged changes:
+Henry's four regressions from the Nov 27–28 work are tracked in
+`~/.hermes/plans/belrog-quality-loop-tracker.md` (an automated 20-minute quality
+loop owns them; owner works directly, no delegation):
 
-1. `592cf30` - Add a Settings toggle that hides the Comfy.org credit balance and stops its polling while hidden.
-2. `fb09ce6` - Refresh paused text/shape/caption rasters when timeline or asset state changes.
-3. `bcea1de` - Recognize namespaced `model.prompt` inputs in imported workflows, with MiniMax H3 regression coverage.
+| id | symptom | status @ v0.6.51 |
+|----|---------|------------------|
+| R1 | Workspace crashes moving to step 1 of the music-video workflow | open |
+| R2 | LTX keyframe shot quality worse than before | open |
+| R3 | Director scripts weak/silly from the local Qwen engine | open |
+| R4 | Characters/locations malformed → 4-panel collage shot, `"Roses boots"`, `CHARACTER: location only` | **fixed** in `681f4db` (keep asset boilerplate out of still/keyframe prompts) |
 
-The production renderer build passed after every feature. Electron main/preload syntax checks pass. All ten existing `package.json` test scripts plus the two recovered-feature suites pass: 82 tests total, 0 failures.
+Method Henry mandated, in order: collect all issues → failing tests first →
+online research → fix → verify → test → push/tag/build/notify → next item.
 
-The maintainer also verified all three user-facing behaviors in the Electron app before PR #99 was merged.
-
-## Preserved Windows Checkout
-
-The original checkout remains untouched at:
-
-`C:\Users\papa\Documents\coding_projects\general\comfyui_editing`
-
-At migration start it was on local `main` at `6b450ce` (`v0.3.23`), three commits behind `origin/main`, with 20 modified tracked files and many untracked files. It contains useful fixes mixed with obsolete experiments, generated review media, drafts, and screenshots.
-
-A safety inventory exists at:
-
-`C:\Users\papa\Documents\coding_projects\general\belrog-migration-backup-2026-08-12`
-
-It contains:
-
-- `tracked-changes.patch`
-- `git-status.txt`
-- `untracked-files.txt`
-- `recent-history.txt`
-
-Do not reset, pull, delete, or repurpose the old checkout until the maintainer has verified the clean branch and explicitly approves cleanup.
-
-## Deliberate Decisions
-
-- The old ComfyUI-based RTX upscale implementation was not migrated. Standalone NVIDIA RTX 4K export already shipped upstream in v0.3.24.
-- My Workflows MCP support was not recopied because it already shipped upstream in v0.3.25.
-- Manual title-bar/window dragging and unload changes were reviewed but not migrated. They are platform-sensitive, mixed with unrelated work, and lack a clear verification record. They remain recoverable in the old checkout and backup patch.
-- Generated timeline contact sheets, output media, mockups, marketing drafts, and old handoff notes were not brought into the clean branch.
-- No dirty old worktree has been deleted.
-
-Clean, fully superseded worktrees removed on 2026-08-12:
-
-- `comfystudio-license-gplv3`
-- `belrog-long-source-export`
-- `belrog-my-workflows-mcp`
-- `belrog-native-rtx-upscale`
-
-Old worktrees retained because they contain uncommitted or unique work:
-
-- `comfystudio-joao-16gb-preview` - modified project loading plus review screenshots and a long detached feature history.
-- `comfystudio-pr49` - one modified Generate file on a detached PR test.
-- `comfystudio-pr49-local-test` - staged and unstaged ASR/music-video test changes.
-- `comfyui_pr50_merge_check` - staged custom-workflow/media changes, two untracked covers, and two commits not represented in `main`.
-- `belrog-infinite-canvas` - uncommitted canvas UI, schema, store, and test work.
-
-Do not delete those retained worktrees without a separate review and explicit maintainer approval.
-
-## Remaining Work
-
-1. On Ubuntu, clone `main` fresh; do not copy `node_modules` or the Windows `.codex` directory.
-2. Run the Ubuntu startup commands below and verify belrog opens.
-3. Keep Windows available for Windows packaging, Azure signing behavior, and NVIDIA RTX export testing.
-4. Review retained worktrees individually before any further deletion.
-
-## Ubuntu First Session
-
-After cloning the intended Git branch on Ubuntu:
+## Test baseline (verified 2026-11-28, v0.6.51)
 
 ```bash
-npm ci
-npm run build
-npm run electron:dev
+node --test 'tests/**/*.test.*' 'src/**/*.test.*' 'electron/**/*.test.*'
 ```
 
-Start a new Codex task with:
+Result: **848 tests, 832 pass, 15 fail, 1 skipped (~35 s).** There is no
+`npm test`; do not add `--experimental-default-type=module` (it forces the CJS
+`electron/` files into ESM and produces fake failures).
 
-> Read AGENTS.md, docs/AI_PROJECT_CONTEXT.md, docs/AI_CURRENT_HANDOFF.md, and docs/AI_RELEASE_HANDOFF.md. Inspect git status and recent history, then summarize the product, architecture, current branch state, and next safe step before changing files.
+The 15 known failures, classified — **run this baseline before blaming your own
+change:**
 
-Local projects, ComfyUI models, credentials, signing secrets, generated media, and machine-specific settings are not repository context and must be migrated separately and deliberately.
+| count | area | classification |
+|-------|------|-----------------|
+| 8 | `src/services/discoverCatalog.test.mjs` | needs network to the public catalog endpoint (no DNS in isolated environments) |
+| 3 | `tests/rtxVideoUpscale.test.js` | Windows-path expectations (`C:\…`) asserted on Linux |
+| 1 | `tests/opticalFlowCache.test.js` | platform/temp-path assumptions |
+| 1 | `tests/runtimePackageGate.test.js` | local FFmpeg/minterpolate availability |
+| 2 | `tests/myWorkflowCatalog.test.js` | **real**: marker case mismatch — code emits `Belrog_PROMPT`, tests assert `BELROG_PROMPT` |
+
+Rules: never delete, skip, or "fix" a failing test to get green. If a failure is
+not in the list above, it is either your regression or a newly discovered defect
+— report it with file:line evidence.
+
+Also required before claiming done: `npm run build`, and
+`node --check electron/main.js && node --check electron/preload.js`.
+
+**Structural gap:** CI (`.github/workflows/release.yml`) builds releases but
+does **not** run tests. Tests are a local gate only until that changes.
+
+## Current architecture (0.6 music-video line)
+
+```
+m4a → Suno intake (src/services/sunoIntake.js)
+    → audio envelope analysis (src/services/audioAnalysis.js)
+    → two-pass local LLM: plot, then per-shot CSV (src/services/actionProse.mjs,
+       bundled llama-server sidecar, prompts compiled in code via promptCompiler.js)
+    → V-gate: ltx_prompt_lint.py + JSON schema + one repair retry
+       (src/services/shotPlanValidator.js against src/schema/shotPlan.schema.json)
+    → plan.json → render/stitch (src/services/musicVideoRender.js)
+Electron main wires it: electron/main.js → electron/musicVideoIpc.mjs →
+   src/services/musicVideoPipeline.js (IPC events mv:progress / mv:complete / …)
+UI: src/components/MusicVideoEasyMode.jsx, GenerateWorkspace.jsx
+   (master director prompt: buildMusicVideoLLMPrompt, ~line 2348)
+```
+
+Decision record for this architecture: `docs/plans/one-shot-redesign.md`
+(in-repo) / `~/.hermes/plans/belrog-oneshot-audit-and-redesign.md`.
+
+## Release state
+
+- Latest assets published: **v0.6.5** (4 assets) and **v0.6.51** (fix for R4).
+- Release procedure: `docs/AI_RELEASE_HANDOFF.md` + `docs/RELEASE_PROCESS.md`.
+- Releases are drafts; verify 4 assets before publishing; never let signing
+  block artifacts.
+
+## Stale instruction cleanup (2026-11-28)
+
+Archived (do not read as current): home-root `belrog-*.md` ×5,
+`~/projects/BELROG LTX-DIRECTOR SCRIPT GENERATOR INTEGRATION/`, the 0.4.x-era
+`belrog-maintenance` skill body, and `backUP01_PROJECT_SUMMARY.md`.
+Everything is preserved in `~/backups/belrog-instructions-2026-11-28/`.
+Authoritative instruction files are exactly: `AGENTS.md`,
+`docs/AI_CURRENT_HANDOFF.md`, `docs/AI_PROJECT_CONTEXT.md`,
+`docs/AI_RELEASE_HANDOFF.md`.

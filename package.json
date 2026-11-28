@@ -8,6 +8,7 @@
     "build": "vite build",
     "icons:generate": "icon-gen -i build/icon.png -o build --ico --ico-name icon --icns --icns-name icon",
     "preview": "vite preview",
+  "test:all": "node --test \"tests/**/*.test.*\" \"src/**/*.test.*\" \"electron/**/*.test.*\"",
     "electron": "electron .",
     "electron:dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder",

@@ -53,17 +53,24 @@ Do not upload `.blockmap` or `latest*.yml` files unless auto-update support is a
 3. Confirm `package.json` has the new release version.
 4. Confirm `package-lock.json` matches the same version.
 5. Run `npm run build`.
-6. Commit the release changes.
-7. Push `main`.
-8. Create and push the version tag:
+6. Run the full test suite and compare against the documented baseline in
+   `docs/AI_CURRENT_HANDOFF.md` — **CI does not run tests**:
+   ```bash
+   node --test 'tests/**/*.test.*' 'src/**/*.test.*' 'electron/**/*.test.*'
+   ```
+   No new failures vs. the baseline. Never delete, skip, or weaken a failing
+   test to get green; fix it or report it to Henry.
+7. Commit the release changes.
+8. Push `main`.
+9. Create and push the version tag:
 
 ```bash
 git tag -a v0.1.12 -m "belrog v0.1.12"
 git push origin refs/tags/v0.1.12
 ```
 
-9. Ask the user to check `Actions > Release Desktop Builds`.
-10. When the jobs are green, ask the user to review and publish the draft release.
+10. Ask the user to check `Actions > Release Desktop Builds`.
+11. When the jobs are green, ask the user to review and publish the draft release.
 
 ## If GitHub Actions Fails
 
