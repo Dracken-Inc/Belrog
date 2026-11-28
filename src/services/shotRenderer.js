@@ -432,8 +432,16 @@ export function createUploadCache({ dir = null } = {}) {
     async hash(filePath) {
       const h = createHash('sha256')
       const size = (await stat(filePath)).size
-      h.update(createReadStream(filePath, { start: 0, end: Math.min(65535, Math.max(0, size - 1)) }))
-      if (size > 131072) h.update(createReadStream(filePath, { start: Math.max(0, size - 65536), end: size - 1 }))
+      // Hash.update() takes a Buffer, never a stream — feeding it a ReadStream
+      // throws synchronously, which would break every upload on its first call.
+      const digestRange = (start, end) => new Promise((res, rej) => {
+        const stream = createReadStream(filePath, { start, end })
+        stream.on('data', (chunk) => h.update(chunk))
+        stream.on('end', res)
+        stream.on('error', rej)
+      })
+      await digestRange(0, Math.min(65535, Math.max(0, size - 1)))
+      if (size > 131072) await digestRange(Math.max(0, size - 65536), size - 1)
       h.update(String(size))
       return h.digest('hex')
     },

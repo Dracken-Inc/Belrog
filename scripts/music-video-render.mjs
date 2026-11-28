@@ -39,6 +39,8 @@ import {
   WORKFLOW_PATH,
 } from '../src/services/shotRenderer.js'
 import { buildStitchCommand, stitchClips } from '../src/services/stitcher.js'
+import { createComfyClient } from '../src/services/comfyClient.js'
+export { createComfyClient }
 import {
   assertFullRenderApproved,
   resolveComfyTarget,
@@ -89,73 +91,11 @@ function parseArgs(argv) {
   return out
 }
 
-/* ---------------------------- comfy client ---------------------------- */
-
-/**
- * The whole client shotRenderer needs: queue, poll, download, upload. Polling
- * /history instead of holding a websocket keeps this file dependency-free.
- * The upload endpoint and form fields match src/services/comfyui.js exactly, so
- * a file uploaded by the CLI is indistinguishable from one uploaded by the app.
+/* ---------------------------- comfy client ----------------------------
+ * The client lives in src/services/comfyClient.js so the app and this CLI
+ * cannot drift on URLs, upload fields or polling. Re-exported here for callers
+ * that already import the CLI.
  */
-export function createComfyClient(baseUrl) {
-  const base = String(baseUrl).replace(/\/+$/, '')
-  return {
-    baseUrl: base,
-    host: (() => { try { return new URL(base).hostname } catch { return 'default' } })(),
-
-    async getObjectInfoCached() {
-      const res = await fetch(`${base}/object_info`)
-      if (!res.ok) throw new Error(`GET /object_info failed: HTTP ${res.status}`)
-      return res.json()
-    },
-
-    async uploadFile(filePath, filename, subfolder = '', type = 'input') {
-      const buf = await readFile(filePath)
-      const name = String(filename || basename(filePath)).replace(/[\\/:*?"<>|]/g, '_')
-      const form = new FormData()
-      form.append('image', new Blob([buf]), name)
-      if (subfolder) form.append('subfolder', subfolder)
-      form.append('type', type)
-      form.append('overwrite', 'true')
-      const res = await fetch(`${base}/upload/image`, { method: 'POST', body: form })
-      if (!res.ok) throw new Error(`upload ${name} failed: HTTP ${res.status} ${(await res.text()).slice(0, 300)}`)
-      return res.json()
-    },
-
-    async queuePrompt(graph) {
-      const res = await fetch(`${base}/prompt`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: graph, client_id: 'belrog-cli' }),
-      })
-      const body = await res.text()
-      if (!res.ok) throw new Error(`/prompt rejected: HTTP ${res.status} ${body.slice(0, 800)}`)
-      return JSON.parse(body)
-    },
-
-    async getHistory(promptId) {
-      const res = await fetch(`${base}/history/${encodeURIComponent(promptId)}`)
-      if (!res.ok) throw new Error(`/history failed: HTTP ${res.status}`)
-      return res.json()
-    },
-
-    async downloadVideo(item) {
-      const q = new URLSearchParams({
-        filename: item.filename,
-        subfolder: item.subfolder || '',
-        type: item.type || 'output',
-      })
-      const res = await fetch(`${base}/view?${q}`)
-      if (!res.ok) throw new Error(`/view failed for ${item.filename}: HTTP ${res.status}`)
-      return res
-    },
-
-    async interrupt() {
-      await fetch(`${base}/interrupt`, { method: 'POST' }).catch(() => {})
-    },
-  }
-}
-
 /* ------------------------------- plan --------------------------------- */
 
 export async function loadPlan(planPath) {
