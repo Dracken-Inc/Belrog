@@ -128,7 +128,12 @@ export async function renderPlanClips(plan, renderDir, deps = {}) {
   const comfy = deps.comfy || (await defaultComfy(env))
   const work = planClipWork({ plan, shotStates, doneClipIndexes })
   // Resolve fps: options.fps > plan.fps (stamped at plan creation) > timelineFps (from caller) > RENDER_DEFAULTS.fps.
-  // The timeline fps (e.g. 23.976) beats the constant 24 to avoid ~0.28s drift over a 283s song.
+  // The timeline fps (e.g. 23.976) beats the constant 24. Why it matters is NOT
+  // gradual drift over the song — the 8n+1 alignment in graphFrames makes 24 and
+  // 23.976 produce the same frame count for ~97.5% of shot lengths. Near a
+  // rounding boundary (~2.5% — e.g. 4.21 s gives 105 frames at 24 but 97 at
+  // 23.976) a wrong fps adds or drops a whole 8-frame block (~0.33 s), so the
+  // defect is occasional jumps on a few shots, not slow desync.
   // plan.look?.fps is dead — nothing in the tree ever sets look.fps.
   const fps = options.fps || plan.fps || timelineFps || RENDER_DEFAULTS.fps
   const cache = options.uploadCache || createUploadCache({ dir: renderDir })
