@@ -89,8 +89,10 @@ Note: Node ≥ 22 module-syntax detection is required — do not add
 ## Reading order
 
 1. `docs/AI_CURRENT_HANDOFF.md` — state right now
-2. `docs/AI_PROJECT_CONTEXT.md` — durable architecture
-3. `docs/AI_RELEASE_HANDOFF.md` — before any commit, tag, or Actions work
+2. `docs/ACTIVE-WORK.md` — **where work stopped and the next action** (live
+   quality-loop tracker; update it as phases complete)
+3. `docs/AI_PROJECT_CONTEXT.md` — durable architecture
+4. `docs/AI_RELEASE_HANDOFF.md` — before any commit, tag, or Actions work
 
 Anything else is reference material until proven current: check its "Last
 updated" date against the current version before trusting it. Old instruction
