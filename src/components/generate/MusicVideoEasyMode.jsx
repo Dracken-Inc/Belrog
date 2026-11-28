@@ -493,6 +493,7 @@ export default function MusicVideoEasyMode({
   yoloMusicAsrLanguage = 'English',
   setYoloMusicAsrLanguage,
   yoloMusicAudioAsset,
+  yoloMusicAudioAssetPath,
   yoloMusicStyleNotes = '',
   setYoloMusicStyleNotes,
   yoloMusicTranscribingSrt,
@@ -605,6 +606,12 @@ export default function MusicVideoEasyMode({
   const [replaceVideoTarget, setReplaceVideoTarget] = useState(null)
   const [videoReplacementAssetId, setVideoReplacementAssetId] = useState('')
   const [videoReplacementBusy, setVideoReplacementBusy] = useState(false)
+  // Music video one-shot pipeline state
+  const [isRenderingPipeline, setIsRenderingPipeline] = useState(false)
+  const [pipelineProgress, setPipelineProgress] = useState(0)
+  const [pipelineStage, setPipelineStage] = useState('')
+  const [pipelineError, setPipelineError] = useState('')
+  const [pipelineVideoPath, setPipelineVideoPath] = useState('')
   const [peopleWizard, setPeopleWizard] = useState(null)
   const replacementFileInputRef = useRef(null)
   const videoReplacementFileInputRef = useRef(null)
@@ -663,6 +670,35 @@ export default function MusicVideoEasyMode({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [replaceVideoTarget])
+
+  // Music video one-shot pipeline IPC listeners
+  useEffect(() => {
+    if (!window.electronAPI?.onMusicVideoProgress) return
+    const cleanupProgress = window.electronAPI.onMusicVideoProgress((data) => {
+      if (data?.progress !== undefined) setPipelineProgress(data.progress)
+      if (data?.stage) setPipelineStage(data.stage)
+    })
+    const cleanupShotDone = window.electronAPI.onMusicVideoShotDone((data) => {
+      if (data?.stage) setPipelineStage(`Shot done: ${data.stage}`)
+    })
+    const cleanupVideoReady = window.electronAPI.onMusicVideoVideoReady((data) => {
+      if (data?.videoPath) setPipelineVideoPath(data.videoPath)
+      setPipelineStage('Video ready')
+      setPipelineProgress(100)
+      setIsRenderingPipeline(false)
+    })
+    const cleanupError = window.electronAPI.onMusicVideoError((data) => {
+      if (data?.message) setPipelineError(data.message)
+      setPipelineStage('Error')
+      setIsRenderingPipeline(false)
+    })
+    return () => {
+      cleanupProgress()
+      cleanupShotDone()
+      cleanupVideoReady()
+      cleanupError()
+    }
+  }, [])
 
   const closePeopleWizard = () => setPeopleWizard(null)
   const handlePeopleWizardBackdropClick = (event) => {
@@ -1856,6 +1892,40 @@ export default function MusicVideoEasyMode({
       setTimelineStatus(`Could not assemble timeline: ${error?.message || 'Unknown error'}`)
     } finally {
       setIsAssemblingTimeline(false)
+    }
+  }
+
+  const handleStartFullPipeline = async () => {
+    if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoStart) return
+    if (isRenderingPipeline) return
+    setIsRenderingPipeline(true)
+    setPipelineProgress(0)
+    setPipelineStage('Starting pipeline...')
+    setPipelineError('')
+    setPipelineVideoPath('')
+    try {
+      const options = {
+        aspectRatio,
+        resolutionPreset,
+        videoFps,
+        coveragePreset,
+        performancePassCount,
+        includeStoryBroll,
+        includeEnvironmentalBroll,
+        includeDetailBroll,
+        videoWorkflowId: yoloMusicVideoWorkflowId,
+        keyframeWorkflowId: yoloMusicKeyframeWorkflowId,
+        styleNotes: yoloMusicStyleNotes,
+        lyrics: yoloMusicLyrics,
+        script: yoloMusicScript,
+        cast: yoloMusicCast,
+        resolvedCast: yoloMusicResolvedCast,
+      }
+      await window.electronAPI.musicVideoStart(yoloMusicAudioAssetPath, options)
+    } catch (error) {
+      setPipelineError(error?.message || 'Failed to start pipeline')
+      setPipelineStage('Error')
+      setIsRenderingPipeline(false)
     }
   }
 
@@ -3720,6 +3790,52 @@ export default function MusicVideoEasyMode({
         <Stat label="Ready keyframes" value={yoloStoryboardReadyCount} />
         <Stat label="Ready videos" value={videoReadyCount} />
       </div>
+      {/* One-shot full pipeline render */}
+      {(isRenderingPipeline || pipelineProgress > 0 || pipelineError || pipelineVideoPath) && (
+        <div className="mt-4 space-y-3 rounded-lg border border-sf-accent/50 bg-sf-accent/10 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-sf-accent">
+                <Film className="h-4 w-4" />
+                <span>One-Shot Music Video Pipeline</span>
+              </div>
+              {pipelineStage && (
+                <p className="mt-1 text-xs text-sf-text-secondary">{pipelineStage}</p>
+              )}
+            </div>
+            {isRenderingPipeline && (
+              <Loader2 className="h-5 w-5 text-sf-accent animate-spin" />
+            )}
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-sf-dark-700">
+            <div
+              className="h-full rounded-full bg-sf-accent transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, pipelineProgress))}%` }}
+            />
+          </div>
+          {pipelineError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">
+              Error: {pipelineError}
+            </div>
+          )}
+          {pipelineVideoPath && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+              Video ready: {pipelineVideoPath}
+            </div>
+          )}
+        </div>
+      )}
+      {!isRenderingPipeline && yoloMusicAudioAssetPath && plannedShotCount > 0 && (
+        <button
+          type="button"
+          onClick={handleStartFullPipeline}
+          disabled={!yoloMusicAudioAssetPath || isRenderingPipeline}
+          className="mt-4 w-full md:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Film className="h-4 w-4" />
+          Generate Full Music Video
+        </button>
+      )}
       {renderAdvancedVideoSettings()}
       {plannedShotCount > 0 && (
         <div className="space-y-3 rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-4">

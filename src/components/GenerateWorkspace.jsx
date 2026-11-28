@@ -4980,6 +4980,25 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
     () => yoloMusicAudioAssets.find((asset) => asset?.id === yoloMusicAudioAssetId) || null,
     [yoloMusicAudioAssets, yoloMusicAudioAssetId]
   )
+  // Resolve absolute path for the selected audio asset (for music-video:start IPC)
+  const [yoloMusicAudioAssetPath, setYoloMusicAudioAssetPath] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    async function resolvePath() {
+      if (!yoloMusicAudioAsset?.path || !currentProjectHandle || !window.electronAPI?.pathJoin) {
+        setYoloMusicAudioAssetPath(null)
+        return
+      }
+      try {
+        const resolved = await window.electronAPI.pathJoin(currentProjectHandle, yoloMusicAudioAsset.path)
+        if (!cancelled) setYoloMusicAudioAssetPath(resolved)
+      } catch {
+        if (!cancelled) setYoloMusicAudioAssetPath(null)
+      }
+    }
+    resolvePath()
+    return () => { cancelled = true }
+  }, [yoloMusicAudioAsset?.path, currentProjectHandle])
   const yoloMusicSongDurationSeconds = useMemo(() => {
     const d = Number(yoloMusicAudioAsset?.duration)
     if (Number.isFinite(d) && d > 0) return d
@@ -18124,6 +18143,7 @@ function GenerateWorkspace({ onOpenWorkflowSetup = null }) {
                     yoloMusicAsrLanguage={yoloMusicAsrLanguage}
                     setYoloMusicAsrLanguage={setYoloMusicAsrLanguage}
                     yoloMusicAudioAsset={yoloMusicAudioAsset}
+                    yoloMusicAudioAssetPath={yoloMusicAudioAssetPath}
                     yoloMusicStyleNotes={yoloMusicStyleNotes}
                     setYoloMusicStyleNotes={setYoloMusicStyleNotes}
                     yoloMusicTranscribingSrt={yoloMusicTranscribingSrt}

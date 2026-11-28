@@ -39,7 +39,7 @@ test('GenerateWorkspace actually passes the builder down', () => {
     /onBuildScriptFromTrack=\{handleBuildMusicVideoScriptFromTrack\}/,
     'the prop is not passed, so the button falls back to "not connected"',
   )
-  const builder = /const handleBuildMusicVideoScriptFromTrack = useCallback\([\s\S]*?\n  \}, \[[\s\S]*?\]\)/.exec(workspace)
+  const builder = /const handleBuildMusicVideoScriptFromTrack = useCallback\([\s\S]*?\n  \}, [\s\S]*?\]\)/.exec(workspace)
   assert.ok(builder, 'the builder callback is missing')
   const body = builder[0]
   assert.match(body, /buildScriptFromTrack\(\{/, 'it must go through the tested intake service')
@@ -74,4 +74,33 @@ test('the probe accepts the containers a song file actually comes in', () => {
     assert.ok(picker[0].includes(`'${ext}'`), `the picker must accept .${ext} — Suno drops video containers`)
   }
   assert.match(main, /require\('\.\/audioTrackProbe'\)/, 'main must use the shared, tested probe parser')
+})
+
+test('MusicVideoEasyMode wires the one-shot pipeline start', () => {
+  assert.match(easyMode, /window\.electronAPI\.musicVideoStart\(/, 'musicVideoStart call is missing')
+  assert.match(easyMode, /yoloMusicAudioAssetPath/, 'audio asset path must reach the start call')
+  assert.match(easyMode, /aspectRatio/, 'options must include aspectRatio')
+  assert.match(easyMode, /resolutionPreset/, 'options must include resolutionPreset')
+  assert.match(easyMode, /videoFps/, 'options must include videoFps')
+  assert.match(easyMode, /coveragePreset/, 'options must include coveragePreset')
+  assert.match(easyMode, /videoWorkflowId/, 'options must include videoWorkflowId')
+  assert.match(easyMode, /keyframeWorkflowId/, 'options must include keyframeWorkflowId')
+  assert.match(easyMode, /styleNotes/, 'options must include styleNotes')
+  assert.match(easyMode, /lyrics/, 'options must include lyrics')
+  assert.match(easyMode, /script/, 'options must include script')
+  assert.match(easyMode, /cast/, 'options must include cast')
+})
+
+test('MusicVideoEasyMode subscribes to pipeline progress events', () => {
+  assert.match(easyMode, /onMusicVideoProgress\(/, 'onMusicVideoProgress listener is missing')
+  assert.match(easyMode, /onMusicVideoShotDone\(/, 'onMusicVideoShotDone listener is missing')
+  assert.match(easyMode, /onMusicVideoVideoReady\(/, 'onMusicVideoVideoReady listener is missing')
+  assert.match(easyMode, /onMusicVideoError\(/, 'onMusicVideoError listener is missing')
+  assert.match(easyMode, /useEffect\(\s*\(\) => \{[\s\S]*?onMusicVideoProgress/, 'listeners must be in a useEffect')
+  assert.match(easyMode, /return \(\) => \{[\s\S]*?cleanupProgress\(\)/, 'cleanup function must remove listeners')
+})
+
+test('GenerateWorkspace passes the resolved audio asset path', () => {
+  assert.match(workspace, /yoloMusicAudioAssetPath=\{yoloMusicAudioAssetPath\}/, 'resolved audio path prop is not passed')
+  assert.match(workspace, /useEffect\(\s*\(\) => \s*\{[\s\S]*?async function resolvePath/, 'workspace must resolve the path via electronAPI.pathJoin')
 })
