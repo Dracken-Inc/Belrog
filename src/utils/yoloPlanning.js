@@ -217,16 +217,46 @@ const INLINE_ASSET_BOUNDARY = String.raw`\s+(?:CHARACTERS?|LOCATIONS?|PROPS?|LIG
 const INLINE_LOCATION_RE = new RegExp(String.raw`\bLOCATIONS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
 const INLINE_PROP_RE = new RegExp(String.raw`\bPROPS?\s*:\s*([a-z0-9][a-z0-9_-]{0,60})\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
 const INLINE_CHARACTER_RE = new RegExp(String.raw`\bCHARACTERS?\s*:\s*([a-zA-Z][a-zA-Z0-9 _-]{0,40}?)\s*:\s*([\s\S]*?)(?=${INLINE_ASSET_BOUNDARY})`, 'gi')
-// Boilerplate the director list appends to every location description.
+// Boilerplate the director list appends to every location description. These
+// are the ONLY two canned sentences we truncate-and-drop; anything else the
+// boilerplate filter strips must be removed IN-PLACE (sentence-level, see
+// stripAssetNoteBoilerplate) so a leading real description is never thrown
+// away with trailing directive prose (shot-5 defect: freeze-frame prose
+// glued after a real location description used to wipe the whole note).
 const INLINE_BOILERPLATE_RE = /\b(?:establish architecture[, ]+spatial relationships[, ]+surfaces[, ]+atmosphere and environmental depth before any subject|no bodies, faces, silhouettes or human-shaped forms)[\s\S]*/gi
 
 function cleanInlineDescription(text = '') {
-  return String(text || '')
-    .replace(INLINE_BOILERPLATE_RE, '')
-    .replace(/\s+/g, ' ')
-    .replace(/[,;:\s]+$/g, '')
-    .trim()
-    .slice(0, 300)
+  return stripAssetNoteBoilerplate(
+    String(text || '').replace(INLINE_BOILERPLATE_RE, ''),
+  ).slice(0, 300)
+}
+
+// An inline directive that yields NO usable description after stripping is a
+// contract problem, not an asset. Silent empty stubs here were the shot-5
+// cast-note defect: a CHARACTER directive with no real appearance prose
+// landed in Cast with an empty note that seedDescription later overwrote with
+// keyframe boilerplate. Surface these so the UI can show a real warning.
+export function findMalformedAssetDirectives(script = '') {
+  const text = String(script || '')
+  if (!text.trim()) return []
+  const malformed = []
+  const seen = new Set()
+  const scan = (re, kind) => {
+    for (const match of text.matchAll(re)) {
+      const slug = slugifyAssetToken(match[1])
+      if (!slug) continue
+      const description = cleanInlineDescription(match[2] || '')
+      if (description) continue
+      const key = `${kind}:${slug}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      malformed.push({ kind, slug })
+    }
+  }
+  scan(INLINE_CHARACTER_RE, 'character')
+  scan(INLINE_LOCATION_RE, 'location')
+  scan(INLINE_PROP_RE, 'prop')
+  return malformed
 }
 
 function slugifyAssetToken(token = '') {
@@ -334,6 +364,110 @@ export function auditAssetLegend(assets = []) {
   return issues
 }
 
+export const ASSET_NOTE_BOILERPLATE_RES = [
+  /\bno cast defined\b/i,
+  /\bor as a generic slot\b/i,
+  /\byou may omit\b/i,
+  /\bexact supplied appearance\b/i,
+  /\bcontinuity state\s*:/i,
+  /\bdo not invent identity details\b/i,
+  /\bfrozen at the instant before motion\b/i,
+  /\bno motion blur\b/i,
+  /\bno bodies, faces, silhouettes\b/i,
+  /\bhuman-shaped forms\b/i,
+  /\bdo not invent\b/i,
+  /\bpreserve (?:ONLY|only)\b/i,
+  /\bone exact still pose\b/i,
+  /\bdirector-note\b/i,
+]
+
+export function isAssetNoteBoilerplate(text = '') {
+  const lower = String(text || '').toLowerCase()
+  return ASSET_NOTE_BOILERPLATE_RES.some((re) => re.test(lower))
+}
+
+export function stripAssetNoteBoilerplate(text = '') {
+  let out = String(text || '')
+  // Drop whole sentences that are prompt-compiler directives or brief echo,
+  // not appearance prose (shot-5 cast-note defect: ACTION-FROZEN/freeze prose
+  // was stored as the cast note and painted into keyframes as a storyboard).
+  out = out
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => sentence.trim() && !isAssetNoteBoilerplate(sentence))
+    .join(' ')
+  for (const re of ASSET_NOTE_BOILERPLATE_RES) out = out.replace(new RegExp(re.source, 'gi'), ' ')
+  return out.replace(/\s+/g, ' ').replace(/[,;.]\s*$/, '').trim()
+}
+
+// Shot-prompt hygiene: director scripts repeat the same compiler directives
+// (ACTION-FROZEN / continuity / appearance boilerplate) in EVERY shot. They
+// belong to the render contract, not to a single keyframe still — kept in a
+// storyboard prompt they read as "paint a storyboard/collage" (shot-5). This
+// removes directive sentences while KEEPING the LABELS (so slug expansion
+// still fires on `LOCATION: (slug)`) and all visible-action prose.
+const SHOT_DIRECTIVE_SENTENCE_RES = [
+  ...ASSET_NOTE_BOILERPLATE_RES,
+  /\bACTION-FROZEN\s*:/i,
+  // A negative "who is on screen" directive (CHARACTER: no person visible) is
+  // a render-contract statement, not keyframe content — the video compile
+  // path enforces it separately (shotRenderer), and as sentence text in a
+  // single still it invites the model to invent or negate people in-frame.
+  /^\s*(?:CHARACTERS?|LOCATIONS?|PROPS?)\s*:\s*(?:no|none|nothing|nobody|null)\b/i,
+  // Bare placeholder slot values (CHARACTER: (location_empty_room)) — a slug
+  // token that names no person at all (shot-5: the empty-room slug landed in
+  // the CHARACTER slot and the image model drew invented people).
+  /^\s*(?:CHARACTERS?|LOCATIONS?|PROPS?)\s*:\s*\(\s*[a-z0-9][a-z0-9_-]{0,60}\s*\)\s*$/i,
+]
+
+export function isShotDirectiveSentence(sentence = '') {
+  const trimmed = String(sentence || '').trim()
+  if (!trimmed) return true
+  return SHOT_DIRECTIVE_SENTENCE_RES.some((re) => re.test(trimmed))
+}
+
+// Strip directive sentences from a multi-line block: sentences split on
+// newlines as well as [.!?], so a directive mid-line never survives via
+// a newline-terminated neighbour (rawText/editor echo guard).
+function stripDirectiveBlock(text = '') {
+  return String(text || '')
+    .split(/(?<=[.!?])\s+|(?<=\n)/)
+    .map((sentence) => {
+      if (isShotDirectiveSentence(sentence)) return ''
+      if (!/[:] /.test(sentence)) return sentence
+      const kept = sentence
+        .split(/(?=\s(?:CHARACTERS?|LOCATIONS?|PROPS?)\s*:\s)/i)
+        .map((seg) => (isShotDirectiveSentence(seg) ? '' : seg))
+        .join('')
+      return kept.replace(/[ \t]{2,}/g, ' ').trim()
+    })
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function stripShotDirectiveProse(text = '') {
+  const value = String(text || '')
+  if (value.includes('\n')) return stripDirectiveBlock(value)
+  // Fast path: no directive sentence markers present — never risk altering
+  // a clean prompt (and keep the function cheap on the render hot path).
+  if (!/\b(?:ACTION-FROZEN|exact supplied appearance|continuity state\s*:|do not invent|frozen at the instant before motion|no motion blur|one exact still pose|no bodies, faces, silhouettes|human-shaped forms|director-note)\b/i.test(value)
+    && !/^\s*(?:CHARACTERS?|LOCATIONS?|PROPS?)\s*:\s*(?:no|none|nothing|nobody|null)\b/im.test(value)
+    && !/^\s*(?:CHARACTERS?|LOCATIONS?|PROPS?)\s*:\s*\(\s*[a-z0-9][a-z0-9_-]{0,60}\s*\)\s*$/im.test(value)) return value.trim()
+  return value
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => {
+      if (isShotDirectiveSentence(sentence)) return ''
+      let kept = sentence
+      // Strip directive fragments from sentences that also carry real
+      // content, keeping their labels so slug expansion survives.
+      for (const re of ASSET_NOTE_BOILERPLATE_RES) kept = kept.replace(new RegExp(re.source, 'gi'), ' ')
+      return kept.replace(/\s+/g, ' ').replace(/[,;:]\s*$/, '').trim()
+    })
+    .filter(Boolean)
+    .join(' ')
+}
+
 export function parseAssetLegendLines(script = '') {
   // Only lines BEFORE the first scene heading belong to the legend; anything
   // after the first Scene/Shot block is normal script text (and stays so).
@@ -377,21 +511,11 @@ export function parseAssetLegendLines(script = '') {
         .trim()
     }
     if (!slug || slug.length > 60) continue
-    description = description.slice(0, 300)
-    // Cast-note hygiene (S4): the brief at GenerateWorkspace.jsx:2394 tells the
-    // model it may omit Artist or use a generic slot. The model echoes that
-    // sentence back as the CHARACTER legend description. Strip it here so the
-    // cast library never stores the boilerplate as a note.
-    if (kind === 'character') {
-      const lower = description.toLowerCase()
-      if (
-        lower.includes('no cast defined') ||
-        lower.includes('or as a generic slot') ||
-        lower.includes('you may omit')
-      ) {
-        description = ''
-      }
-    }
+    // Cast/asset-note hygiene: directive/brief echo (the "exact supplied
+    // appearance… ACTION-FROZEN…" boilerplate and the "you may omit…"
+    // instruction echo) must never be stored as an asset description —
+    // stripping is in-place, so a real leading description survives.
+    description = stripAssetNoteBoilerplate(description).slice(0, 300)
     // Slug key: lowercase, trim; underscores are MEANINGFUL (location_dpf is a
     // different byte-string than location-dpf and must byte-match shot tokens
     // and plate filenames). Spaces/punctuation still fold to hyphens.
@@ -596,8 +720,13 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
     const fallbackAngle = anglePresets[(variationSeed + scenes.length * 2 + shotIndex) % anglePresets.length]
     const fallbackDuration = randomizedShotDurationSeconds(variationSeed + targetDurationSeconds, scenes.length, shotIndex)
     const shotContext = compactPromptText(currentShot.notes || currentShot.label || currentScene.contextLines.join(' '))
+    // Keyframe prompt text is a STILL prompt: shot-level compiler directives
+    // (ACTION-FROZEN, continuity/appearance boilerplate, negative cast lines)
+    // belong to the video render contract, never to the keyframe still
+    // (shot-5: they read as "paint a storyboard" -> collages, invented people).
+    const keyframePromptClean = stripShotDirectiveProse(compactPromptText(currentShot.keyframePrompt || ''))
     const imageBeat = compactPromptText(
-      currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' ')
+      keyframePromptClean || shotContext || currentScene.contextLines.join(' ')
     )
     const videoBeat = compactPromptText(
       currentShot.motionPrompt || currentShot.keyframePrompt || shotContext || currentScene.contextLines.join(' ')
@@ -654,7 +783,7 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
       startAtRaw: sanitizeSnippet(currentShot.startAt || '', 32),
       // Keyframe + motion prompts stay full-length for editing and generation.
       // Cards and compact labels should truncate visually in the UI only.
-      keyframePromptRaw: stripBriefEcho(compactPromptText(currentShot.keyframePrompt || '')),
+      keyframePromptRaw: stripBriefEcho(keyframePromptClean),
       motionPromptRaw: stripBriefEcho(compactPromptText(currentShot.motionPrompt || '')),
       locked: false,
     })
@@ -681,9 +810,9 @@ export function parseStructuredDirectorScript(script = '', options = {}) {
     scenes.push({
       id: sceneId,
       index: sceneIndex + 1,
-      rawText: currentScene.rawLines.join('\n'),
-      contextText: sceneContext,
-      summary: sceneSummary,
+      rawText: stripShotDirectiveProse(currentScene.rawLines.join('\n')),
+      contextText: stripShotDirectiveProse(sceneContext),
+      summary: stripShotDirectiveProse(sceneSummary),
       styleNotes,
       coverageType: sceneCoverage.type,
       coverageLabel: sceneCoverage.label,
@@ -914,9 +1043,11 @@ export function buildYoloPlanFromScript(script = '', options = {}) {
     return {
       id: sceneId,
       index: sceneIndex + 1,
-      rawText: sceneText,
-      contextText: sceneBody,
-      summary: sceneSummary,
+      // rawText keeps shot labels ("Shot 1: …") for the editor, but compiler
+      // directive sentences never enter it (shot-5 echo guard).
+      rawText: stripShotDirectiveProse(sceneText),
+      contextText: stripShotDirectiveProse(sceneBody),
+      summary: stripShotDirectiveProse(sceneSummary),
       styleNotes,
       shots,
     }
@@ -927,7 +1058,7 @@ export function flattenYoloPlanVariants(plan = []) {
   const variants = []
 
   for (const scene of plan || []) {
-    const sceneBody = String(scene?.contextText || getSceneBodyText(scene?.rawText || scene?.summary || '')).trim()
+    const sceneBody = stripShotDirectiveProse(String(scene?.contextText || getSceneBodyText(scene?.rawText || scene?.summary || '')))
     const strictConsistency = String(scene?.styleNotes || '').toLowerCase().includes('consistency mode: strict')
     // Pass identity (master / alt_performance / environmental_broll / detail_broll)
     // is stamped onto the scene by buildYoloMusicPlan. Pass it through so the
@@ -940,13 +1071,28 @@ export function flattenYoloPlanVariants(plan = []) {
       sectionLabel: sanitizeSnippet(scene?.coverageSectionLabel || '', 100),
     }
 
+    const sceneShotBlocks = Array.isArray(scene?.rawLines) && scene.rawLines.length
+      ? scene.rawLines
+      : String(scene?.rawText || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     for (const shot of scene?.shots || []) {
       const takes = Math.max(1, Number(shot?.takesPerAngle) || 1)
       const angles = Array.isArray(shot?.angles) && shot.angles.length > 0
         ? shot.angles
         : DEFAULT_ANGLE_PRESETS.slice(0, 1)
-      const imageBeat = String(shot?.imageBeat || shot?.beat || '').trim()
-      const videoBeat = String(shot?.videoBeat || shot?.beat || '').trim()
+      // Echo guard: a raw scene/shot block echoes the shot's own directive
+      // lines (shot-5); strip directives from any raw text entering prompts.
+      const rawBlockText = (value, max = 1200) => {
+        const raw = String(value || '').trim()
+        if (!raw) return ''
+        const block = sceneShotBlocks.find((l) => String(l).includes(raw))
+        // Only sanitize when the raw block differs (i.e. we actually found the
+        // block); an already-clean prompt must pass through byte-identical,
+        // otherwise a label like "Keyframe prompt:" re-enters the text.
+        if (!block || block === raw) return sanitizeSnippet(raw, max)
+        return sanitizeSnippet(stripShotDirectiveProse(block), max)
+      }
+      const imageBeat = rawBlockText(shot?.imageBeat || shot?.beat, 1200)
+      const videoBeat = stripShotDirectiveProse(String(shot?.videoBeat || shot?.beat || ''))
       const cameraDirection = String(shot?.cameraDirection || '').trim()
       const adBeat = sanitizeSnippet(shot?.adBeat || '', 120)
       const productAction = sanitizeSnippet(shot?.productAction || '', 180)
@@ -989,10 +1135,12 @@ export function flattenYoloPlanVariants(plan = []) {
           ]
             .filter(Boolean)
             .join(' ')
-          const keyframePrompt = compactPromptText(imageBeat || scene?.summary || sceneBody)
+          const keyframePrompt = compactPromptText(stripShotDirectiveProse(imageBeat || scene?.summary || sceneBody))
           const storyboardPrompt = [
             `Single cinematic keyframe still for ${scene.id} ${shot.id}.`,
-            sceneBody ? `Scene context: ${sceneBody}.` : '',
+            // Scene context is stripped of compiler directives too — a raw
+            // scene block echoes the shot's own directive lines (shot-5).
+            stripShotDirectiveProse(sceneBody) ? `Scene context: ${stripShotDirectiveProse(sceneBody)}.` : '',
             adBeat ? `Commercial beat: ${adBeat}.` : '',
             productAction ? `Product action: ${productAction}.` : '',
             productMode ? `Product mode: ${productMode}.` : '',

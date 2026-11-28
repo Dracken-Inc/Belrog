@@ -40,6 +40,7 @@ import { useAssetLibraryStore, allLibraryEntries } from '../../stores/assetLibra
 import { buildReferencePrompt, referenceNegative } from '../../services/scriptGapDetection'
 import { describeAudioIntake } from '../../services/audioScriptIntake.mjs'
 import { copyText } from '../../services/clipboard.mjs'
+import { stripShotDirectiveProse } from '../../utils/yoloPlanning'
 import CastPanel from '../panels/CastPanel'
 
 const DRAFT_STORAGE_KEY = 'comfystudio-music-video-easy-mode-draft-v1'
@@ -3605,7 +3606,10 @@ export default function MusicVideoEasyMode({
               const url = getAssetUrl(asset)
               const cardState = getKeyframeCardState(variant, asset)
               const coverageLabel = getCoverageLabel(scene, shot)
-              const keyframePrompt = String(shot.imageBeat || shot.beat || shot.referenceImagePrompt || '').trim()
+              // Directive boilerplate (ACTION-FROZEN / appearance / negative
+              // cast lines) is stripped from every keyframe prompt shown or
+              // rendered (shot-5); shot.imageBeat stays raw for the editor.
+              const keyframePrompt = stripShotDirectiveProse(String(shot.imageBeat || shot.beat || shot.referenceImagePrompt || ''))
               const keyframeResolutionParts = buildActualImageResolutionParts(asset, runtimeImageDimensions, outputResolutionLabel)
               const generatedKeyframeWorkflowLabel = getGeneratedKeyframeWorkflowLabel(asset, selectedKeyframeWorkflowLabel)
               return (

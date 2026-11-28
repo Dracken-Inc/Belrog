@@ -27,7 +27,7 @@
  *   { kind, name, slug, description (verbatim mentions, deduped), shots: number[],
  *     matched: 'exact' | 'fuzzy' | 'new', evidence: [{ shot, quote }] }
  */
-import { auditAssetLegend } from '../utils/yoloPlanning.js'
+import { auditAssetLegend, stripAssetNoteBoilerplate, isAssetNoteBoilerplate } from '../utils/yoloPlanning.js'
 
 export const GAP_KINDS = Object.freeze({ character: 'character', prop: 'prop', location: 'location' })
 
@@ -486,23 +486,34 @@ export function buildStubUpserts({ detection, library, scenes }) {
   const seedDescriptionForCharacter = (gap) => {
     // Strongest signal first: a keyframe that actually MENTIONS the entity's
     // name (identity anchor). Then fall back to the first gap shot's keyframe.
+    // A keyframe that is ONLY directive prose (ACTION-FROZEN / continuity /
+    // appearance boilerplate — shot-5 cast-note defect) never seeds: it must
+    // fall through to the last-resort search and ultimately seed nothing,
+    // rather than filling Cast notes with prompt-compiler instructions.
     const key = normalizeKey(gap?.name || '')
+    const usable = (text) => {
+      const stripped = stripAssetNoteBoilerplate(text)
+      return stripped.length >= 12 ? stripped : ''
+    }
     for (const shotIndex of (Array.isArray(gap?.shots) ? gap.shots : [])) {
-      const kf = shotKeyframes.find((s) => s.index === shotIndex && s.text && key && s.text.toLowerCase().includes(key))
+      const kf = shotKeyframes.find((s) => s.index === shotIndex && s.text && key && s.text.toLowerCase().includes(key) && usable(s.text))
       if (kf) {
-        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+        const seed = usable(kf.text)
+        return seed.length > 140 ? seed.slice(0, 137).trimEnd() + '…' : seed
       }
     }
     for (const shotIndex of (Array.isArray(gap?.shots) ? gap.shots : [])) {
-      const kf = shotKeyframes.find((s) => s.index === shotIndex && s.text.length >= 12)
+      const kf = shotKeyframes.find((s) => s.index === shotIndex && usable(s.text))
       if (kf) {
-        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+        const seed = usable(kf.text)
+        return seed.length > 140 ? seed.slice(0, 137).trimEnd() + '…' : seed
       }
     }
     // No shot-index match — last resort: first keyframe that mentions the name.
     for (const kf of shotKeyframes) {
-      if (kf.text && key && kf.text.toLowerCase().includes(key)) {
-        return kf.text.length > 140 ? kf.text.slice(0, 137).trimEnd() + '…' : kf.text
+      if (kf.text && key && kf.text.toLowerCase().includes(key) && usable(kf.text)) {
+        const seed = usable(kf.text)
+        return seed.length > 140 ? seed.slice(0, 137).trimEnd() + '…' : seed
       }
     }
     return ''
@@ -528,11 +539,19 @@ export function buildStubUpserts({ detection, library, scenes }) {
     const seededDescription = thinDescription
       ? (seedDescriptionForCharacter(gap) || gap.description)
       : (gap.description || (gap.kind === 'character' ? seedDescriptionForCharacter(gap) : ''))
+    // Whatever path produced it, the final stub note must be free of
+    // directive prose — a stub whose description is ONLY boilerplate (or whose
+    // keyframe seed came up empty) has nothing the reference renderer could
+    // draw, so skip the stub entirely rather than paint a storyboard
+    // (shot-5: the "no bodies/freeze" note became the Cast note and the
+    // location reference image).
+    const cleanNote = stripAssetNoteBoilerplate(seededDescription || '')
+    if (!cleanNote) continue
     stubs.push({
       kind: gap.kind,
       name: gap.name,
       slug: gap.slug,
-      description: seededDescription,
+      description: cleanNote,
       // Legend-declared = the script's own asset block named it. Heuristic
       // guesses are suggestion-only once a legend exists (format-directive
       // contract: never auto-stub from prose).
@@ -594,7 +613,11 @@ export function buildRegenerateAllPreview({ library, cap = 50 }) {
 }
 
 export function buildReferencePrompt(entry) {
-  const base = String(entry?.description || '').trim()
+  // Reference sheets are drawn from the note alone, so directive prose
+  // ("no bodies, faces, silhouettes…", "frozen at the instant before motion")
+  // reads as an instruction to PAINT a storyboard/collage (shot-5). Strip it;
+  // if nothing drawable remains, skip like the empty-note case.
+  const base = stripAssetNoteBoilerplate(entry?.description || '')
   if (!base) return null // §A.5.5: skip, don't generate garbage
   const kindLabel = entry.kind === 'character' ? 'character reference sheet'
     : entry.kind === 'prop' ? 'prop reference sheet'

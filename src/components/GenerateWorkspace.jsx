@@ -70,6 +70,7 @@ import {
   parseStructuredDirectorScript,
   parseAssetLegendLines,
   parseInlineAssetDirectives,
+  stripShotDirectiveProse,
 } from '../utils/yoloPlanning'
 import { extractVisualStyleNotes } from '../utils/musicVisualStyle'
 import { checkWorkflowDependencies, buildMissingDependencyClipboardText } from '../services/workflowDependencies'
@@ -1445,16 +1446,24 @@ function buildMusicVideoNegativePrompt(baseNegativePrompt = '', shotType = '') {
  */
 function expandAssetSlugTokensInPrompt(text = '') {
   const value = String(text || '')
-  if (!value || !/\b(?:LOCATIONS?|PROPS?)\s*:\s*\(/i.test(value)) return value
+  // Sentence-level: directive boilerplate must not reach ANY storyboard render
+  // path (shot-5 — ACTION-FROZEN/appearance prose read as "paint a storyboard").
+  // Slug-label stripping happens first so token expansion below sees real text.
+  const cleaned = stripShotDirectiveProse(value)
+  // Bare placeholder cast tokens ("CHARACTER: (slug)" naming no person) are
+  // deleted by the sentence filter, so only LOCATION/PROP gates expansion.
+  if (!/\b(?:LOCATIONS?|PROPS?)\s*:\s*\(/i.test(cleaned)) return cleaned
   const descriptions = new Map()
   for (const entry of allLibraryEntries(useAssetLibraryStore.getState().library)) {
-    if ((entry?._kind === 'location' || entry?._kind === 'prop') && entry.slug
+    // CHARACTER tokens expand too (shot-5): a bare "(slug)" cast token with no
+    // appearance prose draws an invented person — cite the locked Cast note.
+    if ((entry?._kind === 'location' || entry?._kind === 'prop' || entry?._kind === 'character') && entry.slug
       && String(entry.description || '').trim()) {
       descriptions.set(String(entry.slug).toLowerCase(), String(entry.description).trim())
     }
   }
   if (descriptions.size === 0) return value
-  return value.replace(/\b(LOCATIONS?|PROPS?)\s*:\s*\(\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)/gi,
+  return value.replace(/\b(LOCATIONS?|PROPS?|CHARACTERS?)\s*:\s*\(\s*([a-z0-9][a-z0-9_-]{0,60})\s*\)/gi,
     (whole, label, slug) => {
       const description = descriptions.get(slug.toLowerCase())
       return description ? `${label}: ${description}` : whole
@@ -1476,8 +1485,8 @@ function composeMusicShotReferencePrompt({
   styleNotes = '',
   cameraDirection = '',
 }) {
-  const keyframe = String(keyframePromptRaw || '').trim()
-  const conceptLine = String(concept || '').trim()
+  const keyframe = stripShotDirectiveProse(keyframePromptRaw)
+  const conceptLine = stripShotDirectiveProse(String(concept || ''))
   // Same guard as the motion composer: only VISUAL style survives into the
   // still-image prompt (issue #91).
   const styleLine = extractVisualStyleNotes(styleNotes)
