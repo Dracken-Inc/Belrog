@@ -22,11 +22,10 @@ version, treat this file as stale and say so instead of acting on it.
 ## Open regression work (active)
 
 Henry's four regressions from the Nov 27–28 work are tracked **in this repo** in
-`docs/ACTIVE-WORK.md` — phases P0–P6, done-criteria, and the unchecked boxes
-that mark exactly where work stopped. Start there to continue. It is driven by
-a Hermes 20-minute quality loop (job `0b4c2e5d0487`; owner works directly, no
-delegation); the old external copy is now a pointer stub at
-`~/.hermes/plans/belrog-quality-loop-tracker.md`.
+`docs/ACTIVE-WORK.md` — phases P0–P6, done-criteria, the unchecked boxes that
+mark exactly where work stopped, and the operating rules for working it.
+Start there to continue. There is **no scheduled loop** (the 20-minute cron was
+removed 2026-11-28 after it failed); an agent picks the work up from the file.
 
 | id | symptom | status @ v0.6.51 |
 |----|---------|------------------|

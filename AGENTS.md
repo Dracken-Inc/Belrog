@@ -59,6 +59,8 @@ The music-video / director pipeline. Law until Henry changes it; full text in
 npm run test:all                                # ~35 s; node --test over tests/ src/ electron/
 npm run build
 node --check electron/main.js && node --check electron/preload.js
+npx vite build                                  # MANDATORY before any commit touching src/**/*.jsx —
+                                                # node --test never parses JSX, so tests can't catch it
 ```
 
 (Equivalent: `node --test 'tests/**/*.test.*' 'src/**/*.test.*' 'electron/**/*.test.*'`)

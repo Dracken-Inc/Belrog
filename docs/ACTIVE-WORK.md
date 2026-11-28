@@ -4,16 +4,30 @@
 If you are an agent pointed at this repo: read `../AGENTS.md` first, then
 `AI_CURRENT_HANDOFF.md`, then this file to see exactly where work stopped
 and what the next action is. Keep this file updated as phases complete —
-it is the single source of truth for progress (the Hermes quality-loop cron
-reads it through the pointer at `~/.hermes/plans/belrog-quality-loop-tracker.md`).
+it is the single source of truth for *progress* (rules of conduct live in
+`AGENTS.md`). The old external tracker at
+`~/.hermes/plans/belrog-quality-loop-tracker.md` is a pointer stub to here.
 
 ---
 
-## Loop setup
+## How this work runs
 
-Owner: Gracey, directly. No delegation. Hermes cron loop `0b4c2e5d0487`
-(every 20m, tags v0.6.51 → v0.6.59). Branch `feat/shot-plan-schema-freeze`
-(v0.6.5 published as the last x.y.z).
+Owner: the agent working this repo, **directly — no delegation** (Henry: "no
+delegation, just you. only you"). There is no scheduled loop anymore: the
+20-minute cron was removed on 2026-11-28 after it failed mid-run. Work advances
+whenever an agent picks up this file — phase order, no invented scope.
+
+Operating rules (carried over from the retired loop, still in force):
+
+1. Each session: read this file → **re-verify the last claimed step yourself**
+   (git log/status, run the test, read the file) — your predecessor may be wrong.
+2. Work **one slice** at a time; no scope jumps.
+3. Check the box and append a dated evidence line (commit hash, test counts).
+4. End with a short report to Henry: **verified / changed / next**.
+5. If a phase is blocked on Henry (GPU go, a decision), say so once and do other
+   work from this file — never spin, never manufacture new work.
+6. Next tags are strictly **v0.6.52 … v0.6.59**: never reuse or force-push a
+   number. Publish sequence: `docs/AI_RELEASE_HANDOFF.md`.
 
 ## Task definition (Henry, Nov 28 2026)
 Four days of work = quality regression:
@@ -63,7 +77,7 @@ Plus: every app section exercised, no errors, no memory leaks.
 - [ ] Step-1 crash fixed with regression test.
 
 ### P4 — Release round
-- [ ] Full suite + vite build green at commit → tag v0.6.51 → CI → publish (release is a DRAFT by default: PATCH draft:false, verify 4 assets) → notify Henry.
+- [ ] Full suite + vite build green at commit → tag the next free number (v0.6.52+) → CI → publish (release is a DRAFT by default: PATCH draft:false, verify 4 assets) → notify Henry.
 
 ### P5 — LTX generation quality pass
 - [ ] Adopt research fixes (negative prompts / prompt shape) in shot graph. GPU rule (Henry, Nov 28): **image/keyframe generations OK without asking, in reason; VIDEO generations still need his explicit go.**
@@ -79,3 +93,4 @@ R1–R4 each: defect doc entry + failing-then-passing test + fix commit; shot 5 
 
 ## Evidence log
 - 2026-11-28 (setup): tracker created; loop job 0b4c2e5d0487 scheduled every 20m; last published tag v0.6.5 (686da5f). Shot-5 prompt screenshot analyzed; defect fragments captured above.
+- 2026-11-28 (handoff): cron 0b4c2e5d0487 **removed** after failing ("cron fire ownership was lost", paused at 09:25) — Henry: no cron. Tracker moved into this repo (`docs/ACTIVE-WORK.md`); operating rules folded in above. R4 fixed in `681f4db`; v0.6.51 published. Next tag: v0.6.52.

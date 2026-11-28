@@ -6,14 +6,31 @@ Read this before helping with Belrog commits, tags, or desktop releases.
 
 Do **not** tell the user to build or sign the Mac app manually unless GitHub Actions is broken and the user explicitly asks for a manual fallback.
 
-The normal release flow is:
+## Normal release flow (0.6.x)
 
-1. Commit the release changes.
-2. Push `main`.
-3. Push a version tag, for example `v0.1.12`.
-4. GitHub Actions builds Windows, macOS, and Linux.
-5. GitHub Actions signs and notarizes macOS.
-6. GitHub creates or updates a draft release with assets.
+Releases are cut from **whichever branch carries the work** — currently
+`feat/shot-plan-schema-freeze` — not from `main`, which lags behind at v0.6.2
+(see `docs/AI_CURRENT_HANDOFF.md`). Exact sequence:
+
+1. Verify first: `npm run test:all` matches the documented baseline, and
+   `npx vite build` passes — run `npx vite build` before **any** commit that
+   touches `src/**/*.jsx` (`node --test` never parses JSX, so tests cannot
+   catch a JSX syntax error).
+2. `git push origin <release-branch>`
+3. `npm version <ver> --no-git-tag-version`
+4. `npm install --package-lock-only`
+5. Commit `chore(release): v<ver>` (package.json + package-lock.json only)
+6. `git push origin <release-branch>`
+7. `git tag -a v<ver> -m "belrog v<ver>"` then `git push origin refs/tags/v<ver>`
+8. Poll `https://api.github.com/repos/Dracken-Inc/Belrog/actions/runs?branch=<release-branch>`
+   with the PAT from `~/.git-credentials` until the release workflow completes.
+9. **The workflow leaves the release as a DRAFT.** `GET /releases?per_page=3`,
+   find `v<ver>`, `PATCH {"draft": false}`, and verify **4 assets** (cross-check
+   `GET /releases/tags/v<ver>`).
+10. Notify Henry.
+
+Tag numbering: 0.6.x tags are strictly increasing (… v0.6.51, v0.6.52, …).
+**Never reuse or force-push an existing number.**
 
 The workflow is:
 
@@ -65,8 +82,8 @@ Do not upload `.blockmap` or `latest*.yml` files unless auto-update support is a
 9. Create and push the version tag:
 
 ```bash
-git tag -a v0.1.12 -m "belrog v0.1.12"
-git push origin refs/tags/v0.1.12
+git tag -a v0.6.52 -m "belrog v0.6.52"
+git push origin refs/tags/v0.6.52
 ```
 
 10. Ask the user to check `Actions > Release Desktop Builds`.
