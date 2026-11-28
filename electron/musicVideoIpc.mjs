@@ -59,13 +59,18 @@ export function registerMusicVideoIpcHandlers(win) {
     }
   })
 
-  // Resume an existing project from its saved state
-  ipcMain.handle('music-video:resume', async (_event, { songId } = {}) => {
+  // Resume an existing project from its saved state.
+  // Options MUST be forwarded: renderProjectClips takes the timeline fps off
+  // options.timelineFps, and a resume that drops them renders the remaining
+  // clips with whatever fps the plan happens to carry and no quality/workflow
+  // overrides the caller set. The wizard's "Generate Full Music Video" resumes
+  // through here after the script stop, so this is not just a retry path.
+  ipcMain.handle('music-video:resume', async (_event, { songId, options = {} } = {}) => {
     if (!win || win.isDestroyed()) return { ok: false, error: 'No Belrog window available.' }
     const targetSongId = songId || currentSongId
     if (!targetSongId) return { ok: false, error: 'songId is required.' }
     try {
-      const result = await resumeAndRender({ songId: targetSongId, win })
+      const result = await resumeAndRender({ songId: targetSongId, win, options })
       currentSongId = targetSongId
       return { ok: true, ...result }
     } catch (err) {

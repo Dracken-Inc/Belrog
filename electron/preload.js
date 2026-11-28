@@ -11,8 +11,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   musicVideoStart: (audioFilePath, options) => ipcRenderer.invoke('music-video:start', { audioFilePath, options }),
   // Prepare project up to director script (stops before keyframes/video)
   musicVideoPrepare: (audioFilePath, options) => ipcRenderer.invoke('music-video:prepare', { audioFilePath, options }),
-  // Resume existing project
-  musicVideoResume: (songId) => ipcRenderer.invoke('music-video:resume', { songId }),
+  // Resume existing project. options carry the timeline fps and the render
+  // settings — omitting them silently drops fps authority for the resumed clips.
+  musicVideoResume: (songId, options) => ipcRenderer.invoke('music-video:resume', { songId, options }),
   // Pause/resume/cancel pipeline
   musicVideoPause: () => ipcRenderer.invoke('music-video:pause'),
   musicVideoResumePipeline: () => ipcRenderer.invoke('music-video:resume-pipeline'),
