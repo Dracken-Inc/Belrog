@@ -1895,51 +1895,11 @@ export default function MusicVideoEasyMode({
     }
   }
 
-  const handleStartFullPipeline = async () => {
-    if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoStart) return
-    if (isRenderingPipeline) return
-    setIsRenderingPipeline(true)
-    setPipelineProgress(0)
-    setPipelineStage('Starting pipeline...')
-    setPipelineError('')
-    setPipelineVideoPath('')
-    try {
-      // Resolve timeline fps from project store (renderer process) for accurate fps inheritance
-      let timelineFps = null
-      try {
-        const projectState = useProjectStore.getState?.()
-        const tl = projectState?.getCurrentTimelineSettings?.()
-        if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
-      } catch {
-        // Store not available, ignore
-      }
-
-      const options = {
-        aspectRatio,
-        resolutionPreset,
-        videoFps,
-        timelineFps,
-        coveragePreset,
-        performancePassCount,
-        includeStoryBroll,
-        includeEnvironmentalBroll,
-        includeDetailBroll,
-        videoWorkflowId: yoloMusicVideoWorkflowId,
-        keyframeWorkflowId: yoloMusicKeyframeWorkflowId,
-        styleNotes: yoloMusicStyleNotes,
-        lyrics: yoloMusicLyrics,
-        script: yoloMusicScript,
-        cast: yoloMusicCast,
-        resolvedCast: yoloMusicResolvedCast,
-      }
-      await window.electronAPI.musicVideoStart(yoloMusicAudioAssetPath, options)
-    } catch (error) {
-      setPipelineError(error?.message || 'Failed to start pipeline')
-      setPipelineStage('Error')
-      setIsRenderingPipeline(false)
-    }
-  }
-
+  // Step 1's single action, and the wizard's reason to exist: one press runs the
+  // whole job. Stage 1 is intake -> analysis -> director script -> plan, with no
+  // GPU spent; stage 2 resumes the same project so keyframes, shot videos and the
+  // final video actually render. Before this the press stopped at the director
+  // script and left the user to find a second button to get a video.
   const handlePrepareMusicVideo = async () => {
     if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoPrepare) return
     if (isRenderingPipeline) return
@@ -1949,7 +1909,8 @@ export default function MusicVideoEasyMode({
     setPipelineError('')
     setPipelineVideoPath('')
     try {
-      // Resolve timeline fps from project store (renderer process) for accurate fps inheritance
+      // Resolve timeline fps from the project store (renderer process): main has
+      // its own empty store instance and cannot read this itself.
       let timelineFps = null
       try {
         const projectState = useProjectStore.getState?.()
@@ -1977,16 +1938,27 @@ export default function MusicVideoEasyMode({
         cast: yoloMusicCast,
         resolvedCast: yoloMusicResolvedCast,
       }
+      // Stage 1: no GPU. The script lands on disk and is readable at Step 4.
       const result = await window.electronAPI.musicVideoPrepare(yoloMusicAudioAssetPath, options)
-      if (result?.ok) {
-        setPipelineStage('Director script ready — review at Step 4 (Keyframes)')
-        setPipelineProgress(100)
-        // Advance to step 4 (keyframes) for review
-        setStep('keyframes')
-      } else {
+      if (!result?.ok) {
         setPipelineError(result?.error || 'Failed to prepare music video')
         setPipelineStage('Error')
+        return
       }
+      // Stage 2: the same press keeps going. musicVideoResume drives keyframes,
+      // shot videos and the assembly for the project stage 1 just created.
+      setStep('keyframes')
+      setPipelineStage('Director script ready — rendering keyframes and shot videos...')
+      setPipelineProgress(0)
+      const rendered = await window.electronAPI.musicVideoResume?.(result.songId, options)
+      if (rendered && rendered.ok === false) {
+        setPipelineError(rendered.error || rendered.failed?.map((f) => f.error).join('; ') || 'Render failed')
+        setPipelineStage('Error')
+        return
+      }
+      if (rendered?.videoPath) setPipelineVideoPath(rendered.videoPath)
+      setPipelineStage('Video ready')
+      setPipelineProgress(100)
     } catch (error) {
       setPipelineError(error?.message || 'Failed to prepare music video')
       setPipelineStage('Error')
@@ -2433,20 +2405,15 @@ export default function MusicVideoEasyMode({
           </div>
         </div>
       </div>
-    </div>
 
-    {/* One-shot prepare: audio intake → analysis → director script → assets, stops at keyframes */}
-    {yoloMusicAudioAssetPath && (
-      <div className="mt-6 rounded-lg border border-sf-accent/50 bg-sf-accent/5 p-4">
-        <div className="flex items-center justify-between gap-3">
+      <div className="mt-6 rounded-lg border border-sf-dark-700 bg-sf-dark-900/70 p-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-sf-accent">
-              <Film className="h-4 w-4" />
-              <span>Generate Full Music Video</span>
-            </div>
+            <p className="text-sm font-semibold text-sf-text-primary">Step 1 of {MUSIC_VIDEO_EASY_STEPS.length} — one press runs the whole wizard</p>
             <p className="mt-1 text-xs leading-5 text-sf-text-secondary">
-              One press runs: audio intake → beat/envelope analysis → director script → script-derived assets (cast, stills).
-              Stops at Step 4 (Keyframes) so you can review the script and assets before any frame is keyed.
+              Pick the song, then press once. It analyzes the audio, writes the director
+              script you can read at Step 4, builds the shot plan, then renders keyframes,
+              shot videos and the finished video. No second button to hunt for.
             </p>
           </div>
           <button
@@ -2464,17 +2431,18 @@ export default function MusicVideoEasyMode({
             <div className="h-2 overflow-hidden rounded-full bg-sf-dark-700">
               <div
                 className="h-full rounded-full bg-sf-accent transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(0, pipelineProgress))}%` }}
+                style={{ width: Math.min(100, Math.max(0, pipelineProgress)) + '%' }}
               />
             </div>
             <p className="text-xs text-sf-text-secondary">{pipelineStage}</p>
-            {pipelineError && (
-              <p className="text-xs text-red-200">{pipelineError}</p>
-            )}
+            {pipelineError && <p className="text-xs text-red-200">{pipelineError}</p>}
           </div>
         )}
+        {pipelineVideoPath && (
+          <p className="mt-2 text-xs text-sf-text-secondary">Video ready: {pipelineVideoPath}</p>
+        )}
       </div>
-    )}
+    </div>
   )
 
   const renderPeopleWizardModal = () => {
