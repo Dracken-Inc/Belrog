@@ -6,6 +6,72 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isElectron: true,
 
+  // Music Video One-Shot (W22)
+  // Start a new project from audio file
+  musicVideoStart: (audioFilePath, options) => ipcRenderer.invoke('music-video:start', { audioFilePath, options }),
+  // Resume existing project
+  musicVideoResume: (songId) => ipcRenderer.invoke('music-video:resume', { songId }),
+  // Pause/resume/cancel pipeline
+  musicVideoPause: () => ipcRenderer.invoke('music-video:pause'),
+  musicVideoResumePipeline: () => ipcRenderer.invoke('music-video:resume-pipeline'),
+  musicVideoCancel: () => ipcRenderer.invoke('music-video:cancel'),
+  // Get current state for polling
+  musicVideoGetState: () => ipcRenderer.invoke('music-video:get-state'),
+  // List all projects
+  musicVideoListProjects: () => ipcRenderer.invoke('music-video:list-projects'),
+  // Delete project
+  musicVideoDeleteProject: (songId) => ipcRenderer.invoke('music-video:delete-project', { songId }),
+  // Dry-run: generate plan without rendering
+  musicVideoDryRun: (audioFilePath, options) => ipcRenderer.invoke('music-video:dry-run', { audioFilePath, options }),
+  // Pick audio file via dialog
+  musicVideoPickAudioFile: () => ipcRenderer.invoke('music-video:pickAudioFile'),
+  // Listen to progress events
+  onMusicVideoProgress: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:progress', handler)
+    return () => ipcRenderer.removeListener('mv:progress', handler)
+  },
+  onMusicVideoShotDone: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:shot-done', handler)
+    return () => ipcRenderer.removeListener('mv:shot-done', handler)
+  },
+  onMusicVideoVideoReady: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:video-ready', handler)
+    return () => ipcRenderer.removeListener('mv:video-ready', handler)
+  },
+  onMusicVideoError: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:error', handler)
+    return () => ipcRenderer.removeListener('mv:error', handler)
+  },
+  onMusicVideoComplete: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:complete', handler)
+    return () => ipcRenderer.removeListener('mv:complete', handler)
+  },
+  onMusicVideoScriptReady: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:script-ready', handler)
+    return () => ipcRenderer.removeListener('mv:script-ready', handler)
+  },
+  onMusicVideoCancelled: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:cancelled', handler)
+    return () => ipcRenderer.removeListener('mv:cancelled', handler)
+  },
+  onMusicVideoPaused: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:paused', handler)
+    return () => ipcRenderer.removeListener('mv:paused', handler)
+  },
+  onMusicVideoResumed: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('mv:resumed', handler)
+    return () => ipcRenderer.removeListener('mv:resumed', handler)
+  },
+
   // Audio intake for the Suno-track one-shot path: pick an m4a, then read its
   // duration/chapters so the renderer can derive the director script.
   pickAudioTrack: () => ipcRenderer.invoke('belrog:pickAudioTrack'),
