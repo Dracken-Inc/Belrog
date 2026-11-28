@@ -10,6 +10,11 @@ import { downloadLocalModel, computeLocalSha256 } from '../../electron/remoteMod
 import { join } from 'node:path'
 import { mkdir, stat, readdir } from 'node:fs/promises'
 
+// This file must be loadable from an ESM context (Electron main imports it), and
+// ESM has no require(). createRequire keeps the optional-dependency probes working.
+import { createRequire as _createRequire } from 'node:module'
+const nodeRequire = _createRequire(import.meta.url)
+
 // ═══════════════════════════════════════════
 // Curated Presets (exact metadata per spec)
 // ═══════════════════════════════════════════
@@ -156,7 +161,7 @@ export function setElectronApp(app) { _electronApp = app }
 function getApp() {
   if (_electronApp) return _electronApp
   try {
-    const pkg = require('electron')
+    const pkg = nodeRequire('electron')
     return pkg.app || pkg.default?.app || pkg
   } catch {
     return null

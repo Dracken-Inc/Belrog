@@ -14,6 +14,11 @@ import { spawn } from 'node:child_process'
 import Ajv2020 from 'ajv/dist/2020.js'
 import { compilePromptRequest, callLLM } from './promptCompiler.js'
 
+// This file must be loadable from an ESM context (Electron main imports it), and
+// ESM has no require(). createRequire keeps the optional-dependency probes working.
+import { createRequire as _createRequire } from 'node:module'
+const nodeRequire = _createRequire(import.meta.url)
+
 const SCHEMA_PATH = resolve('src/schema/shotPlan.schema.json')
 const AJV = new Ajv2020({ strict: true, allowUnionTypes: false, allErrors: true })
 const SCHEMA = JSON.parse(readFileSync(SCHEMA_PATH, 'utf8'))
@@ -30,7 +35,7 @@ let cachedLintPath = null
 
 function findLintScript() {
   if (cachedLintPath) return cachedLintPath
-  const { accessSync, constants } = require('node:fs')
+  const { accessSync, constants } = nodeRequire('node:fs')
   for (const p of LINT_PATHS) {
     try {
       accessSync(p, constants.X_OK)

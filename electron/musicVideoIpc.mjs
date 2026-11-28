@@ -9,7 +9,10 @@
  *
  * Do NOT implement pipeline logic here — put it in musicVideoPipeline.js.
  */
-import { ipcMain } from 'electron'
+// Electron's built-in is CommonJS; import the default and destructure so this
+// loads identically under Node (tests) and Electron main.
+import electron from 'electron'
+const { ipcMain, dialog } = electron
 import {
   runMusicVideoPipeline,
   resumeAndRender,
@@ -138,7 +141,6 @@ export function registerMusicVideoIpcHandlers(win) {
   // File picker for the audio source
   ipcMain.handle('music-video:pickAudioFile', async () => {
     if (!win || win.isDestroyed()) return { ok: false, error: 'No Belrog window available.' }
-    const { dialog } = await import('electron')
     try {
       const result = await dialog.showOpenDialog(win, {
         title: 'Choose the song file',
@@ -154,4 +156,5 @@ export function registerMusicVideoIpcHandlers(win) {
       return { ok: false, error: String(err?.message || err) }
     }
   })
+  console.log('[music-video] IPC handlers registered')
 }

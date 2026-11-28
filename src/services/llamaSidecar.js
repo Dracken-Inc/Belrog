@@ -17,12 +17,17 @@ import { join, resolve } from 'node:path'
 import { stat, access, constants, readdir } from 'node:fs/promises'
 import { EventEmitter } from 'node:events'
 
+// This file must be loadable from an ESM context (Electron main imports it), and
+// ESM has no require(). createRequire keeps the optional-dependency probes working.
+import { createRequire as _createRequire } from 'node:module'
+const nodeRequire = _createRequire(import.meta.url)
+
 let _electronApp = null
 export function setElectronApp(app) { _electronApp = app }
 function getApp() {
   if (_electronApp) return _electronApp
   try {
-    const pkg = require('electron')
+    const pkg = nodeRequire('electron')
     return pkg.app || pkg.default?.app || pkg
   } catch {
     return null
@@ -82,7 +87,7 @@ async function isExecutable(path) {
 
 function findFreePort() {
   return new Promise((resolve, reject) => {
-    const { createServer } = require('node:net')
+    const { createServer } = nodeRequire('node:net')
     const server = createServer()
     server.listen(0, '127.0.0.1', () => {
       const port = server.address().port

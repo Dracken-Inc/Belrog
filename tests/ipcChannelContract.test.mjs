@@ -20,7 +20,7 @@ const preloadSources = ['electron/preload.js'].map(read)
 // Handlers live in main.js and in the modules it installs (captionWhisper,
 // remoteModelInstall, ...), so the whole electron/ tree counts.
 const mainSources = readdirSync(electronDir)
-  .filter((name) => /\.c?js$/.test(name) && name !== 'preload.js')
+    .filter((name) => /\.[mc]?js$/.test(name) && name !== 'preload.js')
   .map((name) => read(path.join('electron', name)))
 
 function literals(sources, pattern) {

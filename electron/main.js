@@ -4442,7 +4442,7 @@ ipcMain.handle('director:run-pipeline', async (event, options = {}) => {
 })
 
 // Register W22 music-video IPC handlers (thin wrappers in electron/musicVideoIpc.js)
-import('./musicVideoIpc.js').then(({ registerMusicVideoIpcHandlers }) => {
+import('./musicVideoIpc.mjs').then(({ registerMusicVideoIpcHandlers }) => {
   registerMusicVideoIpcHandlers(mainWindow)
 }).catch(err => {
   console.error('[music-video] Failed to register IPC handlers:', err)

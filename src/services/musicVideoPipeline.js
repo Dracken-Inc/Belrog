@@ -27,14 +27,30 @@
 import { parseLyricBlocks, tileShots, auditTiling, harvestCastSlugs, generateSunoScript } from './sunoIntake.js'
 import { analyzeEnvelopeFFmpeg } from './audioAnalysis.js'
 import { compilePlot, compileShots } from './actionProse.mjs'
-import { validatePlan, repairPlan } from './shotPlanValidator.js'
-import { getModelCatalog, downloadModel } from './modelCatalog.js'
+import { validatePlan } from './shotPlanValidator.js'
+import { getModelCatalog } from './modelCatalog.js'
 import { compilePromptRequest } from './promptCompiler.js'
 import { readFileSync } from 'node:fs'
 import { resolve, join, dirname } from 'node:path'
-import { mkdir, writeFile, readFile, stat, readdir, rm, createReadStream, appendFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, stat, readdir, rm, appendFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { app } from 'electron'
+import { createRequire as _createRequire } from 'node:module'
+const nodeRequire = _createRequire(import.meta.url)
+
+/**
+ * Electron's `app` is optional: this module must also load under plain Node
+ * (tests, CLI, and any host without Electron). A named `import { app }` would
+ * throw at load time in those contexts, so probe it lazily instead.
+ */
+function electronApp() {
+  try {
+    const pkg = nodeRequire('electron')
+    return pkg?.app || pkg?.default?.app || null
+  } catch {
+    return null
+  }
+}
 import Ajv2020 from 'ajv/dist/2020.js'
 import { clipsFromPlan, clipFileName, coveredShots, renderPlanClips, stitchRenderedClips } from './musicVideoRender.js'
 
@@ -128,7 +144,7 @@ const PROJECT_STATUS = {
 }
 
 function getProjectsRoot() {
-  const userData = app.getPath('userData')
+  const userData = electronApp()?.getPath('userData')
   return join(userData, PROJECTS_DIR_NAME)
 }
 
