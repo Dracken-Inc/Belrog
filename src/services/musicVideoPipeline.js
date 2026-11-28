@@ -662,6 +662,16 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
       repairRetries: plan.llm?.repairRetries ?? 0,
     }
 
+    // Stamp timeline fps into the plan for fps inheritance.
+    // Priority: options.timelineFps (passed from renderer) > plan.look?.fps (legacy) > undefined (leave unset).
+    // Never invent a number; if unknown, leave it unset so downstream defaults apply.
+    if (Number.isFinite(options?.timelineFps)) {
+      plan.fps = Number(options.timelineFps)
+    } else if (Number.isFinite(plan?.look?.fps)) {
+      // Preserve any legacy look.fps that may have been set externally.
+      plan.fps = Number(plan.look.fps)
+    }
+
     // ═══════════════════════════════════
     // STAGE 6: Emit plan.json
     // ═══════════════════════════════════
@@ -764,17 +774,10 @@ export async function renderProjectClips({ songId, win = null, options = {}, env
 
   await updateProjectState(songId, { status: PROJECT_STATUS.RENDERING, error: null })
 
-  // Try to get timeline fps from project store (renderer process) for accurate fps inheritance.
-  // In plain Node (tests, CLI) the store may not exist; fall back to plan.look.fps.
-  let timelineFps = null
-  try {
-    const { useProjectStore } = await import('../stores/projectStore.js')
-    const projectState = useProjectStore.getState?.()
-    const tl = projectState?.getCurrentTimelineSettings?.()
-    if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
-  } catch {
-    // Store not available in this process (e.g. plain Node), ignore.
-  }
+  // timelineFps is now passed explicitly in options (from the renderer or MCP).
+  // We do NOT import the renderer store from main — it's a separate empty instance.
+  // If the caller didn't provide it, we fall back to plan.fps (stamped at plan creation).
+  const timelineFps = options?.timelineFps ?? null
 
   const totalClips = (plan.clips || []).length
   let finished = 0
@@ -872,16 +875,10 @@ export async function renderSingleShot(songId, shot, shotIndex, plan, options = 
   const clip = clips.find((c) => c.index === shotIndex) || clips[shotIndex]
   if (!clip) throw new Error(`clip ${shotIndex} is not in this plan (it has ${clips.length} clips)`)
 
-  // Try to get timeline fps from project store for accurate fps inheritance.
-  let timelineFps = null
-  try {
-    const { useProjectStore } = await import('../stores/projectStore.js')
-    const projectState = useProjectStore.getState?.()
-    const tl = projectState?.getCurrentTimelineSettings?.()
-    if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
-  } catch {
-    // Store not available in this process (e.g. plain Node), ignore.
-  }
+  // timelineFps is passed explicitly in options (from the renderer or MCP).
+  // We do NOT import the renderer store from main — it's a separate empty instance.
+  // If the caller didn't provide it, we fall back to plan.fps (stamped at plan creation).
+  const timelineFps = options?.timelineFps ?? null
 
   const result = await renderPlanClips({ ...storedPlan, clips: [clip] }, paths.renders, {
     env: options.env || process.env,

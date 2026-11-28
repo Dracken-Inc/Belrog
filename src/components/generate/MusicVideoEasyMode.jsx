@@ -1904,10 +1904,21 @@ export default function MusicVideoEasyMode({
     setPipelineError('')
     setPipelineVideoPath('')
     try {
+      // Resolve timeline fps from project store (renderer process) for accurate fps inheritance
+      let timelineFps = null
+      try {
+        const projectState = useProjectStore.getState?.()
+        const tl = projectState?.getCurrentTimelineSettings?.()
+        if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
+      } catch {
+        // Store not available, ignore
+      }
+
       const options = {
         aspectRatio,
         resolutionPreset,
         videoFps,
+        timelineFps,
         coveragePreset,
         performancePassCount,
         includeStoryBroll,

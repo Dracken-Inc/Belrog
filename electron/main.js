@@ -4409,7 +4409,7 @@ ipcMain.handle('belrog:probeAudioTrack', async (_event, filePath) => {
 // Belrog music-video pipeline: runs the full m4a → plan.json pipeline
 // from the main process and forwards progress via mv:* events to the window.
 ipcMain.handle('director:run-pipeline', async (event, options = {}) => {
-  const { filePath, outputDir, style, creativePreset, backend, modelId, targetSec } = options
+  const { filePath, outputDir, style, creativePreset, backend, modelId, targetSec, timelineFps } = options
   if (!filePath || typeof filePath !== 'string') {
     return { ok: false, error: 'filePath is required.' }
   }
@@ -4430,6 +4430,7 @@ ipcMain.handle('director:run-pipeline', async (event, options = {}) => {
         modelId,
         targetSec,
         outputDir,
+        timelineFps,
       },
     })
     return { ok: true, planPath: result.planPath, plan: result.plan }
