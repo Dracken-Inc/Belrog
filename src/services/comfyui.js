@@ -7,17 +7,17 @@ import {
   getLocalComfyHttpBaseSync,
   getLocalComfyWsBaseSync,
   hydrateLocalComfyConnection,
-} from './localComfyConnection'
+} from './localComfyConnection.js'
 import {
   isInsufficientCreditsError,
   notifyComfyPartnerCreditsLow,
-} from './comfyPartnerAuth'
-import { extractCreditCountFromText } from '../utils/comfyCredits'
+} from './comfyPartnerAuth.js'
+import { extractCreditCountFromText } from '../utils/comfyCredits.js'
 import {
   MUSIC_VIDEO_SHOT_DEFAULTS,
   getMusicVideoShotTypeOption,
   normalizeMusicVideoShot,
-} from '../config/musicVideoShotConfig'
+} from '../config/musicVideoShotConfig.js'
 
 const COMFY_ORG_API_KEY_SETTING_KEY = 'comfyApiKeyComfyOrg';
 const COMFY_ORG_API_KEY_LOCAL_KEY = 'comfystudio-comfy-api-key';
