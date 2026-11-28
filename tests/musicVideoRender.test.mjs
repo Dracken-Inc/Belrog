@@ -203,13 +203,16 @@ check('clips contribute video only', () => {
 })
 
 check('a long clip is trimmed to its window', () => {
+  // F1: deltaFrames is rendered minus usable (positive for a long clip).
   const s = buildStitchCommand({
     clips: [{ path: '/tmp/renders/clip_0.mp4', index: 0, usableFrames: 121, renderedFrames: 145, fps: 24 }],
     track: plan.track, outPath: '/tmp/o.mp4',
   })
   assert.ok(s.filterComplex.includes('trim=start_frame=0:end_frame=121'), s.filterComplex)
   assert.ok(!s.filterComplex.includes('tpad'), 'tpad would freeze-frame and slide every later cut off the beat')
-  assert.equal(s.trims.find((t) => t.index === 0)?.deltaFrames, 24, JSON.stringify(s.trims))
+  // F1: deltaFrames = rendered - usable (a long clip must TRIM, not pad).
+  assert.equal(s.trims.find((t) => t.index === 0)?.deltaFrames, 145 - 121, JSON.stringify(s.trims))
+  assert.ok(s.filterComplex.includes('end_frame=121') && !s.filterComplex.includes('tpad'), '145 rendered vs 121 usable trims to 121')
 })
 
 check('a clip that came back short is reported as drift, not padded', () => {

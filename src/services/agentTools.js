@@ -205,6 +205,7 @@ function includesQuery(value, query) {
 }
 
 function secondsToTimecode(seconds, fps = 24) {
+  // F1: fps stays a float (NTSC 23.976) — frame counts keep the rounding.
   const safeFps = Math.max(1, Number(fps) || 24)
   const totalFrames = Math.max(0, Math.round((Number(seconds) || 0) * safeFps))
   const frames = totalFrames % safeFps

@@ -321,7 +321,21 @@ export function buildShotGraph({ plan, clip, graph, options = {} } = {}) {
   const wf = graph ? JSON.parse(JSON.stringify(graph)) : null
   if (!wf) throw new Error('buildShotGraph needs the loaded graph')
   const shots = shotsForClip(plan, clip)
-  const opts = { ...RENDER_DEFAULTS, ...options }
+  // F1: plan.fps is the authority on the music-video path — a shot rendered at
+  // an fps other than the plan's desyncs lip-sync against the song, and a
+  // RENDER_DEFAULTS.fps fallback is what let 25 outrun the 23.976 timeline.
+  // Only an explicit options.fps (renderPlanClips' resolved rate) outranks it.
+  if (options.fps !== undefined && !Number.isFinite(Number(options.fps))) {
+    throw new Error('buildShotGraph: options.fps is not a number — refusing to render at a guessed frame rate')
+  }
+  const planFps = Number(plan?.fps)
+  const fps = options.fps !== undefined
+    ? Number(options.fps)
+    : (Number.isFinite(planFps) && planFps > 0 ? planFps : null)
+  if (fps === null) {
+    throw new Error(`plan ${plan?.id ?? plan?.name ?? '(unknown)'} has no usable plan.fps — refusing to render at a guessed frame rate (F1: stamp plan.fps from the timeline, see docs/plans)`)
+  }
+  const opts = { ...RENDER_DEFAULTS, ...options, fps }
   const window = audioWindowForClip({ clip, fps: opts.fps, lookAheadFrames: opts.lookAheadFrames })
   const prompt = compileShotPrompt({ plan, clip, shots, maxLength: opts.maxPromptLength })
 
@@ -329,8 +343,17 @@ export function buildShotGraph({ plan, clip, graph, options = {} } = {}) {
   setNode(wf, NODE.negative, { text: '' })            // empty always: LTX-2.3 does not use it
   setNode(wf, NODE.width, { value: Math.round(opts.width) })
   setNode(wf, NODE.height, { value: Math.round(opts.height) })
-  setNode(wf, NODE.fps, { value: Math.round(opts.fps) })
+  // F1: fps stays a float (23.976 is not 24); only frame counts are rounded,
+  // and they come from graphFrames below — node 1651 must not re-derive them.
+  setNode(wf, NODE.fps, { value: opts.fps })
   setNode(wf, NODE.length, { value: window.renderLengthSec })
+  // F1: single-source the frame count — pin the calculator's output to the
+  // exact value JS computed (graphFrames), instead of letting it recompute
+  // length*fps with whatever rounding its evaluator applies. graphFrames
+  // already applied the 8n+1 law, so the literal IS the aligned count.
+  setNode(wf, NODE.frameCalc, { expression: String(window.renderFrames), variables_a: undefined, variables_b: undefined })
+  delete wf[NODE.frameCalc].inputs['variables.a']
+  delete wf[NODE.frameCalc].inputs['variables.b']
   setNode(wf, NODE.audioStart, { value: window.startSec })
   setNode(wf, NODE.audioFile, { audio: opts.audioFilename || basename(String(plan.track?.path || 'music_video_track.mp3')) })
   setNode(wf, NODE.vocalsSwitch, { switch: Boolean(opts.useVocalsOnly) })
@@ -374,7 +397,14 @@ export function buildShotGraph({ plan, clip, graph, options = {} } = {}) {
 export function buildStillGraph({ plan, clip, graph, options = {} } = {}) {
   const built = buildShotGraph({ plan, clip, graph, options })
   const wf = built.graph
-  const fps = { ...RENDER_DEFAULTS, ...options }.fps
+  // F1: reuse the fps the single authority (buildShotGraph) already resolved
+  // — options may carry RENDER_DEFAULTS.fps from a caller spread, so re-spreading
+  // { ...RENDER_DEFAULTS, ...options } would mask a plan.fps that differs from it.
+  // The fps node is the graph's own record of what authority stamped.
+  const fps = Number(wf[NODE.fps]?.inputs?.value)
+  if (!Number.isFinite(fps) || fps <= 0) {
+    throw new Error('buildStillGraph: could not resolve fps from the graph built by buildShotGraph')
+  }
 
   // One frame only: length = 1/fps makes the calculator land on 8*0+1 = 1.
   setNode(wf, NODE.length, { value: Number((1 / fps).toFixed(6)) })

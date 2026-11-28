@@ -1538,7 +1538,7 @@ export function modifyWAN22Workflow(workflow, options = {}) {
   const splitStep = Math.max(2, Math.floor(samplerSteps / 2))
   const modelShift = useFaceLockPreset ? 4.0 : 4.5
   const loraStrength = useFaceLockPreset ? 1.15 : 1.05
-  const numericFps = Math.max(1, Math.round(Number(fps) || 16))
+  const numericFps = Math.max(1, Number(fps) || 16)
   const numericFrames = Math.max(2, Math.round(Number(frames) || 81))
   const numericDuration = Math.max(0.1, (numericFrames - 1) / numericFps)
 
@@ -1673,7 +1673,7 @@ export function modifyLTX23I2VWorkflow(workflow, options = {}) {
   const modified = JSON.parse(JSON.stringify(workflow))
   const numericWidth = Math.max(256, Math.round(Number(width) || 1080))
   const numericHeight = Math.max(256, Math.round(Number(height) || 1920))
-  const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  const numericFps = Math.max(1, Number(fps) || 24)
   // This graph computes the frame count internally from duration(seconds) * fps,
   // so it wants seconds. Prefer an explicit duration; otherwise derive seconds
   // from a legacy frames count (callers still pass frames).
@@ -1740,7 +1740,7 @@ export function modifyLTX23IA2VWorkflow(workflow, options = {}) {
   const numericWidth = Math.max(256, Math.round(Number(width) || 1280))
   const numericHeight = Math.max(256, Math.round(Number(height) || 720))
   const numericDuration = Math.max(1, Number(duration) || 9)
-  const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  const numericFps = Math.max(1, Number(fps) || 24)
   const numericSeed = Math.round(Number(seed) || Math.floor(Math.random() * 1000000000000))
   const effectiveNegativePrompt = String(negativePrompt || '')
 
@@ -1828,7 +1828,7 @@ export function modifyLTX23IdLoraWorkflow(workflow, options = {}) {
   const numericWidth = Math.max(256, Math.round(Number(width) || 720))
   const numericHeight = Math.max(256, Math.round(Number(height) || 1280))
   const numericDuration = Math.max(1, Number(duration) || 5)
-  const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  const numericFps = Math.max(1, Number(fps) || 24)
   const numericSeed = Math.round(Number(seed) || Math.floor(Math.random() * 1000000000000))
   const effectiveNegativePrompt = String(negativePrompt || '')
 
@@ -2228,7 +2228,7 @@ export function modifyLocalApiWorkflow(workflow, options = {}) {
   const modified = JSON.parse(JSON.stringify(workflow))
   const numericWidth = Math.max(256, Math.round(Number(width) || 1024))
   const numericHeight = Math.max(256, Math.round(Number(height) || 1024))
-  const numericFps = Math.max(1, Math.round(Number(fps) || 24))
+  const numericFps = Math.max(1, Number(fps) || 24)
   const numericDuration = Math.max(1, Number(duration) || 5)
   const frameCount = Math.round(numericDuration * numericFps) + 1
 
@@ -3356,7 +3356,7 @@ export function modifyMusicVideoShotWorkflow(workflow, options = {}) {
     enablePromptEnhancer = false,
     width = MUSIC_VIDEO_SHOT_DEFAULTS.width,
     height = MUSIC_VIDEO_SHOT_DEFAULTS.height,
-    fps = MUSIC_VIDEO_SHOT_DEFAULTS.fps,
+    fps,
     filenamePrefix = 'video/music_video/shot',
     seed: seedOverride = null,
     negativePrompt = '',
@@ -3384,7 +3384,13 @@ export function modifyMusicVideoShotWorkflow(workflow, options = {}) {
 
   const numericWidth = Math.max(256, Math.round(Number(width) || MUSIC_VIDEO_SHOT_DEFAULTS.width))
   const numericHeight = Math.max(256, Math.round(Number(height) || MUSIC_VIDEO_SHOT_DEFAULTS.height))
-  const numericFps = Math.max(1, Math.round(Number(fps) || MUSIC_VIDEO_SHOT_DEFAULTS.fps))
+  // F1: fps stays a float — 23.976 is not 24, and rounding it here is what
+  // desyncs lip-sync against the song. No silent fallback either: a shot
+  // rendered at a guessed frame rate is worse than a loud error.
+  if (!Number.isFinite(Number(fps)) || Number(fps) <= 0) {
+    throw new Error('modifyMusicVideoShotWorkflow: no fps supplied — pass the plan/timeline fps (plan.fps); refusing to render at MUSIC_VIDEO_SHOT_DEFAULTS.fps')
+  }
+  const numericFps = Number(fps)
 
   const modified = JSON.parse(JSON.stringify(workflow))
 
