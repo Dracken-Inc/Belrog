@@ -713,6 +713,178 @@ export async function runMusicVideoPipelineHeadless(filePath, options = {}) {
   return runMusicVideoPipeline({ filePath, win: null, options })
 }
 
+/**
+ * Run the music video pipeline up to plan generation (stages 1-4):
+ * 1. Suno Intake (metadata + lyrics)
+ * 2. Audio Analysis (envelope → beats + sections)
+ * 3. Imagination Engine Pass 1: Plot
+ * 4. Imagination Engine Pass 2: Per-shot CSV (director script)
+ * 
+ * Stops BEFORE V-Gate validation and render phase.
+ * Returns the shot plan (director script) and project info for UI review.
+ * No GPU work is performed.
+ */
+export async function runMusicVideoPipelinePrepare({ filePath, win, options = {} }) {
+  const {
+    style = 'mtv-1990s',
+    creativePreset = 'narrative',
+    backend = 'local',
+    modelId = null,
+    targetSec = 5,
+    outputDir = null,
+    llmBackend = backend,
+    llmModelId = modelId,
+    engine = 'ltx23',
+    quality = 'high',
+  } = options
+
+  let shotPlan = null
+  let planPath = null
+  let songId = null
+  let projectPath = null
+
+  try {
+    // ═══════════════════════════════════
+    // STAGE 1: Suno Intake (metadata + lyrics)
+    // ═══════════════════════════════════
+    emitProgress(win, 'intake', 0.1, 'Reading Suno metadata…')
+    const { lyricsRaw, durationSec, title, artist } = await extractSunoMetadata(filePath)
+    emitProgress(win, 'intake', 0.5, `Track: ${title || 'untitled'} (${durationSec.toFixed(1)}s)`)
+
+    const blocks = parseLyricBlocks(lyricsRaw, durationSec)
+
+    // Audio analysis must run first to get sections for section-aware tiling
+    emitProgress(win, 'audio', 0.1, 'Analyzing audio envelope…')
+    const analysis = await analyzeEnvelopeFFmpeg({ absolutePath: filePath })
+    emitProgress(win, 'audio', 0.6, `Envelope: ${analysis.durationSec.toFixed(1)}s, ${analysis.onsets?.length ?? 0} onsets, ${analysis.sections?.length ?? 0} sections`)
+
+    const sections = analysis.sections
+    emitProgress(win, 'audio', 1.0, `Audio done: ${sections.length} sections detected`)
+
+    // Section-aware tiling: same budget that compileShots will use
+    const shots = tileShotsBySection(blocks, sections)
+    const issues = auditTiling(shots, durationSec)
+    if (issues.length) throw new Error(`Tiling failed: ${issues.map(i => i.message).join('; ')}`)
+
+    const castSlugs = harvestCastSlugs({ cast: [], lyricsRaw })
+    emitProgress(win, 'intake', 1.0, `Intake done: ${shots.length} shots, ${castSlugs.length} cast`)
+
+    // ═══════════════════════════════════
+    // Create project folder structure
+    // ═══════════════════════════════════
+    emitProgress(win, 'project', 0.1, 'Creating project folders…')
+    const metadata = {
+      title,
+      artist,
+      durationSec,
+      bpm: analysis.bpm || 0,
+      hash: analysis.hash || '',
+    }
+
+    const projectResult = await createProject(filePath, metadata, {
+      llmBackend,
+      llmModelId,
+      engine,
+      quality,
+    })
+    songId = projectResult.songId
+    projectPath = projectResult.projectPath
+
+    // ═══════════════════════════════════
+    // STAGE 3: Imagination Engine — Pass 1: Plot
+    // ═══════════════════════════════════
+    emitProgress(win, 'plot', 0.1, 'Generating narrative plot…')
+    const plot = await compilePlot({
+      title,
+      artist,
+      durationSec,
+      lyricsRaw,
+      sections,
+      beats: analysis.onsets || [],
+      style,
+      creativePreset,
+      castSlugs,
+    }, { backend: llmBackend, modelId: llmModelId, win })
+    emitProgress(win, 'plot', 1.0, 'Plot generated')
+
+    // ═══════════════════════════════════
+    // STAGE 4: Imagination Engine — Pass 2: Per-shot CSV (Director Script)
+    // ═══════════════════════════════════
+    emitProgress(win, 'shots', 0.1, 'Generating per-shot plan (director script)…')
+    shotPlan = await compileShots({
+      plot,
+      title,
+      durationSec,
+      sections,
+      beats: analysis.onsets || [],
+      shots: shots.map(s => ({ startSec: s.startSec, endSec: s.endSec, lyric: s.lyric })),
+      style,
+      creativePreset,
+      castSlugs,
+    }, { backend: llmBackend, modelId: llmModelId, win, onShot: (shot, idx, total) => emitShotDone(win, idx, total, shot) })
+    emitProgress(win, 'shots', 1.0, `Director script done: ${shotPlan.shots.length} shots`)
+
+    // ═══════════════════════════════════
+    // STAGE 5: Emit plan.json (without V-Gate validation)
+    // ═══════════════════════════════════
+    // Inject audio metadata into plan
+    shotPlan.track.path = filePath
+    shotPlan.track.hash = analysis.hash || ''
+    shotPlan.track.bpm = analysis.bpm || 0
+    shotPlan.track.beats = analysis.onsets || []
+    shotPlan.track.sections = analysis.sections || []
+    shotPlan.track.profileSource = 'envelope'
+
+    // Add llm field to plan
+    shotPlan.llm = {
+      ...shotPlan.llm,
+      backend: llmBackend,
+      modelId: llmModelId,
+      endpoint: '',
+      pid: 0,
+      logPath: '',
+      grammarEnforced: false,
+      repairRetries: 0,
+    }
+
+    // Stamp timeline fps into the plan for fps inheritance.
+    if (Number.isFinite(options?.timelineFps)) {
+      shotPlan.fps = Number(options.timelineFps)
+    } else if (Number.isFinite(shotPlan?.look?.fps)) {
+      shotPlan.fps = Number(shotPlan.look.fps)
+    }
+
+    emitProgress(win, 'emit', 0.1, 'Writing plan.json…')
+    const outDir = outputDir || projectPath
+    await mkdir(outDir, { recursive: true })
+    planPath = resolve(outDir, 'plan.json')
+    await writeFile(planPath, JSON.stringify(shotPlan, null, 2))
+
+    // Initialize shot states for rendering (but don't render)
+    await initializeShotStates(projectPath, shotPlan)
+
+    emitProgress(win, 'emit', 1.0, `Plan written to ${planPath}`)
+
+    // Emit script-ready event for the Generate Script Modal
+    const script = {
+      shots: shots.map(s => ({ startSec: s.startSec, endSec: s.endSec, lyric: s.lyric })),
+      shotCount: shots.length,
+      hasLyrics: lyricsRaw.length > 0,
+      lyricSource: lyricsRaw.length > 0 ? 'file' : 'none',
+      durationSec,
+      title,
+    }
+    emitScriptReady(win, songId, shotPlan, plot, script)
+
+    emitComplete(win, planPath, shotPlan)
+    return { planPath, plan: shotPlan, songId, projectPath, stoppedAt: 'keyframes' }
+
+  } catch (err) {
+    emitError(win, 'pipeline', err, false)
+    throw err
+  }
+}
+
 // ═══════════════════════════════════════════
 // Render phase (plan.json → clips → final mp4)
 // ═══════════════════════════════════════════

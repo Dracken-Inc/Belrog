@@ -189,3 +189,50 @@ describe('D1: No arithmetic interpolation in prompts', () => {
     assert.ok(content.includes('export function computeShotBudget'), 'Missing computeShotBudget export')
   })
 })
+
+describe('F2: Prepare pipeline (stops at keyframes boundary)', () => {
+  it('runMusicVideoPipelinePrepare is exported from musicVideoPipeline.js', async () => {
+    const pipeline = await import('../src/services/musicVideoPipeline.js')
+    assert.ok(typeof pipeline.runMusicVideoPipelinePrepare === 'function', 'runMusicVideoPipelinePrepare not exported')
+  })
+
+  it('music-video:prepare IPC handler is registered in musicVideoIpc.mjs', async () => {
+    const fs = await import('fs')
+    const content = fs.readFileSync('./electron/musicVideoIpc.mjs', 'utf-8')
+    assert.ok(content.includes('music-video:prepare'), 'music-video:prepare handler not found')
+    assert.ok(content.includes('runMusicVideoPipelinePrepare'), 'runMusicVideoPipelinePrepare not used in handler')
+  })
+
+  it('preload.js exposes musicVideoPrepare', async () => {
+    const fs = await import('fs')
+    const content = fs.readFileSync('./electron/preload.js', 'utf-8')
+    assert.ok(content.includes('musicVideoPrepare'), 'musicVideoPrepare not exposed in preload')
+    assert.ok(content.includes('music-video:prepare'), 'music-video:prepare not invoked in preload')
+  })
+
+  it('MusicVideoEasyMode.jsx has Generate Full Music Video button on song step', async () => {
+    const fs = await import('fs')
+    const content = fs.readFileSync('./src/components/generate/MusicVideoEasyMode.jsx', 'utf-8')
+    assert.ok(content.includes('Generate Full Music Video'), 'Button text not found')
+    assert.ok(content.includes('handlePrepareMusicVideo'), 'Handler not referenced')
+    assert.ok(content.includes('musicVideoPrepare'), 'IPC call not found in component')
+    // Button should be in renderSongStep (step 1)
+    const songStepEnd = content.indexOf('const renderPeopleWizardModal')
+    const songStepContent = content.slice(0, songStepEnd)
+    assert.ok(songStepContent.includes('Generate Full Music Video'), 'Button not in song step')
+  })
+
+  it('prepare pipeline returns stoppedAt: keyframes', async () => {
+    // This is a structural test - the function signature should return stoppedAt
+    const pipeline = await import('../src/services/musicVideoPipeline.js')
+    const fnString = pipeline.runMusicVideoPipelinePrepare.toString()
+    assert.ok(fnString.includes('stoppedAt'), 'stoppedAt not in return object')
+    assert.ok(fnString.includes('keyframes'), 'keyframes not mentioned as stop point')
+  })
+
+  it('prepare pipeline does NOT call resumeAndRender', async () => {
+    const pipeline = await import('../src/services/musicVideoPipeline.js')
+    const fnString = pipeline.runMusicVideoPipelinePrepare.toString()
+    assert.ok(!fnString.includes('resumeAndRender'), 'Should not call resumeAndRender')
+  })
+})

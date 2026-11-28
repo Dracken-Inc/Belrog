@@ -1940,6 +1940,61 @@ export default function MusicVideoEasyMode({
     }
   }
 
+  const handlePrepareMusicVideo = async () => {
+    if (!yoloMusicAudioAssetPath || !window.electronAPI?.musicVideoPrepare) return
+    if (isRenderingPipeline) return
+    setIsRenderingPipeline(true)
+    setPipelineProgress(0)
+    setPipelineStage('Preparing director script...')
+    setPipelineError('')
+    setPipelineVideoPath('')
+    try {
+      // Resolve timeline fps from project store (renderer process) for accurate fps inheritance
+      let timelineFps = null
+      try {
+        const projectState = useProjectStore.getState?.()
+        const tl = projectState?.getCurrentTimelineSettings?.()
+        if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
+      } catch {
+        // Store not available, ignore
+      }
+
+      const options = {
+        aspectRatio,
+        resolutionPreset,
+        videoFps,
+        timelineFps,
+        coveragePreset,
+        performancePassCount,
+        includeStoryBroll,
+        includeEnvironmentalBroll,
+        includeDetailBroll,
+        videoWorkflowId: yoloMusicVideoWorkflowId,
+        keyframeWorkflowId: yoloMusicKeyframeWorkflowId,
+        styleNotes: yoloMusicStyleNotes,
+        lyrics: yoloMusicLyrics,
+        script: yoloMusicScript,
+        cast: yoloMusicCast,
+        resolvedCast: yoloMusicResolvedCast,
+      }
+      const result = await window.electronAPI.musicVideoPrepare(yoloMusicAudioAssetPath, options)
+      if (result?.ok) {
+        setPipelineStage('Director script ready — review at Step 4 (Keyframes)')
+        setPipelineProgress(100)
+        // Advance to step 4 (keyframes) for review
+        setStep('keyframes')
+      } else {
+        setPipelineError(result?.error || 'Failed to prepare music video')
+        setPipelineStage('Error')
+      }
+    } catch (error) {
+      setPipelineError(error?.message || 'Failed to prepare music video')
+      setPipelineStage('Error')
+    } finally {
+      setIsRenderingPipeline(false)
+    }
+  }
+
   const updatePeopleWizard = (updater) => {
     setPeopleWizard((prev) => {
       if (!prev) return prev
@@ -2379,6 +2434,47 @@ export default function MusicVideoEasyMode({
         </div>
       </div>
     </div>
+
+    {/* One-shot prepare: audio intake → analysis → director script → assets, stops at keyframes */}
+    {yoloMusicAudioAssetPath && (
+      <div className="mt-6 rounded-lg border border-sf-accent/50 bg-sf-accent/5 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-sf-accent">
+              <Film className="h-4 w-4" />
+              <span>Generate Full Music Video</span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-sf-text-secondary">
+              One press runs: audio intake → beat/envelope analysis → director script → script-derived assets (cast, stills).
+              Stops at Step 4 (Keyframes) so you can review the script and assets before any frame is keyed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrepareMusicVideo}
+            disabled={isRenderingPipeline || !yoloMusicAudioAssetPath}
+            className="shrink-0 inline-flex items-center justify-center gap-2 rounded-lg bg-sf-accent px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-sf-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isRenderingPipeline ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+            Generate Full Music Video
+          </button>
+        </div>
+        {isRenderingPipeline && (
+          <div className="mt-3 space-y-2">
+            <div className="h-2 overflow-hidden rounded-full bg-sf-dark-700">
+              <div
+                className="h-full rounded-full bg-sf-accent transition-all duration-300"
+                style={{ width: `${Math.min(100, Math.max(0, pipelineProgress))}%` }}
+              />
+            </div>
+            <p className="text-xs text-sf-text-secondary">{pipelineStage}</p>
+            {pipelineError && (
+              <p className="text-xs text-red-200">{pipelineError}</p>
+            )}
+          </div>
+        )}
+      </div>
+    )}
   )
 
   const renderPeopleWizardModal = () => {

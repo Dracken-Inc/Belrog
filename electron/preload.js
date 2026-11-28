@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Music Video One-Shot (W22)
   // Start a new project from audio file
   musicVideoStart: (audioFilePath, options) => ipcRenderer.invoke('music-video:start', { audioFilePath, options }),
+  // Prepare project up to director script (stops before keyframes/video)
+  musicVideoPrepare: (audioFilePath, options) => ipcRenderer.invoke('music-video:prepare', { audioFilePath, options }),
   // Resume existing project
   musicVideoResume: (songId) => ipcRenderer.invoke('music-video:resume', { songId }),
   // Pause/resume/cancel pipeline

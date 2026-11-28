@@ -15,6 +15,7 @@ import electron from 'electron'
 const { ipcMain, dialog } = electron
 import {
   runMusicVideoPipeline,
+  runMusicVideoPipelinePrepare,
   resumeAndRender,
   loadProjectState,
   listProjects,
@@ -37,6 +38,20 @@ export function registerMusicVideoIpcHandlers(win) {
     if (!audioFilePath || typeof audioFilePath !== 'string') return { ok: false, error: 'audioFilePath is required.' }
     try {
       const result = await runMusicVideoPipeline({ filePath: audioFilePath, win, options })
+      currentSongId = result.songId ?? currentSongId
+      return { ok: true, ...result }
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) }
+    }
+  })
+
+  // Prepare a music-video project up to the director script (stops before keyframes/video)
+  // Runs: intake → audio analysis → plot → shots → plan.json, then STOPS at keyframes boundary
+  ipcMain.handle('music-video:prepare', async (_event, { audioFilePath, options = {} } = {}) => {
+    if (!win || win.isDestroyed()) return { ok: false, error: 'No Belrog window available.' }
+    if (!audioFilePath || typeof audioFilePath !== 'string') return { ok: false, error: 'audioFilePath is required.' }
+    try {
+      const result = await runMusicVideoPipelinePrepare({ filePath: audioFilePath, win, options })
       currentSongId = result.songId ?? currentSongId
       return { ok: true, ...result }
     } catch (err) {
