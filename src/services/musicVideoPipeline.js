@@ -24,7 +24,7 @@
  *   mv:paused       { songId }
  *   mv:resumed      { songId }
  */
-import { parseLyricBlocks, tileShots, auditTiling, harvestCastSlugs, generateSunoScript } from './sunoIntake.js'
+import { parseLyricBlocks, tileShots, tileShotsBySection, auditTiling, harvestCastSlugs, generateSunoScript, computeShotBudget } from './sunoIntake.js'
 import { analyzeEnvelopeFFmpeg } from './audioAnalysis.js'
 import { compilePlot, compileShots } from './actionProse.mjs'
 import { validatePlan } from './shotPlanValidator.js'
@@ -565,22 +565,22 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
     emitProgress(win, 'intake', 0.5, `Track: ${title || 'untitled'} (${durationSec.toFixed(1)}s)`)
 
     const blocks = parseLyricBlocks(lyricsRaw, durationSec)
-    const shots = tileShots(blocks, durationSec, { targetSec })
-    const issues = auditTiling(shots, durationSec)
-    if (issues.length) throw new Error(`Tiling failed: ${issues.map(i => i.message).join('; ')}`)
 
-    const castSlugs = harvestCastSlugs({ cast: [], lyricsRaw })
-    emitProgress(win, 'intake', 1.0, `Intake done: ${shots.length} shots, ${castSlugs.length} cast`)
-
-    // ═══════════════════════════════════
-    // STAGE 2: Audio Analysis (envelope → beats + sections)
-    // ═══════════════════════════════════
+    // Audio analysis must run first to get sections for section-aware tiling
     emitProgress(win, 'audio', 0.1, 'Analyzing audio envelope…')
     const analysis = await analyzeEnvelopeFFmpeg({ absolutePath: filePath })
     emitProgress(win, 'audio', 0.6, `Envelope: ${analysis.durationSec.toFixed(1)}s, ${analysis.onsets?.length ?? 0} onsets, ${analysis.sections?.length ?? 0} sections`)
 
     const sections = analysis.sections
     emitProgress(win, 'audio', 1.0, `Audio done: ${sections.length} sections detected`)
+
+    // Section-aware tiling: same budget that compileShots will use
+    const shots = tileShotsBySection(blocks, sections)
+    const issues = auditTiling(shots, durationSec)
+    if (issues.length) throw new Error(`Tiling failed: ${issues.map(i => i.message).join('; ')}`)
+
+    const castSlugs = harvestCastSlugs({ cast: [], lyricsRaw })
+    emitProgress(win, 'intake', 1.0, `Intake done: ${shots.length} shots, ${castSlugs.length} cast`)
 
     // ═══════════════════════════════════
     // Create project folder structure
@@ -611,7 +611,7 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
       durationSec,
       lyricsRaw,
       sections,
-      beats: [],
+      beats: analysis.onsets || [], // Pass real onsets; actionProse.downsampleBeats() will pick 32 evenly spaced
       style,
       creativePreset,
       castSlugs,
@@ -627,7 +627,7 @@ export async function runMusicVideoPipeline({ filePath, win, options = {} }) {
       title,
       durationSec,
       sections,
-      beats: [],
+      beats: analysis.onsets || [], // Pass real onsets for per-section generation
       shots: shots.map(s => ({ startSec: s.startSec, endSec: s.endSec, lyric: s.lyric })),
       style,
       creativePreset,

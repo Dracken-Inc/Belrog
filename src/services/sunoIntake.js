@@ -60,6 +60,15 @@ export function parseLyricBlocks(raw, durationSec) {
 }
 
 /**
+ * Compute per-section shot budget: ~1 shot per 4 seconds, clamped to [2, 8].
+ * @param {number} sectionDurationSec
+ * @returns {number}
+ */
+export function computeShotBudget(sectionDurationSec) {
+  return Math.max(2, Math.min(8, Math.round(sectionDurationSec / 4)))
+}
+
+/**
  * Tile blocks into shots covering [0, durationSec] exactly. Boundaries land on
  * lyric onsets where possible; every shot >= MIN_SHOT_SEC; leftover < MIN_SHOT_SEC
  * is merged into the final shot. Deterministic.
@@ -89,6 +98,33 @@ export function tileShots(blocks, durationSec, { targetSec = 5 } = {}) {
       .filter((b) => b.startSec < endSec && b.endSec > startSec)
       .flatMap((b) => b.lines)
     shots.push({ startSec, endSec, seconds: Math.round((endSec - startSec) * 10) / 10, lyric })
+  }
+  return shots
+}
+
+/**
+ * Tile blocks into shots per section, using computeShotBudget for each section
+ * so the tiling and the model agree on shot count.
+ * @param {Array} blocks - Lyric blocks from parseLyricBlocks
+ * @param {Array} sections - Audio sections from analyzeEnvelopeFFmpeg
+ * @returns {Array} Shots with startSec, endSec, lyric, sectionId
+ */
+export function tileShotsBySection(blocks, sections) {
+  const shots = []
+  for (const section of sections) {
+    const sectionBlocks = blocks.filter(b => b.startSec < section.endSec && b.endSec > section.startSec)
+    const sectionDuration = section.endSec - section.startSec
+    const budget = computeShotBudget(sectionDuration)
+    // Distribute the section duration evenly across the budget
+    const perShot = sectionDuration / budget
+    for (let i = 0; i < budget; i++) {
+      const startSec = section.startSec + i * perShot
+      const endSec = i === budget - 1 ? section.endSec : section.startSec + (i + 1) * perShot
+      const lyric = sectionBlocks
+        .filter((b) => b.startSec < endSec && b.endSec > startSec)
+        .flatMap((b) => b.lines)
+      shots.push({ startSec, endSec, seconds: Math.round((endSec - startSec) * 10) / 10, lyric, sectionId: section.id })
+    }
   }
   return shots
 }
