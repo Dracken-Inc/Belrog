@@ -119,6 +119,7 @@ export async function renderPlanClips(plan, renderDir, deps = {}) {
     onClip = null,
     doneClipIndexes = null,
     shotStates = [],
+    timelineFps = null,
   } = deps
 
   if (!plan) throw new Error('renderPlanClips needs a plan')
@@ -126,7 +127,9 @@ export async function renderPlanClips(plan, renderDir, deps = {}) {
 
   const comfy = deps.comfy || (await defaultComfy(env))
   const work = planClipWork({ plan, shotStates, doneClipIndexes })
-  const fps = options.fps || plan.look?.fps || RENDER_DEFAULTS.fps
+  // Resolve fps: options.fps > plan.look.fps > project timeline fps > RENDER_DEFAULTS.fps.
+  // The timeline fps (e.g. 23.976) beats the constant 24 to avoid ~0.28s drift over a 283s song.
+  const fps = options.fps || plan.look?.fps || timelineFps || RENDER_DEFAULTS.fps
   const cache = options.uploadCache || createUploadCache({ dir: renderDir })
 
   const results = work.doneClips.map((clip) => ({

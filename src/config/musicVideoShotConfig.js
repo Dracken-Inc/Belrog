@@ -991,23 +991,42 @@ export function parseTimedLyrics(rawText = '') {
  * Reuses findLyricLineIndex's three-tier strategy (exact → substring →
  * 4+ consecutive words) but returns the whole timed entry so the planner
  * gets startSec directly. Returns null when no confident match.
+ *
+ * notBeforeSec (number or null): when finite, restricts candidates to
+ * occurrences whose startSec is at least notBeforeSec - 0.25. This prevents
+ * a repeated chorus line from pulling the timeline backwards — nearest-
+ * occurrence alone lets an earlier repetition win when the script expects
+ * the later one.
  */
-export function findTimedLyricLineByText(hint = '', timedLines = [], { preferNearSec = null } = {}) {
+export function findTimedLyricLineByText(hint = '', timedLines = [], { preferNearSec = null, notBeforeSec = null } = {}) {
   if (!Array.isArray(timedLines) || timedLines.length === 0) return null
   const texts = timedLines.map((l) => l?.text || '')
   const idxs = findLyricLineIndexes(hint, texts)
   if (idxs.length === 0) return null
-  if (idxs.length === 1 || preferNearSec === null || !Number.isFinite(preferNearSec)) return timedLines[idxs[0]]
+
+  // Apply notBeforeSec bound: keep only occurrences at or after the threshold.
+  let candidates = idxs
+  if (notBeforeSec !== null && Number.isFinite(notBeforeSec)) {
+    const bound = notBeforeSec - 0.25
+    candidates = idxs.filter((idx) => {
+      const startSec = Number(timedLines[idx]?.startSec)
+      return Number.isFinite(startSec) && startSec >= bound
+    })
+    if (candidates.length === 0) return null
+  }
+
+  if (candidates.length === 1 || preferNearSec === null || !Number.isFinite(preferNearSec)) return timedLines[candidates[0]]
   // Repeated lyric (chorus at 0:39 and 3:30): choose the occurrence whose
   // start time is closest to the anchor, so the shot stays where the
   // script/timeline expects instead of snapping to the first repetition.
-  let best = idxs[0]
+  // Earliest startSec wins a tie.
+  let best = candidates[0]
   let bestDist = Infinity
-  for (const idx of idxs) {
+  for (const idx of candidates) {
     const startSec = Number(timedLines[idx]?.startSec)
     if (!Number.isFinite(startSec)) continue
     const dist = Math.abs(startSec - preferNearSec)
-    if (dist < bestDist) {
+    if (dist < bestDist || (dist === bestDist && startSec < Number(timedLines[best]?.startSec))) {
       bestDist = dist
       best = idx
     }

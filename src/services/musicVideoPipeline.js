@@ -764,6 +764,18 @@ export async function renderProjectClips({ songId, win = null, options = {}, env
 
   await updateProjectState(songId, { status: PROJECT_STATUS.RENDERING, error: null })
 
+  // Try to get timeline fps from project store (renderer process) for accurate fps inheritance.
+  // In plain Node (tests, CLI) the store may not exist; fall back to plan.look.fps.
+  let timelineFps = null
+  try {
+    const { useProjectStore } = await import('../stores/projectStore.js')
+    const projectState = useProjectStore.getState?.()
+    const tl = projectState?.getCurrentTimelineSettings?.()
+    if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
+  } catch {
+    // Store not available in this process (e.g. plain Node), ignore.
+  }
+
   const totalClips = (plan.clips || []).length
   let finished = 0
 
@@ -773,6 +785,7 @@ export async function renderProjectClips({ songId, win = null, options = {}, env
     options: { ...options, quality: state?.pipelineOptions?.quality },
     log,
     shotStates: state?.shots || [],
+    timelineFps,
     shouldCancel: async () => isCancelRequested(songId),
     onClip: async (res) => {
       finished += 1
@@ -859,11 +872,23 @@ export async function renderSingleShot(songId, shot, shotIndex, plan, options = 
   const clip = clips.find((c) => c.index === shotIndex) || clips[shotIndex]
   if (!clip) throw new Error(`clip ${shotIndex} is not in this plan (it has ${clips.length} clips)`)
 
+  // Try to get timeline fps from project store for accurate fps inheritance.
+  let timelineFps = null
+  try {
+    const { useProjectStore } = await import('../stores/projectStore.js')
+    const projectState = useProjectStore.getState?.()
+    const tl = projectState?.getCurrentTimelineSettings?.()
+    if (tl && Number.isFinite(tl.fps)) timelineFps = Number(tl.fps)
+  } catch {
+    // Store not available in this process (e.g. plain Node), ignore.
+  }
+
   const result = await renderPlanClips({ ...storedPlan, clips: [clip] }, paths.renders, {
     env: options.env || process.env,
     gate: options.gate !== false,
     options,
     log: projectLogger(paths),
+    timelineFps,
   })
   const first = result.results[0]
   if (!first?.ok && !first?.skipped) throw new Error(first?.error || `clip ${clip.index} did not render`)

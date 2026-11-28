@@ -1688,8 +1688,14 @@ function buildMusicVideoPlanFromScript(options = {}) {
       // when no Start at pinned it) instead of always the first — otherwise
       // every chorus shot teleports to the chorus's first pass and the
       // timeline plays the song out of order.
+      // notBeforeSec prevents a repeated chorus line from pulling the timeline
+      // backwards: bound is the earlier of explicitStart (if finite) and the
+      // running cursor, minus a small tolerance inside findTimedLyricLineByText.
+      const notBeforeSec = (explicitStart !== null && Number.isFinite(explicitStart))
+        ? Math.min(explicitStart, runningAudioStart)
+        : runningAudioStart
       const timedMatch = effectiveLyricMomentHint && hasTimedLyrics
-        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines, { preferNearSec: explicitStart ?? runningAudioStart })
+        ? findTimedLyricLineByText(effectiveLyricMomentHint, timedLyricLines, { preferNearSec: explicitStart ?? runningAudioStart, notBeforeSec })
         : null
 
       // Tier 3 — legacy linear estimate based on plain lyric line index.
@@ -1700,26 +1706,28 @@ function buildMusicVideoPlanFromScript(options = {}) {
       let audioStart
       let audioStartSource
       const hasTimedMatch = timedMatch && typeof timedMatch.startSec === 'number'
-      if (isVocalAlignedShot && hasTimedMatch) {
-        audioStart = timedMatch.startSec
-        audioStartSource = 'srt-fuzzy'
-        if (explicitStart !== null) {
+
+      // Explicit Start-at always wins when present and finite.
+      // The matched lyric start (if any) is kept only as a lip-sync hint.
+      if (explicitStart !== null && Number.isFinite(explicitStart)) {
+        audioStart = explicitStart
+        audioStartSource = 'start-at'
+        if (hasTimedMatch) {
           const drift = Math.abs(explicitStart - timedMatch.startSec)
           if (drift >= 0.5) {
-            audioStartSource = 'srt-fuzzy-overrode-start-at'
             warnings.push({
               shotIndex: flatShotIndex,
               shotLabel: scriptShot.label || `Shot ${flatShotIndex}`,
-              kind: 'performance-start-at-overridden',
+              kind: 'lyric',
               raw: startAtRaw,
-              message: `Shot ${flatShotIndex}${scriptShot.label ? ` (${scriptShot.label})` : ''}: performance lip-sync uses SRT timing (${formatSecondsAsMMSS(timedMatch.startSec)}) instead of Start at (${formatSecondsAsMMSS(explicitStart)}) for "${lyricMomentHint}".`,
+              message: `Shot ${flatShotIndex}${scriptShot.label ? ` (${scriptShot.label})` : ''}: lyric line begins at ${formatSecondsAsMMSS(timedMatch.startSec)} but the shot keeps Start at ${formatSecondsAsMMSS(explicitStart)}.`,
               severity: 'info',
             })
           }
         }
-      } else if (explicitStart !== null) {
-        audioStart = explicitStart
-        audioStartSource = 'start-at'
+      } else if (isVocalAlignedShot && hasTimedMatch) {
+        audioStart = timedMatch.startSec
+        audioStartSource = 'srt-fuzzy'
       } else if (hasTimedMatch) {
         audioStart = timedMatch.startSec
         audioStartSource = 'srt-fuzzy'

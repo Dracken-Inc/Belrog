@@ -378,6 +378,20 @@ export function parseAssetLegendLines(script = '') {
     }
     if (!slug || slug.length > 60) continue
     description = description.slice(0, 300)
+    // Cast-note hygiene (S4): the brief at GenerateWorkspace.jsx:2394 tells the
+    // model it may omit Artist or use a generic slot. The model echoes that
+    // sentence back as the CHARACTER legend description. Strip it here so the
+    // cast library never stores the boilerplate as a note.
+    if (kind === 'character') {
+      const lower = description.toLowerCase()
+      if (
+        lower.includes('no cast defined') ||
+        lower.includes('or as a generic slot') ||
+        lower.includes('you may omit')
+      ) {
+        description = ''
+      }
+    }
     // Slug key: lowercase, trim; underscores are MEANINGFUL (location_dpf is a
     // different byte-string than location-dpf and must byte-match shot tokens
     // and plate filenames). Spaces/punctuation still fold to hyphens.
