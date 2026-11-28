@@ -29,6 +29,8 @@ on:
 
 permissions:
   contents: write
+  # keyless cosign needs an OIDC id token to mint a signing certificate
+  id-token: write
 
 concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
@@ -275,11 +277,13 @@ jobs:
             --clobber
 
       - name: Cosign keyless sign Windows artifacts
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v2.2.3'
       - name: Sign Windows binaries with cosign
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -413,11 +417,13 @@ jobs:
             --clobber
 
       - name: Cosign keyless sign Linux artifacts
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v2.2.3'
       - name: Sign Linux binaries with cosign
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -580,11 +586,13 @@ jobs:
             --clobber
 
       - name: Cosign keyless sign macOS artifacts
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v2.2.3'
       - name: Sign macOS binaries with cosign
+        continue-on-error: true   # signing must never block the artifacts (Henry: unsigned test builds are fine)
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
